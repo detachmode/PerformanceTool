@@ -8,13 +8,11 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4, review pass, a11y passes, demo speed, CI (0014).
-1. Done: WebAssembly restructure (brain 0015): Core library + WebAssembly client + server host; GitHub Pages workflow (repo owner must set Pages source to "GitHub Actions").
-   Next: REST API on the server + `ApiRunSource`, real-run UI through it.
-2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
-
-Open questions for the user (ask one at a time): which duration summary to show instead of p50/p95/p99;
-group repeated calls by name (IDs collapsed) or by position; colours for call groups.
+- Done: drafts 1–4, review/a11y passes, demo speed, CI (0014), WebAssembly + Pages (0015).
+1. **Running:** popup logs rework (user feedback): level dropdown, no level/call columns, full word-wrapped messages,
+   tappable chart bars, logs as the focus with compact statistics (0012).
+2. **Next:** calm-UI simplification pass over overview, popup and editor (brain 0016): remove or hide what isn't needed at a glance.
+3. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
