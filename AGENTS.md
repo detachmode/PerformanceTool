@@ -64,7 +64,8 @@ details behind it (brain 0029), e.g. an errors counter opens the failed actors.
   images inline.
 - **The GitHub tool used by agents defuses image embeds *and* markdown links to github.com / raw.githubusercontent.com in
   PR descriptions** (`![..](..)`, `[..](..)` and `<img>` get wrapped in code spans). So PR descriptions give the
-  folder's README gallery as a **bare URL on its own line** (GitHub auto-links it), commit-pinned:
+  folder's README gallery as a **bare URL on its own line** (GitHub auto-links it), commit-pinned. The tool also wraps
+  bare URLs longer than ~156 characters, so don't list single image URLs; link only the gallery:
   `https://github.com/<owner>/<repo>/blob/<commit-sha>/docs/screenshots/<folder>/README.md`.
 - If a raw image URL is needed elsewhere, use a **commit-pinned raw URL**:
   `https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/docs/screenshots/...png`, not a branch name.
