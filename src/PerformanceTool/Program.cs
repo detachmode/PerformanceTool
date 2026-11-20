@@ -20,6 +20,9 @@ builder.Services.AddScenario<UserJourneyScenario>();
 
 var app = builder.Build();
 
+// Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
+app.Services.GetRequiredService<ScenarioCatalog>();
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -33,6 +36,15 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+
+// Machine-readable scenario catalog (id, name, description, JSON Schema of the parameters) for the CLI and coding harnesses.
+app.MapGet("/api/scenarios", (ScenarioCatalog catalog) => catalog.All.Select(s => new
+{
+    s.Id,
+    s.Name,
+    s.Description,
+    Parameters = s.Spec.ToJsonSchema(),
+}));
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

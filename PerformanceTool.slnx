@@ -1,3 +1,8 @@
 <Solution>
-  <Project Path="src/PerformanceTool/PerformanceTool.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/PerformanceTool/PerformanceTool.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PerformanceTool.Tests/PerformanceTool.Tests.csproj" />
+  </Folder>
 </Solution>

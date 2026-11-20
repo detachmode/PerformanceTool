@@ -1,0 +1,154 @@
+@* Generated editor for a scenario's parameter class (docs/brain/0007). Never add per-scenario markup here:
+   new parameter shapes are supported by adding a FieldKind in ParameterSpec and a case below. *@
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using PerformanceTool.Services.Scenarios.Spec
+
+@foreach (var f in Spec.Fields)
+{
+    var field = f;
+    var id = $"{IdPrefix}-{field.JsonName}";
+    <div class="field @(field.Wide ? "wide" : "") kind-@field.Kind.ToString().ToLowerInvariant()" data-field="@field.JsonName">
+        @if (field.Kind is not (FieldKind.Toggle or FieldKind.Group))
+        {
+            <label for="@id">
+                @field.Label
+                @if (field.Optional)
+                {
+                    <span class="opt">optional</span>
+                }
+            </label>
+        }
+        @switch (field.Kind)
+        {
+            case FieldKind.Text:
+                <input id="@id" type="text" value="@Str(field)" placeholder="@field.Placeholder" disabled="@Disabled" @onchange="e => SetStr(field, e)" />
+                break;
+            case FieldKind.Url:
+                <input id="@id" type="url" value="@Str(field)" placeholder="@(field.Placeholder ?? "https://")" disabled="@Disabled" @onchange="e => SetStr(field, e)" />
+                break;
+            case FieldKind.Multiline:
+                <textarea id="@id" rows="3" value="@Str(field)" placeholder="@field.Placeholder" disabled="@Disabled" @onchange="e => SetStr(field, e)"></textarea>
+                break;
+            case FieldKind.Secret:
+                var shown = revealed.Contains(id);
+                <div class="secret">
+                    <input id="@id" type="@(shown ? "text" : "password")" autocomplete="off" value="@Str(field)"
+                           placeholder="@(field.Placeholder ?? "value or ${env:NAME}")" disabled="@Disabled" @onchange="e => SetStr(field, e)" />
+                    <button type="button" class="icon-btn" title="@(shown ? "Hide" : "Show")" aria-label="@(shown ? "Hide value" : "Show value")"
+                            @onclick="() => { if (!revealed.Remove(id)) revealed.Add(id); }">@(shown ? "Hide" : "Show")</button>
+                </div>
+                break;
+            case FieldKind.Toggle:
+                var on = Bool(field);
+                <div class="toggle-row">
+                    <button id="@id" type="button" role="switch" aria-checked="@(on ? "true" : "false")" class="toggle @(on ? "on" : "")"
+                            disabled="@Disabled" @onclick="() => Values[field.JsonName] = !on"><span class="knob"></span></button>
+                    <label for="@id">@field.Label</label>
+                </div>
+                break;
+            case FieldKind.Choice:
+                <select id="@id" value="@Str(field)" disabled="@Disabled" @onchange="e => SetStr(field, e)">
+                    @foreach (var o in field.Options)
+                    {
+                        <option value="@o.Value">@o.Label</option>
+                    }
+                </select>
+                break;
+            case FieldKind.Integer:
+            case FieldKind.Number:
+                <input id="@id" type="number" step="@(field.Kind == FieldKind.Integer ? "1" : "any")" min="@Inv(field.Min)" max="@Inv(field.Max)"
+                       value="@NumStr(field)" placeholder="@field.Placeholder" disabled="@Disabled" @onchange="e => SetNumber(field, e)" />
+                break;
+            case FieldKind.Slider:
+                <div class="slider">
+                    <input id="@id" type="range" min="@Inv(field.Min)" max="@Inv(field.Max)" step="1" value="@NumStr(field)"
+                           disabled="@Disabled" @oninput="e => SetNumber(field, e)" />
+                    <output for="@id">@NumStr(field)</output>
+                </div>
+                break;
+            case FieldKind.Duration:
+                <DurationInput Id="@id" Value="@Duration(field)" Disabled="Disabled" ValueChanged="v => SetDuration(field, v)" />
+                break;
+            case FieldKind.List:
+                <ListEditor Id="@id" Items="@Array(field)" Urls="field.ItemsAreUrls" Disabled="Disabled" />
+                break;
+            case FieldKind.KeyValue:
+                <KeyValueEditor Id="@id" Values="@Object(field)" Disabled="Disabled" />
+                break;
+            case FieldKind.Group:
+                <details class="group" open>
+                    <summary>@field.Label</summary>
+                    <div class="group-body">
+                        <ParameterEditor Spec="field.Children!" Values="@Object(field)" Disabled="Disabled" IdPrefix="@id" />
+                    </div>
+                </details>
+                break;
+        }
+        @if (field.Description is not null && field.Kind != FieldKind.Group)
+        {
+            <small class="help">@field.Description</small>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public ParameterSpec Spec { get; set; } = default!;
+    /// <summary>The stored values (preset format). Edited in place.</summary>
+    [Parameter, EditorRequired] public JsonObject Values { get; set; } = default!;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "p";
+
+    private readonly HashSet<string> revealed = [];
+
+    private static string? Inv(double? d) => d?.ToString(CultureInfo.InvariantCulture);
+
+    private string Str(FieldSpec f) => Values[f.JsonName] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
+    private void SetStr(FieldSpec f, ChangeEventArgs e) => Values[f.JsonName] = e.Value?.ToString() ?? "";
+
+    private bool Bool(FieldSpec f) => Values[f.JsonName] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
+
+    private string NumStr(FieldSpec f) => Values[f.JsonName] switch
+    {
+        JsonValue v when v.GetValueKind() == JsonValueKind.Number => v.ToJsonString(),
+        JsonValue v when v.TryGetValue<string>(out var s) => s,
+        _ => "",
+    };
+
+    private void SetNumber(FieldSpec f, ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString()?.Trim() ?? "";
+        if (text.Length == 0)
+        {
+            if (f.Nullable) Values[f.JsonName] = null;
+            return;
+        }
+        if (f.Kind is FieldKind.Integer or FieldKind.Slider)
+        {
+            if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l)) Values[f.JsonName] = l;
+        }
+        else if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) Values[f.JsonName] = d;
+    }
+
+    private TimeSpan Duration(FieldSpec f) =>
+        TimeSpan.TryParse(Str(f), CultureInfo.InvariantCulture, out var t) ? t : TimeSpan.Zero;
+
+    private void SetDuration(FieldSpec f, TimeSpan value) => Values[f.JsonName] = value.ToString("c", CultureInfo.InvariantCulture);
+
+    private JsonArray Array(FieldSpec f)
+    {
+        if (Values[f.JsonName] is JsonArray a) return a;
+        var created = new JsonArray();
+        Values[f.JsonName] = created;
+        return created;
+    }
+
+    private JsonObject Object(FieldSpec f)
+    {
+        if (Values[f.JsonName] is JsonObject o) return o;
+        var created = f.Children?.DefaultJson() ?? new JsonObject();
+        Values[f.JsonName] = created;
+        return created;
+    }
+}

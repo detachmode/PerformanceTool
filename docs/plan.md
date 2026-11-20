@@ -19,16 +19,21 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Error grouping: click an error message → all executions with that error.
 - [ ] Keyboard access (focusable bars/rows, Esc closes panels); works during a live run.
 
-## 0b. Typed scenario parameters, generated editor (requirement, see brain 0007)
-- [ ] `Scenario<TParameters>` base: parameters as a typed record. Migrate the 4 built-ins.
-- [ ] Reflection metadata model (cached per type): name, description, order, group, required, range, default.
-- [ ] Generated editor components: text / multiline / URL, toggle for `bool`, dropdown for `enum`,
-      number with range, duration for `TimeSpan`, list editor, key/value editor (headers), nested groups,
-      masked `[Secret]`.
-- [ ] Validation from the same attributes, shared by UI, presets, CLI and CI.
-- [ ] JSON Schema export per scenario (for the CLI and harnesses).
-- [ ] Startup check: unsupported property types fail loudly.
-- [ ] Preset compatibility: presets saved with the current string parameters still load.
+## 0b. Typed scenario parameters, generated editor (brain 0007), done
+- [x] `Scenario<TParameters>` base; the 4 built-ins migrated (with new options: expected status, auth, think time, repeat, stop on failure).
+- [x] Reflection metadata model, generated editor (text/multiline/URL/secret, toggle, enum dropdown, number,
+      slider, duration, list, key/value, nested groups), DataAnnotations validation, JSON Schema (`/api/scenarios`).
+- [x] Startup check for unsupported types; legacy presets still load.
+- [ ] Per-field inline validation messages (today errors are listed above the stats).
+- [ ] Conditional fields (e.g. show Token only when Scheme = Bearer).
+
+## 0c. Live scenario tiles + Aspire-inspired restyle (requirement, see brain 0008)
+- [ ] Runner reports execution-started events and in-flight counts per entry.
+- [ ] Tile per scenario: chips, title, description, big value + unit, mini bar chart (last ~100 executions), error/drop badges.
+- [ ] Live overview grid during a run; a tile pulses or glows while its scenario is executing; target vs actual runs/min.
+- [ ] Click a tile → dialog with parameters, full chart, latency distribution, status codes, errors, recent executions.
+- [ ] Restyle the app after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
+      toolbar with icon buttons, collapsible left list, group/sort menus). Re-validate the palette on the new surfaces.
 
 ## 1. Shared core + persisted run history (prerequisite for 2 and 3)
 Today results only live in the browser circuit. The CLI and CI need the same data as the UI.
@@ -67,6 +72,7 @@ Goal: an agent (Claude Code etc.) can do everything the UI can, on the same data
 - [ ] CI for this repo itself: build + tests on push.
 
 ## Other ideas
-- [ ] Unit tests for `LoadRunner` scheduling, preset round-trips and parameter validation.
+- [x] Unit tests for `LoadRunner` scheduling, legacy preset loading and parameter specs (`tests/PerformanceTool.Tests`).
+- [ ] Test project in CI.
 - [ ] Ramp-up profiles (rate changes over time) instead of a constant rate.
-- [ ] Secrets in parameters (tokens) shouldn't be stored in plain preset files: support `${env:NAME}` placeholders.
+- [x] `[Secret]` parameters are not stored in presets; `${env:NAME}` placeholders are kept and resolved at run time.

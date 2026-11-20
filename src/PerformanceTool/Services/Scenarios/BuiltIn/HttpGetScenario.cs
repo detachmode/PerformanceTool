@@ -1,16 +1,24 @@
+using System.ComponentModel.DataAnnotations;
+using PerformanceTool.Services.Scenarios.Spec;
+
 namespace PerformanceTool.Services.Scenarios.BuiltIn;
 
-public sealed class HttpGetScenario : IScenario
+public sealed class HttpGetParameters
 {
-    public string Id => "http-get";
-    public string Name => "HTTP GET";
-    public string Description => "Fetches a single URL and downloads the full response body.";
+    [Display(Name = "URL"), Required, HttpUrl]
+    public string Url { get; set; } = "https://example.com";
 
-    public IReadOnlyList<ScenarioParameter> Parameters { get; } =
-    [
-        new("url", "URL", ParameterType.Url, "https://example.com"),
-    ];
+    [Display(Name = "Expected status", Description = "Fail unless the response has exactly this status. Empty = any 2xx/3xx.", Prompt = "any 2xx/3xx")]
+    [Range(100, 599)]
+    public int? ExpectedStatus { get; set; }
+}
 
-    public Task<ScenarioOutcome> ExecuteAsync(ScenarioContext ctx, CancellationToken ct) =>
-        ctx.SendAsync(new HttpRequestMessage(HttpMethod.Get, ctx.Get("url").Trim()), ct);
+public sealed class HttpGetScenario : Scenario<HttpGetParameters>
+{
+    public override string Id => "http-get";
+    public override string Name => "HTTP GET";
+    public override string Description => "Fetches a single URL and downloads the full response body.";
+
+    protected override async Task<ScenarioOutcome> ExecuteAsync(HttpGetParameters p, ScenarioContext ctx, CancellationToken ct) =>
+        (await ctx.SendAsync(new HttpRequestMessage(HttpMethod.Get, p.Url.Trim()), ct)).Expect(p.ExpectedStatus);
 }

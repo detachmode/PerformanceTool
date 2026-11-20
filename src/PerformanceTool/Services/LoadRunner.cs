@@ -6,7 +6,7 @@ namespace PerformanceTool.Services;
 /// <summary>One scenario execution. <see cref="Entry"/> is the index into <see cref="LoadPlan.Scenarios"/>.</summary>
 public sealed record ExecutionResult(int Sequence, int Entry, double StartedAtSeconds, double ElapsedMs, int? StatusCode, long Bytes, string? Error)
 {
-    public bool Success => Error is null && StatusCode is >= 200 and < 400;
+    public bool Success => Error is null;
 }
 
 /// <summary>
@@ -44,7 +44,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         async Task ScheduleEntry(int entry)
         {
             var config = plan.Scenarios[entry];
-            var parameters = (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(config.Parameters);
+            // Bind once per run: typed parameters, ${env:NAME} secrets resolved. Shared read-only by all executions.
+            var parameters = scenarios[entry].Spec.Bind(config.Parameters);
+            scenarios[entry].Spec.ResolveSecrets(parameters);
             // Due times are computed per run in ticks (not n × a rounded interval), so the run count is exact:
             // 180/min for 8 s is 24 runs, not 25. See docs/brain/0004.
             var ticksPerRun = TimeSpan.TicksPerMinute / config.RatePerMinute;
@@ -76,7 +78,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             }
         }
 
-        async Task ExecuteOne(IScenario scenario, int entry, int seq, IReadOnlyDictionary<string, string> parameters)
+        async Task ExecuteOne(IScenario scenario, int entry, int seq, object parameters)
         {
             using var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             execCts.CancelAfter(timeout);
@@ -85,7 +87,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             ScenarioOutcome outcome;
             try
             {
-                outcome = await scenario.ExecuteAsync(new ScenarioContext(http, parameters), execCts.Token);
+                outcome = await scenario.ExecuteAsync(parameters, new ScenarioContext(http), execCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -101,8 +103,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             }
             sw.Stop();
 
-            var error = outcome.Error ?? (outcome.Success ? null : $"HTTP {outcome.StatusCode}");
-            await onResult(new ExecutionResult(seq, entry, startedAt, sw.Elapsed.TotalMilliseconds, outcome.StatusCode, outcome.Bytes, error));
+            var elapsed = outcome.Measured ?? sw.Elapsed;
+            await onResult(new ExecutionResult(seq, entry, startedAt, elapsed.TotalMilliseconds, outcome.StatusCode, outcome.Bytes, outcome.FailureReason));
         }
 
         await Task.WhenAll(Enumerable.Range(0, plan.Scenarios.Count).Select(ScheduleEntry));

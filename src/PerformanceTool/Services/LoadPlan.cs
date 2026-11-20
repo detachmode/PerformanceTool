@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using PerformanceTool.Services.Scenarios;
 
 namespace PerformanceTool.Services;
@@ -40,9 +41,8 @@ public sealed class LoadPlan
             if (scenario is null) { errors.Add($"{label}: unknown scenario '{entry.ScenarioId}'."); continue; }
             if (entry.RatePerMinute is <= 0 or > MaxRatePerMinute || double.IsNaN(entry.RatePerMinute))
                 errors.Add($"{label}: runs per minute must be between 0 and {MaxRatePerMinute:N0}.");
-            foreach (var p in scenario.Parameters)
-                if (p.Validate(entry.Parameters.GetValueOrDefault(p.Key)) is { } err)
-                    errors.Add($"{label}: {err}");
+            foreach (var err in scenario.Spec.Validate(entry.Parameters))
+                errors.Add($"{label}: {err}");
         }
         return errors;
     }
@@ -53,24 +53,28 @@ public sealed class ScenarioRunConfig
     public string ScenarioId { get; set; } = "";
     public string Label { get; set; } = "";
     public double RatePerMinute { get; set; } = 60;
-    public Dictionary<string, string> Parameters { get; set; } = [];
+    /// <summary>Parameter values as stored in presets. Shape is defined by the scenario's parameter class (brain 0007).</summary>
+    public JsonObject Parameters { get; set; } = new();
 
     public ScenarioRunConfig Clone() => new()
     {
         ScenarioId = ScenarioId,
         Label = Label,
         RatePerMinute = RatePerMinute,
-        Parameters = new Dictionary<string, string>(Parameters),
+        Parameters = (JsonObject)Parameters.DeepClone(),
     };
 
     public static ScenarioRunConfig CreateFor(IScenario scenario) => new()
     {
         ScenarioId = scenario.Id,
         Label = scenario.Name,
-        Parameters = scenario.Parameters.ToDictionary(p => p.Key, p => p.DefaultValue),
+        Parameters = scenario.Spec.DefaultJson(),
     };
 
-    /// <summary>Adds defaults for parameters missing from an older preset and drops ones the scenario no longer has.</summary>
-    public void Normalize(IScenario scenario) =>
-        Parameters = scenario.Parameters.ToDictionary(p => p.Key, p => Parameters.GetValueOrDefault(p.Key) ?? p.DefaultValue);
+    /// <summary>
+    /// Brings stored values into the scenario's current shape: adds defaults for new parameters, drops removed ones
+    /// and converts legacy values (e.g. a multiline string into a list). Anything unreadable goes to <paramref name="problems"/>.
+    /// </summary>
+    public void Normalize(IScenario scenario, List<string>? problems = null) =>
+        Parameters = scenario.Spec.Normalize(Parameters, problems);
 }

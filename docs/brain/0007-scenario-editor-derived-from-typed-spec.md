@@ -1,7 +1,6 @@
 # 0007. Scenario editor UI is derived from a typed spec in code
 
-- Status: Accepted (requirement, not implemented yet, see `docs/plan.md` → "Typed scenario parameters").
-  Extends 0003: replaces its hand-written `ScenarioParameter` list once implemented.
+- Status: Accepted, implemented. Replaces the hand-written `ScenarioParameter` list from 0003.
 - Date: 2026-11-20
 
 ## What
@@ -14,15 +13,17 @@ right editor automatically, with no UI code:
 | `string` | text input; `[Multiline]` → textarea; `[Url]` → URL input with validation |
 | `bool` | toggle switch |
 | `enum` | dropdown of enum values (display names via `[Display]`/`[Description]`) |
-| `int`, `long`, `double` | number input; `[Range]` → min/max (slider if range is small) |
+| `int`, `long`, `double`, `decimal` (also nullable) | number input; `[Range]` → min/max; integer range ≤ 20 → slider |
 | `TimeSpan` | duration input (e.g. `500ms`, `2s`) |
 | `string[]` / `List<T>` | list editor (add/remove/reorder rows) |
 | `Dictionary<string,string>` | key/value editor (e.g. headers) |
-| nested record | grouped / collapsible section |
+| nested class (public parameterless ctor) | collapsible group |
 
-Metadata comes from standard attributes where possible (`[Display(Name, Description, Order, GroupName)]`,
-`[Required]`, `[Range]`, `[Url]`, `[DefaultValue]`), plus a few of our own where needed (`[Multiline]`,
-`[Secret]` → masked input, not stored in plain presets). Validation reuses the same attributes for the UI,
+Metadata comes from standard attributes (`[Display(Name, Description, Prompt, Order)]`, `[Required]`,
+`[Range]`, `[MinLength]`). Defaults are the property initialisers. Our own attributes are in
+`Services/Scenarios/Spec/Attributes.cs`: `[HttpUrl]` (URL input and validation, also per list item),
+`[Multiline]` and `[Secret]` (masked input; stripped from presets unless it is a `${env:NAME}` reference, which
+is resolved when the run starts). Validation reuses the same attributes for the UI,
 presets, CLI and CI.
 
 The scenario gets a strongly typed object, e.g.
@@ -44,3 +45,19 @@ The scenario gets a strongly typed object, e.g.
 - Generate the editor with a reflection-based metadata model built once per scenario type and cached.
   Razor renders that model, so there are no per-scenario Razor files.
 - An unknown property type must fail loudly at startup (catalog validation), not render a broken field.
+
+## Implementation notes
+- `ParameterSpec` (`Services/Scenarios/Spec/ParameterSpec.cs`) is the reflection model, cached per type. It also
+  binds, normalises, validates, strips/resolves secrets and exports JSON Schema.
+- Values are stored as a `JsonObject` in `ScenarioRunConfig.Parameters`, which is the preset format. The editor
+  edits that object in place, and the runner binds it to the typed class once per run.
+- Binding is lenient: legacy shapes from string-only presets are converted (multiline string → list,
+  `Name: value` lines → dictionary, case-insensitive enum names, durations like `250ms`). Unreadable values
+  reset to the default and are reported in the "preset loaded" message.
+- Editor components: `Components/Parameters/` (`ParameterEditor` switches on `FieldKind`; `ListEditor`,
+  `KeyValueEditor`, `DurationInput`). Supporting a new type means a new `FieldKind`, a case in `ParameterSpec`
+  and a case in `ParameterEditor`. Never per-scenario markup.
+- `GET /api/scenarios` returns every scenario with its parameter JSON Schema (including an `x-editor` hint).
+- The app validates all specs at startup (`ScenarioCatalog` is resolved in `Program.cs`), so an unsupported
+  type stops the app with a message that names the property.
+- Covered by `tests/PerformanceTool.Tests/ParameterSpecTests.cs` and `LoadPlanTests.cs` (legacy preset).

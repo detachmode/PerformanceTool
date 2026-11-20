@@ -229,10 +229,14 @@
         var name = presetName.Trim();
         if (name.Length == 0) { presetMessage = "Enter a name to save the preset."; return; }
         var existed = presets.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
-        await Presets.SaveAsync(name, plan);
+        // Secrets never go into preset files; ${env:NAME} references are kept (brain 0007).
+        var toSave = plan.Clone();
+        var stripped = toSave.Scenarios.Sum(e => Catalog.Find(e.ScenarioId)?.Spec.StripSecrets(e.Parameters) ?? 0);
+        await Presets.SaveAsync(name, toSave);
         presets = await Presets.ListAsync();
         selectedPreset = presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Name ?? "";
-        presetMessage = existed ? $"Updated preset “{name}”." : $"Saved preset “{name}”.";
+        presetMessage = (existed ? $"Updated preset “{name}”." : $"Saved preset “{name}”.")
+            + (stripped > 0 ? $" {stripped} secret value(s) were not saved; use ${{env:NAME}} to reference an environment variable." : "");
     }
 
     private void LoadPreset()
@@ -240,9 +244,15 @@
         if (presets.FirstOrDefault(p => p.Name == selectedPreset) is not { } preset) return;
         var loaded = preset.Plan.Clone();
         var missing = new List<string>();
+        var problems = new List<string>();
         foreach (var entry in loaded.Scenarios.ToList())
         {
-            if (Catalog.Find(entry.ScenarioId) is { } scenario) entry.Normalize(scenario);
+            if (Catalog.Find(entry.ScenarioId) is { } scenario)
+            {
+                var entryProblems = new List<string>();
+                entry.Normalize(scenario, entryProblems);
+                problems.AddRange(entryProblems.Select(p => $"{entry.Label}: {p}"));
+            }
             else { missing.Add(entry.ScenarioId); loaded.Scenarios.Remove(entry); }
         }
         if (loaded.Scenarios.Count > LoadPlan.MaxEntries) loaded.Scenarios.RemoveRange(LoadPlan.MaxEntries, loaded.Scenarios.Count - LoadPlan.MaxEntries);
@@ -250,9 +260,9 @@
         plan = loaded;
         presetName = preset.Name;
         errors = [];
-        presetMessage = missing.Count == 0
-            ? $"Loaded preset “{preset.Name}”."
-            : $"Loaded “{preset.Name}”, skipped scenarios that no longer exist in code: {string.Join(", ", missing)}.";
+        presetMessage = $"Loaded preset “{preset.Name}”."
+            + (missing.Count > 0 ? $" Skipped scenarios that no longer exist in code: {string.Join(", ", missing)}." : "")
+            + (problems.Count > 0 ? $" Some values were reset to defaults: {string.Join(" · ", problems)}" : "");
     }
 
     private async Task DeletePreset()

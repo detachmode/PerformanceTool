@@ -14,36 +14,10 @@
     {
         <div class="entry-body">
             <div class="field rate">
-                <label>Runs / minute</label>
-                <input type="number" min="0.1" step="any" @bind="Config.RatePerMinute" disabled="@Disabled" />
+                <label for="@($"{idPrefix}-rate")">Runs / minute</label>
+                <input id="@($"{idPrefix}-rate")" type="number" min="0.1" step="any" @bind="Config.RatePerMinute" disabled="@Disabled" />
             </div>
-            @foreach (var p in Scenario.Parameters)
-            {
-                var key = p.Key;
-                <div class="field @(p.Type is ParameterType.Multiline or ParameterType.Url ? "wide" : "")">
-                    <label title="@p.Help">@p.Label@(p.Required ? "" : " (optional)")</label>
-                    @switch (p.Type)
-                    {
-                        case ParameterType.Multiline:
-                            <textarea rows="3" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" placeholder="@p.Help"></textarea>
-                            break;
-                        case ParameterType.Choice:
-                            <select value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled">
-                                @foreach (var o in p.Options ?? [])
-                                {
-                                    <option value="@o">@o</option>
-                                }
-                            </select>
-                            break;
-                        case ParameterType.Integer:
-                            <input type="number" step="1" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" />
-                            break;
-                        default:
-                            <input type="@(p.Type == ParameterType.Url ? "url" : "text")" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" placeholder="@p.Help" />
-                            break;
-                    }
-                </div>
-            }
+            <ParameterEditor Spec="Scenario.Spec" Values="Config.Parameters" Disabled="Disabled" IdPrefix="@idPrefix" />
         </div>
     }
 </div>
@@ -55,6 +29,6 @@
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
 
-    private string Get(string key) => Config.Parameters.GetValueOrDefault(key) ?? "";
-    private void Set(string key, ChangeEventArgs e) => Config.Parameters[key] = e.Value?.ToString() ?? "";
+    // Unique per card so labels/ids don't collide when the same scenario is added twice.
+    private readonly string idPrefix = "e" + Guid.NewGuid().ToString("N")[..8];
 }

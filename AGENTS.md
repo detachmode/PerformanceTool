@@ -15,19 +15,24 @@ to the index. Commit it in the same change as the code.
 
 ## Project
 - `src/PerformanceTool` — Blazor Web App, interactive **server** rendering, `net11.0`.
-  - `Services/Scenarios/` — `IScenario` and the built-in scenarios. New scenario = new class + `AddScenario<T>()` in `Program.cs`.
-    Scenario editor UI must be **generated** from the scenario's parameter spec, never hand-written per scenario (brain 0007).
+  - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios. A new scenario is a parameter class
+    plus a scenario class plus `AddScenario<T>()` in `Program.cs`. The editor is **generated** from the parameter
+    class (`Services/Scenarios/Spec/ParameterSpec.cs`, `Components/Parameters/`), never hand-written per scenario (brain 0007).
   - `Services/LoadRunner.cs` — open-model scheduler; `Services/LoadPlan.cs` — the plan (also the preset format).
   - `Services/PresetStore.cs` — presets as JSON files (`Presets:Directory`, default `presets/`).
   - `Components/Pages/Home.razor` — the page; `LiveChart.razor`, `ScenarioEntryCard.razor`, `Stat.razor`.
 - Interactive pages need `@rendermode InteractiveServer`, otherwise buttons do nothing.
 
-## Build and run
+## Build, test and run
+```bash
+dotnet test
+```
 ```bash
 dotnet run --project src/PerformanceTool
 ```
-If only an older SDK is available (the cloud agent environment has .NET 10), verify by building a **copy**
-with the target framework changed to `net10.0`. Don't change the committed `net11.0` target.
+If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/` and the
+`.slnx` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
+the committed `net11.0` targets.
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
