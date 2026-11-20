@@ -13,6 +13,10 @@ tints per call group). From now on, **colour is only used to transport meaning**
 **red for failed calls**. Green here means "good" (it carries meaning), so it replaces the neutral default for bars.
 Scenarios still have no identity colour.
 
+**Actors in flight (user decision):** actors that are currently being executed are also shown in the bar charts, in
+**blue or grey and/or with an animation**, so it's visible what is running right now. The exact style is chosen from a
+draft (Proposed: a blue bar that grows with elapsed time and pulses gently, turning green/yellow/red when it finishes).
+
 ## Why
 Colour is a strong signal. Spent on decoration or arbitrary identity, it adds noise (0016) and hides the signals that
 matter.

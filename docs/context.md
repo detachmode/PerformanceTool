@@ -14,7 +14,7 @@ standard load-testing tools (requests, iterations, virtual users, throughput, p9
 scenarios, actors and calls, and ask the user when unsure.
 
 ## Colours
-Bars and status: **green = good**, **yellow = slow**, **red = failed** (brain 0018). No colour per scenario.
+Bars and status: **green = good**, **yellow = slow**, **red = failed**; actors **in flight** are shown as running (blue/grey and/or animated, style open) (brain 0018). No colour per scenario.
 
 ## Terms
 
