@@ -49,5 +49,5 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0009](0009-agent-access-to-ci-runs.md) | Agents inspect CI runs: run bundles, artifact + central server (API key), one CLI/API (+ MCP) | Proposed, partly decided in 0010 |
 | [0010](0010-azure-devops-pipeline-artifacts.md) | Azure DevOps: tool runs in the pipeline; results as a full artifact + a small summary artifact | Accepted (not implemented) |
 | [0011](0011-overview-and-editor-pages.md) | Separate lightweight overview page (tiles with Aspire-style box charts + details popup) and editor page | Accepted (not implemented) |
-| [0012](0012-scenario-logging.md) | Scenarios log via ILogger with one scope per execution (one bar); logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted (not implemented) |
-| [0013](0013-call-durations-are-first-class.md) | Call durations inside each instance are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked instance bars (up to ~50 calls) | Accepted (not implemented) |
+| [0012](0012-scenario-logging.md) | Scenarios log via ILogger with one scope per actor (one bar); logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted (not implemented) |
+| [0013](0013-call-durations-are-first-class.md) | Call durations inside each actor are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked actor bars (up to ~50 calls) | Accepted (not implemented) |
