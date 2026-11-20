@@ -25,6 +25,8 @@ public sealed class ApiRunSource : IRunSource
     public void SavePreset(string name) => throw NotYet();
     public void LoadPreset(string name) => throw NotYet();
     public void Start() => throw NotYet();
+    public void Pause() => throw NotYet();
+    public void Resume() => throw NotYet();
     public void Stop() => throw NotYet();
     public void Dispose() { }
 }

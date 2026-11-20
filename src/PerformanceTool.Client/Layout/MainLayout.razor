@@ -1,10 +1,8 @@
-@* Top bar shared by all pages (brain 0020): app name, Overview / Editor, and on the right the run controls: preset, Start/Stop, elapsed / duration, Logs. *@
+@* Top bar shared by all pages (brain 0020): app name, Overview / Editor, and the build stamp. The run controls live in the player bar at the bottom (brain 0027). *@
 @inherits LayoutComponentBase
 @implements IDisposable
-@inject IRunSource Sim
 @inject LogsPopupState Logs
 
-@{ var s = Sim.Current; }
 <div class="shell">
     <header class="top">
         <a class="brand" href="overview" aria-label="PerformanceTool, overview">
@@ -15,22 +13,10 @@
             <NavLink class="nav-item" href="overview" Match="NavLinkMatch.Prefix">Overview</NavLink>
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix">Editor</NavLink>
         </nav>
-        <div class="run-controls" role="group" aria-label="Run">
-            <span class="preset-name" title="Preset: @Sim.PresetName">@Sim.PresetName</span>
-            @if (s.Running)
-            {
-                <button class="btn stop" @onclick="Sim.Stop">■ Stop</button>
-            }
-            else
-            {
-                <button class="btn start" @onclick="Sim.Start">▶ Start</button>
-            }
-            <span class="time" title="Elapsed / duration">@Format.Time(s.Elapsed) / @Format.Time(s.Plan.DurationSeconds)</span>
-            <button class="btn ghost" @onclick="() => Logs.Show()" aria-haspopup="dialog">Logs</button>
-        </div>
         <BuildStamp />
     </header>
     <main class="main">@Body</main>
+    <PlayerBar />
 </div>
 
 @if (Logs.IsOpen)
@@ -47,7 +33,6 @@
 @code {
     protected override void OnInitialized()
     {
-        Sim.Changed += OnChanged;
         Logs.Changed += OnChanged;
     }
 
@@ -59,7 +44,6 @@
 
     public void Dispose()
     {
-        Sim.Changed -= OnChanged;
         Logs.Changed -= OnChanged;
     }
 }

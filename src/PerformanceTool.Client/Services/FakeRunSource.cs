@@ -74,11 +74,13 @@ public sealed class FakeRunSource : IRunSource
     private int sequence;
     private string runId = "";
     private DateTimeOffset runStartedUtc;
+    private System.Diagnostics.Stopwatch sw = new();
+    private double pausedTotal, pauseAt;
 
     private sealed record Pending(int Entry, int Sequence, double StartedAt, double EndAt, double ElapsedMs, List<FakeCall> Calls, string? Error, FakeProfile Profile);
 
     public RunSnapshot Current { get; private set; } = default!;
-    public bool IsRunning => state == FakeRunState.Running;
+    public bool IsRunning => state is FakeRunState.Running or FakeRunState.Paused;
 
     /// <summary>Raised whenever <see cref="Current"/> changes. Pages must marshal with InvokeAsync.</summary>
     public event Action? Changed;
@@ -168,25 +170,46 @@ public sealed class FakeRunSource : IRunSource
         _ = LoopAsync(cts.Token);
     }
 
+    /// <summary>Pause (brain 0027): no new actors start and the run clock stands still; actors already running finish.</summary>
+    public void Pause()
+    {
+        if (state != FakeRunState.Running) return;
+        state = FakeRunState.Paused;
+        pauseAt = sw.Elapsed.TotalSeconds;
+        Current = Snapshot();
+        Changed?.Invoke();
+    }
+
+    public void Resume()
+    {
+        if (state != FakeRunState.Paused) return;
+        pausedTotal += sw.Elapsed.TotalSeconds - pauseAt;
+        state = FakeRunState.Running;
+        Current = Snapshot();
+        Changed?.Invoke();
+    }
+
     public void Stop()
     {
         cts?.Cancel();
-        if (state == FakeRunState.Running) Finish(Math.Min(elapsed, runPlan.DurationSeconds));
+        if (IsRunning) Finish(Math.Min(elapsed, runPlan.DurationSeconds));
         Current = Snapshot();
         Changed?.Invoke();
     }
 
     private async Task LoopAsync(CancellationToken ct)
     {
-        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var clock = sw = System.Diagnostics.Stopwatch.StartNew();
+        pausedTotal = 0;
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
         var tick = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                Step(clock.Elapsed.TotalSeconds);
-                var done = state != FakeRunState.Running;
+                if (state == FakeRunState.Paused) CompletePending(elapsed + clock.Elapsed.TotalSeconds - pauseAt);
+                else Step(clock.Elapsed.TotalSeconds - pausedTotal);
+                var done = state == FakeRunState.Finished;
                 if (++tick % 3 == 0 || done)
                 {
                     Current = Snapshot();
@@ -230,6 +253,13 @@ public sealed class FakeRunSource : IRunSource
                 nextFire[i] += interval * (0.9 + rng.NextDouble() * 0.2);
             }
         }
+        CompletePending(now);
+        if (now >= runPlan.DurationSeconds && pending.Count == 0) Finish(runPlan.DurationSeconds);
+    }
+
+    /// <summary>Completes the actors whose end has come. While paused the time keeps running for them only (they finish, nothing new starts).</summary>
+    private void CompletePending(double now)
+    {
         for (var k = pending.Count - 1; k >= 0; k--)
         {
             var p = pending[k];
@@ -239,7 +269,6 @@ public sealed class FakeRunSource : IRunSource
             inFlight[p.Entry]--;
             Complete(p);
         }
-        if (now >= runPlan.DurationSeconds && pending.Count == 0) Finish(runPlan.DurationSeconds);
     }
 
     private void Fire(int entry, double at)

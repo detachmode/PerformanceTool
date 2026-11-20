@@ -34,5 +34,8 @@ public interface IRunSource : IDisposable
 
     // Run control.
     void Start();
+    /// <summary>Pause (brain 0027): stop starting new actors and stop the run clock; running actors finish.</summary>
+    void Pause();
+    void Resume();
     void Stop();
 }
