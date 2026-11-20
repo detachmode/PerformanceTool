@@ -1,5 +1,6 @@
-@* DRAFT overview page (brain 0011): slim run bar, then a grid of scenario cards like the Aspire Metrics instrument cards.
-   Click a card for the details popup. Where Start/Stop lives is still undecided: this draft puts it in the run bar. *@
+@* DRAFT overview page (brain 0011 + 0006): slim run bar, filter chips, then a grid of scenario cards like the Aspire Metrics
+   instrument cards. Everything is clickable: cards open the details popup, chips and the summary strip filter and sort,
+   the "..." menu hides or isolates. Where Start/Stop lives is still undecided: this draft puts it in the run bar. *@
 @page "/drafts"
 @page "/drafts/overview"
 @layout DraftsLayout
@@ -11,7 +12,10 @@
 
 @{
     var s = Sim.Current;
-    var all = LatencyStats.From(s.All);
+    BuildRows(s);
+    var shown = Visible();
+    var all = LatencyStats.From(shown.SelectMany(r => s.ByEntry[r.Index]).ToList());
+    var shownStarts = shown.Sum(r => s.Starts[r.Index]);
     var state = s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle";
     var pct = Math.Clamp(s.Elapsed / Math.Max(1, s.Plan.DurationSeconds), 0, 1) * 100;
 }
@@ -36,42 +40,88 @@
         }
     </section>
 
+    @if (filter.Active)
+    {
+        <div class="dr-filterbar" role="group" aria-label="Active filters">
+            <span class="muted">Showing @shown.Count of @s.Count</span>
+            @if (filter.Only is { } only && only < s.Count) { <button class="chip removable" @onclick="filter.ClearOnly">only: <span class="swatch" style="background:@SeriesPalette.For(only)"></span>@s.Labels[only] ✕</button> }
+            @foreach (var t in filter.Types) { var type = t; <button class="chip removable" @onclick="() => filter.ToggleType(type)">type: @type ✕</button> }
+            @foreach (var h in filter.Hidden.OrderBy(x => x).Where(x => x < s.Count)) { var hi = h; <button class="chip removable" title="Click to show it again" @onclick="() => filter.Hidden.Remove(hi)">hidden: <span class="swatch" style="background:@SeriesPalette.For(hi)"></span>@s.Labels[hi] ✕</button> }
+            @if (filter.ErrorsOnly) { <button class="chip removable" @onclick="() => filter.ErrorsOnly = false">with errors ✕</button> }
+            @if (filter.Search.Length > 0) { <button class="chip removable" @onclick='() => filter.Search = ""'>“@filter.Search” ✕</button> }
+            <button class="btn ghost small" @onclick="filter.Clear">Clear all</button>
+        </div>
+    }
+
     <section aria-label="Scenarios">
         <div class="group-head">
             <h2>Scenarios</h2>
-            <span class="count">@s.Count</span>
+            <span class="count">@(filter.Active ? $"{shown.Count} of {s.Count}" : s.Count.ToString())</span>
+            <input id="dr-filter" class="dr-search" type="search" placeholder="Filter scenarios…  ( / )" aria-label="Filter scenarios" autocomplete="off"
+                   value="@filter.Search" @oninput="SetSearch" @onkeydown="SearchKey" />
+            <DraftDropdown Label="Sort" Value="@OverviewFilter.Title(filter.Sort)" Suffix="@(filter.Sort == SortKey.Plan ? null : filter.Descending ? "↓ high first" : "↑ low first")"
+                           Selected="@filter.Sort.ToString()" Items="SortItems" OnSelect="PickSort" />
+            <DraftDropdown Label="Group" Value="@(filter.Group == GroupKey.None ? "None" : "Type")" Selected="@filter.Group.ToString()"
+                           Items="GroupItems" OnSelect="k => filter.Group = Enum.Parse<GroupKey>(k)" />
             <span class="dotted"></span>
-            <div class="dr-summary" aria-label="Summary">
-                <span><span class="k">Executions</span> <b>@DraftFormat.Num(all.Count)</b></span>
-                <span><span class="k">Errors</span> <b class="@(all.Errors > 0 ? "bad" : "")">@DraftFormat.Num(all.Errors)</b>@if (all.Count > 0) { <span class="k"> (@((all.Errors * 100.0 / all.Count).ToString("0.0"))%)</span> }</span>
-                <span><span class="k">p95</span> <b>@LiveChart.Fmt(all.P95)</b></span>
-                <span><span class="k">Throughput</span> <b>@DraftFormat.Rate(s.Elapsed > 0 ? s.Starts.Sum() / (s.Elapsed / 60) : 0)</b> <span class="k">exec/min</span></span>
+            <div class="dr-summary" aria-label="Summary of the shown scenarios">
+                <button class="sum @(filter.Sort == SortKey.Executions ? "on" : "")" title="Sort by @(Terms.Executions)" @onclick="() => filter.SortBy(SortKey.Executions)"><span class="k">@Terms.ExecutionsCap</span> <b>@DraftFormat.Num(all.Count)</b></button>
+                <button class="sum @(filter.ErrorsOnly ? "on" : "")" aria-pressed="@filter.ErrorsOnly" title="@(filter.ErrorsOnly ? "Show all scenarios again" : "Show only scenarios with errors")" @onclick="() => filter.ErrorsOnly = !filter.ErrorsOnly">
+                    <span class="k">Errors</span> <b class="@(all.Errors > 0 ? "bad" : "")">@DraftFormat.Num(all.Errors)</b>@if (all.Count > 0) { <span class="k"> (@((all.Errors * 100.0 / all.Count).ToString("0.0"))%)</span> }
+                </button>
+                <button class="sum @(filter.Sort == SortKey.P95 ? "on" : "")" title="Sort scenarios by p95" @onclick="() => filter.SortBy(SortKey.P95)"><span class="k">p95</span> <b>@LiveChart.Fmt(all.P95)</b></button>
+                <button class="sum @(filter.Sort == SortKey.Rate ? "on" : "")" title="Sort scenarios by rate" @onclick="() => filter.SortBy(SortKey.Rate)"><span class="k">Throughput</span> <b>@DraftFormat.Rate(s.Elapsed > 0 ? shownStarts / (s.Elapsed / 60) : 0)</b> <span class="k">@Terms.PerMinuteShort</span></button>
             </div>
         </div>
 
-        <div class="dr-grid">
-            @for (var i = 0; i < s.Count; i++)
+        @if (shown.Count == 0)
+        {
+            <div class="dr-nomatch muted">No scenarios match the filters. <button class="dr-link-btn" @onclick="filter.Clear">Clear all</button></div>
+        }
+        else if (filter.Group == GroupKey.Type)
+        {
+            @foreach (var g in shown.GroupBy(r => r.Type).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
             {
-                var idx = i;
-                var cfg = s.Plan.Scenarios[idx];
-                <DraftScenarioCard @key="cfg" Index="idx" Label="@s.Labels[idx]" TypeName="@(Catalog.Find(cfg.ScenarioId)?.Name ?? cfg.ScenarioId)"
-                                   Description="@s.Descriptions[idx]" TargetPerMinute="cfg.RatePerMinute" Results="s.ByEntry[idx]"
-                                   Dropped="s.Dropped[idx]" InFlight="s.InFlight[idx]" Starts="s.Starts[idx]" SinceLastStart="s.SinceLastStart[idx]"
-                                   ElapsedSeconds="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" Running="s.Running" OnOpen="Open" />
+                var type = g.Key;
+                <div class="dr-group-head">
+                    <button class="chip chip-btn @(filter.Types.Contains(type) ? "on" : "")" title="Click to filter to this type" @onclick="() => filter.ToggleType(type)">@type</button>
+                    <span class="count">@g.Count()</span><span class="dotted"></span>
+                </div>
+                <div class="dr-grid">
+                    @foreach (var r in g) { @Card(s, r) }
+                </div>
             }
-        </div>
+        }
+        else
+        {
+            <div class="dr-grid">
+                @foreach (var r in shown) { @Card(s, r) }
+            </div>
+        }
     </section>
 </div>
 
-@if (detail is { } d && d < s.Count)
+@if (detail is { } d && d.Index < s.Count)
 {
-    <ScenarioDetailDialog Index="d" Config="s.Plan.Scenarios[d]" Scenario="Catalog.Find(s.Plan.Scenarios[d].ScenarioId)" Label="@s.Labels[d]"
-                          Labels="s.Labels" Results="s.ByEntry[d]" Logs="s.LogsByEntry[d]" Dropped="s.Dropped[d]" InFlight="s.InFlight[d]"
-                          Starts="s.Starts[d]" ElapsedSeconds="s.Elapsed" Running="s.Running" OnClose="Close" />
+    <ScenarioDetailDialog @key="d" Index="d.Index" Config="s.Plan.Scenarios[d.Index]" Scenario="Catalog.Find(s.Plan.Scenarios[d.Index].ScenarioId)" Label="@s.Labels[d.Index]"
+                          Labels="s.Labels" Results="s.ByEntry[d.Index]" Logs="s.LogsByEntry[d.Index]" Dropped="s.Dropped[d.Index]" InFlight="s.InFlight[d.Index]"
+                          Starts="s.Starts[d.Index]" ElapsedSeconds="s.Elapsed" Running="s.Running" InitialWindowFrom="d.WindowFrom" OnClose="Close" />
 }
 
 @code {
-    private int? detail;
+    private sealed record Row(int Index, string Label, string Type, string? Description, LatencyStats Stats, double Rate);
+
+    private static readonly IReadOnlyList<(string, string)> SortItems =
+        Enum.GetValues<SortKey>().Select(k => (k.ToString(), OverviewFilter.Title(k))).ToList();
+    private static readonly IReadOnlyList<(string, string)> GroupItems = [(nameof(GroupKey.None), "None"), (nameof(GroupKey.Type), "Type")];
+
+    private readonly OverviewFilter filter = new();
+    private OpenRequest? detail;
+    private int? menuFor;
+
+    private List<Row> rows = [];
+    private LatencyStats[] statsCache = [];
+    private int[] statsCounts = [];
 
     protected override void OnInitialized() => Sim.Changed += OnChanged;
 
@@ -81,8 +131,62 @@
         catch (ObjectDisposedException) { }
     }
 
-    private void Open(int index) => detail = index;
+    /// <summary>Per-entry stats are recomputed only when an entry got new results; the card does the same for its own value.</summary>
+    private void BuildRows(RunSnapshot s)
+    {
+        if (statsCache.Length != s.Count) { statsCache = new LatencyStats[s.Count]; statsCounts = Enumerable.Repeat(-1, s.Count).ToArray(); }
+        rows = new(s.Count);
+        for (var i = 0; i < s.Count; i++)
+        {
+            var res = s.ByEntry[i];
+            if (statsCounts[i] != res.Count)
+            {
+                statsCounts[i] = res.Count;
+                statsCache[i] = LatencyStats.From(res is IReadOnlyCollection<ExecutionResult> c ? c : res.ToList());
+            }
+            var cfg = s.Plan.Scenarios[i];
+            var type = Catalog.Find(cfg.ScenarioId)?.Name ?? cfg.ScenarioId;
+            rows.Add(new(i, s.Labels[i], type, s.Descriptions[i], statsCache[i], s.Elapsed > 0 ? s.Starts[i] / (s.Elapsed / 60) : 0));
+        }
+    }
+
+    private List<Row> Visible()
+    {
+        IEnumerable<Row> q = rows.Where(r => filter.Passes(r.Index, r.Label, r.Type, r.Description, r.Stats.Errors));
+        Func<Row, IComparable> key = filter.Sort switch
+        {
+            SortKey.Name => r => r.Label.ToLowerInvariant(),
+            SortKey.P95 => r => r.Stats.P95,
+            SortKey.Errors => r => r.Stats.Errors,
+            SortKey.Rate => r => r.Rate,
+            SortKey.Executions => r => r.Stats.Count,
+            _ => r => r.Index,
+        };
+        // OrderBy is stable, so ties keep plan order.
+        return (filter.Descending ? q.OrderByDescending(key) : q.OrderBy(key)).ToList();
+    }
+
+    private RenderFragment Card(RunSnapshot s, Row r) => @<DraftScenarioCard @key="s.Plan.Scenarios[r.Index]" Index="r.Index" Label="@r.Label" TypeName="@r.Type"
+                       Description="@r.Description" TargetPerMinute="s.Plan.Scenarios[r.Index].RatePerMinute" Results="s.ByEntry[r.Index]"
+                       Dropped="s.Dropped[r.Index]" InFlight="s.InFlight[r.Index]" Starts="s.Starts[r.Index]" SinceLastStart="s.SinceLastStart[r.Index]"
+                       ElapsedSeconds="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" Running="s.Running"
+                       TypeActive="filter.Types.Contains(r.Type)" MenuOpen="menuFor == r.Index"
+                       OnOpen="Open" OnIsolate="Isolate" OnHide="Hide" OnFilterType="filter.ToggleType" OnSortRate="() => filter.SortBy(SortKey.Rate)"
+                       OnToggleMenu="ToggleMenu" />;
+
+    private void PickSort(string key) => filter.SortBy(Enum.Parse<SortKey>(key));
+    private void Isolate(int i) { menuFor = null; filter.Isolate(i); }
+    private void Hide(int i) { menuFor = null; filter.Hide(i); }
+    private void ToggleMenu(int i) => menuFor = menuFor == i ? null : i;
+    private void Open(OpenRequest r) { menuFor = null; detail = r; }
     private void Close() => detail = null;
+
+    private void SetSearch(ChangeEventArgs e) => filter.Search = e.Value?.ToString() ?? "";
+
+    private void SearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") filter.Search = "";
+    }
 
     public void Dispose() => Sim.Changed -= OnChanged;
 }

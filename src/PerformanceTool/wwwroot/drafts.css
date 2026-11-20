@@ -167,3 +167,68 @@
     .log-search { width: 100%; }
     .log-time { display: none; }
 }
+
+/* ---------- 0006 interactions on the overview ---------- */
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: .1rem; flex: none; }
+.dr-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: 0 .1rem; min-height: 1.6rem; font-size: .8rem; }
+.dr-filterbar .btn.small { align-self: center; padding: .2rem .6rem; }
+.dr-filterbar .chip { font-family: inherit; font-size: .75rem; cursor: pointer; }
+.dr-filterbar .chip:hover { border-color: var(--bad); }
+
+.dr-page .group-head { align-items: center; gap: .6rem; }
+.dr-search { width: 210px; padding: .32rem .6rem; font-size: .82rem; }
+.dr-link-btn { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+.dr-link-btn:hover { text-decoration: underline; }
+.dr-nomatch { padding: 2rem; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+.dr-group-head { display: flex; align-items: center; gap: .6rem; margin: .9rem 0 .5rem; }
+.dr-group-head:first-child { margin-top: .2rem; }
+.dr-group-head .count { color: var(--muted); font-size: .8rem; }
+.dr-group-head .dotted { flex: 1; }
+
+/* summary strip items are buttons */
+.dr-summary { gap: .15rem .4rem; }
+.dr-summary .sum { background: none; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text); font: inherit; padding: .22rem .5rem; cursor: pointer; font-variant-numeric: tabular-nums; }
+.dr-summary .sum:hover { background: #ffffff0f; border-color: var(--border); }
+.dr-summary .sum.on { border-color: var(--accent2); background: #7b68ee1f; }
+
+/* toolbar dropdowns and menus */
+.dr-dd { position: relative; }
+.dr-dd-btn { display: inline-flex; align-items: baseline; gap: .4rem; background: var(--input); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; font-size: .82rem; padding: .3rem .6rem; cursor: pointer; }
+.dr-dd-btn:hover, .dr-dd-btn.open { border-color: var(--accent); }
+.dr-dd-btn .k { color: var(--muted); }
+.dr-dd-btn b { font-weight: 600; color: var(--title); }
+.dr-dd-btn .caret { color: var(--muted); font-size: .7rem; }
+.dr-backdrop { position: fixed; inset: 0; z-index: 30; background: transparent; cursor: default; }
+.dr-menu { position: absolute; z-index: 31; top: calc(100% + 4px); left: 0; min-width: 190px; list-style: none; margin: 0; padding: .3rem; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px #0009; display: grid; gap: 1px; }
+.dr-menu button { width: 100%; display: flex; align-items: center; gap: .5rem; text-align: left; background: none; border: 0; color: var(--text); font: inherit; font-size: .82rem; padding: .38rem .55rem; border-radius: var(--radius-sm); cursor: pointer; }
+.dr-menu button:hover { background: var(--selected); }
+.dr-menu .tick { width: .9rem; color: var(--accent2); flex: none; }
+.dr-menu .suffix { margin-left: auto; color: var(--muted); font-size: .72rem; }
+.dr-menu button.on { color: #fff; }
+.card-menu { top: 2.1rem; left: auto; right: .6rem; min-width: 170px; }
+
+/* card extras */
+.dr-card { position: relative; }
+.dr-card:focus-visible, .dr-chart:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.dr-card.menu-open { z-index: 32; }
+.dr-card .chips { align-items: center; }
+.chip-btn { font-family: var(--mono); cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent); color: var(--text); }
+.chip-btn.on { color: var(--text); border-color: var(--accent2); background: #7b68ee33; }
+.dr-more { margin-left: auto; background: none; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--muted); font-size: 1rem; line-height: 1; padding: .1rem .4rem; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.dr-card:hover .dr-more, .dr-card:focus-within .dr-more, .dr-card.menu-open .dr-more { opacity: 1; }
+.dr-more:hover { color: var(--text); border-color: var(--border); background: #ffffff0f; }
+
+/* bucket chart: slots are hit targets, tooltip is CSS only (no round trip) */
+.dr-chart { position: relative; cursor: default; }
+.dr-chart .slot { position: relative; cursor: pointer; }
+.dr-chart .slot:hover { background: #ffffff10; }
+.dr-chart .slot:hover i, .dr-chart:focus-visible .slot.kb i { filter: brightness(1.25); }
+.dr-chart:focus-visible .slot.kb { background: #ffffff18; box-shadow: inset 0 0 0 1px var(--accent2); border-radius: 2px; }
+.tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 40; flex-direction: column; gap: .12rem; min-width: 118px; padding: .45rem .6rem; background: var(--topbar); border: 1px solid var(--faint); border-radius: var(--radius); box-shadow: 0 6px 18px #000a; font-size: .74rem; color: var(--text); white-space: nowrap; pointer-events: none; text-align: left; }
+.tip b { color: var(--title); font-family: var(--mono); }
+.tip .bad { color: var(--bad); }
+.tip em { color: var(--faint); font-style: normal; font-size: .68rem; margin-top: .15rem; }
+.slot:hover > .tip, .dr-chart:focus-visible .slot.kb > .tip { display: flex; }
+.slot.tip-left > .tip { left: 0; transform: none; }
+.slot.tip-right > .tip { left: auto; right: 0; transform: none; }

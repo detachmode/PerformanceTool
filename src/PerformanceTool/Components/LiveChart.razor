@@ -1,5 +1,6 @@
 @* One bar per scenario execution, coloured by scenario entry. Pure HTML/CSS, see docs/brain/0002. *@
 @using System.Globalization
+@using PerformanceTool.Components.Drafts
 
 <section class="@(Embedded ? "chart-embedded" : "card chart-card")">
     <div class="chart-title">
@@ -43,7 +44,7 @@
     </div>
     @if (Results.Count > MaxBars)
     {
-        <div class="chart-note">Showing the latest @MaxBars of @Results.Count executions. Statistics include all of them.</div>
+        <div class="chart-note">Showing the latest @MaxBars of @Results.Count @Terms.Executions. Statistics include all of them.</div>
     }
 </section>
 

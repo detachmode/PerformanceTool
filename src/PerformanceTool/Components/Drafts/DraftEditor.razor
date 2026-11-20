@@ -74,14 +74,14 @@
                         <button class="dr-row @(idx == selected ? "on" : "")" style="--series:@SeriesPalette.For(idx)" @onclick="() => selected = idx" aria-current="@(idx == selected)">
                             <i class="dot"></i>
                             <span class="name">@(string.IsNullOrWhiteSpace(c.Label) ? c.ScenarioId : c.Label)</span>
-                            <span class="rate">@DraftFormat.Rate(c.RatePerMinute) exec/min</span>
+                            <span class="rate">@DraftFormat.Rate(c.RatePerMinute) @Terms.PerMinuteShort</span>
                             <span class="type">@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)</span>
                         </button>
                     </li>
                 }
                 @if (plan.Scenarios.Count == 0) { <li class="muted dr-empty">No scenarios yet. Add one to start.</li> }
             </ul>
-            <div class="dr-list-foot">@DraftFormat.Rate(total) exec/min in total · ≈ @DraftFormat.Num(total * plan.DurationSeconds / 60) executions per run</div>
+            <div class="dr-list-foot">@DraftFormat.Rate(total) @Terms.PerMinuteShort in total · ≈ @DraftFormat.Num(total * plan.DurationSeconds / 60) @Terms.Executions per run</div>
         </aside>
 
         <section class="dr-detail" aria-label="Selected scenario">
@@ -103,7 +103,7 @@
                     <p class="dr-detail-desc">@scenario.Description</p>
                     <div class="entry-body dr-form" style="--series:@SeriesPalette.For(selected)" @key="cfg">
                         <div class="field rate">
-                            <label for="dr-rate">Executions / minute</label>
+                            <label for="dr-rate">@Terms.ExecutionsCap / minute</label>
                             <input id="dr-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" />
                         </div>
                         <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"dr{selected}")" />

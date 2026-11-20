@@ -3,6 +3,7 @@
    Esc or a click outside closes it. *@
 @using System.Globalization
 @using PerformanceTool.Services.Drafts
+@using PerformanceTool.Components.Drafts
 
 <div class="overlay" tabindex="-1" @ref="root" @onclick="Close" @onkeydown="OnKey" role="presentation">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" style="--series:@Color" @onclick:stopPropagation>
@@ -12,7 +13,7 @@
                 <h2 id="dlg-title">@Label</h2>
                 <div class="chips">
                     <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
-                    <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) exec/min target</span>
+                    <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) @Terms.PerMinuteShort target</span>
                     @if (Running)
                     {
                         <span class="chip live"><i class="pulse-dot"></i>@InFlight in flight</span>
@@ -24,10 +25,10 @@
 
         <div class="dlg-body">
             <section class="dlg-stats">
-                <Stat Label="Executions" Value="@stats.Count.ToString("N0")" />
+                <Stat Label="@Terms.ExecutionsCap" Value="@stats.Count.ToString("N0")" />
                 <Stat Label="Errors" Value="@stats.Errors.ToString("N0")" Bad="@(stats.Errors > 0)" />
                 <Stat Label="Dropped" Value="@Dropped.ToString("N0")" Bad="@(Dropped > 0)" />
-                <Stat Label="Exec/min (act. / target)" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
+                <Stat Label="@($"{Terms.PerMinuteShort} (act. / target)")" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
                 <Stat Label="Avg" Value="@LiveChart.Fmt(stats.Avg)" />
                 <Stat Label="p50" Value="@LiveChart.Fmt(stats.P50)" />
                 <Stat Label="p95" Value="@LiveChart.Fmt(stats.P95)" />
@@ -53,19 +54,20 @@
                     @if (failedOnly) { <button class="chip removable" @onclick="() => failedOnly = false">failed only ✕</button> }
                     @if (status is not null) { <button class="chip removable" @onclick="() => status = null">status @status ✕</button> }
                     @if (error is not null) { <button class="chip removable" title="@error" @onclick="() => error = null">error: @Trunc(error, 40) ✕</button> }
+                    @if (window is { } w) { <button class="chip removable" title="Time window" @onclick="() => window = null">@DraftFormat.Time(w.Lo) – @DraftFormat.Time(w.Hi) ✕</button> }
                     @if (bucket is { } b) { <button class="chip removable" @onclick="() => bucket = null">@LiveChart.Fmt(b.Lo) – @LiveChart.Fmt(b.Hi) ✕</button> }
                     <button class="btn ghost small" @onclick="ClearFilters">Clear all</button>
                 </div>
             }
 
-            <LiveChart Embedded="true" Title="Response time per execution" ShowLegend="false" Results="filtered" Labels="Labels"
+            <LiveChart Embedded="true" Title="@($"Response time per {Terms.Execution}")" ShowLegend="false" Results="filtered" Labels="Labels"
                        Average="avgFiltered" OnBarClick="Select" SelectedSequence="selected?.Sequence"
-                       EmptyText="@(Results.Count == 0 ? "No executions yet." : "No executions match the filters.")" />
+                       EmptyText="@(Results.Count == 0 ? $"No {Terms.Executions} yet." : $"No {Terms.Executions} match the filters.")" />
 
             @if (selected is { } s)
             {
                 <div class="selected-exec" role="status">
-                    <b>Execution #@(s.Sequence + 1)</b>
+                    <b>@Terms.ExecutionCap #@(s.Sequence + 1)</b>
                     <span>started @s.StartedAtSeconds.ToString("0.00", CultureInfo.InvariantCulture) s into the run</span>
                     <span>@LiveChart.Fmt(s.ElapsedMs)</span>
                     <span>@(s.StatusCode is { } sc ? $"HTTP {sc}" : "no response")</span>
@@ -81,7 +83,7 @@
                 var rows = LogRows(out var matching);
                 <section class="panel logs" aria-label="Logs">
                     <div class="panel-head">
-                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · execution #{selected.Sequence + 1}" : "")</span></h3>
+                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · {Terms.Execution} #{selected.Sequence + 1}" : "")</span></h3>
                         <div class="log-tools">
                             <div class="lvls" role="group" aria-label="Level filter">
                                 @foreach (var lvl in FakeLogEntry.Levels)
@@ -95,10 +97,11 @@
                             <input type="search" class="log-search" placeholder="Search message, exception, scope…" aria-label="Search logs" @bind="logSearch" @bind:event="oninput" />
                         </div>
                     </div>
-                    @if (selected is not null || logSearch.Length > 0)
+                    @if (selected is not null || logSearch.Length > 0 || window is not null)
                     {
                         <div class="filters">
-                            @if (selected is not null) { <button class="chip removable" @onclick="() => selected = null">execution #@(selected.Sequence + 1) ✕</button> }
+                            @if (selected is not null) { <button class="chip removable" @onclick="() => selected = null">@Terms.Execution #@(selected.Sequence + 1) ✕</button> }
+                            @if (window is { } lw) { <button class="chip removable" title="Time window" @onclick="() => window = null">@DraftFormat.Time(lw.Lo) – @DraftFormat.Time(lw.Hi) ✕</button> }
                             @if (logSearch.Length > 0) { <button class="chip removable" @onclick='() => logSearch = ""'>“@Trunc(logSearch, 30)” ✕</button> }
                         </div>
                     }
@@ -112,7 +115,7 @@
                                     <span class="caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
                                     <span class="log-lvl">@Short(entry.Level)</span>
                                     <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
-                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of execution #@(entry.Sequence + 1)"
+                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of @Terms.Execution #@(entry.Sequence + 1)"
                                             @onclick="() => SelectSequence(entry.Sequence)" @onclick:stopPropagation>#@(entry.Sequence + 1)</button>
                                     <span class="log-msg">@entry.Message</span>
                                     @if (entry.Exception is not null) { <span class="log-ex-flag" title="Has exception details">exception</span> }
@@ -160,8 +163,8 @@
                                 var idx = i;
                                 var (lo, hi) = Range(idx);
                                 <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")"
-                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] executions"
-                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] executions"
+                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] @Terms.Executions"
+                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] @Terms.Executions"
                                         @onclick="() => ToggleBucket(idx)">
                                     <i style="height:@HistHeight(histogram[idx])"></i>
                                 </button>
@@ -228,7 +231,7 @@
 
             <section class="panel recent">
                 <div class="panel-head">
-                    <h3>Recent executions</h3>
+                    <h3>Recent @Terms.Executions</h3>
                     <div class="toggles">
                         <button class="chip toggle-chip @(failedOnly ? "on" : "")" aria-pressed="@failedOnly" @onclick="() => failedOnly = !failedOnly">Failed only</button>
                     </div>
@@ -248,19 +251,19 @@
                                     <td class="@(row.Success ? "" : "bad")">@(row.StatusCode?.ToString() ?? "—")</td>
                                     <td>@row.Bytes.ToString("N0")</td>
                                     <td class="err-cell">@row.Error</td>
-                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this execution" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
+                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this @Terms.Execution" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
                                 </tr>
                             }
                             @if (recentRows.Count == 0)
                             {
-                                <tr><td colspan="6" class="muted center">@(Results.Count == 0 ? "No executions yet." : "No executions match the filters.")</td></tr>
+                                <tr><td colspan="6" class="muted center">@(Results.Count == 0 ? $"No {Terms.Executions} yet." : $"No {Terms.Executions} match the filters.")</td></tr>
                             }
                         </tbody>
                     </table>
                 </div>
                 @if (filtered.Count > RecentRows)
                 {
-                    <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching executions.</div>
+                    <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching @Terms.Executions.</div>
                 }
             </section>
             }
@@ -286,6 +289,8 @@
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>Log statements of this scenario (brain 0012). Draft data for now; the Logs tab only shows when given.</summary>
     [Parameter] public IReadOnlyList<FakeLogEntry>? Logs { get; set; }
+    /// <summary>Open pre-filtered to the executions (and logs) that started in the second [from, from + 1) of the run (brain 0006).</summary>
+    [Parameter] public double? InitialWindowFrom { get; set; }
 
     private bool HasLogs => Logs is not null;
     private string tab = "details";
@@ -316,6 +321,11 @@
         IEnumerable<FakeLogEntry> q = Logs ?? [];
         q = q.Where(l => logLevels.Contains(l.Level));
         if (selected is { } s) q = q.Where(l => l.Sequence == s.Sequence);
+        if (window is { } win)
+        {
+            var seqs = Results.Where(r => r.StartedAtSeconds >= win.Lo && r.StartedAtSeconds < win.Hi).Select(r => r.Sequence).ToHashSet();
+            q = q.Where(l => seqs.Contains(l.Sequence));
+        }
         if (logSearch.Length > 0)
             q = q.Where(l => l.Message.Contains(logSearch, StringComparison.OrdinalIgnoreCase)
                 || (l.Exception?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false)
@@ -332,6 +342,8 @@
 
     // Filters (shared by chart and list)
     // Setters re-run the derived data: OnParametersSet does not fire for state changes made inside the component.
+    private (double Lo, double Hi)? _window; private bool windowInit;
+    private (double Lo, double Hi)? window { get => _window; set { _window = value; Recompute(); } }
     private bool _failedOnly; private string? _status; private string? _error; private (double Lo, double Hi)? _bucket;
     private bool failedOnly { get => _failedOnly; set { _failedOnly = value; Recompute(); } }
     private string? status { get => _status; set { _status = value; Recompute(); } }
@@ -351,11 +363,12 @@
 
     private string Color => SeriesPalette.For(Index);
     private double Actual => Starts / Math.Max(ElapsedSeconds / 60, 1e-6);
-    private bool HasFilter => failedOnly || status is not null || error is not null || bucket is not null;
+    private bool HasFilter => window is not null || failedOnly || status is not null || error is not null || bucket is not null;
 
     protected override void OnParametersSet()
     {
         logErrors = Logs?.Count(l => l.Level == "Error") ?? 0;
+        if (!windowInit) { windowInit = true; if (InitialWindowFrom is { } f) _window = (f, f + 1); }
         Recompute();
     }
 
@@ -373,6 +386,7 @@
         foreach (var r in Results) histogram[Math.Min(Buckets - 1, (int)(r.ElapsedMs / histMax * Buckets))]++;
 
         IEnumerable<ExecutionResult> q = Results;
+        if (window is { } win) q = q.Where(r => r.StartedAtSeconds >= win.Lo && r.StartedAtSeconds < win.Hi);
         if (failedOnly) q = q.Where(r => !r.Success);
         if (status is not null) q = q.Where(r => StatusKey(r) == status);
         if (error is not null) q = q.Where(r => r.Error == error);
@@ -404,7 +418,7 @@
     private string HistHeight(int n) => (n == 0 ? 0 : Math.Max(4, n * 100.0 / Math.Max(1, histogram.Max()))).ToString("0.#", CultureInfo.InvariantCulture) + "%";
     private string Share(int n) => (n * 100.0 / Math.Max(1, Results.Count)).ToString("0.#", CultureInfo.InvariantCulture) + "%";
 
-    private void ClearFilters() { _failedOnly = false; _status = null; _error = null; _bucket = null; Recompute(); }
+    private void ClearFilters() { _window = null; _failedOnly = false; _status = null; _error = null; _bucket = null; Recompute(); }
     private void Select(ExecutionResult r) => selected = selected?.Sequence == r.Sequence ? null : r;
     private Task Close() => OnClose.InvokeAsync();
     private static string Trunc(string s, int n) => s.Length <= n ? s : s[..n] + "…";
