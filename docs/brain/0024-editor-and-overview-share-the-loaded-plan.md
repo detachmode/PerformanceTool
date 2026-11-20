@@ -1,6 +1,6 @@
 # 0024. Editor and overview show the same view of the loaded scenarios
 
-- Status: Accepted (user decision); the shared design is open
+- Status: Accepted (user decision)
 - Date: 2026-11-20
 
 ## What
@@ -12,6 +12,8 @@ a preset. Presets are only loaded into it and saved from it.
 Today the editor (a list plus detail panel) and the overview (cards) look unrelated, and the editor's preset controls
 make it feel like you're editing a preset file. That's confusing.
 
+**Decided:** the editor uses **the same scenario cards as the overview** ("they look nicer"). In the editor, a card
+opens that scenario's settings.
+
 ## Open (to decide with the user)
-- The shared representation (e.g. the same scenario cards on both pages, with the editor adding edit controls), and
-  how presets are shown as "load into / save from" the current plan.
+- How presets are shown as "load into / save from" the current scenarios.
