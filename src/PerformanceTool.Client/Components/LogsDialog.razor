@@ -78,7 +78,7 @@
 
         <div class="log-foot muted">
             @Format.Plural(filtered.Count, "line", "lines")
-            @if (s.Store.DetailTrimmed) { <text> · logs of older actors are no longer kept (latest @Format.Num(RunStore.DetailPerScenario) actors per scenario)</text> }
+            @if (s.Store.DetailTrimmed) { <text> · logs of older successful actors are no longer kept</text> }
         </div>
     </div>
 </div>

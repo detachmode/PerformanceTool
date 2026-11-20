@@ -39,6 +39,7 @@
     var bucketed = width > 0;
     var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
+    var stats = StatsFor(actors, view.Finished, from, to);
     var activeBucket = bucketed ? bucket : null;
     var sideRows = SideRows(actors, view.Finished, runningNow, show, from, to, activeBucket, width);
     // The selected actor stays selected when it is folded into a time bucket: that bucket shows as selected.
@@ -50,6 +51,8 @@
     <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
         <div class="dlg-head">
             <h2 id="scn-title">@label</h2>
+            <span class="spacer"></span>
+            <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">⚙</button>
             <button class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
         </div>
 
@@ -60,6 +63,15 @@
             <button class="fig @(view.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(view.Failed == 0)" title="Show only the failed actors" aria-pressed="@Aria.Bool(show == ActorShow.Failed)">@Format.Plural(view.Failed, "error", "errors")</button>
             <button class="fig @(view.SlowCalls > 0 ? "warn" : "")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(view.SlowActors == 0)" title="Show only the slow actors" aria-pressed="@Aria.Bool(show == ActorShow.Slow)">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</button>
             <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort</span>
+            @if (stats.Count > 0)
+            {
+                <span class="fig-sep" aria-hidden="true"></span>
+                <button class="fig" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median of @Format.Plural(stats.Count, "actor", "actors")): open the actor in the middle">typical <b>@Format.Ms(stats.Median)</b></button>
+                <button class="fig @(stats.TailIsSlow ? "warn" : "")" @onclick="() => TailOnly(stats.P95)" title="The slowest 5 % take at least @Format.Ms(stats.P95): list them" aria-pressed="@Aria.Bool(tailMs is not null)">slowest 5% <b>@Format.Ms(stats.P95)</b></button>
+                <button class="fig @(stats.LongestIsSlow ? "warn" : "")" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest actor">longest <b>@Format.Ms(stats.Longest)</b></button>
+                <button class="fig @(stats.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(stats.Failed == 0)" title="Failed actors: @stats.Failed of @stats.Count">error rate <b>@Pc(stats.ErrorRate)</b></button>
+                <button class="fig @(stats.Slow > 0 ? "warn" : "")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(stats.Slow == 0)" title="Slow actors: @stats.Slow of @stats.Count">slow rate <b>@Pc(stats.SlowRate)</b></button>
+            }
         </p>
 
         <div class="actors-bar">
@@ -183,7 +195,7 @@
                 @if (actor.Error is not null) { <p class="actor-error bad">@actor.Error</p> }
                 @if (detail is null)
                 {
-                    <p class="muted">The calls of this actor are no longer kept (only the latest @Format.Num(RunStore.DetailPerScenario) actors of each scenario keep their calls and logs).</p>
+                    <p class="muted">The calls and logs of this actor are no longer kept (details of older successful actors are dropped first).</p>
                 }
                 else
                 {
@@ -209,6 +221,10 @@
                 <h3>Actors in view <span class="n">@Format.Num(sideRows.Count)</span></h3>
                 <p class="side-scope muted">
                     @(win is { } ws ? $"{Format.Time(ws.From)}{(ws.Follow ? " → now" : $" – {Format.Time(ws.To)}")}" : "whole run")
+                    @if (tailMs is { } tm)
+                    {
+                        <button class="chip" @onclick="() => tailMs = null" title="Show all actors of the time frame again">slowest 5% (≥ @Format.Ms(tm)) ✕</button>
+                    }
                     @if (activeBucket is { } ab)
                     {
                         <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">bucket @Format.Time(ab)–@Format.Time(ab + width) ✕</button>
@@ -243,10 +259,35 @@
     private bool listHover;
     private List<ActorRow> sideCache = [];
     private int[] sideCounts = new int[4];
-    private (double, double, ActorShow) sideKey;
+    private (double, double, ActorShow, double?) sideKey;
     private (int, int) sideCountKey;
     private long sideAt;
     private string sideReset = "";
+    private double? tailMs;
+    private ActorStats statsCache = ActorStats.Empty;
+    private (double, double) statsKey;
+    private int statsCount = -1;
+    private long statsAt;
+
+    /// <summary>Statistics of the actors in the visible window (brain 0030), recomputed when the window changes and at most every 0.7 s otherwise.</summary>
+    private ActorStats StatsFor(IReadOnlyList<ActorRecord> actors, int count, double from, double to)
+    {
+        var key = (from, to);
+        if (key == statsKey && (count == statsCount || Environment.TickCount64 - statsAt < 700)) return statsCache;
+        statsCache = ActorStats.Compute(actors, count, from, to);
+        statsKey = key; statsCount = count; statsAt = Environment.TickCount64;
+        return statsCache;
+    }
+
+    private static string Pc(double v) => v == 0 ? "0%" : v < 10 ? v.ToString("0.0", CultureInfo.InvariantCulture) + "%" : v.ToString("0", CultureInfo.InvariantCulture) + "%";
+
+    private void SelectIndex(int index)
+    {
+        var actors = Snapshot.Store.Actors(Index);
+        if (index >= 0 && index < actors.Count) { selRunning = null; selected = actors[index]; }
+    }
+
+    private void TailOnly(double ms) { tailMs = tailMs is null ? ms : null; show = ActorShow.All; bucket = null; }
     private bool refocus = true;
     private DockZoom? zoom;
     // Freeze while aiming (brain 0026): the chart data of the last normal render, and the data held while the user aims.
@@ -297,15 +338,15 @@
         if (e.Key == "Escape") OnClose.InvokeAsync();
     }
 
-    private void SetShow(ActorShow s, bool keepBucket = false) { show = s; if (!keepBucket) bucket = null; fz = null; }
+    private void SetShow(ActorShow s, bool keepBucket = false) { show = s; tailMs = null; if (!keepBucket) bucket = null; fz = null; }
 
     private void Brush(BrushRange r)
     {
         win = new Win(Math.Max(0, r.From), r.To, r.ToEnd);
-        bucket = null; fz = null;
+        bucket = null; fz = null; tailMs = null;
     }
-    private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; }
-    private void ResetZoom() { win = null; bucket = null; fz = null; }
+    private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
+    private void ResetZoom() { win = null; bucket = null; fz = null; tailMs = null; }
 
     private void SelectRow(ActorRow row)
     {
@@ -322,13 +363,13 @@
     {
         var lo = bucketStart is { } b ? Math.Max(from, b) : from;
         var hi = bucketStart is { } b2 ? Math.Min(to, b2 + width) : to;
-        var key = (lo, hi, sh);
+        var key = (lo, hi, sh, tailMs);
         var countKey = (count, running.Count);
         var stale = key != sideKey || (countKey != sideCountKey && !listHover && Environment.TickCount64 - sideAt > 700);
         if (!stale) return sideCache;
-        sideCache = ActorOrder.Rows(actors, count, running, sh, lo, hi);
+        sideCache = ActorOrder.Rows(actors, count, running, sh, lo, hi, tailMs ?? 0);
         sideKey = key; sideCountKey = countKey; sideAt = Environment.TickCount64;
-        sideReset = $"{lo}|{hi}|{sh}";
+        sideReset = $"{lo}|{hi}|{sh}|{tailMs}";
         sideCounts = new int[4];
         foreach (var r in sideCache) sideCounts[(int)r.State]++;
         return sideCache;

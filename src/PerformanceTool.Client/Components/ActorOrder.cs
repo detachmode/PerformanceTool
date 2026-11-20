@@ -33,16 +33,16 @@ public static class ActorOrder
     };
 
     /// <summary>All actors of one scenario that started in [from, to), filtered like the chart, in the general order. Running actors are included only for "All".</summary>
-    public static List<ActorRow> Rows(IReadOnlyList<ActorRecord> actors, int count, IReadOnlyList<RunningActor> running, ActorShow show, double from, double to)
+    public static List<ActorRow> Rows(IReadOnlyList<ActorRecord> actors, int count, IReadOnlyList<RunningActor> running, ActorShow show, double from, double to, double minMs = 0)
     {
         var rows = new List<ActorRow>();
         for (var i = 0; i < count; i++)
         {
             var a = actors[i];
-            if (!ActorBars.Includes(show, a) || a.StartedAt < from || a.StartedAt >= to) continue;
+            if (!ActorBars.Includes(show, a) || a.StartedAt < from || a.StartedAt >= to || a.DurationMs < minMs) continue;
             rows.Add(new(a.Sequence, a.StartedAt, a.DurationMs, StateOf(a.Outcome), i));
         }
-        if (show == ActorShow.All)
+        if (show == ActorShow.All && minMs <= 0)
             foreach (var r in running)
                 if (r.StartedAt >= from && r.StartedAt < to) rows.Add(new(r.Sequence, r.StartedAt, 0, ActorState.Running, -1));
         rows.Sort(Comparer);

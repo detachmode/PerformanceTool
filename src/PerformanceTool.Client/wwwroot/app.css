@@ -476,3 +476,5 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .set-field .help { font-size: .75rem; color: var(--muted); }
 .set-foot { display: flex; justify-content: flex-end; }
 @media (max-width: 760px) { .overlay.settings { padding: 3rem 0 0; } .settings-dialog { min-height: 0; border-radius: var(--radius); margin: 0 .6rem; } }
+.figures .fig b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.figures .fig-sep { width: 1px; height: 1em; background: var(--border); align-self: center; }
