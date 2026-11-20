@@ -14,7 +14,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done:** editor uses the overview's scenario cards (brain 0024).
 - **Done:** full word-wrapped log rows (variable-height virtual list).
 - **Done:** magnification only in the popup, bar labels (actor + times), popup bar limit 240 (brain 0023 update).
-- **Running:** build info (commit + deploy date) and no stale cache (brain 0025).
+- **Done:** build info (commit + deploy date) and no stale cache (brain 0025).
+- **Waiting for the user** to agree on the next small step.
 
 Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
 what counts as "slow"; duration summary.
