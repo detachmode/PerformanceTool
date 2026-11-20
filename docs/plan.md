@@ -15,7 +15,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done:** full word-wrapped log rows (variable-height virtual list).
 - **Done:** magnification only in the popup, bar labels (actor + times), popup bar limit 240 (brain 0023 update).
 - **Done:** build info (commit + deploy date) and no stale cache (brain 0025).
-- **Running:** popup chart polish: cooler labels, adaptive zoom at full bar count, neighbour labels, x-axis (0023 update 2).
+- **Done:** popup chart polish: hover card, adaptive zoom, neighbour labels, x-axis (0023 update 2).
+- **Proposed, waiting for the user:** easier clicking on a live chart (freeze while aiming, pick on pointer-down, selection sticks to the actor).
 
 Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
 what counts as "slow"; duration summary.
