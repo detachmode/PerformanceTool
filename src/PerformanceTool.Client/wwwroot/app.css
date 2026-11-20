@@ -80,6 +80,15 @@ label { font-size: .72rem; color: var(--muted); }
 .fig { display: flex; flex-direction: column; }
 .fig b { font-size: 1.55rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--title); }
 .fig small { color: var(--muted); font-size: .75rem; }
+/* card statistics (brain 0030): one quiet inline line, no boxes; colour only means slow = amber, failed = red */
+.card-stats { display: flex; flex-wrap: wrap; gap: .1rem .9rem; font-size: .75rem; color: var(--muted); line-height: 1.5; margin-top: -.25rem; }
+.card-stats .st { white-space: nowrap; }
+.card-stats .st small { font-size: inherit; color: var(--faint); }
+.card-stats .st b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.card-stats .st.warn b { color: var(--warn); }
+.card-stats .st.bad b { color: var(--bad); }
+.card:hover .card-stats .st:hover b { text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 760px) { .card-stats .st:nth-child(3) { display: none; } }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 48px; border-bottom: 1px solid var(--border); position: relative; }
 .spark i { flex: 1 1 0; min-width: 2px; background: var(--bar); border-radius: 1px 1px 0 0; opacity: .8; }
 .spark i.run, .bar.run, .call.run i { background: var(--running); opacity: 1; animation: running-pulse 1.8s ease-in-out infinite; }
