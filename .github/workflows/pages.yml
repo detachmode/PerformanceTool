@@ -2,6 +2,7 @@ name: Pages
 
 # Publishes the Blazor WebAssembly client with fake data (brain 0015) to https://detachmode.github.io/PerformanceTool/.
 # One-time repo setting: Settings > Pages > Source: "GitHub Actions".
+# Runs after every merge to main (a merge is a push to main), plus manual runs.
 on:
   push:
     branches: [main]

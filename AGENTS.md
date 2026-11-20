@@ -40,7 +40,7 @@ Client alone (fake data): `dotnet run --project src/PerformanceTool.Client`. Ser
 ```bash
 dotnet run --project src/PerformanceTool
 ```
-CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on every push and PR (brain 0014). Keep `dotnet test` green.
+CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/` and the
 `.slnx` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
 the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.WebAssembly` `11.0.*-*` to `10.0.*` in the copy).
@@ -52,6 +52,12 @@ the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.We
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
 it, used as a filter and isolated. Don't add read-only data views.
+
+## Screenshots in the repo and in PRs
+- Never overwrite or rename existing files in `docs/screenshots/`; earlier PR descriptions link to them.
+- Put each set of screenshots in a **new, uniquely named folder**, e.g. `docs/screenshots/2026-11-20-dock-magnify/`.
+- In PR descriptions, link images with a **commit-pinned** URL
+  (`https://github.com/<owner>/<repo>/blob/<commit-sha>/docs/screenshots/...?raw=true`), not a branch name.
 
 ## UI changes need a screenshot
 Whenever you change the UI, run the app, drive it with Playwright (a real run, not just the empty page) and

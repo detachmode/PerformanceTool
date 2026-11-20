@@ -1,7 +1,9 @@
 name: CI
 
+# Runs on pushes to main and as PR build validation only (user decision), plus manual runs.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

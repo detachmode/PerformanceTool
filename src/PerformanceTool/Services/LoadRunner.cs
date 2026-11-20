@@ -33,6 +33,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         var inFlight = new List<Task>();
         var inFlightByEntry = new int[plan.Scenarios.Count]; // executions running right now, per entry (brain 0008)
         var inFlightTotal = 0;
+        // Counter changes and their activity events happen under one async lock, so observers receive events in the
+        // same order the counters changed. Without it, concurrent ends could arrive with stale in-flight counts.
+        using var activityLock = new SemaphoreSlim(1, 1);
         var sequence = -1;
         var clock = Stopwatch.StartNew();
         var duration = TimeSpan.FromSeconds(plan.DurationSeconds);
@@ -66,24 +69,34 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 }
 
                 var seq = Interlocked.Increment(ref sequence);
-                // Counted before the task is queued; the callback runs inside the task so a slow observer never delays scheduling.
-                var nowInFlight = Interlocked.Increment(ref inFlightByEntry[entry]);
-                var total = Interlocked.Increment(ref inFlightTotal);
+                // Counting and the callback run inside the task, so a slow observer never delays scheduling.
                 var task = Task.Run(async () =>
                 {
                     try
                     {
-                        if (onActivity is not null)
-                            await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, true, nowInFlight, total));
+                        await activityLock.WaitAsync();
+                        try
+                        {
+                            var nowInFlight = ++inFlightByEntry[entry];
+                            var total = ++inFlightTotal;
+                            if (onActivity is not null)
+                                await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, true, nowInFlight, total));
+                        }
+                        finally { activityLock.Release(); }
                         await ExecuteOne(scenarios[entry], entry, seq, parameters);
                     }
                     finally
                     {
                         gate.Release();
-                        var left = Interlocked.Decrement(ref inFlightByEntry[entry]);
-                        var totalLeft = Interlocked.Decrement(ref inFlightTotal);
-                        if (onActivity is not null)
-                            await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, false, left, totalLeft));
+                        await activityLock.WaitAsync();
+                        try
+                        {
+                            var left = --inFlightByEntry[entry];
+                            var totalLeft = --inFlightTotal;
+                            if (onActivity is not null)
+                                await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, false, left, totalLeft));
+                        }
+                        finally { activityLock.Release(); }
                     }
                 }, CancellationToken.None);
                 lock (inFlight) inFlight.Add(task);

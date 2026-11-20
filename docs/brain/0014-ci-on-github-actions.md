@@ -19,3 +19,7 @@ Runs on the same ref cancel each other (`concurrency`); the token is read-only (
 - Only official `actions/*` actions at pinned major versions: small supply-chain surface. The summary is a few
   lines of shell instead of a marketplace reporter.
 - This is CI for this repo itself. CI integration of the tool (brain 0009, 0010) is a separate topic.
+
+## Update (2026-11-20)
+CI runs only on **pushes to `main`** and on **pull requests** (build validation), plus manual dispatch. It no
+longer runs on pushes to other branches (user decision).

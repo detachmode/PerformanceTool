@@ -55,10 +55,10 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted, implemented (UI, Pages) |
 | [0016](0016-calm-ui-less-information.md) | Calm UI: show less, reveal on demand; avoid information overload | Accepted |
 | [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor in a separate Logs popup | Accepted |
-| [0018](0018-colour-carries-meaning.md) | Colour carries meaning: no colour per scenario; colour only when errors or slow calls occur | Accepted |
+| [0018](0018-colour-carries-meaning.md) | Colour carries meaning: no colour per scenario; bars green = good, yellow = slow, red = failed | Accepted |
 | [0019](0019-visible-state-and-feedback.md) | Visible selection everywhere; editor gives immediate feedback on changes | Accepted |
 | [0020](0020-simple-first-features-one-by-one.md) | Simple first: core flow (set up, run, presets, inspect), then features one by one | Accepted |
 | [0021](0021-ui-scales-to-long-runs.md) | UI must scale to runs of hours with many actors, calls and logs | Accepted |
 | [0022](0022-core-flow-ui-and-scaling-choices.md) | Core-flow UI choices: placeholder slow rule, bounded data, own VirtualList | Accepted (slow rule Proposed) |
-| [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts to make small bars easy to click | Accepted (not implemented) |
+| [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts to make small bars easy to click | Accepted (implemented) |
 | [0024](0024-editor-and-overview-share-the-loaded-plan.md) | Editor and overview show the same view of the loaded scenarios; editing the loaded plan, not a preset; editor uses the overview's cards | Accepted (not implemented) |

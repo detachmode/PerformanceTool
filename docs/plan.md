@@ -9,12 +9,13 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 ## Agent queue
 - Done: core-flow simplification (brain 0020, 0021, 0022): editor, overview, scenario popup, Logs popup; scales to 3 h runs.
-- **Running:** Dock-like magnification on the actor bar charts (brain 0023).
-- Next (after the magnification merges, same files): editor uses the overview's scenario cards (brain 0024).
-- Agreed, not started: full word-wrapped log rows (variable-height virtual list).
+- **Done:** Dock-like magnification on the actor bar charts (brain 0023).
+- **Done:** bar colours green/yellow/red and blue running actors (brain 0018).
+- **Done:** editor uses the overview's scenario cards (brain 0024).
+- **Running:** full word-wrapped log rows (variable-height virtual list).
 
 Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
-log rows: fixed two lines + detail panel, or full word wrap in the list; what counts as "slow"; duration summary.
+what counts as "slow"; duration summary.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)

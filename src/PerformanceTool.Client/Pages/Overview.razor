@@ -23,7 +23,7 @@
         @for (var i = 0; i < s.Count; i++)
         {
             var idx = i;
-            <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Actors="s.Store.Actors(idx)"
+            <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Actors="s.Store.Actors(idx)" Running="s.ActorsInFlight?[idx]"
                           Target="s.Plan.Scenarios[idx].RatePerMinute" Elapsed="s.Elapsed" OnOpen="i => open = i" />
         }
     </div>

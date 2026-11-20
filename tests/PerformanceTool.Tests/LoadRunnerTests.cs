@@ -137,4 +137,26 @@ public class LoadRunnerTests
         Assert.True(results.Count < started);            // the in-flight ones were cancelled, not reported
         Assert.Equal(0, activity.Last(a => !a.Started).TotalInFlight);
     }
+
+    [Fact]
+    public async Task Activity_events_arrive_in_counter_order_even_when_many_end_at_once()
+    {
+        // Many overlapping actors cancelled at the same moment: every event must change the total by exactly one,
+        // in arrival order, so a UI that shows the latest event's count is never stale.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var cts = new CancellationTokenSource();
+            var plan = new LoadPlan { DurationSeconds = 5, MaxConcurrency = 200, Scenarios = [Entry(6000, delayMs: 2000)] };
+            cts.CancelAfter(TimeSpan.FromMilliseconds(400));
+            var (_, activity) = await RunWithActivity(plan, cts.Token);
+
+            var expected = 0;
+            foreach (var a in activity)
+            {
+                expected += a.Started ? 1 : -1;
+                Assert.Equal(expected, a.TotalInFlight);
+            }
+            Assert.Equal(0, expected);
+        }
+    }
 }

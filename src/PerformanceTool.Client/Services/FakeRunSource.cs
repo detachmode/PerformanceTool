@@ -51,6 +51,7 @@ public sealed class FakeRunSource : IRunSource
     private readonly Random rng = new(7);
     private CancellationTokenSource? cts;
     private string savedFingerprint = "";
+    private HashSet<string> savedEntries = [];
 
     // The editable plan (what the editor page changes) and the profile of each entry.
     public LoadPlan Plan { get; private set; } = new();
@@ -89,6 +90,7 @@ public sealed class FakeRunSource : IRunSource
         Presets.Add(new("Black Friday mix", Plan.Clone(), [.. Profiles]));
         Presets.Add(MakeSmoke());
         savedFingerprint = Fingerprint(Plan);
+        savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         // Pre-seed a finished run, simulated in virtual time.
         BeginRun();
         if (simulateSeconds > 0) runPlan.DurationSeconds = (int)simulateSeconds;
@@ -126,6 +128,7 @@ public sealed class FakeRunSource : IRunSource
         Presets.Add(new(name, Plan.Clone(), [.. Profiles]));
         PresetName = name;
         savedFingerprint = Fingerprint(Plan);
+        savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         Changed?.Invoke();
     }
 
@@ -136,8 +139,13 @@ public sealed class FakeRunSource : IRunSource
         Profiles = [.. p.Profiles];
         PresetName = p.Name;
         savedFingerprint = Fingerprint(Plan);
+        savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         Changed?.Invoke();
     }
+
+    public bool IsEntryChanged(ScenarioRunConfig entry) => !savedEntries.Contains(EntryFingerprint(entry));
+
+    private static string EntryFingerprint(ScenarioRunConfig s) => $"{s.ScenarioId}|{s.Label}|{s.RatePerMinute}|{s.Parameters.ToJsonString()}";
 
     /// <summary>A string that changes whenever anything the editor can change changes.</summary>
     private static string Fingerprint(LoadPlan plan)
@@ -379,7 +387,10 @@ public sealed class FakeRunSource : IRunSource
         var views = Enumerable.Range(0, n)
             .Select(i => new ScenarioView(store.Actors(i).Count, failed[i], slowActors[i], slowCalls[i], inFlight[i], starts[i]))
             .ToArray();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store);
+        var running = new IReadOnlyList<RunningActor>[n];
+        for (var i = 0; i < n; i++)
+            running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningActor(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running);
     }
 
     // ---------- the fake plan ----------

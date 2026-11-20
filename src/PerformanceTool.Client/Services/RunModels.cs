@@ -69,6 +69,15 @@ public sealed class ActorDetail(int sequence, int entry, IReadOnlyList<FakeCall>
 /// <summary>Counters of one scenario entry at one moment (immutable copy).</summary>
 public sealed record ScenarioView(int Finished, int Failed, int SlowActors, int SlowCalls, int InFlight, int Starts);
 
+/// <summary>
+/// An actor that is being executed right now (brain 0018). Its outcome is not known yet; <see cref="Calls"/> is the whole playthrough, so a
+/// reader may only show the calls whose time has come (offset within the elapsed time).
+/// </summary>
+public sealed record RunningActor(int Sequence, int Entry, double StartedAt, IReadOnlyList<FakeCall> Calls)
+{
+    public string Name => $"Actor #{Sequence + 1}";
+}
+
 /// <summary>Immutable view of the run for the pages. Arrays are small; the bulk data sits in <see cref="Store"/> and is read up to the counts here.</summary>
 public sealed record RunSnapshot(
     FakeRunState State,
@@ -76,7 +85,8 @@ public sealed record RunSnapshot(
     LoadPlan Plan,
     IReadOnlyList<string> Labels,
     ScenarioView[] Scenarios,
-    RunStore Store)
+    RunStore Store,
+    IReadOnlyList<RunningActor>[]? ActorsInFlight = null)
 {
     public bool Running => State == FakeRunState.Running;
     public int Count => Plan.Scenarios.Count;
