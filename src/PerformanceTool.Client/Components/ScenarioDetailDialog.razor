@@ -51,7 +51,7 @@
         else
         {
             <div class="chart-scroll">
-                <div class="chart" style="min-width:@(bars.Count * 14)px" role="group" aria-label="Actors">
+                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     @foreach (var b in bars)
                     {
@@ -68,7 +68,7 @@
                             </button>
                         }
                     }
-                </div>
+                </DockZoom>
             </div>
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or amber if any actor in it failed or was slow. Click a bar to list its actors.</text> }
@@ -168,6 +168,11 @@
     }
 
     private void SetShow(ActorShow s) { show = s; bucket = null; }
+
+    private void PickAt(List<ActorBar> bars, int index)
+    {
+        if (index >= 0 && index < bars.Count && bars[index].Count > 0) PickBar(bars[index]);
+    }
 
     private void PickBar(ActorBar bar)
     {

@@ -60,4 +60,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0020](0020-simple-first-features-one-by-one.md) | Simple first: core flow (set up, run, presets, inspect), then features one by one | Accepted |
 | [0021](0021-ui-scales-to-long-runs.md) | UI must scale to runs of hours with many actors, calls and logs | Accepted |
 | [0022](0022-core-flow-ui-and-scaling-choices.md) | Core-flow UI choices: placeholder slow rule, bounded data, own VirtualList | Accepted (slow rule Proposed) |
-| [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts to make small bars easy to click | Accepted (not implemented) |
+| [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts to make small bars easy to click | Accepted (implemented) |
