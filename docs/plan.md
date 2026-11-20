@@ -8,12 +8,11 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
-- Stopped by the user: logs rework and editor rework (too much at once).
-- **Waiting for the user** to agree on the first small step of the core flow (brain 0020).
+- Done: core-flow simplification (brain 0020, 0021, 0022): editor, overview, scenario popup, Logs popup; scales to 3 h runs.
+- **Waiting for the user's feedback** on the simplified UI before the next small step.
 
-Core flow to get right, one step at a time (brain 0020): set up scenarios → run → save/load presets → inspect the run.
-
-Open questions for the user (ask one at a time): what counts as "slow"; which duration summary; call grouping.
+Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
+log rows: fixed two lines + detail panel, or full word wrap in the list; what counts as "slow"; duration summary.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
