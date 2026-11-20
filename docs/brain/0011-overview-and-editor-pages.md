@@ -11,6 +11,10 @@
 - **The details popup as implemented in 0008 is liked** ("a lot better"). Keep its content and style
   (stats row, full chart, latency distribution, status codes, errors, parameters).
 
+- **User feedback on draft 1:** the rate wasn't prominent enough. The overview must make it very prominent **how many
+  instances are running**: live instances running now and instances per minute are the headline of each card
+  (and of the run bar). Latency is secondary.
+
 ## Why
 - The user wants to *watch* runs on a calm, glanceable page. Editing forms on the same page bury the tiles.
 - In the 0008 build, the tiles were below a long editor and hard to find, and their mini charts didn't read as the
