@@ -53,6 +53,12 @@ the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.We
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
 it, used as a filter and isolated. Don't add read-only data views.
 
+## Screenshots in the repo and in PRs
+- Never overwrite or rename existing files in `docs/screenshots/`; earlier PR descriptions link to them.
+- Put each set of screenshots in a **new, uniquely named folder**, e.g. `docs/screenshots/2026-11-20-dock-magnify/`.
+- In PR descriptions, link images with a **commit-pinned** URL
+  (`https://github.com/<owner>/<repo>/blob/<commit-sha>/docs/screenshots/...?raw=true`), not a branch name.
+
 ## UI changes need a screenshot
 Whenever you change the UI, run the app, drive it with Playwright (a real run, not just the empty page) and
 **show the user a screenshot**. Run with `ASPNETCORE_ENVIRONMENT=Development` so static assets resolve.

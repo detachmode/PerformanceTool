@@ -11,3 +11,4 @@
 - **Keep a background agent busy only with steps the user agreed on** (brain 0020: small steps, one feature at a time). Keep the queue in `docs/plan.md` ("Agent queue") and start the next item as soon as one finishes. User feedback goes to the front of the queue.
 - **Use the tool's own language** (`docs/context.md`), not standard load-testing vocabulary or metrics, in UI, docs and agent briefs.
 - **Calm UI (brain 0016):** show less, reveal on demand. Every agent brief for UI work must include this principle.
+- **Screenshots:** never overwrite old screenshot files; use a new folder per set and commit-pinned links in PRs (see `AGENTS.md`).
