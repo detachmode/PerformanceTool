@@ -54,4 +54,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0014](0014-ci-on-github-actions.md) | GitHub Actions CI: restore, build, test (TRX artifact + summary) on every push/PR | Accepted |
 | [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted, implemented (UI, Pages) |
 | [0016](0016-calm-ui-less-information.md) | Calm UI: show less, reveal on demand; avoid information overload | Accepted |
-| [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor | Accepted (design open) |
+| [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor in a separate Logs popup | Accepted |
