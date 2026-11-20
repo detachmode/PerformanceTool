@@ -35,6 +35,10 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [x] Restyle the app (done except: collapsible left list, chart/table toggle; sort/group menus added) after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
       toolbar with icon buttons, collapsible left list, group/sort menus). Re-validate the palette on the new surfaces.
 
+## 0d. Overview + editor pages (brain 0011)
+- [ ] Split into a lightweight **overview page** (scenario tiles with little Aspire-style box charts; click → existing details popup) and an **editor page**.
+- [ ] Open: where runs are started/stopped; exact mini-chart style.
+
 ## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009, proposed)
 - [ ] Extract `Services/*` into `src/PerformanceTool.Core` (scenarios, plan, runner, presets, stats), used by web, CLI and server.
 - [ ] Run bundle writer: `manifest.json`, `summary.json`, `results.ndjson(.gz)` (appended live), `summary.md`, `junit.xml`;
