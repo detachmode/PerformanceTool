@@ -1,6 +1,6 @@
 # 0008. Live scenario tiles overview, Aspire-dashboard inspired styling
 
-- Status: Accepted (requirement, not implemented yet, see `docs/plan.md` → "Live scenario tiles")
+- Status: Accepted, implemented (tiles, detail dialog, restyle; see Implementation notes)
 - Date: 2026-11-20
 
 ## What
@@ -48,3 +48,20 @@ https://aspire.dev/whats-new/aspire-17/ and https://aspire.dev/dashboard/explore
   render cadence. Activity highlighting must come from runner state (in-flight count per entry), not from
   guessing based on results.
 - The runner needs to report "execution started" events and in-flight counts per entry, not only completed results.
+
+## Implementation notes (2026-11-20)
+- **Runner.** `LoadRunner.RunAsync(..., onActivity)` raises `ExecutionActivity` (started / ended, in-flight per entry and total).
+  Every start has exactly one end (result or cancelled); the start event runs inside the execution task so a slow
+  observer never delays the open-model schedule (0004). `Home.razor` counts by event (+1/-1), not by the snapshot,
+  because `InvokeAsync` may reorder events of different executions.
+- **Highlight.** A tile is "active" while in-flight > 0 or for 0.6 s after the last start: fast requests finish
+  between 150 ms renders and would otherwise never light up. The start ping alternates two identical keyframes
+  (`ping-a`/`ping-b`) so the CSS animation restarts.
+- **Components.** `ScenarioTile` (stats cached per result count, 100 bars max), `ScenarioDetailDialog` (histogram,
+  status codes, error groups, parameters via `ParameterSummary` generated from the spec, recent executions; every
+  facet is a filter shared by chart and list; Esc/outside click close), `LiveChart` got `Embedded`, `OnBarClick`.
+- **Look.** Tokens at the top of `wwwroot/app.css`; dark only, flat, radius 4-6 px.
+- **Palette.** Re-validated against card `#2a2534` and page `#221d2d`: all checks pass, steps unchanged. The error red
+  `#d03b3b` is 2.57:1 on `#303445` (selected row), so failed bars keep the hatch texture and error text uses `#f2737d`.
+- **Not done:** collapsible left list, chart/table view toggle and dimension-filter chips of the Aspire Metrics page;
+  only sort and group-by-type menus were added. The dialog has no focus trap.

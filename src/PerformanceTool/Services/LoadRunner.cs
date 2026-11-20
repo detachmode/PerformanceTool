@@ -10,6 +10,13 @@ public sealed record ExecutionResult(int Sequence, int Entry, double StartedAtSe
 }
 
 /// <summary>
+/// Start or end of one execution, with the number of executions in flight afterwards (docs/brain/0008).
+/// Every <see cref="Started"/> is followed by exactly one end event, whether the execution reported a result or was
+/// cancelled because the user stopped the run. The end event is raised after <c>onResult</c>.
+/// </summary>
+public sealed record ExecutionActivity(int Sequence, int Entry, double AtSeconds, bool Started, int InFlight, int TotalInFlight);
+
+/// <summary>
 /// Runs a <see cref="LoadPlan"/> as an open workload: every entry fires at its own fixed rate, independent of
 /// how long earlier executions take. If <see cref="LoadPlan.MaxConcurrency"/> executions are already in flight,
 /// the run is dropped and reported instead of queued. See docs/brain/0004-open-model-rate-scheduling.md.
@@ -20,7 +27,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         LoadPlan plan,
         Func<ExecutionResult, ValueTask> onResult,
         Func<int, ValueTask> onDropped,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<ExecutionActivity, ValueTask>? onActivity = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
@@ -36,6 +44,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
 
         using var gate = new SemaphoreSlim(plan.MaxConcurrency, plan.MaxConcurrency);
         var inFlight = new List<Task>();
+        var inFlightByEntry = new int[plan.Scenarios.Count]; // executions running right now, per entry (brain 0008)
+        var inFlightTotal = 0;
         var sequence = -1;
         var clock = Stopwatch.StartNew();
         var duration = TimeSpan.FromSeconds(plan.DurationSeconds);
@@ -69,10 +79,25 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 }
 
                 var seq = Interlocked.Increment(ref sequence);
+                // Counted before the task is queued; the callback runs inside the task so a slow observer never delays scheduling.
+                var nowInFlight = Interlocked.Increment(ref inFlightByEntry[entry]);
+                var total = Interlocked.Increment(ref inFlightTotal);
                 var task = Task.Run(async () =>
                 {
-                    try { await ExecuteOne(scenarios[entry], entry, seq, parameters); }
-                    finally { gate.Release(); }
+                    try
+                    {
+                        if (onActivity is not null)
+                            await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, true, nowInFlight, total));
+                        await ExecuteOne(scenarios[entry], entry, seq, parameters);
+                    }
+                    finally
+                    {
+                        gate.Release();
+                        var left = Interlocked.Decrement(ref inFlightByEntry[entry]);
+                        var totalLeft = Interlocked.Decrement(ref inFlightTotal);
+                        if (onActivity is not null)
+                            await onActivity(new ExecutionActivity(seq, entry, clock.Elapsed.TotalSeconds, false, left, totalLeft));
+                    }
                 }, CancellationToken.None);
                 lock (inFlight) inFlight.Add(task);
             }

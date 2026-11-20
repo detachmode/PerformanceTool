@@ -45,6 +45,6 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0005](0005-presets-as-json-files.md) | Presets stored as one JSON file each | Accepted |
 | [0006](0006-ux-everything-clickable-and-inspectable.md) | UX principle: everything clickable, inspectable, filterable, isolatable | Accepted |
 | [0007](0007-scenario-editor-derived-from-typed-spec.md) | Scenario editor UI generated from a typed parameter spec (enum → dropdown, bool → toggle, …) | Accepted, implemented |
-| [0008](0008-live-scenario-tiles-overview.md) | Live scenario tiles with mini charts, activity highlighting, detail popup; Aspire-inspired styling | Accepted (not implemented) |
+| [0008](0008-live-scenario-tiles-overview.md) | Live scenario tiles with mini charts, activity highlighting, detail popup; Aspire-inspired styling | Accepted, implemented |
 | [0009](0009-agent-access-to-ci-runs.md) | Agents inspect CI runs: run bundles, artifact + central server (API key), one CLI/API (+ MCP) | Proposed, partly decided in 0010 |
 | [0010](0010-azure-devops-pipeline-artifacts.md) | Azure DevOps: tool runs in the pipeline; results as a full artifact + a small summary artifact | Accepted (not implemented) |
