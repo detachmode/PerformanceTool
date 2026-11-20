@@ -34,3 +34,8 @@ matter.
 - Running actors are `RunningActor` records in `RunSnapshot.ActorsInFlight` (per scenario); `ActorBars.WithRunning` adds them as blue bars at the right edge, or counts them into the newest time bucket (a blue segment stacked on the bucket bar).
 - Growth is driven by `dock-magnify.js` (one shared rAF loop sets `height` on `[data-start]` bars from the chart's `data-elapsed` / `data-scale`), not by Blazor renders. The pulse is a CSS opacity animation, off under `prefers-reduced-motion`. Colour is `--running` (blue; set a grey to try the grey variant).
 - A running actor can be selected; its calls so far show as done (green/red) or running (blue); slow is only known when it finishes. When it finishes, the selection turns into the finished actor in place.
+
+## Update (user, 2026-11-20): card outline
+A scenario card's outline is **red** when it has failed actors, **yellow** when it has slow ones (and no failed), and
+**green** when it has finished actors and **none** of them failed or were slow. Cards with no finished actors yet
+(idle, editor) stay neutral.
