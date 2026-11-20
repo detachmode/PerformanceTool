@@ -22,7 +22,10 @@ public sealed record FakeProfile(
     string[]? CallNames = null,
     int MinCalls = 0,
     int? FailAtCall = null,
-    double ThinkMs = 0)
+    double ThinkMs = 0,
+    int? SpikeCall = null,
+    double SpikeChance = 0,
+    int? ForceFailOn = null)
 {
     public static FakeProfile Generic => new(null, 150, 0.4, 0.02, 0.01, 8_000,
         [new(500, "HTTP 500 Internal Server Error", 1)]);
@@ -311,11 +314,14 @@ public sealed class FakeRunSimulator : IDisposable
         var ms = profile.MedianMs * Math.Exp(profile.Sigma * Gaussian());
         var slow = rng.NextDouble() < profile.TailChance;
         if (slow) ms *= 2.5 + rng.NextDouble() * 3;
+        // A spike makes one particular call of the instance much slower (e.g. POST /cart), which stretches the instance.
+        var spike = profile.SpikeCall is not null && rng.NextDouble() < profile.SpikeChance;
+        if (spike) ms += profile.MedianMs * 0.6;
         ms = Math.Clamp(ms, 3, timeoutMs);
 
         int? status = 200;
         string? error = null;
-        if (rng.NextDouble() < profile.ErrorRate && profile.Errors is { Count: > 0 } errors)
+        if ((rng.NextDouble() < profile.ErrorRate || starts[entry] == profile.ForceFailOn) && profile.Errors is { Count: > 0 } errors)
         {
             var pick = Pick(errors);
             status = pick.Status;
@@ -326,7 +332,7 @@ public sealed class FakeRunSimulator : IDisposable
         var seq = sequence++;
         ms = Math.Round(ms, 1);
         var result = new ExecutionResult(seq, entry, at, ms, status, bytes, error);
-        var calls = MakeCalls(seq, ms, status, error, profile);
+        var calls = MakeCalls(seq, ms, status, error, profile, spike);
         pending.Add(new(entry, at + ms / 1000, result, MakeLogs(entry, seq, at, ms, status, error, slow, profile, timeoutMs, calls), calls));
         inFlight[entry]++;
         starts[entry]++;
@@ -339,7 +345,7 @@ public sealed class FakeRunSimulator : IDisposable
     /// Splits an instance into its chained calls. A failing instance has exactly one failing call; the calls after it
     /// are skipped (no time, no status). Think time sits between calls and is part of the instance's duration.
     /// </summary>
-    private List<FakeCall> MakeCalls(int seq, double ms, int? status, string? error, FakeProfile profile)
+    private List<FakeCall> MakeCalls(int seq, double ms, int? status, string? error, FakeProfile profile, bool spike)
     {
         var names = profile.CallNames is { Length: > 0 } n ? n : [$"{profile.Method} {profile.Path}"];
         var count = profile.MinCalls > 0 && profile.MinCalls < names.Length ? rng.Next(profile.MinCalls, names.Length + 1) : names.Length;
@@ -347,7 +353,7 @@ public sealed class FakeRunSimulator : IDisposable
         var ran = failAt >= 0 ? failAt + 1 : count;
         var think = ran > 1 ? Math.Min(profile.ThinkMs, ms * 0.3 / (ran - 1)) : 0;
         var avail = ms - think * (ran - 1);
-        var weights = Enumerable.Range(0, ran).Select(_ => 0.7 + rng.NextDouble() * 0.6).ToArray();
+        var weights = Enumerable.Range(0, ran).Select(i => (0.7 + rng.NextDouble() * 0.6) * (spike && i == profile.SpikeCall ? 6 : 1)).ToArray();
         var total = weights.Sum();
         var list = new List<FakeCall>();
         var offset = 0.0;
@@ -479,14 +485,15 @@ public sealed class FakeRunSimulator : IDisposable
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
             new("Places an order with a fixed demo cart.", 240, 0.45, 0.03, 0.015, 1_200,
                 [new(500, "HTTP 500 Internal Server Error", 2), new(422, "HTTP 422 Payment declined", 1)], "POST", "/api/checkout",
-                CallNames: ["GET /api/cart/demo-42", "POST /api/checkout", "GET /api/orders/latest"], MinCalls: 2, FailAtCall: 1, ThinkMs: 60));
+                CallNames: ["GET /api/cart/{id}", "POST /api/checkout", "GET /api/orders/{id}"], MinCalls: 2, FailAtCall: 1, ThinkMs: 60));
         Add(Entry("http-get", "Search", 300, "https://shop.example.com/api/search?q=shoes"),
             new("Full-text search for a popular term.", 140, 0.5, 0.04, 0.005, 22_000,
                 [new(500, "HTTP 500 Internal Server Error", 1)], "GET", "/api/search?q=shoes"));
         Add(Entry("user-journey", "User journey", 40, ""),
-            new("Home, product, cart and checkout pages with think time.", 1700, 0.22, 0.02, 0.02, 160_000,
+            new("Home, product, cart and checkout pages with think time.", 1500, 0.2, 0.02, 0.03, 160_000,
                 [new(502, "Step 3 failed: HTTP 502 Bad Gateway", 1)], "GET", "/", 4,
-                ["GET /", "GET /products/42", "POST /cart", "GET /checkout"], FailAtCall: 2, ThinkMs: 250));
+                ["GET /", "GET /products/{id}", "POST /cart", "GET /checkout"], FailAtCall: 2, ThinkMs: 250,
+                SpikeCall: 2, SpikeChance: 0.14, ForceFailOn: 14));
         Add(Entry("http-custom", "Flaky partner API", 90, "https://partner.example.com/v2/stock"),
             new("Third-party stock service that fails and times out under load.", 320, 0.6, 0.05, 0.13, 3_400,
                 [new(500, "HTTP 500 Internal Server Error", 5), new(null, "Timed out after 3 s", 3), new(503, "HTTP 503 Service Unavailable", 2)],
