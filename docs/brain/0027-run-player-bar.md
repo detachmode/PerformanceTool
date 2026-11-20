@@ -32,3 +32,8 @@ run status always in view on every page.
 ## Update (user feedback, 2026-11-20)
 Make the player bar's UI **nicer**, and the **play / stop buttons more prominent**. Keep the calm, cockpit-inspired
 look (no glow-heavy or skeuomorphic styling).
+
+## Update 2 (polish and drill-down, 2026-11-20)
+- Play/Pause is a 54px round disc (violet idle/paused/finished, blue running, hover/active/focus states) with a short desktop label ("Start run", "Pause", "Resume", "Run again"; hidden below 1100px). Stop is a smaller round secondary button with a red hover.
+- Bar surface: lighter top edge plus soft shadow, more spacing, recessed progress track with ticks.
+- Brain 0029: Running, Errors and Slow readouts are buttons opening the Logs popup (Errors pre-filtered to Failed, Slow to Slow, Running all logs). Calm affordance: faint background and underlined label on hover/focus. LogsPopupState.Show got an optional ActorShow outcome, read by LogsDialog on init. Actors/min and the clock are not drill-down yet.
