@@ -22,13 +22,13 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
+# Two jobs, like GitHub's official Pages template: the deploy job starts only after the build job has finished, so the
+# uploaded "github-pages" artifact is visible to the API. In one job, deploy-pages could look for it too early and find
+# none ("No artifacts named github-pages were found"), as happened once after PR #11.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,6 +73,14 @@ jobs:
         with:
           path: out/wwwroot
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
