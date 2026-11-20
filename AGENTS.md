@@ -34,6 +34,7 @@ dotnet test
 ```bash
 dotnet run --project src/PerformanceTool
 ```
+CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on every push and PR (brain 0014). Keep `dotnet test` green.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/` and the
 `.slnx` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
 the committed `net11.0` targets.
