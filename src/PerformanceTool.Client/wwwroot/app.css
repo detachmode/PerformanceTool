@@ -498,3 +498,5 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .logrow.lv-Information { border-left-color: var(--good); }
 .figures .fig b { color: var(--text); }
 .figures .fig.bad b { color: var(--bad); } .figures .fig.warn b { color: var(--warn); } .figures .fig.good b { color: var(--good); }
+.figures .fig { display: inline-block; }
+.figures .fig b { font-size: inherit; line-height: inherit; font-weight: 600; }
