@@ -75,6 +75,7 @@ label { font-size: .72rem; color: var(--muted); }
 .card:hover { background: var(--panel2); }
 .card.bad { border-color: #f2737d80; border-left-color: var(--bad); }
 .card.warn { border-color: #e3a84f66; border-left-color: var(--warn); }
+.card.calm-ok { border-color: #4fb28666; border-left-color: var(--good); }
 .card-title { font-weight: 600; color: var(--title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-figures { display: flex; gap: 1.6rem; flex-wrap: wrap; }
 .fig { display: flex; flex-direction: column; }

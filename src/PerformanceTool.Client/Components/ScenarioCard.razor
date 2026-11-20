@@ -2,7 +2,7 @@
    Neutral by default; red when errors occurred, amber when only slow calls occurred (brain 0018). The chart is bounded to the latest actors (brain 0021). *@
 @using System.Globalization
 @{
-    var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : "";
+    var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
     var actual = Elapsed > 0 ? View.Starts / (Elapsed / 60) : 0;
     var runNow = Running is { Count: > 0 } ? Running.Skip(Math.Max(0, Running.Count - 12)).ToList() : [];
     var take = Math.Min(View.Finished, MaxBars - runNow.Count);
