@@ -23,3 +23,15 @@ navigation goal (0017).
   value changes, not only when the input loses focus.
 - Some **scrollbars are missing** in the editor (content can't be reached); fix overflow so every area that can grow
   scrolls.
+
+### Implemented (editor fixes)
+- **Change detection while typing:** every generated input (text, URL, multiline, secret, number, slider, duration, list items,
+  key/value rows) and the label, rate and plan settings update on `input`. The dirty state is derived from the live plan on every
+  render, so "Unsaved changes", Save and the card's "Changed" marker react at once, and reverting the text removes them again.
+  Components raise `Edited` (typing) and `Committed` (leaving a field, buttons, toggles) to the page.
+- **Calm validation:** errors are shown from a snapshot taken on blur or after a 300 ms pause in typing, never per keystroke.
+  Only the selected entry is validated (cheap per keystroke).
+- **Scrolling:** the settings panel is a flex column (sticky head with Unsaved + Save, scrolling body, sticky foot with
+  "Remove scenario"). Before, a tall panel was cut off at the bottom of the window (sticky, no max height) and the phone sheet's
+  header scrolled away. The panel is capped to the visible area (minus the player bar); on phones the sheet is full screen with
+  the same layout. Multiline fields are capped (40vh, resizable). The page itself scrolls for the cards grid and presets.
