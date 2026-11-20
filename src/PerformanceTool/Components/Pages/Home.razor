@@ -1,185 +1,267 @@
 @page "/"
 @rendermode InteractiveServer
 @implements IDisposable
-@inject LoadTester Tester
+@inject LoadRunner Runner
+@inject ScenarioCatalog Catalog
+@inject PresetStore Presets
 
 <PageTitle>Performance Tool</PageTitle>
 
 <header class="topbar">
     <div class="brand"><span class="logo">⚡</span> Performance<span>Tool</span></div>
-    <div class="status @(running ? "live" : "")">@(running ? "LIVE" : results.Count > 0 ? "DONE" : "IDLE")</div>
+    <div class="run-state">
+        @if (running || results.Count > 0)
+        {
+            <div class="progress" title="@($"{Elapsed:0}s of {activePlan.DurationSeconds}s")">
+                <div style="width:@(Math.Clamp(Elapsed / activePlan.DurationSeconds, 0, 1).ToString("P0", System.Globalization.CultureInfo.InvariantCulture).Replace(" ", ""))"></div>
+            </div>
+            <span class="muted">@($"{Elapsed:0}s / {activePlan.DurationSeconds}s")</span>
+        }
+        <div class="status @(running ? "live" : "")">@(running ? "LIVE" : results.Count > 0 ? "DONE" : "IDLE")</div>
+    </div>
 </header>
 
 <main class="container">
-    <section class="card controls">
-        <div class="field grow">
-            <label for="url">Target URL</label>
-            <input id="url" type="url" @bind="url" disabled="@running" placeholder="https://example.com" @onkeydown="OnKey" />
+    <section class="card presets">
+        <div class="preset-group">
+            <label for="preset">Preset</label>
+            <select id="preset" @bind="selectedPreset" disabled="@running">
+                <option value="">— choose a preset —</option>
+                @foreach (var p in presets)
+                {
+                    <option value="@p.Name">@p.Name</option>
+                }
+            </select>
+            <button class="btn ghost" @onclick="LoadPreset" disabled="@(running || selectedPreset == "")">Load</button>
+            <button class="btn ghost danger" @onclick="DeletePreset" disabled="@(running || selectedPreset == "")">Delete</button>
         </div>
-        <div class="field">
-            <label for="count">Requests</label>
-            <input id="count" type="number" min="1" max="@LoadTester.MaxRequests" @bind="totalRequests" disabled="@running" />
+        <div class="preset-group">
+            <input @bind="presetName" placeholder="Preset name" aria-label="Preset name" disabled="@running" />
+            <button class="btn ghost" @onclick="SavePreset" disabled="@running">Save current</button>
         </div>
-        <div class="field">
-            <label for="conc">Concurrency</label>
-            <input id="conc" type="number" min="1" max="@LoadTester.MaxConcurrency" @bind="concurrency" disabled="@running" />
-        </div>
-        <div class="field">
-            <label for="to">Timeout (s)</label>
-            <input id="to" type="number" min="1" max="300" @bind="timeoutSeconds" disabled="@running" />
-        </div>
-        @if (running)
+        @if (presetMessage is not null)
         {
-            <button class="btn stop" @onclick="Stop">■ Stop</button>
-        }
-        else
-        {
-            <button class="btn start" @onclick="Start">▶ Start test</button>
+            <div class="preset-msg">@presetMessage</div>
         }
     </section>
 
-    @if (error is not null)
+    <section class="card">
+        <div class="section-head">
+            <h2>Scenario mix</h2>
+            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") runs/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") runs</span>
+        </div>
+        <div class="entries">
+            @for (var i = 0; i < plan.Scenarios.Count; i++)
+            {
+                var entry = plan.Scenarios[i];
+                <ScenarioEntryCard @key="entry" Config="entry" Scenario="Catalog.Find(entry.ScenarioId)" Color="@SeriesPalette.For(i)"
+                                   Disabled="running" OnRemove="() => plan.Scenarios.Remove(entry)" />
+            }
+        </div>
+        <div class="add-row">
+            <select @bind="addScenarioId" disabled="@(running || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-label="Scenario to add">
+                @foreach (var s in Catalog.All)
+                {
+                    <option value="@s.Id">@s.Name — @s.Description</option>
+                }
+            </select>
+            <button class="btn ghost" @onclick="AddScenario" disabled="@(running || plan.Scenarios.Count >= LoadPlan.MaxEntries)">+ Add scenario</button>
+        </div>
+
+        <div class="controls run-settings">
+            <div class="field">
+                <label for="dur">Duration (s)</label>
+                <input id="dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@running" />
+            </div>
+            <div class="field">
+                <label for="conc">Max in-flight</label>
+                <input id="conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@running" />
+            </div>
+            <div class="field">
+                <label for="to">Timeout (s)</label>
+                <input id="to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@running" />
+            </div>
+            <div class="spacer"></div>
+            @if (running)
+            {
+                <button class="btn stop" @onclick="Stop">■ Stop</button>
+            }
+            else
+            {
+                <button class="btn start" @onclick="Start">▶ Start run</button>
+            }
+        </div>
+    </section>
+
+    @if (errors.Count > 0)
     {
-        <div class="error">@error</div>
+        <div class="error"><ul>@foreach (var e in errors) { <li>@e</li> }</ul></div>
     }
 
-    @{ var s = ComputeStats(); }
+    @{ var all = LatencyStats.From(results); }
     <section class="stats">
-        <Stat Label="Completed" Value="@($"{s.Count} / {totalRun}")" />
-        <Stat Label="Errors" Value="@s.Errors.ToString()" Bad="@(s.Errors > 0)" />
-        <Stat Label="Req/s" Value="@s.Rps.ToString("N1")" />
-        <Stat Label="Min" Value="@Fmt(s.Min)" />
-        <Stat Label="Avg" Value="@Fmt(s.Avg)" />
-        <Stat Label="p50" Value="@Fmt(s.P50)" />
-        <Stat Label="p95" Value="@Fmt(s.P95)" />
-        <Stat Label="p99" Value="@Fmt(s.P99)" />
-        <Stat Label="Max" Value="@Fmt(s.Max)" />
+        <Stat Label="Executions" Value="@all.Count.ToString("N0")" />
+        <Stat Label="Errors" Value="@all.Errors.ToString("N0")" Bad="@(all.Errors > 0)" />
+        <Stat Label="Dropped" Value="@dropped.Sum().ToString("N0")" Bad="@(dropped.Sum() > 0)" />
+        <Stat Label="Runs/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
+        <Stat Label="Avg" Value="@LiveChart.Fmt(all.Avg)" />
+        <Stat Label="p50" Value="@LiveChart.Fmt(all.P50)" />
+        <Stat Label="p95" Value="@LiveChart.Fmt(all.P95)" />
+        <Stat Label="p99" Value="@LiveChart.Fmt(all.P99)" />
+        <Stat Label="Max" Value="@LiveChart.Fmt(all.Max)" />
     </section>
 
-    <section class="card chart-card">
-        <div class="chart-title">
-            <h2>Response time per request</h2>
-            <div class="legend"><i class="fast"></i>fast <i class="slow"></i>slow <i class="err"></i>error</div>
-        </div>
-        <div class="chart">
-            <div class="y-axis">
-                <span>@Fmt(scale)</span><span>@Fmt(scale / 2)</span><span>0</span>
-            </div>
-            <div class="plot">
-                <div class="gridline" style="bottom:100%"></div>
-                <div class="gridline" style="bottom:50%"></div>
-                @if (s.Count > 0)
-                {
-                    <div class="avg-line" style="bottom:@Pct(s.Avg)"><span>avg @Fmt(s.Avg)</span></div>
-                }
-                <div class="bars">
-                    @foreach (var r in results)
+    <LiveChart Results="results" Labels="activeLabels" Average="all.Avg" />
+
+    @if (activePlan.Scenarios.Count > 0 && (running || results.Count > 0))
+    {
+        <section class="card table-card">
+            <table class="breakdown">
+                <thead>
+                    <tr><th>Scenario</th><th>Target/min</th><th>Actual/min</th><th>Runs</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < activePlan.Scenarios.Count; i++)
                     {
-                        <div class="bar @(r.Success ? "" : "failed")"
-                             style="height:@Pct(r.ElapsedMs);--c:@Color(r)"
-                             title="#@(r.Sequence + 1) — @Fmt(r.ElapsedMs) — @(r.Error ?? r.StatusCode?.ToString())"></div>
+                        var entry = i;
+                        var st = LatencyStats.From(results.Where(r => r.Entry == entry).ToList());
+                        <tr>
+                            <td><i class="swatch" style="background:@SeriesPalette.For(i)"></i>@activeLabels[i]</td>
+                            <td>@activePlan.Scenarios[i].RatePerMinute.ToString("0.#")</td>
+                            <td>@((st.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("0.#"))</td>
+                            <td>@st.Count</td>
+                            <td class="@(st.Errors > 0 ? "bad" : "")">@st.Errors</td>
+                            <td class="@(dropped[i] > 0 ? "bad" : "")">@dropped[i]</td>
+                            <td>@LiveChart.Fmt(st.Avg)</td>
+                            <td>@LiveChart.Fmt(st.P50)</td>
+                            <td>@LiveChart.Fmt(st.P95)</td>
+                            <td>@LiveChart.Fmt(st.Max)</td>
+                        </tr>
                     }
-                </div>
-                @if (results.Count == 0)
-                {
-                    <div class="empty">Enter a URL and start a test — bars appear live, one per request.</div>
-                }
-            </div>
-        </div>
-    </section>
+                </tbody>
+            </table>
+        </section>
+    }
 </main>
 
 @code {
-    private string url = "https://example.com";
-    private int totalRequests = 100;
-    private int concurrency = 5;
-    private int timeoutSeconds = 30;
-
-    private readonly List<RequestResult> results = new();
+    private LoadPlan plan = new();
+    private LoadPlan activePlan = new();          // snapshot of the plan that is/was running
+    private List<string> activeLabels = [];
+    private readonly List<ExecutionResult> results = [];
+    private int[] dropped = [];
+    private List<string> errors = [];
     private bool running;
-    private string? error;
-    private int totalRun;
-    private double scale = 100;
-    private long startTicks, endTicks;
-    private long lastRender;
+    private string addScenarioId = "";
+    private System.Diagnostics.Stopwatch clock = new();
     private CancellationTokenSource? cts;
 
-    private void OnKey(KeyboardEventArgs e)
+    private IReadOnlyList<Preset> presets = [];
+    private string selectedPreset = "";
+    private string presetName = "";
+    private string? presetMessage;
+
+    private double? finishedElapsed;
+    // A run that completes covers its whole scheduled window; a stopped run only the time until Stop.
+    private double Elapsed => finishedElapsed ?? Math.Min(clock.Elapsed.TotalSeconds, activePlan.DurationSeconds);
+
+    protected override async Task OnInitializedAsync()
     {
-        if (e.Key == "Enter" && !running) _ = Start();
+        addScenarioId = Catalog.All.FirstOrDefault()?.Id ?? "";
+        if (Catalog.Find("http-get") is { } get) plan.Scenarios.Add(ScenarioRunConfig.CreateFor(get));
+        presets = await Presets.ListAsync();
+    }
+
+    private void AddScenario()
+    {
+        if (Catalog.Find(addScenarioId) is not { } scenario || plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
+        var config = ScenarioRunConfig.CreateFor(scenario);
+        var sameKind = plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
+        if (sameKind > 0) config.Label += $" #{sameKind + 1}";
+        plan.Scenarios.Add(config);
     }
 
     private async Task Start()
     {
-        var settings = new LoadTestSettings(url.Trim(), totalRequests, concurrency, timeoutSeconds);
-        if (!LoadTester.TryValidate(settings, out error)) return;
+        errors = plan.Validate(Catalog);
+        if (errors.Count > 0) return;
 
+        activePlan = plan.Clone();
+        activeLabels = activePlan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
         results.Clear();
-        scale = 100;
-        totalRun = settings.TotalRequests;
+        dropped = new int[activePlan.Scenarios.Count];
         running = true;
+        finishedElapsed = null;
         cts = new CancellationTokenSource();
-        startTicks = endTicks = Environment.TickCount64;
-        StateHasChanged();
+        clock = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
-            await Tester.RunAsync(settings, r => new ValueTask(InvokeAsync(() => OnResult(r))), cts.Token);
+            var run = Runner.RunAsync(activePlan,
+                r => new ValueTask(InvokeAsync(() => results.Add(r))),
+                entry => new ValueTask(InvokeAsync(() => dropped[entry]++)),
+                cts.Token);
+
+            // Re-render on a fixed cadence instead of per result, so fast runs don't flood the SignalR circuit.
+            using var ticker = new PeriodicTimer(TimeSpan.FromMilliseconds(150));
+            while (!run.IsCompleted && await ticker.WaitForNextTickAsync())
+                StateHasChanged();
+            await run;
         }
         catch (Exception ex)
         {
-            error = ex.Message;
+            errors = [ex.Message];
         }
         finally
         {
+            clock.Stop();
+            finishedElapsed = cts!.IsCancellationRequested ? Math.Min(clock.Elapsed.TotalSeconds, activePlan.DurationSeconds) : activePlan.DurationSeconds;
             running = false;
-            endTicks = Environment.TickCount64;
             cts?.Dispose();
             cts = null;
-            StateHasChanged();
-        }
-    }
-
-    private void OnResult(RequestResult r)
-    {
-        results.Add(r);
-        // Keep the Y axis at a "nice" ceiling so bars never overflow.
-        if (r.ElapsedMs > scale) scale = Math.Ceiling(r.ElapsedMs * 1.1 / 50) * 50;
-        endTicks = Environment.TickCount64;
-
-        // Throttle re-renders to ~15 fps so very fast tests don't flood the SignalR circuit.
-        var now = Environment.TickCount64;
-        if (now - lastRender >= 66)
-        {
-            lastRender = now;
-            StateHasChanged();
         }
     }
 
     private void Stop() => cts?.Cancel();
 
-    private string Pct(double ms) => (Math.Clamp(ms / scale, 0, 1) * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
-
-    private string Color(RequestResult r)
+    private async Task SavePreset()
     {
-        if (!r.Success) return "hsl(350 85% 58%)";
-        var t = Math.Clamp(r.ElapsedMs / scale, 0, 1);
-        var hue = 150 - 130 * Math.Sqrt(t); // green → amber/red
-        return $"hsl({hue.ToString("0", System.Globalization.CultureInfo.InvariantCulture)} 85% 55%)";
+        var name = presetName.Trim();
+        if (name.Length == 0) { presetMessage = "Enter a name to save the preset."; return; }
+        var existed = presets.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        await Presets.SaveAsync(name, plan);
+        presets = await Presets.ListAsync();
+        selectedPreset = presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Name ?? "";
+        presetMessage = existed ? $"Updated preset “{name}”." : $"Saved preset “{name}”.";
     }
 
-    private static string Fmt(double ms) => ms >= 1000 ? $"{ms / 1000:0.00} s" : $"{ms:0.#} ms";
-
-    private record Summary(int Count, int Errors, double Min, double Avg, double P50, double P95, double P99, double Max, double Rps);
-
-    private Summary ComputeStats()
+    private void LoadPreset()
     {
-        if (results.Count == 0) return new(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        var sorted = results.Select(r => r.ElapsedMs).Order().ToArray();
-        double P(double p) => sorted[Math.Min(sorted.Length - 1, (int)Math.Ceiling(p * sorted.Length) - 1)];
-        var seconds = Math.Max((endTicks - startTicks) / 1000.0, 0.001);
-        return new(results.Count, results.Count(r => !r.Success), sorted[0], sorted.Average(),
-            P(0.5), P(0.95), P(0.99), sorted[^1], results.Count / seconds);
+        if (presets.FirstOrDefault(p => p.Name == selectedPreset) is not { } preset) return;
+        var loaded = preset.Plan.Clone();
+        var missing = new List<string>();
+        foreach (var entry in loaded.Scenarios.ToList())
+        {
+            if (Catalog.Find(entry.ScenarioId) is { } scenario) entry.Normalize(scenario);
+            else { missing.Add(entry.ScenarioId); loaded.Scenarios.Remove(entry); }
+        }
+        if (loaded.Scenarios.Count > LoadPlan.MaxEntries) loaded.Scenarios.RemoveRange(LoadPlan.MaxEntries, loaded.Scenarios.Count - LoadPlan.MaxEntries);
+
+        plan = loaded;
+        presetName = preset.Name;
+        errors = [];
+        presetMessage = missing.Count == 0
+            ? $"Loaded preset “{preset.Name}”."
+            : $"Loaded “{preset.Name}”, skipped scenarios that no longer exist in code: {string.Join(", ", missing)}.";
+    }
+
+    private async Task DeletePreset()
+    {
+        if (selectedPreset == "") return;
+        await Presets.DeleteAsync(selectedPreset);
+        presetMessage = $"Deleted preset “{selectedPreset}”.";
+        selectedPreset = "";
+        presets = await Presets.ListAsync();
     }
 
     public void Dispose() => cts?.Cancel();

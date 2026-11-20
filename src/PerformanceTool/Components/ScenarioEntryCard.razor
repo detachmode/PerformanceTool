@@ -1,0 +1,60 @@
+@* Editor for one entry of the scenario mix: label, rate and the scenario's own parameters. *@
+<div class="entry" style="--series:@Color">
+    <div class="entry-head">
+        <span class="swatch"></span>
+        <input class="entry-label" @bind="Config.Label" disabled="@Disabled" aria-label="Label" />
+        @if (Scenario is null || !Config.Label.StartsWith(Scenario.Name, StringComparison.Ordinal))
+        {
+            <span class="entry-kind" title="@Scenario?.Description">@(Scenario?.Name ?? $"Unknown: {Config.ScenarioId}")</span>
+        }
+        <button class="icon-btn" @onclick="OnRemove" disabled="@Disabled" title="Remove scenario">✕</button>
+    </div>
+
+    @if (Scenario is not null)
+    {
+        <div class="entry-body">
+            <div class="field rate">
+                <label>Runs / minute</label>
+                <input type="number" min="0.1" step="any" @bind="Config.RatePerMinute" disabled="@Disabled" />
+            </div>
+            @foreach (var p in Scenario.Parameters)
+            {
+                var key = p.Key;
+                <div class="field @(p.Type is ParameterType.Multiline or ParameterType.Url ? "wide" : "")">
+                    <label title="@p.Help">@p.Label@(p.Required ? "" : " (optional)")</label>
+                    @switch (p.Type)
+                    {
+                        case ParameterType.Multiline:
+                            <textarea rows="3" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" placeholder="@p.Help"></textarea>
+                            break;
+                        case ParameterType.Choice:
+                            <select value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled">
+                                @foreach (var o in p.Options ?? [])
+                                {
+                                    <option value="@o">@o</option>
+                                }
+                            </select>
+                            break;
+                        case ParameterType.Integer:
+                            <input type="number" step="1" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" />
+                            break;
+                        default:
+                            <input type="@(p.Type == ParameterType.Url ? "url" : "text")" value="@Get(key)" @onchange="e => Set(key, e)" disabled="@Disabled" placeholder="@p.Help" />
+                            break;
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ScenarioRunConfig Config { get; set; } = default!;
+    [Parameter] public IScenario? Scenario { get; set; }
+    [Parameter] public string Color { get; set; } = "#888";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private string Get(string key) => Config.Parameters.GetValueOrDefault(key) ?? "";
+    private void Set(string key, ChangeEventArgs e) => Config.Parameters[key] = e.Value?.ToString() ?? "";
+}

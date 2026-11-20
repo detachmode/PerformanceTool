@@ -1,0 +1,77 @@
+@* One bar per scenario execution, coloured by scenario entry. Pure HTML/CSS, see docs/brain/0002. *@
+@using System.Globalization
+
+<section class="card chart-card">
+    <div class="chart-title">
+        <h2>Response time per execution</h2>
+        <div class="legend">
+            @for (var i = 0; i < Labels.Count; i++)
+            {
+                <span><i style="background:@SeriesPalette.For(i)"></i>@Labels[i]</span>
+            }
+            <span><i class="err"></i>failed</span>
+        </div>
+    </div>
+    <div class="chart">
+        <div class="y-axis">
+            <span>@Fmt(scale)</span><span>@Fmt(scale / 2)</span><span>0</span>
+        </div>
+        <div class="plot">
+            <div class="gridline" style="bottom:100%"></div>
+            <div class="gridline" style="bottom:50%"></div>
+            @if (visible.Count > 0)
+            {
+                <div class="avg-line" style="bottom:@Pct(Average)"><span>avg @Fmt(Average)</span></div>
+            }
+            <div class="bars">
+                @foreach (var r in visible)
+                {
+                    <div class="bar @(r.Success ? "" : "failed")"
+                         style="height:@Pct(r.ElapsedMs);--c:@SeriesPalette.For(r.Entry)"
+                         title="#@(r.Sequence + 1) · @Label(r.Entry) · @Fmt(r.ElapsedMs) · @(r.Error ?? $"HTTP {r.StatusCode}")"></div>
+                }
+            </div>
+            @if (Results.Count == 0)
+            {
+                <div class="empty">Pick scenarios and start a run — bars appear live, one per execution.</div>
+            }
+        </div>
+    </div>
+    @if (Results.Count > MaxBars)
+    {
+        <div class="chart-note">Showing the latest @MaxBars of @Results.Count executions. Statistics include all of them.</div>
+    }
+</section>
+
+@code {
+    public const int MaxBars = 600;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter] public double Average { get; set; }
+
+    private List<ExecutionResult> visible = [];
+    private double scale = 100;
+
+    protected override void OnParametersSet()
+    {
+        visible = Results.Count > MaxBars ? Results.Skip(Results.Count - MaxBars).ToList() : Results.ToList();
+        scale = NiceCeiling(visible.Count == 0 ? 0 : visible.Max(r => r.ElapsedMs) * 1.05);
+    }
+
+    private string Label(int entry) => entry < Labels.Count ? Labels[entry] : $"#{entry + 1}";
+
+    /// <summary>Rounds up to a readable step (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × 10^n) so bars use most of the height.</summary>
+    private static double NiceCeiling(double value)
+    {
+        if (value <= 10) return 10;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
+        foreach (var step in new[] { 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10 })
+            if (step * magnitude >= value) return step * magnitude;
+        return 10 * magnitude;
+    }
+
+    private string Pct(double ms) => (Math.Clamp(ms / scale, 0, 1) * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+
+    public static string Fmt(double ms) => ms >= 1000 ? $"{ms / 1000:0.00} s" : $"{ms:0.#} ms";
+}
