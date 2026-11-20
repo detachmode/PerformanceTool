@@ -60,7 +60,12 @@ details behind it (brain 0029), e.g. an errors counter opens the failed actors.
 ## Screenshots in the repo and in PRs
 - Never overwrite or rename existing files in `docs/screenshots/`; earlier PR descriptions link to them.
 - Put each set of screenshots in a **new, uniquely named folder**, e.g. `docs/screenshots/2026-11-20-dock-magnify/`.
-- In PR descriptions, link images with a **commit-pinned raw URL**:
+- Each screenshot folder has a `README.md` gallery that embeds its images (relative paths). GitHub renders it with the
+  images inline.
+- **The GitHub tool used by agents defuses image embeds in PR descriptions** (`![..](..)` and `<img>` get broken).
+  So PR descriptions **link to the folder's README gallery** with a normal markdown link, commit-pinned:
+  `https://github.com/<owner>/<repo>/blob/<commit-sha>/docs/screenshots/<folder>/README.md`.
+- If a raw image URL is needed elsewhere, use a **commit-pinned raw URL**:
   `https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/docs/screenshots/...png`, not a branch name.
   Don't use `github.com/.../blob/...?raw=true`: it redirects, and many viewers (apps, notifications) then show only the
   URL instead of the image.
