@@ -8,8 +8,8 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: UI draft 1 (overview, editor, popup logs), draft 2 (0006 interactions on the overview).
-1. **Running:** draft 3: rename "execution" → **instance** in all draft UI (`Terms.cs`); show an instance's **chained calls** in the popup (fake data); then 0006 on the editor page.
+- Done: UI draft 1 (overview, editor, popup logs), draft 2 (0006 interactions on the overview), draft 3 (instance/call language, calls waterfall in the popup, 0006 on the editor, live running-instances headline on cards).
+1. Draft iteration from the user's feedback on draft 3.
 2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
 
 ## Done

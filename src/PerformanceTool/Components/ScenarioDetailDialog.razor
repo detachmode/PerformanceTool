@@ -1,5 +1,5 @@
 @* Details of one scenario entry: parameters, full-size chart, latency histogram, status codes, grouped errors and
-   recent executions. Everything is clickable and acts as a filter that the chart and the list share (docs/brain/0006, 0008).
+   recent instances. Everything is clickable and acts as a filter that the chart and the list share (docs/brain/0006, 0008).
    Esc or a click outside closes it. *@
 @using System.Globalization
 @using PerformanceTool.Services.Drafts
@@ -25,10 +25,10 @@
 
         <div class="dlg-body">
             <section class="dlg-stats">
-                <Stat Label="@Terms.ExecutionsCap" Value="@stats.Count.ToString("N0")" />
+                <Stat Label="@Terms.InstancesCap" Value="@stats.Count.ToString("N0")" />
                 <Stat Label="Errors" Value="@stats.Errors.ToString("N0")" Bad="@(stats.Errors > 0)" />
                 <Stat Label="Dropped" Value="@Dropped.ToString("N0")" Bad="@(Dropped > 0)" />
-                <Stat Label="@($"{Terms.PerMinuteShort} (act. / target)")" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
+                <Stat Label="@Terms.PerMinuteShort" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
                 <Stat Label="Avg" Value="@LiveChart.Fmt(stats.Avg)" />
                 <Stat Label="p50" Value="@LiveChart.Fmt(stats.P50)" />
                 <Stat Label="p95" Value="@LiveChart.Fmt(stats.P95)" />
@@ -60,14 +60,14 @@
                 </div>
             }
 
-            <LiveChart Embedded="true" Title="@($"Response time per {Terms.Execution}")" ShowLegend="false" Results="filtered" Labels="Labels"
+            <LiveChart Embedded="true" Title="@($"Response time per {Terms.Instance}")" ShowLegend="false" Results="filtered" Labels="Labels"
                        Average="avgFiltered" OnBarClick="Select" SelectedSequence="selected?.Sequence"
-                       EmptyText="@(Results.Count == 0 ? $"No {Terms.Executions} yet." : $"No {Terms.Executions} match the filters.")" />
+                       EmptyText="@(Results.Count == 0 ? $"No {Terms.Instances} yet." : $"No {Terms.Instances} match the filters.")" />
 
             @if (selected is { } s)
             {
                 <div class="selected-exec" role="status">
-                    <b>@Terms.ExecutionCap #@(s.Sequence + 1)</b>
+                    <b>@Terms.InstanceCap #@(s.Sequence + 1)</b>
                     <span>started @s.StartedAtSeconds.ToString("0.00", CultureInfo.InvariantCulture) s into the run</span>
                     <span>@LiveChart.Fmt(s.ElapsedMs)</span>
                     <span>@(s.StatusCode is { } sc ? $"HTTP {sc}" : "no response")</span>
@@ -78,12 +78,47 @@
                 </div>
             }
 
+            @if (selected is { } ws && CallsOf(ws.Sequence) is { Count: > 0 } wcalls)
+            {
+                var span = Math.Max(1, ws.ElapsedMs);
+                <section class="panel waterfall" aria-label="Calls of instance #@(ws.Sequence + 1)">
+                    <div class="panel-head">
+                        <h3>@Terms.CallsCap <span class="muted">@wcalls.Count(c => !c.Skipped) of @wcalls.Count · click a call to see only its logs</span></h3>
+                    </div>
+                    <div class="wf-axis"><span></span><span class="wf-scale"><i>0</i><i>@LiveChart.Fmt(span / 2)</i><i>@LiveChart.Fmt(span)</i></span><span></span><span></span></div>
+                    <div class="wf-rows" role="list">
+                        @foreach (var c in wcalls)
+                        {
+                            var call = c;
+                            var prevEnd = call.Index == 0 ? 0 : wcalls[call.Index - 1].OffsetMs + wcalls[call.Index - 1].DurationMs;
+                            <button class="wf-row @(call.Failed ? "failed" : "") @(call.Skipped ? "skipped" : "") @(callFilter == call.Index ? "on" : "")" role="listitem"
+                                    title="@CallTitle(call)"
+                                    @onclick="() => PickCall(call)">
+                                <span class="wf-name"><b>@(call.Index + 1)</b> @call.Name</span>
+                                <span class="wf-track">
+                                    @if (!call.Skipped)
+                                    {
+                                        @if (call.ThinkBeforeMs > 0)
+                                        {
+                                            <i class="wf-think" style="left:@Pc(prevEnd, span);width:@Pc(call.ThinkBeforeMs, span)" title="Think time @call.ThinkBeforeMs.ToString("0") ms"></i>
+                                        }
+                                        <i class="wf-bar" style="left:@Pc(call.OffsetMs, span);width:@Pc(Math.Max(call.DurationMs, span * 0.006), span)"></i>
+                                    }
+                                </span>
+                                <span class="wf-status @(call.Failed ? "bad" : "")">@(call.Skipped ? "skipped" : call.Status?.ToString() ?? "timeout")</span>
+                                <span class="wf-dur">@(call.Skipped ? "—" : LiveChart.Fmt(call.DurationMs))</span>
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+
             @if (tab == "logs" && HasLogs)
             {
                 var rows = LogRows(out var matching);
                 <section class="panel logs" aria-label="Logs">
                     <div class="panel-head">
-                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · {Terms.Execution} #{selected.Sequence + 1}" : "")</span></h3>
+                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · {Terms.Instance} #{selected.Sequence + 1}" : "")</span></h3>
                         <div class="log-tools">
                             <div class="lvls" role="group" aria-label="Level filter">
                                 @foreach (var lvl in FakeLogEntry.Levels)
@@ -100,7 +135,8 @@
                     @if (selected is not null || logSearch.Length > 0 || window is not null)
                     {
                         <div class="filters">
-                            @if (selected is not null) { <button class="chip removable" @onclick="() => selected = null">@Terms.Execution #@(selected.Sequence + 1) ✕</button> }
+                            @if (selected is not null && callFilter is { } cf && CallsOf(selected.Sequence) is { } cl && cf < cl.Count) { <button class="chip removable" @onclick="() => callFilter = null">call @(cf + 1) · @cl[cf].Name ✕</button> }
+                            @if (selected is not null) { <button class="chip removable" @onclick="() => { selected = null; callFilter = null; }">@Terms.Instance #@(selected.Sequence + 1) ✕</button> }
                             @if (window is { } lw) { <button class="chip removable" title="Time window" @onclick="() => window = null">@DraftFormat.Time(lw.Lo) – @DraftFormat.Time(lw.Hi) ✕</button> }
                             @if (logSearch.Length > 0) { <button class="chip removable" @onclick='() => logSearch = ""'>“@Trunc(logSearch, 30)” ✕</button> }
                         </div>
@@ -115,8 +151,10 @@
                                     <span class="caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
                                     <span class="log-lvl">@Short(entry.Level)</span>
                                     <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
-                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of @Terms.Execution #@(entry.Sequence + 1)"
+                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of @Terms.Instance #@(entry.Sequence + 1)"
                                             @onclick="() => SelectSequence(entry.Sequence)" @onclick:stopPropagation>#@(entry.Sequence + 1)</button>
+                                    @if (entry.CallIndex is { } ci) { <button class="log-call @(selected?.Sequence == entry.Sequence && callFilter == ci ? "on" : "")" title="Show only the logs of call @(ci + 1) of #@(entry.Sequence + 1)"
+                                            @onclick="() => SelectCall(entry.Sequence, ci)" @onclick:stopPropagation>call @(ci + 1)</button> }
                                     <span class="log-msg">@entry.Message</span>
                                     @if (entry.Exception is not null) { <span class="log-ex-flag" title="Has exception details">exception</span> }
                                 </div>
@@ -163,8 +201,8 @@
                                 var idx = i;
                                 var (lo, hi) = Range(idx);
                                 <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")"
-                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] @Terms.Executions"
-                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] @Terms.Executions"
+                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] @Terms.Instances"
+                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] @Terms.Instances"
                                         @onclick="() => ToggleBucket(idx)">
                                     <i style="height:@HistHeight(histogram[idx])"></i>
                                 </button>
@@ -231,14 +269,14 @@
 
             <section class="panel recent">
                 <div class="panel-head">
-                    <h3>Recent @Terms.Executions</h3>
+                    <h3>Recent @Terms.Instances</h3>
                     <div class="toggles">
                         <button class="chip toggle-chip @(failedOnly ? "on" : "")" aria-pressed="@failedOnly" @onclick="() => failedOnly = !failedOnly">Failed only</button>
                     </div>
                 </div>
                 <div class="table-scroll">
                     <table class="breakdown exec-table">
-                        <thead><tr><th>#</th><th>Started</th><th>Time</th><th>Status</th><th>Bytes</th><th>Error</th>@if (HasLogs) {<th></th>}</tr></thead>
+                        <thead><tr><th>#</th><th>Started</th><th>Time</th><th>Calls</th><th>Status</th><th>Bytes</th><th>Error</th>@if (HasLogs) {<th></th>}</tr></thead>
                         <tbody>
                             @foreach (var r in recentRows)
                             {
@@ -248,22 +286,23 @@
                                     <td>@(row.Sequence + 1)</td>
                                     <td>@row.StartedAtSeconds.ToString("0.0", CultureInfo.InvariantCulture) s</td>
                                     <td>@LiveChart.Fmt(row.ElapsedMs)</td>
+                                    <td class="calls-cell">@(CallsOf(row.Sequence) is { } rc ? (rc.Any(c => c.Skipped) ? $"{rc.Count(c => !c.Skipped)} of {rc.Count}" : rc.Count.ToString()) : "—")</td>
                                     <td class="@(row.Success ? "" : "bad")">@(row.StatusCode?.ToString() ?? "—")</td>
                                     <td>@row.Bytes.ToString("N0")</td>
                                     <td class="err-cell">@row.Error</td>
-                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this @Terms.Execution" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
+                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this @Terms.Instance" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
                                 </tr>
                             }
                             @if (recentRows.Count == 0)
                             {
-                                <tr><td colspan="6" class="muted center">@(Results.Count == 0 ? $"No {Terms.Executions} yet." : $"No {Terms.Executions} match the filters.")</td></tr>
+                                <tr><td colspan="7" class="muted center">@(Results.Count == 0 ? $"No {Terms.Instances} yet." : $"No {Terms.Instances} match the filters.")</td></tr>
                             }
                         </tbody>
                     </table>
                 </div>
                 @if (filtered.Count > RecentRows)
                 {
-                    <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching @Terms.Executions.</div>
+                    <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching @Terms.Instances.</div>
                 }
             </section>
             }
@@ -289,7 +328,26 @@
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>Log statements of this scenario (brain 0012). Draft data for now; the Logs tab only shows when given.</summary>
     [Parameter] public IReadOnlyList<FakeLogEntry>? Logs { get; set; }
-    /// <summary>Open pre-filtered to the executions (and logs) that started in the second [from, from + 1) of the run (brain 0006).</summary>
+    /// <summary>Calls of each instance by instance number (draft data). Selecting an instance shows them as a waterfall.</summary>
+    [Parameter] public IReadOnlyDictionary<int, IReadOnlyList<FakeCall>>? Calls { get; set; }
+    private int? callFilter;
+    private static string CallTitle(FakeCall c) =>
+        c.Skipped ? "Skipped: an earlier call failed" : $"{c.Name}: starts +{c.OffsetMs:0.#} ms, takes {c.DurationMs:0.#} ms" + (c.Error is not null ? " · " + c.Error : "");
+    private IReadOnlyList<FakeCall>? CallsOf(int sequence) => Calls is not null && Calls.TryGetValue(sequence, out var l) ? l : null;
+    private static string Pc(double v, double span) => Math.Clamp(v * 100 / span, 0, 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+    /// <summary>Click a call: only its log lines (the instance stays selected).</summary>
+    private void PickCall(FakeCall c)
+    {
+        if (callFilter == c.Index && tab == "logs") { callFilter = null; return; }
+        callFilter = c.Index;
+        if (HasLogs) tab = "logs";
+    }
+    private void SelectCall(int sequence, int index)
+    {
+        selected = Results.FirstOrDefault(r => r.Sequence == sequence);
+        callFilter = index;
+    }
+    /// <summary>Open pre-filtered to the instances (and logs) that started in the second [from, from + 1) of the run (brain 0006).</summary>
     [Parameter] public double? InitialWindowFrom { get; set; }
 
     private bool HasLogs => Logs is not null;
@@ -312,15 +370,15 @@
     private void ToggleLog(long id) { if (!expandedLogs.Remove(id)) expandedLogs.Add(id); }
     private void LogKey(KeyboardEventArgs e, long id) { if (e.Key is "Enter" or " ") ToggleLog(id); }
 
-    /// <summary>Jump to the logs of one execution (from a bar, a table row or a log line).</summary>
-    private void ShowLogs(ExecutionResult r) { selected = r; tab = "logs"; }
-    private void SelectSequence(int sequence) => selected = Results.FirstOrDefault(r => r.Sequence == sequence);
+    /// <summary>Jump to the logs of one instance (from a bar, a table row or a log line).</summary>
+    private void ShowLogs(ExecutionResult r) { selected = r; callFilter = null; tab = "logs"; }
+    private void SelectSequence(int sequence) { selected = Results.FirstOrDefault(r => r.Sequence == sequence); callFilter = null; }
 
     private List<FakeLogEntry> LogRows(out int matching)
     {
         IEnumerable<FakeLogEntry> q = Logs ?? [];
         q = q.Where(l => logLevels.Contains(l.Level));
-        if (selected is { } s) q = q.Where(l => l.Sequence == s.Sequence);
+        if (selected is { } s) q = q.Where(l => l.Sequence == s.Sequence && (callFilter is null || l.CallIndex == callFilter));
         if (window is { } win)
         {
             var seqs = Results.Where(r => r.StartedAtSeconds >= win.Lo && r.StartedAtSeconds < win.Hi).Select(r => r.Sequence).ToHashSet();
@@ -419,7 +477,7 @@
     private string Share(int n) => (n * 100.0 / Math.Max(1, Results.Count)).ToString("0.#", CultureInfo.InvariantCulture) + "%";
 
     private void ClearFilters() { _window = null; _failedOnly = false; _status = null; _error = null; _bucket = null; Recompute(); }
-    private void Select(ExecutionResult r) => selected = selected?.Sequence == r.Sequence ? null : r;
+    private void Select(ExecutionResult r) { selected = selected?.Sequence == r.Sequence ? null : r; callFilter = null; }
     private Task Close() => OnClose.InvokeAsync();
     private static string Trunc(string s, int n) => s.Length <= n ? s : s[..n] + "…";
 

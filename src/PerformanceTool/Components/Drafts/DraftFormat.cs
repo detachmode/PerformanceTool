@@ -12,5 +12,5 @@ public static class DraftFormat
     }
 
     public static string Num(double value) => value.ToString("N0", CultureInfo.InvariantCulture);
-    public static string Rate(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+    public static string Rate(double value) => value.ToString(value >= 10 ? "0" : "0.#", CultureInfo.InvariantCulture);
 }

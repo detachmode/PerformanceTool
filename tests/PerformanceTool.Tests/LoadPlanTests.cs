@@ -44,7 +44,7 @@ public class LoadPlanTests
         plan.Scenarios[0].RatePerMinute = 0;
         var errors = plan.Validate(Catalog);
         Assert.Contains(errors, e => e.StartsWith("HTTP GET:") && e.Contains("http(s) URL"));
-        Assert.Contains(errors, e => e.Contains("runs per minute"));
+        Assert.Contains(errors, e => e.Contains("instances per minute"));
     }
 
     [Fact]
