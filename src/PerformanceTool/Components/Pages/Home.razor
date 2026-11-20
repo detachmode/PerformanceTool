@@ -48,7 +48,7 @@
     <section class="card">
         <div class="section-head">
             <h2>Scenario mix</h2>
-            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") runs/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") runs</span>
+            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") exec/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") executions</span>
         </div>
         <div class="entries">
             @for (var i = 0; i < plan.Scenarios.Count; i++)
@@ -103,7 +103,7 @@
         <Stat Label="Executions" Value="@all.Count.ToString("N0")" />
         <Stat Label="Errors" Value="@all.Errors.ToString("N0")" Bad="@(all.Errors > 0)" />
         <Stat Label="Dropped" Value="@dropped.Sum().ToString("N0")" Bad="@(dropped.Sum() > 0)" />
-        <Stat Label="Runs/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
+        <Stat Label="Executions/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
         <Stat Label="Avg" Value="@LiveChart.Fmt(all.Avg)" />
         <Stat Label="p50" Value="@LiveChart.Fmt(all.P50)" />
         <Stat Label="p95" Value="@LiveChart.Fmt(all.P95)" />
@@ -162,7 +162,7 @@
         <section class="card table-card">
             <table class="breakdown">
                 <thead>
-                    <tr><th>Scenario</th><th>Target/min</th><th>Actual/min</th><th>Runs</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
+                    <tr><th>Scenario</th><th>Target exec/min</th><th>Actual exec/min</th><th>Executions</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
                 </thead>
                 <tbody>
                     @for (var i = 0; i < activePlan.Scenarios.Count; i++)

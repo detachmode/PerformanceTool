@@ -1,0 +1,41 @@
+@* DRAFT layout: Aspire-style top nav shared by the /drafts pages (app name left, nav with underline on the active item, run status right). *@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject FakeRunSimulator Sim
+
+@{ var s = Sim.Current; }
+<div class="dr-shell">
+    <header class="dr-top">
+        <a class="dr-brand" href="drafts/overview">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20 12 3l9 17h-5l-4-8-4 8z" fill="#7b68ee"/><path d="M9 20l3-6 3 6z" fill="#b7b0d9"/></svg>
+            <span>Performance<b>Tool</b></span>
+        </a>
+        <nav class="dr-nav" aria-label="Main">
+            <NavLink class="dr-nav-item" href="drafts/overview" Match="NavLinkMatch.Prefix">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5h4.5v4.5H2.5zM9 2.5h4.5v4.5H9zM2.5 9H7v4.5H2.5zM9 9h4.5v4.5H9z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+                Overview
+            </NavLink>
+            <NavLink class="dr-nav-item" href="drafts/editor" Match="NavLinkMatch.Prefix">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+                Editor
+            </NavLink>
+        </nav>
+        <div class="dr-top-status" title="@Sim.PresetName">
+            <span class="dr-state @(s.Running ? "live" : "done")"><i class="status-dot"></i><span class="dr-state-text">@(s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle")</span></span>
+            <span class="dr-time">@DraftFormat.Time(s.Elapsed) / @DraftFormat.Time(s.Plan.DurationSeconds)</span>
+        </div>
+    </header>
+    <main class="dr-main">@Body</main>
+</div>
+
+@code {
+    protected override void OnInitialized() => Sim.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose() => Sim.Changed -= OnChanged;
+}

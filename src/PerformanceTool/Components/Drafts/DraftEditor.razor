@@ -1,0 +1,165 @@
+@* DRAFT editor page (brain 0011): compose the scenario mix. Left: the scenarios in the mix; right: the selected one with the
+   generated parameter editor (brain 0007). Plan settings and presets sit in the toolbar. Edits live in memory only. *@
+@page "/drafts/editor"
+@layout DraftsLayout
+@implements IDisposable
+@inject FakeRunSimulator Sim
+@inject ScenarioCatalog Catalog
+
+<PageTitle>Editor · PerformanceTool (draft)</PageTitle>
+
+@{
+    var plan = Sim.Plan;
+    var locked = Sim.IsRunning;
+    var errors = plan.Validate(Catalog);
+    var total = plan.Scenarios.Sum(x => x.RatePerMinute);
+    if (selected >= plan.Scenarios.Count) selected = plan.Scenarios.Count - 1;
+    var cfg = selected >= 0 ? plan.Scenarios[selected] : null;
+    var scenario = cfg is null ? null : Catalog.Find(cfg.ScenarioId);
+}
+
+<div class="dr-page">
+    <section class="dr-toolbar" aria-label="Plan and presets">
+        <div class="dr-tb-group">
+            <label for="dr-preset">Preset</label>
+            <select id="dr-preset" @bind="selectedPreset" disabled="@locked">
+                <option value="">— choose —</option>
+                @foreach (var p in Sim.Presets) { <option value="@p.Name">@p.Name</option> }
+            </select>
+            <button class="btn ghost" @onclick="Load" disabled="@(locked || selectedPreset == "")">Load</button>
+            <input @bind="presetName" placeholder="Save as…" aria-label="Preset name" disabled="@locked" />
+            <button class="btn ghost" @onclick="Save" disabled="@(locked || presetName.Trim() == "")">Save</button>
+            @if (message is not null) { <span class="dr-msg">@message</span> }
+        </div>
+        <div class="dr-tb-group right">
+            <div class="dr-num"><label for="dr-dur">Duration (s)</label><input id="dr-dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@locked" /></div>
+            <div class="dr-num"><label for="dr-conc">Max in-flight</label><input id="dr-conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@locked" /></div>
+            <div class="dr-num"><label for="dr-to">Timeout (s)</label><input id="dr-to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@locked" /></div>
+        </div>
+    </section>
+
+    @if (locked)
+    {
+        <div class="dr-note">A run is in progress. Stop it on the <a href="drafts/overview">Overview</a> to edit the mix.</div>
+    }
+    @if (errors.Count > 0)
+    {
+        <div class="error"><ul>@foreach (var e in errors) { <li>@e</li> }</ul></div>
+    }
+
+    <div class="dr-split">
+        <aside class="dr-list" aria-label="Scenarios in the mix">
+            <div class="dr-list-head">
+                <h2>Scenarios</h2>
+                <span class="count">@plan.Scenarios.Count / @LoadPlan.MaxEntries</span>
+                <span class="spacer"></span>
+                <button class="btn ghost small" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-expanded="@addOpen">+ Add scenario</button>
+            </div>
+            @if (addOpen)
+            {
+                <ul class="dr-add-menu" aria-label="Scenario types">
+                    @foreach (var sc in Catalog.All)
+                    {
+                        var chosen = sc;
+                        <li><button @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
+                    }
+                </ul>
+            }
+            <ul class="dr-rows">
+                @for (var i = 0; i < plan.Scenarios.Count; i++)
+                {
+                    var idx = i;
+                    var c = plan.Scenarios[idx];
+                    <li>
+                        <button class="dr-row @(idx == selected ? "on" : "")" style="--series:@SeriesPalette.For(idx)" @onclick="() => selected = idx" aria-current="@(idx == selected)">
+                            <i class="dot"></i>
+                            <span class="name">@(string.IsNullOrWhiteSpace(c.Label) ? c.ScenarioId : c.Label)</span>
+                            <span class="rate">@DraftFormat.Rate(c.RatePerMinute) exec/min</span>
+                            <span class="type">@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)</span>
+                        </button>
+                    </li>
+                }
+                @if (plan.Scenarios.Count == 0) { <li class="muted dr-empty">No scenarios yet. Add one to start.</li> }
+            </ul>
+            <div class="dr-list-foot">@DraftFormat.Rate(total) exec/min in total · ≈ @DraftFormat.Num(total * plan.DurationSeconds / 60) executions per run</div>
+        </aside>
+
+        <section class="dr-detail" aria-label="Selected scenario">
+            @if (cfg is null)
+            {
+                <div class="muted dr-empty">Select a scenario on the left to edit it.</div>
+            }
+            else
+            {
+                <div class="dr-detail-head" style="--series:@SeriesPalette.For(selected)">
+                    <span class="swatch"></span>
+                    <input class="entry-label" @bind="cfg.Label" disabled="@locked" aria-label="Label" />
+                    <span class="chip" title="@scenario?.Description">@(scenario?.Name ?? cfg.ScenarioId)</span>
+                    <span class="spacer"></span>
+                    <button class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove</button>
+                </div>
+                @if (scenario is not null)
+                {
+                    <p class="dr-detail-desc">@scenario.Description</p>
+                    <div class="entry-body dr-form" style="--series:@SeriesPalette.For(selected)" @key="cfg">
+                        <div class="field rate">
+                            <label for="dr-rate">Executions / minute</label>
+                            <input id="dr-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" />
+                        </div>
+                        <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"dr{selected}")" />
+                    </div>
+                }
+                else
+                {
+                    <div class="muted dr-empty">Scenario no longer exists in code.</div>
+                }
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private int selected;
+    private bool addOpen;
+    private string selectedPreset = "";
+    private string presetName = "";
+    private string? message;
+
+    protected override void OnInitialized() => Sim.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void Add(IScenario scenario)
+    {
+        Sim.AddEntry(scenario);
+        selected = Sim.Plan.Scenarios.Count - 1;
+        addOpen = false;
+    }
+
+    private void Remove()
+    {
+        Sim.RemoveEntry(selected);
+        selected = Math.Min(selected, Sim.Plan.Scenarios.Count - 1);
+    }
+
+    private void Load()
+    {
+        Sim.LoadPreset(selectedPreset);
+        selected = 0;
+        presetName = Sim.PresetName;
+        message = $"Loaded “{Sim.PresetName}”.";
+    }
+
+    private void Save()
+    {
+        Sim.SavePreset(presetName);
+        selectedPreset = Sim.PresetName;
+        message = $"Saved “{Sim.PresetName}” (in memory).";
+    }
+
+    public void Dispose() => Sim.Changed -= OnChanged;
+}
