@@ -2,6 +2,7 @@
    recent executions. Everything is clickable and acts as a filter that the chart and the list share (docs/brain/0006, 0008).
    Esc or a click outside closes it. *@
 @using System.Globalization
+@using PerformanceTool.Services.Drafts
 
 <div class="overlay" tabindex="-1" @ref="root" @onclick="Close" @onkeydown="OnKey" role="presentation">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" style="--series:@Color" @onclick:stopPropagation>
@@ -11,7 +12,7 @@
                 <h2 id="dlg-title">@Label</h2>
                 <div class="chips">
                     <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
-                    <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture)/min target</span>
+                    <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) exec/min target</span>
                     @if (Running)
                     {
                         <span class="chip live"><i class="pulse-dot"></i>@InFlight in flight</span>
@@ -23,16 +24,27 @@
 
         <div class="dlg-body">
             <section class="dlg-stats">
-                <Stat Label="Runs" Value="@stats.Count.ToString("N0")" />
+                <Stat Label="Executions" Value="@stats.Count.ToString("N0")" />
                 <Stat Label="Errors" Value="@stats.Errors.ToString("N0")" Bad="@(stats.Errors > 0)" />
                 <Stat Label="Dropped" Value="@Dropped.ToString("N0")" Bad="@(Dropped > 0)" />
-                <Stat Label="Runs/min (actual / target)" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
+                <Stat Label="Exec/min (act. / target)" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
                 <Stat Label="Avg" Value="@LiveChart.Fmt(stats.Avg)" />
                 <Stat Label="p50" Value="@LiveChart.Fmt(stats.P50)" />
                 <Stat Label="p95" Value="@LiveChart.Fmt(stats.P95)" />
                 <Stat Label="p99" Value="@LiveChart.Fmt(stats.P99)" />
                 <Stat Label="Max" Value="@LiveChart.Fmt(stats.Max)" />
             </section>
+
+            @if (HasLogs)
+            {
+                <div class="tabs" role="tablist">
+                    <button role="tab" aria-selected="@(tab == "details")" class="tab @(tab == "details" ? "on" : "")" @onclick='() => tab = "details"'>Details</button>
+                    <button role="tab" aria-selected="@(tab == "logs")" class="tab @(tab == "logs" ? "on" : "")" @onclick='() => tab = "logs"'>
+                        Logs <span class="tab-count">@Logs!.Count.ToString("N0")</span>
+                        @if (logErrors > 0) { <span class="tab-count bad">@logErrors.ToString("N0") @(logErrors == 1 ? "error" : "errors")</span> }
+                    </button>
+                </div>
+            }
 
             @if (HasFilter)
             {
@@ -59,10 +71,80 @@
                     <span>@(s.StatusCode is { } sc ? $"HTTP {sc}" : "no response")</span>
                     <span>@s.Bytes.ToString("N0") bytes</span>
                     @if (s.Error is not null) { <span class="bad">@s.Error</span> }
+                    @if (HasLogs && tab != "logs") { <button class="chip" @onclick="() => ShowLogs(s)">View logs</button> }
                     <button class="icon-btn" @onclick="() => selected = null" aria-label="Clear selection">✕</button>
                 </div>
             }
 
+            @if (tab == "logs" && HasLogs)
+            {
+                var rows = LogRows(out var matching);
+                <section class="panel logs" aria-label="Logs">
+                    <div class="panel-head">
+                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · execution #{selected.Sequence + 1}" : "")</span></h3>
+                        <div class="log-tools">
+                            <div class="lvls" role="group" aria-label="Level filter">
+                                @foreach (var lvl in FakeLogEntry.Levels)
+                                {
+                                    var l = lvl;
+                                    <button class="lvl lvl-@l.ToLowerInvariant() @(logLevels.Contains(l) ? "on" : "")" aria-pressed="@logLevels.Contains(l)"
+                                            title="@l: click to toggle, Alt+click to show only this level"
+                                            @onclick="e => ToggleLevel(l, e.AltKey)">@Short(l) <span>@LevelCount(l)</span></button>
+                                }
+                            </div>
+                            <input type="search" class="log-search" placeholder="Search message, exception, scope…" aria-label="Search logs" @bind="logSearch" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    @if (selected is not null || logSearch.Length > 0)
+                    {
+                        <div class="filters">
+                            @if (selected is not null) { <button class="chip removable" @onclick="() => selected = null">execution #@(selected.Sequence + 1) ✕</button> }
+                            @if (logSearch.Length > 0) { <button class="chip removable" @onclick='() => logSearch = ""'>“@Trunc(logSearch, 30)” ✕</button> }
+                        </div>
+                    }
+                    <div class="log-list" role="list">
+                        @foreach (var row in rows)
+                        {
+                            var entry = row;
+                            var open = expandedLogs.Contains(entry.Id);
+                            <div class="log-row lvl-@entry.Level.ToLowerInvariant() @(open ? "open" : "")" role="listitem">
+                                <div class="log-main" tabindex="0" role="button" aria-expanded="@open" @onclick="() => ToggleLog(entry.Id)" @onkeydown="e => LogKey(e, entry.Id)">
+                                    <span class="caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
+                                    <span class="log-lvl">@Short(entry.Level)</span>
+                                    <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
+                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of execution #@(entry.Sequence + 1)"
+                                            @onclick="() => SelectSequence(entry.Sequence)" @onclick:stopPropagation>#@(entry.Sequence + 1)</button>
+                                    <span class="log-msg">@entry.Message</span>
+                                    @if (entry.Exception is not null) { <span class="log-ex-flag" title="Has exception details">exception</span> }
+                                </div>
+                                @if (open)
+                                {
+                                    <div class="log-detail">
+                                        <div class="scope">
+                                            <span class="muted">Scope</span>
+                                            @foreach (var kv in entry.Scope)
+                                            {
+                                                var value = kv.Value;
+                                                <button class="chip" title="Search for this value" @onclick="() => logSearch = value">@kv.Key=@value</button>
+                                            }
+                                            <span class="chip">Timestamp=@entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
+                                        </div>
+                                        @if (entry.Exception is not null) { <pre class="exception">@entry.Exception</pre> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (rows.Count == 0)
+                        {
+                            <div class="muted center log-empty">@(Logs!.Count == 0 ? "No log statements yet." : "No log statements match the filters.")</div>
+                        }
+                    </div>
+                    @if (matching > rows.Count) { <div class="chart-note">Showing the latest @rows.Count of @matching.ToString("N0") matching statements.</div> }
+                </section>
+            }
+
+            @if (tab != "logs" || !HasLogs)
+            {
             <div class="dlg-grid">
                 <section class="panel">
                     <h3>Latency distribution</h3>
@@ -78,8 +160,8 @@
                                 var idx = i;
                                 var (lo, hi) = Range(idx);
                                 <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")"
-                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] runs"
-                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] runs"
+                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] executions"
+                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] executions"
                                         @onclick="() => ToggleBucket(idx)">
                                     <i style="height:@HistHeight(histogram[idx])"></i>
                                 </button>
@@ -153,7 +235,7 @@
                 </div>
                 <div class="table-scroll">
                     <table class="breakdown exec-table">
-                        <thead><tr><th>#</th><th>Started</th><th>Time</th><th>Status</th><th>Bytes</th><th>Error</th></tr></thead>
+                        <thead><tr><th>#</th><th>Started</th><th>Time</th><th>Status</th><th>Bytes</th><th>Error</th>@if (HasLogs) {<th></th>}</tr></thead>
                         <tbody>
                             @foreach (var r in recentRows)
                             {
@@ -166,6 +248,7 @@
                                     <td class="@(row.Success ? "" : "bad")">@(row.StatusCode?.ToString() ?? "—")</td>
                                     <td>@row.Bytes.ToString("N0")</td>
                                     <td class="err-cell">@row.Error</td>
+                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this execution" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
                                 </tr>
                             }
                             @if (recentRows.Count == 0)
@@ -180,6 +263,7 @@
                     <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching executions.</div>
                 }
             </section>
+            }
         </div>
     </div>
 </div>
@@ -200,6 +284,48 @@
     [Parameter] public double ElapsedSeconds { get; set; }
     [Parameter] public bool Running { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Log statements of this scenario (brain 0012). Draft data for now; the Logs tab only shows when given.</summary>
+    [Parameter] public IReadOnlyList<FakeLogEntry>? Logs { get; set; }
+
+    private bool HasLogs => Logs is not null;
+    private string tab = "details";
+    private string logSearch = "";
+    private readonly HashSet<string> logLevels = [.. FakeLogEntry.Levels];
+    private readonly HashSet<long> expandedLogs = [];
+    private int logErrors;
+    private const int MaxLogRows = 300;
+
+    private static string Short(string level) => level switch { "Trace" => "TRC", "Debug" => "DBG", "Information" => "INF", "Warning" => "WRN", _ => "ERR" };
+    private int LevelCount(string level) => Logs?.Count(l => l.Level == level) ?? 0;
+
+    private void ToggleLevel(string level, bool only)
+    {
+        if (only) { logLevels.Clear(); logLevels.Add(level); }
+        else if (!logLevels.Remove(level)) logLevels.Add(level);
+    }
+
+    private void ToggleLog(long id) { if (!expandedLogs.Remove(id)) expandedLogs.Add(id); }
+    private void LogKey(KeyboardEventArgs e, long id) { if (e.Key is "Enter" or " ") ToggleLog(id); }
+
+    /// <summary>Jump to the logs of one execution (from a bar, a table row or a log line).</summary>
+    private void ShowLogs(ExecutionResult r) { selected = r; tab = "logs"; }
+    private void SelectSequence(int sequence) => selected = Results.FirstOrDefault(r => r.Sequence == sequence);
+
+    private List<FakeLogEntry> LogRows(out int matching)
+    {
+        IEnumerable<FakeLogEntry> q = Logs ?? [];
+        q = q.Where(l => logLevels.Contains(l.Level));
+        if (selected is { } s) q = q.Where(l => l.Sequence == s.Sequence);
+        if (logSearch.Length > 0)
+            q = q.Where(l => l.Message.Contains(logSearch, StringComparison.OrdinalIgnoreCase)
+                || (l.Exception?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false)
+                || l.Scope.Any(kv => kv.Value.Contains(logSearch, StringComparison.OrdinalIgnoreCase)));
+        var all = q.ToList();
+        matching = all.Count;
+        // Newest first, like Aspire's structured logs.
+        all.Reverse();
+        return all.Count <= MaxLogRows ? all : all.GetRange(0, MaxLogRows);
+    }
 
     private ElementReference root;
     private bool focused;
@@ -227,7 +353,11 @@
     private double Actual => Starts / Math.Max(ElapsedSeconds / 60, 1e-6);
     private bool HasFilter => failedOnly || status is not null || error is not null || bucket is not null;
 
-    protected override void OnParametersSet() => Recompute();
+    protected override void OnParametersSet()
+    {
+        logErrors = Logs?.Count(l => l.Level == "Error") ?? 0;
+        Recompute();
+    }
 
     private void Recompute()
     {

@@ -14,7 +14,7 @@
     {
         <div class="entry-body">
             <div class="field rate">
-                <label for="@($"{idPrefix}-rate")">Runs / minute</label>
+                <label for="@($"{idPrefix}-rate")">Executions / minute</label>
                 <input id="@($"{idPrefix}-rate")" type="number" min="0.1" step="any" @bind="Config.RatePerMinute" disabled="@Disabled" />
             </div>
             <ParameterEditor Spec="Scenario.Spec" Values="Config.Parameters" Disabled="Disabled" IdPrefix="@idPrefix" />

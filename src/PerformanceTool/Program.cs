@@ -11,6 +11,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<PresetStore>();
 builder.Services.AddScoped<LoadRunner>();
+builder.Services.AddScoped<PerformanceTool.Services.Drafts.FakeRunSimulator>(); // DRAFT: fake data for /drafts
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();

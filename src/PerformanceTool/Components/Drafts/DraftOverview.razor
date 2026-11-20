@@ -1,0 +1,88 @@
+@* DRAFT overview page (brain 0011): slim run bar, then a grid of scenario cards like the Aspire Metrics instrument cards.
+   Click a card for the details popup. Where Start/Stop lives is still undecided: this draft puts it in the run bar. *@
+@page "/drafts"
+@page "/drafts/overview"
+@layout DraftsLayout
+@implements IDisposable
+@inject FakeRunSimulator Sim
+@inject ScenarioCatalog Catalog
+
+<PageTitle>Overview · PerformanceTool (draft)</PageTitle>
+
+@{
+    var s = Sim.Current;
+    var all = LatencyStats.From(s.All);
+    var state = s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle";
+    var pct = Math.Clamp(s.Elapsed / Math.Max(1, s.Plan.DurationSeconds), 0, 1) * 100;
+}
+
+<div class="dr-page">
+    <section class="dr-runbar" aria-label="Run">
+        <div class="dr-preset">
+            <span class="dr-label">Preset</span>
+            <b>@Sim.PresetName</b>
+            <a class="dr-link" href="drafts/editor">Edit</a>
+        </div>
+        <div class="dr-state @(s.Running ? "live" : "done")"><i class="status-dot"></i>@state</div>
+        <div class="dr-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)pct)"><div style="width:@(pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
+        <span class="dr-time">@DraftFormat.Time(s.Elapsed) / @DraftFormat.Time(s.Plan.DurationSeconds)</span>
+        @if (s.Running)
+        {
+            <button class="btn stop" @onclick="Sim.Stop">■ Stop</button>
+        }
+        else
+        {
+            <button class="btn start" @onclick="Sim.Start">▶ Start</button>
+        }
+    </section>
+
+    <section aria-label="Scenarios">
+        <div class="group-head">
+            <h2>Scenarios</h2>
+            <span class="count">@s.Count</span>
+            <span class="dotted"></span>
+            <div class="dr-summary" aria-label="Summary">
+                <span><span class="k">Executions</span> <b>@DraftFormat.Num(all.Count)</b></span>
+                <span><span class="k">Errors</span> <b class="@(all.Errors > 0 ? "bad" : "")">@DraftFormat.Num(all.Errors)</b>@if (all.Count > 0) { <span class="k"> (@((all.Errors * 100.0 / all.Count).ToString("0.0"))%)</span> }</span>
+                <span><span class="k">p95</span> <b>@LiveChart.Fmt(all.P95)</b></span>
+                <span><span class="k">Throughput</span> <b>@DraftFormat.Rate(s.Elapsed > 0 ? s.Starts.Sum() / (s.Elapsed / 60) : 0)</b> <span class="k">exec/min</span></span>
+            </div>
+        </div>
+
+        <div class="dr-grid">
+            @for (var i = 0; i < s.Count; i++)
+            {
+                var idx = i;
+                var cfg = s.Plan.Scenarios[idx];
+                <DraftScenarioCard @key="cfg" Index="idx" Label="@s.Labels[idx]" TypeName="@(Catalog.Find(cfg.ScenarioId)?.Name ?? cfg.ScenarioId)"
+                                   Description="@s.Descriptions[idx]" TargetPerMinute="cfg.RatePerMinute" Results="s.ByEntry[idx]"
+                                   Dropped="s.Dropped[idx]" InFlight="s.InFlight[idx]" Starts="s.Starts[idx]" SinceLastStart="s.SinceLastStart[idx]"
+                                   ElapsedSeconds="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" Running="s.Running" OnOpen="Open" />
+            }
+        </div>
+    </section>
+</div>
+
+@if (detail is { } d && d < s.Count)
+{
+    <ScenarioDetailDialog Index="d" Config="s.Plan.Scenarios[d]" Scenario="Catalog.Find(s.Plan.Scenarios[d].ScenarioId)" Label="@s.Labels[d]"
+                          Labels="s.Labels" Results="s.ByEntry[d]" Logs="s.LogsByEntry[d]" Dropped="s.Dropped[d]" InFlight="s.InFlight[d]"
+                          Starts="s.Starts[d]" ElapsedSeconds="s.Elapsed" Running="s.Running" OnClose="Close" />
+}
+
+@code {
+    private int? detail;
+
+    protected override void OnInitialized() => Sim.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void Open(int index) => detail = index;
+    private void Close() => detail = null;
+
+    public void Dispose() => Sim.Changed -= OnChanged;
+}

@@ -5,11 +5,11 @@
 
 <div class="tile @(Active ? "active" : "") @(Running && Active ? (Starts % 2 == 0 ? "ping-a" : "ping-b") : "")"
      style="--series:@Color" role="button" tabindex="0"
-     aria-label="@Label: @(stats.Count == 0 ? "no executions yet" : $"p95 {valueText}, {stats.Count} runs, {stats.Errors} errors"). Open details."
+     aria-label="@Label: @(stats.Count == 0 ? "no executions yet" : $"p95 {valueText}, {stats.Count} executions, {stats.Errors} errors"). Open details."
      data-tile="@Index" @onclick="Open" @onkeydown="OnKey">
     <div class="chips">
         <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
-        <span class="chip" title="Target rate">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture)/min</span>
+        <span class="chip" title="Target rate">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) exec/min</span>
     </div>
     <div class="tile-title" title="@Label">@Label</div>
     <div class="tile-desc" title="@Scenario?.Description">@(Scenario?.Description ?? "Scenario no longer exists in code.")</div>
@@ -17,7 +17,7 @@
     <div class="tile-value">
         @if (stats.Count == 0)
         {
-            <b class="none">—</b><span class="unit">no runs yet</span>
+            <b class="none">—</b><span class="unit">no executions yet</span>
         }
         else
         {
@@ -31,7 +31,7 @@
             <span class="inflight @(InFlight > 0 ? "on" : "")"><i class="pulse-dot"></i>@InFlight in flight</span>
         }
         <span class="rate" title="Executions started per minute: actual vs target">
-            @ActualPerMinute.ToString("0.#", CultureInfo.InvariantCulture) / @Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) per min
+            @ActualPerMinute.ToString("0.#", CultureInfo.InvariantCulture) / @Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) exec/min
         </span>
         @if (stats.Errors > 0)
         {
