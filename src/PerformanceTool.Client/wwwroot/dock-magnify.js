@@ -310,11 +310,17 @@ export function attach(el, ref, options) {
     const pick = e => { const i = hit(rel(e)); pickKey(i >= 0 ? items[i].dataset.key : null); };
 
     // ---- brush (brain 0023, update 3): a mouse drag of more than 6 px is a brush, less is a click (the bar under the pointer at press time is
-    // picked on release). On touch, press and hold (~0.4 s) without moving, then drag; moving at once keeps the magnifying finger.
-    // The brush covers the bars it overlaps in the resting layout; Blazor gets the time frame (data-t0 .. data-t1 of those bars).
-    const THRESH = 6, HOLD = 380;
+    // picked on release). The brush covers the bars it overlaps in the resting layout; Blazor gets the time frame (data-t0 .. data-t1 of those bars).
+    // ---- touch (brain 0031): a tap picks the bar (no magnification); press and hold (~0.4 s, little movement) turns the magnifier on at the
+    // finger and dragging moves it, lifting ends it; two fingers pinch the time range (the touch brush). A one-finger swipe that starts before
+    // the hold fires cancels the hold and is left to the browser (scrolling): no magnification, selection or zoom. The chart only stops the
+    // page from scrolling or zooming while a hold-drag or pinch is going on.
+    const THRESH = 6, HOLD = 400, SLOP = 9, MINSPAN = 0.5;
     const brushEl = select ? el.querySelector(':scope > .dz-brush') : null;
-    let drag = null, holdTimer = 0, swallow = -1e9;
+    let drag = null, holdTimer = 0;
+    const pts = new Map();            // touch pointers on the chart: id -> {x, y}
+    let tmode = '';                    // '' | 'wait' (finger down, may become tap or hold) | 'scroll' | 'hold' | 'pinch' | 'done' (gesture over, fingers still down)
+    let tkey = null, tdown = null, pinch = null, zoomTimer = 0, zoomAt = 0;
     const spanOf = (a, b) => {
         refresh(); const lo = Math.min(a, b), hi = Math.max(a, b), idx = [];
         rest.forEach((q, i) => { if (q.left + q.width > lo && q.left < hi) idx.push(i); });
@@ -326,7 +332,6 @@ export function attach(el, ref, options) {
         drag.brushing = true; active = false; kick();
         el.dataset.brushing = '1';
         try { el.setPointerCapture(drag.id); } catch (_) { }
-        try { if (drag.touch && navigator.vibrate) navigator.vibrate(12); } catch (_) { }
     };
     const updateBrush = x => {
         x = Math.max(0, Math.min(el.clientWidth, x)); drag.x = x;
@@ -339,44 +344,104 @@ export function attach(el, ref, options) {
     };
     const finishBrush = apply => {
         const d = drag; drag = null;
-        if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
         if (!d || !d.brushing) return false;
         delete el.dataset.brushing; brushEl.classList.remove('show');
         try { el.releasePointerCapture(d.id); } catch (_) { }
         const idx = apply ? spanOf(d.x0, d.x) : [];
         if (idx.length) { const [a, b] = rangeOf(idx); window.__dock.brushes = (window.__dock.brushes || 0) + 1; ref.invokeMethodAsync('Brush', a, b, idx[idx.length - 1] >= items.length - 1); }
-        swallow = performance.now();
         return true;
     };
+
+    // pinch: spreading the fingers zooms the time range in, pinching zooms out; the time under the fingers' midpoint stays under it.
+    // Blazor gets the range live (at most every 90 ms) and once more at the end; it clamps it to the run and follows the live edge.
+    const sendZoom = force => {
+        if (!pinch || !pinch.next) return;
+        const now = performance.now();
+        if (!force && now - zoomAt < 90) { if (!zoomTimer) zoomTimer = setTimeout(() => { zoomTimer = 0; sendZoom(false); }, 90); return; }
+        if (zoomTimer) { clearTimeout(zoomTimer); zoomTimer = 0; }
+        zoomAt = now; const [a, b] = pinch.next; pinch.next = null;
+        window.__dock.zooms = (window.__dock.zooms || 0) + 1;
+        ref.invokeMethodAsync('Zoom', a, b);
+    };
+    const pinchStart = () => {
+        refresh();
+        if (items.length === 0) return false;
+        let a = Infinity, b = -Infinity;
+        for (let i = 0; i < items.length; i++) { a = Math.min(a, t0(i)); b = Math.max(b, t1(i)); }
+        const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
+        pinch = { a, b, d0: Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac0: ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth), next: null };
+        return b > a;
+    };
+    const pinchMove = () => {
+        const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
+        const d = Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac = ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth);
+        const span0 = pinch.b - pinch.a, span = Math.max(MINSPAN, span0 * pinch.d0 / d);
+        const tc = pinch.a + pinch.frac0 * span0, from = tc - frac * span;
+        pinch.next = [from, from + span];
+        sendZoom(false);
+    };
+    const endTouch = () => {      // all fingers up (or the gesture was taken away)
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+        if (pinch) { sendZoom(true); pinch = null; }
+        pts.clear(); tmode = ''; tkey = null; tdown = null; down = false; active = false; kick(); syncAim();
+    };
+    const onTouchDown = e => {
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        down = true;
+        if (pts.size === 1) {
+            tmode = 'wait'; tkey = null; tdown = { x: e.clientX, y: e.clientY };
+            const i = hit(rel(e)); tkey = i >= 0 ? items[i].dataset.key : null;
+            px = rel(e);
+            if (holdTimer) clearTimeout(holdTimer);
+            holdTimer = setTimeout(() => {
+                holdTimer = 0;
+                if (tmode !== 'wait') return;
+                tmode = 'hold'; active = true; kick(); window.__dock.holds = (window.__dock.holds || 0) + 1;
+                try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) { }
+            }, HOLD);
+        } else if (pts.size === 2) {
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+            active = false; kick();
+            tmode = pinchStart() ? 'pinch' : 'done';
+        } else tmode = 'done';
+        syncAim();
+    };
+    const onTouchMove = e => {
+        const p = pts.get(e.pointerId); if (!p) return;
+        p.x = e.clientX; p.y = e.clientY;
+        if (tmode === 'wait') {
+            if (Math.hypot(e.clientX - tdown.x, e.clientY - tdown.y) >= SLOP) { tmode = 'scroll'; if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; } }
+        } else if (tmode === 'hold') { px = rel(e); active = true; kick(); }
+        else if (tmode === 'pinch') pinchMove();
+    };
+    const onTouchUp = e => {
+        const was = pts.has(e.pointerId); pts.delete(e.pointerId);
+        if (!was) return;
+        if (tmode === 'wait' && e.type === 'pointerup') { const k = tkey; endTouch(); pickKey(k); return; }
+        if (tmode === 'pinch' && pts.size === 1) { sendZoom(true); pinch = null; tmode = 'done'; active = false; kick(); }
+        if (pts.size === 0) endTouch();
+    };
+    // Stop the page from scrolling or zooming while a hold-drag or pinch is going on (needs a non-passive listener); a plain swipe still scrolls.
+    const onTouchMoveEv = e => { if (tmode === 'hold' || tmode === 'pinch' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
+    const onContext = e => { if (tmode) e.preventDefault(); };
 
     const onMove = e => { px = rel(e); active = true; kick(); };
     const onDown = e => {
         if (!select) return;
-        const x = rel(e);
-        if (e.pointerType === 'touch') {
-            down = true; onMove(e);
-            drag = { id: e.pointerId, x0: x, x, cx: e.clientX, cy: e.clientY, touch: true, brushing: false };
-            if (holdTimer) clearTimeout(holdTimer);
-            holdTimer = setTimeout(() => { holdTimer = 0; if (drag && !drag.moved) startBrush(); }, HOLD);
-            syncAim();
-        } else if (e.button === 0) {
-            const i = hit(x);
-            drag = { id: e.pointerId, x0: x, x, cx: e.clientX, cy: e.clientY, touch: false, brushing: false, key: i >= 0 ? items[i].dataset.key : null };
+        if (e.pointerType === 'touch') { onTouchDown(e); return; }
+        if (e.button === 0) {
+            const x = rel(e), i = hit(x);
+            drag = { id: e.pointerId, x0: x, x, cx: e.clientX, cy: e.clientY, brushing: false, key: i >= 0 ? items[i].dataset.key : null };
         }
     };
     const onPointerMove = e => {
-        const touch = e.pointerType === 'touch';
-        if (drag && !touch && e.buttons === 0) drag = null;
+        if (e.pointerType === 'touch') { if (select) onTouchMove(e); return; }
+        if (drag && e.buttons === 0) drag = null;
         if (drag && select) {
-            const dist = Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy);
-            if (!drag.brushing && dist >= THRESH) {
-                if (touch) { drag.moved = true; if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; } }
-                else startBrush();
-            }
+            if (!drag.brushing && Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy) >= THRESH) startBrush();
             if (drag.brushing) { updateBrush(rel(e)); return; }
         }
-        if (touch) { if (!select) return; }
-        else if (!hover) { hover = true; syncAim(); }
+        if (!hover) { hover = true; syncAim(); }
         onMove(e);
     };
     const onEnter = e => { if (e.pointerType !== 'touch' && !hover) { hover = true; syncAim(); } };
@@ -387,16 +452,10 @@ export function attach(el, ref, options) {
     };
     const onUp = e => {
         if (!select) return;
-        const apply = e.type === 'pointerup';
-        if (e.pointerType !== 'touch') {
-            const d = drag;
-            if (d && d.brushing) { finishBrush(apply); active = false; kick(); }
-            else if (d && apply && e.button === 0) { drag = null; pickKey(d.key); }
-            return;
-        }
-        px = rel(e);
-        if (!finishBrush(apply) && apply) { pick(e); touchDone = performance.now(); }
-        down = false; active = false; kick(); syncAim();
+        if (e.pointerType === 'touch') { onTouchUp(e); return; }
+        const apply = e.type === 'pointerup', d = drag;
+        if (d && d.brushing) { finishBrush(apply); active = false; kick(); }
+        else if (d && apply && e.button === 0) { drag = null; pickKey(d.key); }
     };
     const onClick = e => {
         if (!select || e.detail === 0) return;      // keyboard activation goes straight to Blazor
@@ -405,7 +464,7 @@ export function attach(el, ref, options) {
     const onFocusIn = e => { if (e.target.matches && e.target.matches(':focus-visible')) { focused = true; syncAim(); } };
     const onFocusOut = () => { focused = false; syncAim(); };
     // Blazor resumes (badge click): forget the aiming state without telling Blazor again.
-    el.__release = () => { if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; } if (notified) { notified = false; snapshot(); } hover = down = focused = false; };
+    el.__release = () => { if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; } if (notified) { notified = false; snapshot(); } hover = down = focused = false; pts.clear(); tmode = ''; };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointerenter', onEnter);
     el.addEventListener('pointermove', onPointerMove);
@@ -413,12 +472,14 @@ export function attach(el, ref, options) {
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('click', onClick, true);
+    el.addEventListener('touchmove', onTouchMoveEv, { passive: false });
+    el.addEventListener('contextmenu', onContext);
     el.addEventListener('focusin', onFocusIn);
     el.addEventListener('focusout', onFocusOut);
     el.__dock = () => {
         el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onPointerMove);
         el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerup', onUp);
-        el.removeEventListener('pointercancel', onUp); if (holdTimer) clearTimeout(holdTimer); el.removeEventListener('click', onClick, true);
+        el.removeEventListener('pointercancel', onUp); if (holdTimer) clearTimeout(holdTimer); el.removeEventListener('click', onClick, true); el.removeEventListener('touchmove', onTouchMoveEv); el.removeEventListener('contextmenu', onContext); if (zoomTimer) clearTimeout(zoomTimer);
         el.removeEventListener('pointerenter', onEnter); el.removeEventListener('focusin', onFocusIn); el.removeEventListener('focusout', onFocusOut);
         if (aimTimer) clearTimeout(aimTimer);
         if (raf) cancelAnimationFrame(raf);
