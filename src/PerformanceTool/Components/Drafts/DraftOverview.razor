@@ -49,7 +49,7 @@
             @foreach (var sp in FakeRunSimulator.DemoSpeeds)
             {
                 var speed = sp;
-                <button class="dr-seg @(Sim.DemoSpeed == speed ? "on" : "")" aria-pressed="@(Sim.DemoSpeed == speed ? "true" : "false")" @onclick="() => Sim.DemoSpeed = speed">@speed×</button>
+                <button class="dr-seg @(Sim.DemoSpeed == speed ? "on" : "")" aria-pressed="@Aria.Bool(Sim.DemoSpeed == speed)" @onclick="() => Sim.DemoSpeed = speed">@speed×</button>
             }
         </div>
         @if (s.Running)
@@ -90,7 +90,7 @@
                 <span class="sum big" title="Actors running right now in the shown scenarios"><b>@shownRunning</b> <span class="k">running</span></span>
                 <button class="sum big @(filter.Sort == SortKey.Rate ? "on" : "")" title="Sort scenarios by rate" @onclick="() => filter.SortBy(SortKey.Rate)"><b>@DraftFormat.Rate(s.Elapsed > 0 ? shownStarts / (s.Elapsed / 60) : 0)</b> <span class="k">/ @DraftFormat.Rate(shownTarget) @Terms.PerMinuteShort</span></button>
                 <button class="sum @(filter.Sort == SortKey.Instances ? "on" : "")" title="Sort by @(Terms.Instances)" @onclick="() => filter.SortBy(SortKey.Instances)"><span class="k">@Terms.InstancesCap</span> <b>@DraftFormat.Num(all.Count)</b></button>
-                <button class="sum @(filter.ErrorsOnly ? "on" : "")" aria-pressed="@filter.ErrorsOnly" title="@(filter.ErrorsOnly ? "Show all scenarios again" : "Show only scenarios with errors")" @onclick="() => filter.ErrorsOnly = !filter.ErrorsOnly">
+                <button class="sum @(filter.ErrorsOnly ? "on" : "")" aria-pressed="@Aria.Bool(filter.ErrorsOnly)" title="@(filter.ErrorsOnly ? "Show all scenarios again" : "Show only scenarios with errors")" @onclick="() => filter.ErrorsOnly = !filter.ErrorsOnly">
                     <span class="k">Errors</span> <b class="@(all.Errors > 0 ? "bad" : "")">@DraftFormat.Num(all.Errors)</b>@if (all.Count > 0) { <span class="k"> (@((all.Errors * 100.0 / all.Count).ToString("0.0"))%)</span> }
                 </button>
                 <button class="sum @(filter.Sort == SortKey.P95 ? "on" : "")" title="Sort scenarios by p95" @onclick="() => filter.SortBy(SortKey.P95)"><span class="k">p95</span> <b>@LiveChart.Fmt(all.P95)</b></button>
@@ -107,7 +107,7 @@
             {
                 var type = g.Key;
                 <div class="dr-group-head">
-                    <button class="chip chip-btn @(filter.Types.Contains(type) ? "on" : "")" title="Click to filter to this type" @onclick="() => filter.ToggleType(type)">@type</button>
+                    <button class="chip chip-btn @(filter.Types.Contains(type) ? "on" : "")" aria-pressed="@Aria.Bool(filter.Types.Contains(type))" title="Click to filter to this type" @onclick="() => filter.ToggleType(type)">@type</button>
                     <span class="count">@g.Count()</span><span class="dotted"></span>
                 </div>
                 <div class="dr-grid">

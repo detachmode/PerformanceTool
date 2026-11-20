@@ -1,6 +1,6 @@
 @* DRAFT: small Aspire-style toolbar dropdown (sort / group). A transparent backdrop closes it on an outside click, Esc closes it too. *@
 <div class="dr-dd" @onkeydown="OnKey">
-    <button class="dr-dd-btn @(open ? "open" : "")" aria-haspopup="menu" aria-expanded="@open" @onclick="() => open = !open">
+    <button class="dr-dd-btn @(open ? "open" : "")" aria-haspopup="menu" aria-expanded="@Aria.Bool(open)" @onclick="() => open = !open">
         <span class="k">@Label</span><b>@Value</b><span class="caret" aria-hidden="true">▾</span>
     </button>
     @if (open)
@@ -11,7 +11,7 @@
             {
                 var k = key;
                 <li role="none">
-                    <button role="menuitemradio" aria-checked="@(k == Selected)" class="@(k == Selected ? "on" : "")" @onclick="() => Pick(k)">
+                    <button role="menuitemradio" aria-checked="@Aria.Bool(k == Selected)" class="@(k == Selected ? "on" : "")" @onclick="() => Pick(k)">
                         <span class="tick">@(k == Selected ? "✓" : "")</span>@text
                         @if (k == Selected && Suffix is not null) { <span class="suffix">@Suffix</span> }
                     </button>

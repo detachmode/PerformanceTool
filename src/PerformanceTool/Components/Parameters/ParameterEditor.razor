@@ -44,7 +44,7 @@
             case FieldKind.Toggle:
                 var on = Bool(field);
                 <div class="toggle-row">
-                    <button id="@id" type="button" role="switch" aria-checked="@(on ? "true" : "false")" class="toggle @(on ? "on" : "")"
+                    <button id="@id" type="button" role="switch" aria-checked="@Aria.Bool(on)" class="toggle @(on ? "on" : "")"
                             disabled="@Disabled" @onclick="() => Values[field.JsonName] = !on"><span class="knob"></span></button>
                     <label for="@id">@field.Label</label>
                 </div>

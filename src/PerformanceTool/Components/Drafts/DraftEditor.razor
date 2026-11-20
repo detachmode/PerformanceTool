@@ -44,9 +44,9 @@
             @if (message is not null) { <span class="dr-msg">@message</span> }
         </div>
         <div class="dr-tb-group right">
-            <div class="dr-num @(planErr.ContainsKey("dr-dur") ? "is-invalid" : "")"><label for="dr-dur">Duration (s)</label><input id="dr-dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@locked" aria-invalid="@planErr.ContainsKey("dr-dur")" />@if (planErr.TryGetValue("dr-dur", out var e1)) { <small class="field-error" role="alert">@e1</small> }</div>
-            <div class="dr-num @(planErr.ContainsKey("dr-conc") ? "is-invalid" : "")"><label for="dr-conc">Max in-flight</label><input id="dr-conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@locked" aria-invalid="@planErr.ContainsKey("dr-conc")" />@if (planErr.TryGetValue("dr-conc", out var e2)) { <small class="field-error" role="alert">@e2</small> }</div>
-            <div class="dr-num @(planErr.ContainsKey("dr-to") ? "is-invalid" : "")"><label for="dr-to">Timeout (s)</label><input id="dr-to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@locked" aria-invalid="@planErr.ContainsKey("dr-to")" />@if (planErr.TryGetValue("dr-to", out var e3)) { <small class="field-error" role="alert">@e3</small> }</div>
+            <div class="dr-num @(planErr.ContainsKey("dr-dur") ? "is-invalid" : "")"><label for="dr-dur">Duration (s)</label><input id="dr-dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dr-dur"))" />@if (planErr.TryGetValue("dr-dur", out var e1)) { <small class="field-error" role="alert">@e1</small> }</div>
+            <div class="dr-num @(planErr.ContainsKey("dr-conc") ? "is-invalid" : "")"><label for="dr-conc">Max in-flight</label><input id="dr-conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dr-conc"))" />@if (planErr.TryGetValue("dr-conc", out var e2)) { <small class="field-error" role="alert">@e2</small> }</div>
+            <div class="dr-num @(planErr.ContainsKey("dr-to") ? "is-invalid" : "")"><label for="dr-to">Timeout (s)</label><input id="dr-to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dr-to"))" />@if (planErr.TryGetValue("dr-to", out var e3)) { <small class="field-error" role="alert">@e3</small> }</div>
         </div>
     </section>
 
@@ -74,7 +74,7 @@
                 <h2>Scenarios</h2>
                 <span class="count">@(listFilter.Length > 0 ? $"{shownIdx.Count} of {plan.Scenarios.Count}" : $"{plan.Scenarios.Count} / {LoadPlan.MaxEntries}")</span>
                 <span class="spacer"></span>
-                <button id="dr-add" class="btn ghost small" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-expanded="@addOpen">+ Add scenario</button>
+                <button id="dr-add" class="btn ghost small" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="menu" aria-expanded="@Aria.Bool(addOpen)">+ Add scenario</button>
             </div>
             <div class="dr-list-filter">
                 <input id="dr-filter" type="search" class="dr-search" placeholder="Filter scenarios…  ( / )" aria-label="Filter scenarios" autocomplete="off"
@@ -97,7 +97,7 @@
                     var c = plan.Scenarios[idx];
                     var bad = entryErr[idx].Count;
                     <li @key="c">
-                        <button id="dr-row-@idx" role="option" aria-selected="@(idx == selected)" class="dr-row @(idx == selected ? "on" : "") @(bad > 0 ? "is-invalid" : "")" style="--series:@SeriesPalette.For(idx)"
+                        <button id="dr-row-@idx" role="option" aria-selected="@Aria.Bool(idx == selected)" class="dr-row @(idx == selected ? "on" : "") @(bad > 0 ? "is-invalid" : "")" style="--series:@SeriesPalette.For(idx)"
                                 tabindex="@(idx == selected ? 0 : -1)" @onclick="() => selected = idx">
                             <i class="dot"></i>
                             <span class="name"><span class="nm">@LabelOf(c)</span>@if (bad > 0) { <span class="row-err" title="@(bad == 1 ? "1 field needs attention" : $"{bad} fields need attention")" aria-label="@bad invalid @(bad == 1 ? "field" : "fields")">!</span> }</span>
@@ -137,7 +137,7 @@
                     <div class="entry-body dr-form" style="--series:@SeriesPalette.For(selected)" @key="cfg">
                         <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
                             <label for="dr-rate">@Terms.InstancesCap / minute</label>
-                            <input id="dr-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" aria-invalid="@(cfgErr.Rate is not null)" />
+                            <input id="dr-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
                             @if (cfgErr.Rate is not null) { <small class="field-error" role="alert">@cfgErr.Rate</small> }
                         </div>
                         <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"dr{selected}")" Errors="cfgErr.Fields" />

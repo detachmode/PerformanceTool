@@ -112,7 +112,7 @@
                                 @foreach (var lvl in FakeLogEntry.Levels)
                                 {
                                     var l = lvl;
-                                    <button class="lvl lvl-@l.ToLowerInvariant() @(logLevels.Contains(l) ? "on" : "")" aria-pressed="@logLevels.Contains(l)"
+                                    <button class="lvl lvl-@l.ToLowerInvariant() @(logLevels.Contains(l) ? "on" : "")" aria-pressed="@Aria.Bool(logLevels.Contains(l))"
                                             title="@l: click to toggle, Alt+click to show only this level"
                                             @onclick="e => ToggleLevel(l, e.AltKey)">@Short(l) <span>@LevelCount(l)</span></button>
                                 }
@@ -134,13 +134,13 @@
                             var entry = row;
                             var open = expandedLogs.Contains(entry.Id);
                             <div class="log-row lvl-@entry.Level.ToLowerInvariant() @(open ? "open" : "")" role="listitem">
-                                <div class="log-main" tabindex="0" role="button" aria-expanded="@open" @onclick="() => ToggleLog(entry.Id)" @onkeydown="e => LogKey(e, entry.Id)">
+                                <div class="log-main" tabindex="0" role="button" aria-expanded="@Aria.Bool(open)" @onclick="() => ToggleLog(entry.Id)" @onkeydown="e => LogKey(e, entry.Id)">
                                     <span class="caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
                                     <span class="log-lvl">@Short(entry.Level)</span>
                                     <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
-                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" title="Show only the logs of @Terms.Instance #@(entry.Sequence + 1)"
+                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" aria-pressed="@Aria.Bool(selected?.Sequence == entry.Sequence)" title="Show only the logs of @Terms.Instance #@(entry.Sequence + 1)"
                                             @onclick="() => SelectSequence(entry.Sequence)" @onclick:stopPropagation>#@(entry.Sequence + 1)</button>
-                                    @if (entry.CallIndex is { } ci) { <button class="log-call @(selected?.Sequence == entry.Sequence && callFilter == ci ? "on" : "")" title="Show only the logs of call @(ci + 1) of #@(entry.Sequence + 1)"
+                                    @if (entry.CallIndex is { } ci) { <button class="log-call @(selected?.Sequence == entry.Sequence && callFilter == ci ? "on" : "")" aria-pressed="@Aria.Bool(selected?.Sequence == entry.Sequence && callFilter == ci)" title="Show only the logs of call @(ci + 1) of #@(entry.Sequence + 1)"
                                             @onclick="() => SelectCall(entry.Sequence, ci)" @onclick:stopPropagation>call @(ci + 1)</button> }
                                     <span class="log-msg">@entry.Message</span>
                                     @if (entry.Exception is not null) { <span class="log-ex-flag" title="Has exception details">exception</span> }
@@ -187,7 +187,7 @@
                             {
                                 var idx = i;
                                 var (lo, hi) = Range(idx);
-                                <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")"
+                                <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")" aria-pressed="@Aria.Bool(bucket is { } sb2 && sb2.Lo == lo)"
                                         title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
                                         aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
                                         @onclick="() => ToggleBucket(idx)">
@@ -206,7 +206,7 @@
                         @foreach (var (code, n) in statusCounts)
                         {
                             <li>
-                                <button class="row-btn @(status == code ? "on" : "")" @onclick="() => status = status == code ? null : code">
+                                <button class="row-btn @(status == code ? "on" : "")" aria-pressed="@Aria.Bool(status == code)" @onclick="() => status = status == code ? null : code">
                                     <span class="code @(code.StartsWith('2') || code.StartsWith('3') ? "" : "bad")">@(code)</span>
                                     <span class="grow"><i class="share" style="width:@Share(n)"></i></span>
                                     <span class="n">@n.ToString("N0")</span>
@@ -223,7 +223,7 @@
                         @foreach (var (message, n) in errorGroups)
                         {
                             <li>
-                                <button class="row-btn @(error == message ? "on" : "")" title="@message" @onclick="() => error = error == message ? null : message">
+                                <button class="row-btn @(error == message ? "on" : "")" aria-pressed="@Aria.Bool(error == message)" title="@message" @onclick="() => error = error == message ? null : message">
                                     <span class="msg">@message</span>
                                     <span class="n bad">@n.ToString("N0")</span>
                                 </button>
@@ -258,7 +258,7 @@
                 <div class="panel-head">
                     <h3>Recent @Terms.Instances</h3>
                     <div class="toggles">
-                        <button class="chip toggle-chip @(failedOnly ? "on" : "")" aria-pressed="@failedOnly" @onclick="() => failedOnly = !failedOnly">Failed only</button>
+                        <button class="chip toggle-chip @(failedOnly ? "on" : "")" aria-pressed="@Aria.Bool(failedOnly)" @onclick="() => failedOnly = !failedOnly">Failed only</button>
                     </div>
                 </div>
                 <div class="table-scroll">
@@ -433,7 +433,7 @@
     private bool focused;
     private bool focusTab;
 
-    private string Sel(string t) => tab == t ? "true" : "false";
+    private string Sel(string t) => Aria.Bool(tab == t);
     private void SetTab(string t) => tab = t;
 
     /// <summary>Left/Right/Home/End switch tabs (automatic activation) and move focus with them.</summary>

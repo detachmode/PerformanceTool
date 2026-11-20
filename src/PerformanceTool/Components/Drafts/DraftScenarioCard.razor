@@ -9,10 +9,10 @@
 
 <div class="dr-card @(Active ? "active" : "") @(MenuOpen ? "menu-open" : "")" style="--series:@Color" data-card="@Index" @onkeydown="OnKey">
     <div class="chips">
-        <button class="chip chip-btn @(TypeActive ? "on" : "")" aria-pressed="@TypeActive" title="@(TypeActive ? "Remove the type filter" : $"Show only {TypeName} scenarios")"
+        <button class="chip chip-btn @(TypeActive ? "on" : "")" aria-pressed="@Aria.Bool(TypeActive)" title="@(TypeActive ? "Remove the type filter" : $"Show only {TypeName} scenarios")"
                 @onclick="() => OnFilterType.InvokeAsync(TypeName)" @onclick:stopPropagation><i class="dot"></i>@TypeName</button>
         <button class="chip chip-btn" title="Target rate. Click to sort by rate" @onclick="() => OnSortRate.InvokeAsync()" @onclick:stopPropagation>@DraftFormat.Rate(TargetPerMinute) @Terms.PerMinuteShort</button>
-        <button class="dr-more" aria-haspopup="menu" aria-expanded="@MenuOpen" aria-label="Actions for @Label" title="Actions"
+        <button class="dr-more" aria-haspopup="menu" aria-expanded="@Aria.Bool(MenuOpen)" aria-label="Actions for @Label" title="Actions"
                 @onclick="() => OnToggleMenu.InvokeAsync(Index)" @onclick:stopPropagation>⋯</button>
     </div>
     @if (MenuOpen)

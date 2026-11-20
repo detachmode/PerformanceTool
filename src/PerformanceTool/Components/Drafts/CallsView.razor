@@ -21,7 +21,7 @@
             @foreach (var g in groups)
             {
                 var gg = g;
-                <button class="cv-key @(group == gg.Name ? "on" : "") @(group is not null && group != gg.Name ? "off" : "")" aria-pressed="@(group == gg.Name)"
+                <button class="cv-key @(group == gg.Name ? "on" : "") @(group is not null && group != gg.Name ? "off" : "")" aria-pressed="@Aria.Bool(group == gg.Name)"
                         title="Show only the calls of @gg.Name (@Terms.CallCount(gg.Calls))" @onclick="() => PickGroup(gg.Name)">
                     <i class="cv-sw" style="--seg:@GroupColor(gg.Name)"></i>@gg.Name <span class="cv-n">@gg.Calls</span>
                 </button>
@@ -85,18 +85,18 @@
             <table class="breakdown call-table">
                 <thead>
                     <tr>
-                        <th aria-sort="@Aria(SortKey.Index)"><button class="th-btn" @onclick="() => SortBy(SortKey.Index)">Call @Arrow(SortKey.Index)</button></th>
-                        <th aria-sort="@Aria(SortKey.Count)"><button class="th-btn" @onclick="() => SortBy(SortKey.Count)">Count @Arrow(SortKey.Count)</button></th>
-                        <th aria-sort="@Aria(SortKey.Typical)"><button class="th-btn" title="Median duration" @onclick="() => SortBy(SortKey.Typical)">Typical @Arrow(SortKey.Typical)</button></th>
-                        <th aria-sort="@Aria(SortKey.Slowest)"><button class="th-btn" @onclick="() => SortBy(SortKey.Slowest)">Slowest @Arrow(SortKey.Slowest)</button></th>
-                        <th aria-sort="@Aria(SortKey.Errors)"><button class="th-btn" @onclick="() => SortBy(SortKey.Errors)">Errors @Arrow(SortKey.Errors)</button></th>
+                        <th aria-sort="@SortAria(SortKey.Index)"><button class="th-btn" @onclick="() => SortBy(SortKey.Index)">Call @Arrow(SortKey.Index)</button></th>
+                        <th aria-sort="@SortAria(SortKey.Count)"><button class="th-btn" @onclick="() => SortBy(SortKey.Count)">Count @Arrow(SortKey.Count)</button></th>
+                        <th aria-sort="@SortAria(SortKey.Typical)"><button class="th-btn" title="Median duration" @onclick="() => SortBy(SortKey.Typical)">Typical @Arrow(SortKey.Typical)</button></th>
+                        <th aria-sort="@SortAria(SortKey.Slowest)"><button class="th-btn" @onclick="() => SortBy(SortKey.Slowest)">Slowest @Arrow(SortKey.Slowest)</button></th>
+                        <th aria-sort="@SortAria(SortKey.Errors)"><button class="th-btn" @onclick="() => SortBy(SortKey.Errors)">Errors @Arrow(SortKey.Errors)</button></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var st in rows)
                     {
                         var s = st;
-                        <tr class="clickable @(Call == s.Index ? "selected" : "")" data-call="@s.Index" tabindex="0" aria-selected="@(Call == s.Index)" @onclick="() => Pick(s.Index)" @onkeydown="e => PickKey(e, s.Index)">
+                        <tr class="clickable @(Call == s.Index ? "selected" : "")" data-call="@s.Index" tabindex="0" aria-selected="@Aria.Bool(Call == s.Index)" @onclick="() => Pick(s.Index)" @onkeydown="e => PickKey(e, s.Index)">
                             <td class="call-name" title="@(s.Group is null ? s.Name : $"{s.Name} · {s.Group}")"><i class="cv-sw" style="--seg:@GroupColor(s.Group ?? s.Name)"></i>@s.Name</td>
                             <td>@s.Count.ToString("N0")@if (s.Skipped > 0) { <span class="faint" title="@s.Skipped skipped because an earlier call failed"> +@s.Skipped skipped</span> }</td>
                             <td>@LiveChart.Fmt(s.Typical)</td>
@@ -231,7 +231,7 @@
         else { sort = k; desc = k != SortKey.Index; }
     }
     private string Arrow(SortKey k) => sort == k ? (desc ? "↓" : "↑") : "";
-    private string Aria(SortKey k) => sort == k ? (desc ? "descending" : "ascending") : "none";
+    private string SortAria(SortKey k) => sort == k ? (desc ? "descending" : "ascending") : "none";
 
     private static string InstanceLabel(Inst i) =>
         $"{Terms.InstanceCap} #{i.R.Sequence + 1}, {LiveChart.Fmt(i.R.ElapsedMs)}, {i.Calls.Count(c => !c.Skipped)} of {i.Calls.Count} {Terms.Calls}" + (i.R.Success ? "" : ", failed");
