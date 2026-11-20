@@ -70,7 +70,7 @@ input:disabled { opacity: .6; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .75rem; }
 .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: .75rem 1rem; }
 .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
-.stat-value { font-size: 1.3rem; font-weight: 700; margin-top: .2rem; font-variant-numeric: tabular-nums; }
+.stat-value { white-space: nowrap; font-size: 1.15rem; font-weight: 700; margin-top: .2rem; font-variant-numeric: tabular-nums; }
 .stat.bad .stat-value { color: var(--bad); }
 .chart-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .chart-title h2 { margin: 0; font-size: 1rem; }
@@ -93,3 +93,9 @@ input:disabled { opacity: .6; }
 @keyframes grow { from { transform: scaleY(0); opacity: .3; } to { transform: scaleY(1); opacity: 1; } }
 @keyframes pulse { 50% { opacity: .45; } }
 @media (max-width: 640px) { .container { padding: 1rem; } .chart { height: 280px; } }
+
+#blazor-error-ui {
+    color-scheme: light only; background: #ffffe0; color: #222; bottom: 0; box-shadow: 0 -1px 2px rgba(0,0,0,.2);
+    display: none; left: 0; padding: .6rem 1.25rem .7rem 1.25rem; position: fixed; width: 100%; z-index: 1000;
+}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; top: .5rem; }
