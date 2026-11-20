@@ -48,6 +48,9 @@ the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.We
 **GitHub Pages:** `.github/workflows/pages.yml` publishes the client (Release, trimmed) on every push to `main` and on manual dispatch, rewrites
 `<base href>` to `/PerformanceTool/`, copies `index.html` to `404.html` (deep links like `/editor`) and adds `.nojekyll`. Site: https://detachmode.github.io/PerformanceTool/
 (fake data only). The repo setting Pages > Source must be "GitHub Actions". To test locally, publish, apply the same rewrite and serve under a `/PerformanceTool/` path.
+**Build info and cache (brain 0025):** the workflow publishes with `-p:BuildSha=${{ github.sha }} -p:BuildTime=<UTC>` (shown by `Layout/BuildStamp.razor`),
+writes `build-info.json` (the page fetches it to offer "New version available, reload"), and adds `?v=<sha>` to `app.css` and `favicon.svg`. Blazor fingerprints `_framework/*` and the
+JS modules via the importmap in `index.html`. Pages allows no custom HTTP headers. When you add a stylesheet or icon to `index.html`, add it to the `?v=` sed in `pages.yml` too.
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect

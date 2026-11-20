@@ -28,6 +28,7 @@
             <span class="time" title="Elapsed / duration">@Format.Time(s.Elapsed) / @Format.Time(s.Plan.DurationSeconds)</span>
             <button class="btn ghost" @onclick="() => Logs.Show()" aria-haspopup="dialog">Logs</button>
         </div>
+        <BuildStamp />
     </header>
     <main class="main">@Body</main>
 </div>

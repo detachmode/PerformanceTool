@@ -41,8 +41,13 @@ jobs:
 
       # Release publish = trimmed. PerformanceTool.Core is a TrimmerRootAssembly so the generated editor keeps its metadata.
       # No wasm-tools workload needed (no AOT, no native relinking).
+      # BuildSha / BuildTime end up in the UI's build info (brain 0025).
       - name: Publish client
-        run: dotnet publish src/PerformanceTool.Client -c Release -o out
+        run: |
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "BUILD_TIME=$BUILD_TIME" >> "$GITHUB_ENV"
+          dotnet publish src/PerformanceTool.Client -c Release -o out \
+            -p:BuildSha="${{ github.sha }}" -p:BuildTime="$BUILD_TIME"
 
       - name: Prepare site
         working-directory: out/wwwroot
@@ -52,8 +57,13 @@ jobs:
           # The site lives under /PerformanceTool/.
           sed -i 's|<base href="/" />|<base href="/PerformanceTool/" />|' index.html
           grep -q '<base href="/PerformanceTool/" />' index.html
+          # Cache-bust the files the fingerprint placeholders do not cover (framework and JS modules are content-hashed by the build).
+          sed -i 's|href="app.css"|href="app.css?v=${{ github.sha }}"|; s|href="favicon.svg"|href="favicon.svg?v=${{ github.sha }}"|' index.html
+          grep -q 'app.css?v=' index.html
           # SPA deep links (/editor) hit Pages' 404 page, which is the app itself.
           cp index.html 404.html
+          # Lets a running page notice a newer deploy (brain 0025). Fetched with cache: no-store.
+          printf '{"sha":"%s","time":"%s"}\n' "${{ github.sha }}" "$BUILD_TIME" > build-info.json
           # Do not run Jekyll (it would drop the _framework folder).
           touch .nojekyll
 

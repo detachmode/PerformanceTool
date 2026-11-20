@@ -1,0 +1,45 @@
+@* Small muted build info at the far right of the top bar (brain 0025, calm UI 0016): "build 3f9a1c2 · 20 Nov 2026 15:30 UTC".
+   Checks once on load whether a newer deploy exists and then offers a reload. *@
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@{ var b = BuildInfo.Current; }
+<span class="build-stamp">
+    @if (newer)
+    {
+        <a class="build-new" href="@Nav.BaseUri" @onclick="Reload" @onclick:preventDefault>New version available, reload</a>
+    }
+    <span>build
+        @if (b.CommitUrl is { } url)
+        {
+            <a href="@url" target="_blank" rel="noopener" title="Open commit on GitHub">@b.ShortSha</a>
+        }
+        else { <span>@b.ShortSha</span> }
+        @if (b.TimeText.Length > 0) { <text> · @b.TimeText</text> }
+    </span>
+</span>
+
+@code {
+    private bool newer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (BuildInfo.Current.Sha is null) return;   // local build, nothing to compare
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"build-info.json?t={DateTime.UtcNow.Ticks}");
+            req.SetBrowserRequestCache(BrowserRequestCache.NoStore);
+            using var res = await Http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+            var live = await res.Content.ReadFromJsonAsync<LiveInfo>();
+            newer = !string.IsNullOrEmpty(live?.Sha) && live.Sha != BuildInfo.Current.Sha;
+        }
+        catch { /* offline or missing file: say nothing */ }
+    }
+
+    private void Reload() => Nav.NavigateTo(Nav.Uri, forceLoad: true);
+
+    private sealed record LiveInfo(string? Sha);
+}
