@@ -24,6 +24,8 @@ public interface IRunSource : IDisposable
     IReadOnlyList<string> PresetNames { get; }
     /// <summary>True when the plan differs from the loaded or last saved preset.</summary>
     bool HasUnsavedChanges { get; }
+    /// <summary>True when this scenario entry differs from the loaded or last saved preset (new or edited).</summary>
+    bool IsEntryChanged(ScenarioRunConfig entry);
     void AddEntry(IScenario scenario);
     void RemoveEntry(int index);
     /// <summary>Saves the plan under <paramref name="name"/> and makes it the current preset.</summary>

@@ -12,14 +12,29 @@
     var reason = View.Failed > 0
         ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow call", "slow calls") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
+    var aria = Label + ": "
+        + (Idle ? Format.Rate(Target) + " actors per minute" : View.InFlight + " actors running, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " actors per minute")
+        + (reason.Length > 0 ? ", " + reason : "")
+        + (Idle ? ". Edit settings" : ". Open details")
+        + (Edited ? ". Changed since the preset was loaded" : "");
 }
-<button class="card @cls" @onclick="() => OnOpen.InvokeAsync(Index)"
-        aria-label="@Label: @View.InFlight actors running, @Format.Rate(actual) of @Format.Rate(Target) actors per minute@(reason.Length > 0 ? ", " + reason : ""). Open details">
-    <span class="card-title">@Label</span>
-    <span class="card-figures">
-        <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
-        <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
-    </span>
+<button class="card @cls @(Selected ? "selected" : "") @(Edited ? "edited" : "")" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)" @onclick="() => OnOpen.InvokeAsync(Index)"
+        aria-label="@aria">
+    <span class="card-title">@Label@if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }</span>
+    @if (Idle)
+    {
+        <span class="card-figures">
+            <span class="fig"><b>@Format.Rate(Target)</b><small>@Terms.PerMinuteShort</small></span>
+        </span>
+        <span class="card-kind">@Subtitle</span>
+    }
+    else
+    {
+        <span class="card-figures">
+            <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
+            <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
+        </span>
+    }
     <DockZoom Tag="span" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
         @foreach (var a in recent)
         {
@@ -29,7 +44,7 @@
         {
             <i class="run" data-start="@((r.StartedAt * 1000).ToString("0", CultureInfo.InvariantCulture))"></i>
         }
-        @if (recent.Length == 0 && runNow.Count == 0) { <em>No actors started yet</em> }
+        @if (recent.Length == 0 && runNow.Count == 0) { <em>@(Idle ? "Not run yet" : "No actors started yet")</em> }
     </DockZoom>
     <span class="card-reason">@(reason.Length > 0 ? reason : " ")</span>
 </button>
@@ -44,6 +59,13 @@
     [Parameter] public double Target { get; set; }
     [Parameter] public IReadOnlyList<RunningActor>? Running { get; set; }
     [Parameter] public double Elapsed { get; set; }
+    /// <summary>Editor mode (brain 0024): the card shows the configured scenario, not run data.</summary>
+    [Parameter] public bool Idle { get; set; }
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public bool Selectable { get; set; }
+    [Parameter] public bool Selected { get; set; }
+    /// <summary>Changed since the preset was loaded or last saved.</summary>
+    [Parameter] public bool Edited { get; set; }
     [Parameter] public EventCallback<int> OnOpen { get; set; }
 
     private static string Pct(double f) => Math.Clamp(f * 100, 4, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
