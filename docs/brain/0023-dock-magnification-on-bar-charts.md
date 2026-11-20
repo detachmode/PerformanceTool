@@ -22,3 +22,10 @@ and calm (0016) but makes precise selection easy.
 - Falloff: cosine over +-4 bars, hovered bar about 3x wide before compression, bars up to 12% taller, 70 ms easing. Total width is kept fixed by normalising the widths.
 - The hit test uses the displayed (magnified) layout. Mouse selects on `click`, touch on release (the following synthetic click is swallowed). Keyboard clicks (`detail` 0) pass through to the bar buttons unchanged.
 - `prefers-reduced-motion`: instant change, no easing. Card charts get hover magnification only (a click still opens the card). On touch devices the popup chart is `touch-action: none` and drops its 14px minimum bar width so all bars fit the screen.
+
+## Update (user feedback, 2026-11-20)
+- **No magnification on the overview cards.** It only makes sense in the **scenario details popup**, so it is
+  removed from the cards.
+- In the popup, the **hovered (magnified) bar shows, inside the bar, the actor number and its timestamps**
+  (e.g. `#192 · 10:42:05 → 10:42:11`, or start time and duration). Which exact fields is up to the draft;
+  keep it short.
