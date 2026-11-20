@@ -56,3 +56,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0016](0016-calm-ui-less-information.md) | Calm UI: show less, reveal on demand; avoid information overload | Accepted |
 | [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor in a separate Logs popup | Accepted |
 | [0018](0018-colour-carries-meaning.md) | Colour must carry meaning, not arbitrary identity/decoration (scheme open) | Accepted (scheme open) |
+| [0019](0019-visible-state-and-feedback.md) | Visible selection everywhere; editor gives immediate feedback on changes | Accepted |
