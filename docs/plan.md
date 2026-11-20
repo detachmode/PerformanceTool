@@ -35,41 +35,41 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Restyle the app after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
       toolbar with icon buttons, collapsible left list, group/sort menus). Re-validate the palette on the new surfaces.
 
-## 1. Shared core + persisted run history (prerequisite for 2 and 3)
-Today results only live in the browser circuit. The CLI and CI need the same data as the UI.
-- [ ] Extract `Services/*` (scenarios, `LoadPlan`, `LoadRunner`, `PresetStore`, stats) into a class library
-      `src/PerformanceTool.Core`, used by the web app and the CLI. Scenarios live there (or in a separate
-      scenarios library) so every host has the same catalog.
-- [ ] Persist each run: plan snapshot, start/end time, per-execution results, per-scenario summary. Same
-      file-based approach as presets (e.g. `data/runs/<timestamp>-<name>/run.json` + `results.ndjson`),
-      under one shared data root (`PerformanceTool:DataDirectory`) with `presets/` and `runs/` inside.
-- [ ] UI: run history page (list, open a past run, compare two runs). Runs started from the CLI show up too.
-- [ ] Optional: the UI picks up a run that is in progress from another process (tail `results.ndjson`).
+## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009)
+- [ ] Extract `Services/*` into `src/PerformanceTool.Core` (scenarios, plan, runner, presets, stats), used by web, CLI and server.
+- [ ] Run bundle writer: `manifest.json`, `summary.json`, `results.ndjson(.gz)` (appended live), `summary.md`, `junit.xml`;
+      JSON schemas with `schemaVersion`, documented in `docs/`.
+- [ ] CI context auto-detection (Azure DevOps, GitHub Actions, local) and user tags.
+- [ ] Shared data root (`PerformanceTool:DataDirectory`) with `presets/` and `runs/`; the UI writes every run as a bundle.
+- [ ] UI run history: list, open a past run (same charts/tiles), compare two runs.
 
-## 2. CLI for people and coding harnesses
-Goal: an agent (Claude Code etc.) can do everything the UI can, on the same data.
-- [ ] `src/PerformanceTool.Cli` as a .NET tool (`perftool`), using `System.CommandLine`.
-- [ ] Commands:
-  - `perftool scenarios list` — ids, descriptions, parameter schemas
-  - `perftool presets list | show <name> | save <name> --file plan.json | delete <name>`
-  - `perftool run --preset <name>` or `--plan plan.json`, overrides like `--duration 60`,
-    `--set "<entry>.url=https://..."`, `--rate "<entry>=120"`
-  - `perftool runs list | show <id>` — read the stored history
-- [ ] `--json` on every command: stable, machine-readable output (schema documented) so harnesses can parse it.
-      Default output is a readable table plus a live progress line.
-- [ ] Same data directory as the web app (shared config), so presets/runs created in one show up in the other.
-- [ ] Meaningful exit codes: 0 ok, 1 thresholds failed, 2 invalid input/config, 3 run error.
-- [ ] Document the CLI in `AGENTS.md` so agents can find it.
+## 2. CLI for people, harnesses and pipelines (`perftool`)
+- [ ] `src/PerformanceTool.Cli` as a .NET tool, `System.CommandLine`; `--json` everywhere; exit codes 0 ok / 1 thresholds failed / 2 invalid input / 3 run error.
+- [ ] `scenarios list`, `presets list|show|save|delete`, `run --preset|--plan [--set entry.param=value] [--rate entry=N] [--duration] [--tag k=v]`.
+- [ ] `runs list|show|executions|errors|compare|pull` with filters (commit, branch, PR, build, tag, preset, status; scenario, status code, error, min latency, time window, limit).
+- [ ] Works locally (data folder) or remotely (`--server` / `PERFTOOL_SERVER`, `PERFTOOL_API_KEY`).
+- [ ] `runs pull --from azdo|github --build <id>` downloads CI artifacts via `az` / `gh`.
+- [ ] Document the CLI for agents in `AGENTS.md`.
 
-## 3. Running in CI/CD pipelines
-- [ ] Pass/fail **thresholds** stored in the preset/plan, e.g. `p95 < 300ms`, `errorRate < 1%`,
-      `dropped == 0`, per scenario or global. `perftool run` exits 1 when any fails.
-- [ ] Report outputs: JSON summary, JUnit XML (one test case per threshold, so CI shows failures natively),
-      Markdown summary (for `$GITHUB_STEP_SUMMARY` / PR comments).
-- [ ] Container image (`Dockerfile`) with the CLI, and an example GitHub Actions workflow
-      (`.github/workflows/perf.yml`) that runs a preset against a deployed environment and uploads reports.
-- [ ] Optional: compare with a baseline run and fail on regression (e.g. p95 +20%).
-- [ ] CI for this repo itself: build + tests on push.
+## 3. Results server + API keys
+- [ ] REST API in the web app: `POST /api/runs` (upload a bundle | start a remote run), `GET /api/runs` (filters, paging),
+      `GET /api/runs/{id}` (summary), `/executions` (filters, paging), `/errors`, `/compare/{other}`, `/bundle` (zip).
+- [ ] API keys: scopes `runs:read`, `runs:write`, `runs:execute`; hashed at rest; created/revoked in the UI; `Authorization: Bearer`.
+- [ ] Storage: file system, then an Azure Blob Storage provider.
+- [ ] Deployable image + docs (Azure Container Apps / App Service).
+- [ ] Later: OIDC / workload identity federation for pipelines instead of static keys.
+
+## 4. CI/CD integration (Azure DevOps first, then GitHub)
+- [ ] Thresholds in the plan/preset (`p95 < 300ms`, `errorRate < 1%`, `dropped == 0`; global or per scenario) → exit code + JUnit.
+- [ ] Azure DevOps: YAML template (run → publish artifact → PublishTestResults → upload summary → optional push to server → PR comment).
+- [ ] GitHub: composite action / reusable workflow (artifact, `$GITHUB_STEP_SUMMARY`, PR comment, optional push).
+- [ ] Container image with the CLI (ACR / GHCR).
+- [ ] Baseline comparison: fail on regression vs last good run on the default branch.
+- [ ] CI for this repo itself: build + `dotnet test` on push.
+
+## 5. Agent integration
+- [ ] `perftool mcp`: MCP server over the same API (list_runs, get_run_summary, query_executions, errors, compare_runs, list_scenarios, start_run).
+- [ ] PR comment / summary always contains the run id and copy-paste commands for agents to drill down.
 
 ## Other ideas
 - [x] Unit tests for `LoadRunner` scheduling, legacy preset loading and parameter specs (`tests/PerformanceTool.Tests`).
