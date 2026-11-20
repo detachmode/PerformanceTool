@@ -1,0 +1,185 @@
+@page "/"
+@implements IDisposable
+@inject LoadTester Tester
+
+<PageTitle>Performance Tool</PageTitle>
+
+<header class="topbar">
+    <div class="brand"><span class="logo">⚡</span> Performance<span>Tool</span></div>
+    <div class="status @(running ? "live" : "")">@(running ? "LIVE" : results.Count > 0 ? "DONE" : "IDLE")</div>
+</header>
+
+<main class="container">
+    <section class="card controls">
+        <div class="field grow">
+            <label for="url">Target URL</label>
+            <input id="url" type="url" @bind="url" disabled="@running" placeholder="https://example.com" @onkeydown="OnKey" />
+        </div>
+        <div class="field">
+            <label for="count">Requests</label>
+            <input id="count" type="number" min="1" max="@LoadTester.MaxRequests" @bind="totalRequests" disabled="@running" />
+        </div>
+        <div class="field">
+            <label for="conc">Concurrency</label>
+            <input id="conc" type="number" min="1" max="@LoadTester.MaxConcurrency" @bind="concurrency" disabled="@running" />
+        </div>
+        <div class="field">
+            <label for="to">Timeout (s)</label>
+            <input id="to" type="number" min="1" max="300" @bind="timeoutSeconds" disabled="@running" />
+        </div>
+        @if (running)
+        {
+            <button class="btn stop" @onclick="Stop">■ Stop</button>
+        }
+        else
+        {
+            <button class="btn start" @onclick="Start">▶ Start test</button>
+        }
+    </section>
+
+    @if (error is not null)
+    {
+        <div class="error">@error</div>
+    }
+
+    @{ var s = ComputeStats(); }
+    <section class="stats">
+        <Stat Label="Completed" Value="@($"{s.Count} / {totalRun}")" />
+        <Stat Label="Errors" Value="@s.Errors.ToString()" Bad="@(s.Errors > 0)" />
+        <Stat Label="Req/s" Value="@s.Rps.ToString("N1")" />
+        <Stat Label="Min" Value="@Fmt(s.Min)" />
+        <Stat Label="Avg" Value="@Fmt(s.Avg)" />
+        <Stat Label="p50" Value="@Fmt(s.P50)" />
+        <Stat Label="p95" Value="@Fmt(s.P95)" />
+        <Stat Label="p99" Value="@Fmt(s.P99)" />
+        <Stat Label="Max" Value="@Fmt(s.Max)" />
+    </section>
+
+    <section class="card chart-card">
+        <div class="chart-title">
+            <h2>Response time per request</h2>
+            <div class="legend"><i class="fast"></i>fast <i class="slow"></i>slow <i class="err"></i>error</div>
+        </div>
+        <div class="chart">
+            <div class="y-axis">
+                <span>@Fmt(scale)</span><span>@Fmt(scale / 2)</span><span>0</span>
+            </div>
+            <div class="plot">
+                <div class="gridline" style="bottom:100%"></div>
+                <div class="gridline" style="bottom:50%"></div>
+                @if (s.Count > 0)
+                {
+                    <div class="avg-line" style="bottom:@Pct(s.Avg)"><span>avg @Fmt(s.Avg)</span></div>
+                }
+                <div class="bars">
+                    @foreach (var r in results)
+                    {
+                        <div class="bar @(r.Success ? "" : "failed")"
+                             style="height:@Pct(r.ElapsedMs);--c:@Color(r)"
+                             title="#@(r.Sequence + 1) — @Fmt(r.ElapsedMs) — @(r.Error ?? r.StatusCode?.ToString())"></div>
+                    }
+                </div>
+                @if (results.Count == 0)
+                {
+                    <div class="empty">Enter a URL and start a test — bars appear live, one per request.</div>
+                }
+            </div>
+        </div>
+    </section>
+</main>
+
+@code {
+    private string url = "https://example.com";
+    private int totalRequests = 100;
+    private int concurrency = 5;
+    private int timeoutSeconds = 30;
+
+    private readonly List<RequestResult> results = new();
+    private bool running;
+    private string? error;
+    private int totalRun;
+    private double scale = 100;
+    private long startTicks, endTicks;
+    private long lastRender;
+    private CancellationTokenSource? cts;
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !running) _ = Start();
+    }
+
+    private async Task Start()
+    {
+        var settings = new LoadTestSettings(url.Trim(), totalRequests, concurrency, timeoutSeconds);
+        if (!LoadTester.TryValidate(settings, out error)) return;
+
+        results.Clear();
+        scale = 100;
+        totalRun = settings.TotalRequests;
+        running = true;
+        cts = new CancellationTokenSource();
+        startTicks = endTicks = Environment.TickCount64;
+        StateHasChanged();
+
+        try
+        {
+            await Tester.RunAsync(settings, r => new ValueTask(InvokeAsync(() => OnResult(r))), cts.Token);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            running = false;
+            endTicks = Environment.TickCount64;
+            cts?.Dispose();
+            cts = null;
+            StateHasChanged();
+        }
+    }
+
+    private void OnResult(RequestResult r)
+    {
+        results.Add(r);
+        // Keep the Y axis at a "nice" ceiling so bars never overflow.
+        if (r.ElapsedMs > scale) scale = Math.Ceiling(r.ElapsedMs * 1.1 / 50) * 50;
+        endTicks = Environment.TickCount64;
+
+        // Throttle re-renders to ~15 fps so very fast tests don't flood the SignalR circuit.
+        var now = Environment.TickCount64;
+        if (now - lastRender >= 66)
+        {
+            lastRender = now;
+            StateHasChanged();
+        }
+    }
+
+    private void Stop() => cts?.Cancel();
+
+    private string Pct(double ms) => (Math.Clamp(ms / scale, 0, 1) * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private string Color(RequestResult r)
+    {
+        if (!r.Success) return "hsl(350 85% 58%)";
+        var t = Math.Clamp(r.ElapsedMs / scale, 0, 1);
+        var hue = 150 - 130 * Math.Sqrt(t); // green → amber/red
+        return $"hsl({hue.ToString("0", System.Globalization.CultureInfo.InvariantCulture)} 85% 55%)";
+    }
+
+    private static string Fmt(double ms) => ms >= 1000 ? $"{ms / 1000:0.00} s" : $"{ms:0.#} ms";
+
+    private record Summary(int Count, int Errors, double Min, double Avg, double P50, double P95, double P99, double Max, double Rps);
+
+    private Summary ComputeStats()
+    {
+        if (results.Count == 0) return new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        var sorted = results.Select(r => r.ElapsedMs).Order().ToArray();
+        double P(double p) => sorted[Math.Min(sorted.Length - 1, (int)Math.Ceiling(p * sorted.Length) - 1)];
+        var seconds = Math.Max((endTicks - startTicks) / 1000.0, 0.001);
+        return new(results.Count, results.Count(r => !r.Success), sorted[0], sorted.Average(),
+            P(0.5), P(0.95), P(0.99), sorted[^1], results.Count / seconds);
+    }
+
+    public void Dispose() => cts?.Cancel();
+}
