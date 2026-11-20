@@ -6,7 +6,9 @@ Instructions for coding agents (and humans) working in this repo.
 1. **`docs/brain/`** holds the decision records: what we built and why. Read the index in
    `docs/brain/README.md` and the records for the area you're touching **before** making changes.
    Don't contradict a record silently: follow it, or add a new record that supersedes it.
-2. **`docs/plan.md`** is the backlog. Check it before starting new features, and update it when you finish one.
+2. **`docs/context.md`** is the domain language. Use its terms (execution, scenario entry, run, …) consistently in
+   code, UI and docs.
+3. **`docs/plan.md`** is the backlog. Check it before starting new features, and update it when you finish one.
 
 ## Record your decisions
 When you make a decision someone might later ask "why?" about (architecture, dependency, data format,
