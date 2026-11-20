@@ -487,3 +487,7 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 @media (max-width: 760px) { .overlay.settings { padding: 3rem 0 0; } .settings-dialog { min-height: 0; border-radius: var(--radius); margin: 0 .6rem; } }
 .figures .fig b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .figures .fig-sep { width: 1px; height: 1em; background: var(--border); align-self: center; }
+.figures .fig.good b { color: var(--good); }   /* positive is green (brain 0018): a 0 % error rate */
+.logrow.lv-Information { border-left-color: var(--good); }
+.figures .fig b { color: var(--text); }
+.figures .fig.bad b { color: var(--bad); } .figures .fig.warn b { color: var(--warn); } .figures .fig.good b { color: var(--good); }

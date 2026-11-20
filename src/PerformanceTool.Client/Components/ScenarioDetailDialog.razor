@@ -69,8 +69,8 @@
                 <button class="fig" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median of @Format.Plural(stats.Count, "actor", "actors")): open the actor in the middle">typical <b>@Format.Ms(stats.Median)</b></button>
                 <button class="fig @(stats.TailIsSlow ? "warn" : "")" @onclick="() => TailOnly(stats.P95)" title="The slowest 5 % take at least @Format.Ms(stats.P95): list them" aria-pressed="@Aria.Bool(tailMs is not null)">slowest 5% <b>@Format.Ms(stats.P95)</b></button>
                 <button class="fig @(stats.LongestIsSlow ? "warn" : "")" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest actor">longest <b>@Format.Ms(stats.Longest)</b></button>
-                <button class="fig @(stats.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(stats.Failed == 0)" title="Failed actors: @stats.Failed of @stats.Count">error rate <b>@Pc(stats.ErrorRate)</b></button>
-                <button class="fig @(stats.Slow > 0 ? "warn" : "")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(stats.Slow == 0)" title="Slow actors: @stats.Slow of @stats.Count">slow rate <b>@Pc(stats.SlowRate)</b></button>
+                <button class="fig @(stats.Failed > 0 ? "bad" : "good")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(stats.Failed == 0)" title="Failed actors: @stats.Failed of @stats.Count">error rate <b>@Pc(stats.ErrorRate)</b></button>
+                <button class="fig @(stats.Slow > 0 ? "warn" : "good")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(stats.Slow == 0)" title="Slow actors: @stats.Slow of @stats.Count">slow rate <b>@Pc(stats.SlowRate)</b></button>
             }
         </p>
 
@@ -248,6 +248,8 @@
     [Parameter, EditorRequired] public int Index { get; set; }
     [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
     [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Optional: what to list when the popup opens (the overview card figures lead here, brain 0029).</summary>
+    [Parameter] public DetailFilter InitialShow { get; set; }
 
     private ElementReference root;
     private ActorShow show = ActorShow.All;
@@ -299,7 +301,19 @@
     private ActorOutcome StepOutcome => show == ActorShow.Slow ? ActorOutcome.Slow : ActorOutcome.Failed;
     private int StepCount(ScenarioView v) => show == ActorShow.Slow ? v.SlowActors : v.Failed;
 
-    protected override void OnInitialized() { Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged; }
+    protected override void OnInitialized()
+    {
+        Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged;
+        switch (InitialShow)
+        {
+            case DetailFilter.Failed: show = ActorShow.Failed; break;
+            case DetailFilter.Slow: show = ActorShow.Slow; break;
+            case DetailFilter.Slowest5Pct:
+                var st = ActorStats.Compute(Snapshot.Store.Actors(Index), Snapshot.Scenarios[Index].Finished, double.NegativeInfinity, double.PositiveInfinity);
+                if (st.Count > 0) tailMs = st.P95;
+                break;
+        }
+    }
 
     private void OnSettingsChanged()
     {

@@ -41,10 +41,10 @@
             var slowPct = 100.0 * View.SlowActors / fin;
             <span class="card-stats" title="Typical duration, slowest 5 %, longest, errors and slow actors of finished actors. Click to open details.">
                 <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
-                <span class="st @(stats.P95Slow ? "warn" : "")"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
+                <span class="st @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
                 <span class="st @(stats.LongestSlow ? "warn" : "")"><small>longest</small> <b>@Format.Ms(stats.Longest)</b></span>
-                <span class="st @(View.Failed > 0 ? "bad" : "")"><small>errors</small> <b>@Pc(errPct)</b></span>
-                <span class="st @(View.SlowActors > 0 ? "warn" : "")"><small>slow</small> <b>@Pc(slowPct)</b></span>
+                <span class="st @(View.Failed > 0 ? "bad" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true"><small>errors</small> <b>@Pc(errPct)</b></span>
+                <span class="st @(View.SlowActors > 0 ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"><small>slow</small> <b>@Pc(slowPct)</b></span>
             </span>
         }
     }
@@ -80,6 +80,8 @@
     /// <summary>Changed since the preset was loaded or last saved.</summary>
     [Parameter] public bool Edited { get; set; }
     [Parameter] public EventCallback<int> OnOpen { get; set; }
+    /// <summary>A statistic of the card was clicked: open the popup pre-filtered (brain 0029).</summary>
+    [Parameter] public EventCallback<(int Index, DetailFilter Filter)> OnOpenFiltered { get; set; }
 
     private readonly ScenarioStats stats = new();
 

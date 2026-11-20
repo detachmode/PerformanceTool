@@ -2,6 +2,9 @@ using PerformanceTool.Client.Services;
 
 namespace PerformanceTool.Client.Components;
 
+/// <summary>What the scenario popup lists when it opens (e.g. from a figure on an overview card, brain 0029).</summary>
+public enum DetailFilter { All, Failed, Slow, Slowest5Pct }
+
 /// <summary>How an actor looks in a list or chip: its outcome, or "running" while it has none yet (brain 0028).</summary>
 public enum ActorState : byte { Failed = 0, Slow = 1, Running = 2, Ok = 3 }
 
