@@ -8,6 +8,8 @@
     var s = Sim.Current;
     Rebuild(s);
     var allLevels = level.All(x => x);
+    var nFailed = 0; var nSlow = 0;
+    for (var i = 0; i < s.Count; i++) if (scenario is null || scenario == i) { nFailed += s.Scenarios[i].Failed; nSlow += s.Scenarios[i].SlowActors; }
 }
 
 <div class="overlay logs" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="Popup.Close" role="presentation">
@@ -28,13 +30,13 @@
 
             <div class="seg" role="group" aria-label="Actors">
                 <button class="@(outcome == ActorShow.All ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.All)" @onclick="() => outcome = ActorShow.All">All actors</button>
-                <button class="@(outcome == ActorShow.Failed ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Failed)" @onclick="() => outcome = ActorShow.Failed">Failed</button>
-                <button class="@(outcome == ActorShow.Slow ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Slow)" @onclick="() => outcome = ActorShow.Slow">Slow</button>
+                <button class="@(outcome == ActorShow.Failed ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Failed)" @onclick="() => outcome = ActorShow.Failed" title="Only the logs of failed actors">Failed <span class="n">@Format.Num(nFailed)</span></button>
+                <button class="@(outcome == ActorShow.Slow ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Slow)" @onclick="() => outcome = ActorShow.Slow" title="Only the logs of slow actors">Slow <span class="n">@Format.Num(nSlow)</span></button>
             </div>
 
             @if (actor is { } a)
             {
-                <button class="chip" @onclick="() => actor = null" title="Remove the actor filter">Actor #@(a + 1) ✕</button>
+                <button class="chip" @onclick="() => actor = null" title="Remove the actor filter">Actor <ActorChip Sequence="a" State="StateOf(a, scenario)" /> ✕</button>
             }
 
             <div class="dd">
@@ -58,7 +60,7 @@
         <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
-                    <button class="actor-chip" @onclick="() => FilterActor(l)" title="Show only the logs of actor #@(l.Sequence + 1)">#@(l.Sequence + 1)</button>
+                    <ActorChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" OnClick="() => FilterActor(l)" Title="@($"Show only the logs of actor #{l.Sequence + 1}")" />
                     <button class="msg" aria-pressed="@Aria.Bool(ReferenceEquals(expanded, l))" title="Show details" @onclick="() => expanded = ReferenceEquals(expanded, l) ? null : l"><span class="visually-hidden">@l.Level: </span>@l.Message</button>
                 </div>
             </ItemContent>
@@ -68,7 +70,7 @@
         @if (expanded is { } x)
         {
             <section class="log-detail" aria-label="Log line details">
-                <div class="log-detail-head"><b>Actor #@(x.Sequence + 1)</b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
+                <div class="log-detail-head"><b>Actor <ActorChip Sequence="x.Sequence" State="StateOf(x.Sequence, x.Entry)" /></b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
                 <dl>@foreach (var (k, v) in x.Scope) { <dt>@k</dt><dd>@v</dd> }</dl>
                 @if (x.Exception is not null) { <pre>@x.Exception</pre> }
             </section>
@@ -116,6 +118,15 @@
     {
         if (e.Key != "Escape") return;
         if (levelsOpen) levelsOpen = false; else Popup.Close();
+    }
+
+    /// <summary>Outcome colour of an actor (brain 0028): running while it is in flight, else its outcome.</summary>
+    private ActorState StateOf(int sequence, int? entry)
+    {
+        var s = Sim.Current;
+        if (entry is { } e && s.ActorsInFlight is { } fl && e < fl.Length && fl[e].Any(r => r.Sequence == sequence)) return ActorState.Running;
+        if (entry is null && s.ActorsInFlight is { } all && all.Any(l => l.Any(r => r.Sequence == sequence))) return ActorState.Running;
+        return ActorOrder.StateOf(s.Store.OutcomeOf(sequence));
     }
 
     private void SetScenario(ChangeEventArgs e) => scenario = int.TryParse(e.Value?.ToString(), out var i) ? i : null;

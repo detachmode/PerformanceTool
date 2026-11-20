@@ -1,0 +1,23 @@
+@* The actor number (#192) in the colour of its outcome (brain 0028): red failed, yellow slow, green ok, blue running. Use this wherever an actor number is shown.
+   With OnClick it is a button (e.g. a log row filters on the actor), otherwise plain text. The outcome is also in the accessible name. *@
+@{
+    var css = ActorOrder.Css(State);
+    var label = $"Actor #{Sequence + 1}, {ActorOrder.Word(State)}";
+}
+@if (OnClick.HasDelegate)
+{
+    <button type="button" class="actor-chip achip @css @Class" title="@(Title ?? label)" aria-label="@label" @onclick="OnClick">#@(Sequence + 1)</button>
+}
+else
+{
+    <span class="achip @css @Class" title="@Title">#@(Sequence + 1)<span class="visually-hidden"> (@ActorOrder.Word(State))</span></span>
+}
+
+@code {
+    /// <summary>Zero-based sequence of the actor; shown as #Sequence+1.</summary>
+    [Parameter, EditorRequired] public int Sequence { get; set; }
+    [Parameter] public ActorState State { get; set; } = ActorState.Ok;
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

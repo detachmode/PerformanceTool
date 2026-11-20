@@ -4,6 +4,9 @@ using Microsoft.JSInterop;
 
 namespace PerformanceTool.Client.Components;
 
+/// <summary>A brushed time frame in run seconds. <see cref="ToEnd"/> is true when the brush reached the newest bar (the live edge).</summary>
+public readonly record struct BrushRange(double From, double To, bool ToEnd);
+
 /// <summary>
 /// Wraps a bar chart in an element and gives it Dock-like magnification (brain 0023). The per-frame work is in
 /// <c>wwwroot/dock-magnify.js</c>; Blazor only hears about a selection once (click or touch release) through <see cref="OnPick"/>
@@ -22,6 +25,8 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     [Parameter] public EventCallback<string> OnPick { get; set; }
     /// <summary>True while the user is aiming at the chart (pointer over it, finger down, keyboard focus), so the owner can hold back new bars (brain 0026).</summary>
     [Parameter] public EventCallback<bool> OnAim { get; set; }
+    /// <summary>The user brushed a time frame (drag across the chart, brain 0023 update 3).</summary>
+    [Parameter] public EventCallback<BrushRange> OnBrush { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
 
@@ -55,6 +60,7 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
 
     [JSInvokable] public Task Pick(string key) => OnPick.InvokeAsync(key);
     [JSInvokable] public Task Aim(bool aiming) => OnAim.InvokeAsync(aiming);
+    [JSInvokable] public Task Brush(double from, double to, bool toEnd) => OnBrush.InvokeAsync(new BrushRange(from, to, toEnd));
 
     /// <summary>The owner resumes by itself (badge click): the script forgets its aiming state.</summary>
     public async Task ReleaseAsync()

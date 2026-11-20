@@ -10,12 +10,13 @@ const CW = 6.2;        // width of one monospace character of the neighbour labe
 // Adaptive magnification (brain 0023, update 2): the hovered bar should end up about `target` px wide whatever the bar count, so the
 // peak factor is computed from the chart width W, the resting pitch r and the falloff radius R (bars, cosine kernel, whose extra width
 // sums to (peak-1)*r*R): hovered = peak*r*W / (W + (peak-1)*r*R)  =>  peak*r = target*(W - r*R) / (W - target*R).
-function plan(W, r) {
-    const target = Math.min(48, Math.max(36, W * 0.055));
+function plan(W, r, zs) {
+    let target = Math.min(48, Math.max(36, W * 0.055)) * zs;
     let R = Math.round(4 + (10 - r) * 0.45);
-    R = Math.max(4, Math.min(8, R, Math.floor(0.65 * W / target)));
+    R = Math.max(2, Math.min(8, R, Math.floor(0.65 * W / target)));
+    target = Math.min(target, 0.8 * W / R);      // the zoomed area can never need more than the chart
     const solved = target * (W - r * R) / (W - target * R);
-    return { R, peak: Math.max(MIN_PEAK, solved / r) };
+    return { R, peak: Math.max(Math.max(1.5, MIN_PEAK * zs), solved / r) };
 }
 const fmt = (s, tenths) => {
     s = Math.max(0, s);
@@ -107,9 +108,11 @@ export function attach(el, ref, options) {
     // ---- hover card: dot, #id, duration, secondary line; tail points at the bar. Built once, filled per hovered bar.
     let card = null, cardKey = '';
     if (tip) {
-        card = { dot: mk('dz-dot', 'i'), id: mk('dz-id', 'b'), meta: mk('dz-meta'), sub: mk('dz-sub') };
+        card = { dot: mk('dz-dot', 'i'), id: mk('dz-id', 'b'), meta: mk('dz-meta'), sub: mk('dz-sub'), counts: mk('dz-counts') };
+        card.cnt = ['bad', 'warn', 'good', 'run'].map(c => { const e = mk(c); e.append(mk('', 'i'), mk('', 'b'), mk('', 'em')); card.counts.append(e); return e; });
+        card.cnt[0].lastChild.textContent = ' failed'; card.cnt[1].lastChild.textContent = ' slow'; card.cnt[2].lastChild.textContent = ' ok'; card.cnt[3].lastChild.textContent = ' running';
         const row = mk('dz-row'); row.append(card.dot, card.id, card.meta);
-        const body = mk('dz-body'); body.append(row, card.sub);
+        const body = mk('dz-body'); body.append(row, card.sub, card.counts);
         tip.replaceChildren(body, mk('dz-tail'));
     }
     // ---- neighbour labels (pooled, fixed slots) and axis parts
@@ -177,10 +180,18 @@ export function attach(el, ref, options) {
         if (!it || !d.l1) return null;
         const bar = it.querySelector('.bar-stack, .bar');
         if (!bar) return null;
-        const key = [d.l1, d.l2, d.l3, d.s].join('|');
+        const key = [d.l1, d.l2, d.l3, d.s, d.bad, d.slow, d.ok, d.runn].join('|');
         if (key !== cardKey) {
             cardKey = key;
+            const bk = d.bucket !== undefined;
             card.dot.className = 'dz-dot ' + (d.s || ''); card.id.textContent = d.l1; card.meta.textContent = d.l2 || '';
+            card.id.className = 'dz-id' + (!bk && d.s ? ' ' + d.s : '');
+            card.counts.style.display = bk ? '' : 'none';
+            if (bk) [d.bad, d.slow, d.ok, d.runn].forEach((v, k) => {
+                const n = parseInt(v) || 0, e = card.cnt[k];
+                e.children[1].textContent = n; e.className = ['bad', 'warn', 'good', 'run'][k] + (n === 0 ? ' zero' : '');
+                e.style.display = k === 3 && n === 0 ? 'none' : '';
+            });
             card.sub.textContent = d.l3 || ''; card.sub.style.display = d.l3 ? '' : 'none';
         }
         const br = bar.getBoundingClientRect(), er = el.getBoundingClientRect(), sc = el.parentElement;
@@ -221,6 +232,7 @@ export function attach(el, ref, options) {
                         n.style.transform = `translateX(${x0.toFixed(1)}px)`; n.style.width = w.toFixed(1) + 'px';
                         n.style.opacity = Math.max(0.22, 0.8 - 0.14 * (a - 1)).toFixed(2);
                         if (n.firstChild.textContent !== ds.n1) n.firstChild.textContent = ds.n1;
+                        const nc = ds.ns || ''; if (n.firstChild.className !== nc) n.firstChild.className = nc;
                         if (n.lastChild.textContent !== ds.n2) n.lastChild.textContent = ds.n2;
                     }
                 }
@@ -239,7 +251,7 @@ export function attach(el, ref, options) {
         const k = reduced() ? 1 : 1 - Math.exp(-dt / SMOOTH_MS);
         const span = rest[n - 1].left + rest[n - 1].width - rest[0].left;
         const pitch = span / n;
-        const { R, peak } = plan(span, pitch);
+        const { R, peak } = plan(span, pitch, Math.min(2.5, Math.max(0.5, parseFloat(el.dataset.zoom) || 1)));
         let moving = false, sum = 0, total = 0;
         const w = new Array(n);
         for (let i = 0; i < n; i++) {
@@ -294,24 +306,96 @@ export function attach(el, ref, options) {
         return -1;
     };
     // Blazor gets the key of the bar (actor or time bucket), not its index, so a render between pointer-down and the call cannot change the target.
-    const pick = e => { const i = hit(rel(e)); const key = i >= 0 ? items[i].dataset.key : null; if (key) { window.__dock.calls++; window.__dock.lastKey = key; ref.invokeMethodAsync('Pick', key); } };
+    const pickKey = key => { if (key) { window.__dock.calls++; window.__dock.lastKey = key; ref.invokeMethodAsync('Pick', key); } };
+    const pick = e => { const i = hit(rel(e)); pickKey(i >= 0 ? items[i].dataset.key : null); };
+
+    // ---- brush (brain 0023, update 3): a mouse drag of more than 6 px is a brush, less is a click (the bar under the pointer at press time is
+    // picked on release). On touch, press and hold (~0.4 s) without moving, then drag; moving at once keeps the magnifying finger.
+    // The brush covers the bars it overlaps in the resting layout; Blazor gets the time frame (data-t0 .. data-t1 of those bars).
+    const THRESH = 6, HOLD = 380;
+    const brushEl = select ? el.querySelector(':scope > .dz-brush') : null;
+    let drag = null, holdTimer = 0, swallow = -1e9;
+    const spanOf = (a, b) => {
+        refresh(); const lo = Math.min(a, b), hi = Math.max(a, b), idx = [];
+        rest.forEach((q, i) => { if (q.left + q.width > lo && q.left < hi) idx.push(i); });
+        return idx;
+    };
+    const rangeOf = idx => { let a = Infinity, b = -Infinity; for (const i of idx) { a = Math.min(a, t0(i)); b = Math.max(b, t1(i)); } return [a, b]; };
+    const startBrush = () => {
+        if (!drag || drag.brushing || !brushEl) return;
+        drag.brushing = true; active = false; kick();
+        el.dataset.brushing = '1';
+        try { el.setPointerCapture(drag.id); } catch (_) { }
+        try { if (drag.touch && navigator.vibrate) navigator.vibrate(12); } catch (_) { }
+    };
+    const updateBrush = x => {
+        x = Math.max(0, Math.min(el.clientWidth, x)); drag.x = x;
+        const lo = Math.min(drag.x0, x), hi = Math.max(drag.x0, x), idx = spanOf(drag.x0, x);
+        brushEl.classList.add('show'); brushEl.style.left = lo + 'px'; brushEl.style.width = (hi - lo) + 'px';
+        if (idx.length) {
+            const [a, b] = rangeOf(idx), tenths = !items[idx[0]].dataset.bucket;
+            brushEl.firstChild.textContent = fmt(a, tenths) + ' – ' + fmt(b, tenths);
+        }
+    };
+    const finishBrush = apply => {
+        const d = drag; drag = null;
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+        if (!d || !d.brushing) return false;
+        delete el.dataset.brushing; brushEl.classList.remove('show');
+        try { el.releasePointerCapture(d.id); } catch (_) { }
+        const idx = apply ? spanOf(d.x0, d.x) : [];
+        if (idx.length) { const [a, b] = rangeOf(idx); window.__dock.brushes = (window.__dock.brushes || 0) + 1; ref.invokeMethodAsync('Brush', a, b, idx[idx.length - 1] >= items.length - 1); }
+        swallow = performance.now();
+        return true;
+    };
 
     const onMove = e => { px = rel(e); active = true; kick(); };
     const onDown = e => {
-        if (e.pointerType === 'touch') { if (select) { down = true; onMove(e); syncAim(); } }
-        else if (select && e.button === 0) pick(e);        // mouse and pen pick on pointer-down, from the layout the user sees now (brain 0026)
+        if (!select) return;
+        const x = rel(e);
+        if (e.pointerType === 'touch') {
+            down = true; onMove(e);
+            drag = { id: e.pointerId, x0: x, x, cx: e.clientX, cy: e.clientY, touch: true, brushing: false };
+            if (holdTimer) clearTimeout(holdTimer);
+            holdTimer = setTimeout(() => { holdTimer = 0; if (drag && !drag.moved) startBrush(); }, HOLD);
+            syncAim();
+        } else if (e.button === 0) {
+            const i = hit(x);
+            drag = { id: e.pointerId, x0: x, x, cx: e.clientX, cy: e.clientY, touch: false, brushing: false, key: i >= 0 ? items[i].dataset.key : null };
+        }
     };
     const onPointerMove = e => {
-        if (e.pointerType === 'touch') { if (!select) return; }
+        const touch = e.pointerType === 'touch';
+        if (drag && !touch && e.buttons === 0) drag = null;
+        if (drag && select) {
+            const dist = Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy);
+            if (!drag.brushing && dist >= THRESH) {
+                if (touch) { drag.moved = true; if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; } }
+                else startBrush();
+            }
+            if (drag.brushing) { updateBrush(rel(e)); return; }
+        }
+        if (touch) { if (!select) return; }
         else if (!hover) { hover = true; syncAim(); }
         onMove(e);
     };
     const onEnter = e => { if (e.pointerType !== 'touch' && !hover) { hover = true; syncAim(); } };
-    const onLeave = e => { if (e.pointerType !== 'touch') { active = false; hover = false; kick(); syncAim(); } };
+    const onLeave = e => {
+        if (e.pointerType === 'touch') return;
+        if (drag && drag.brushing) return;
+        drag = null; active = false; hover = false; kick(); syncAim();
+    };
     const onUp = e => {
-        if (e.pointerType !== 'touch' || !select) return;
+        if (!select) return;
+        const apply = e.type === 'pointerup';
+        if (e.pointerType !== 'touch') {
+            const d = drag;
+            if (d && d.brushing) { finishBrush(apply); active = false; kick(); }
+            else if (d && apply && e.button === 0) { drag = null; pickKey(d.key); }
+            return;
+        }
         px = rel(e);
-        if (e.type === 'pointerup') { pick(e); touchDone = performance.now(); }
+        if (!finishBrush(apply) && apply) { pick(e); touchDone = performance.now(); }
         down = false; active = false; kick(); syncAim();
     };
     const onClick = e => {
@@ -334,7 +418,7 @@ export function attach(el, ref, options) {
     el.__dock = () => {
         el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onPointerMove);
         el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerup', onUp);
-        el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true);
+        el.removeEventListener('pointercancel', onUp); if (holdTimer) clearTimeout(holdTimer); el.removeEventListener('click', onClick, true);
         el.removeEventListener('pointerenter', onEnter); el.removeEventListener('focusin', onFocusIn); el.removeEventListener('focusout', onFocusOut);
         if (aimTimer) clearTimeout(aimTimer);
         if (raf) cancelAnimationFrame(raf);
