@@ -49,3 +49,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0009](0009-agent-access-to-ci-runs.md) | Agents inspect CI runs: run bundles, artifact + central server (API key), one CLI/API (+ MCP) | Proposed, partly decided in 0010 |
 | [0010](0010-azure-devops-pipeline-artifacts.md) | Azure DevOps: tool runs in the pipeline; results as a full artifact + a small summary artifact | Accepted (not implemented) |
 | [0011](0011-overview-and-editor-pages.md) | Separate lightweight overview page (tiles with Aspire-style box charts + details popup) and editor page | Accepted (not implemented) |
+| [0012](0012-scenario-logging.md) | Scenarios log via ILogger with a scope per run; logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted (not implemented) |

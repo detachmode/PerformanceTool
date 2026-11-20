@@ -43,6 +43,11 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Split into a lightweight **overview page** (scenario tiles with little Aspire-style box charts; click → existing details popup) and an **editor page**.
 - [ ] Open: where runs are started/stopped; exact mini-chart style.
 
+## 0e. Scenario logging (brain 0012)
+- [ ] `ILogger` available to scenarios; new logging scope per run; tool records the logs.
+- [ ] Persist logs locally with the run data (CI later: part of the full artifact).
+- [ ] UI: log statements visible when inspecting a scenario (details popup). Draft with fake logs first.
+
 ## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009, proposed)
 - [ ] Extract `Services/*` into `src/PerformanceTool.Core` (scenarios, plan, runner, presets, stats), used by web, CLI and server.
 - [ ] Run bundle writer: `manifest.json`, `summary.json`, `results.ndjson(.gz)` (appended live), `summary.md`, `junit.xml`;
