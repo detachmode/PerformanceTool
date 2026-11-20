@@ -8,14 +8,13 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4, review pass, a11y follow-ups + demo speed, ARIA attribute pass.
-- **Idle: waiting for user input** (open questions below).
+- Done: drafts 1–4, review pass, a11y passes, demo speed, CI (0014).
+1. **Running:** WebAssembly restructure (brain 0015): Core library + WebAssembly client (drafts UI, in-browser fake
+   data) + server host; GitHub Pages deployment with fake data.
 2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
-- Decision-free UI work is running out; further items need user input (see open questions).
 
-Open questions for the user (ask one at a time): which duration summary to show instead of p50/p95/p99 (asked);
-group repeated calls by name (IDs collapsed) or by position; colours for call groups; may decided backend items
-(0012 logging, 0013 call recording) be built in the background during the drafts phase?
+Open questions for the user (ask one at a time): which duration summary to show instead of p50/p95/p99;
+group repeated calls by name (IDs collapsed) or by position; colours for call groups.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
