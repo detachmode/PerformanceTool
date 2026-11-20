@@ -51,3 +51,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0011](0011-overview-and-editor-pages.md) | Separate lightweight overview page (tiles with Aspire-style box charts + details popup) and editor page | Accepted (not implemented) |
 | [0012](0012-scenario-logging.md) | Scenarios log via ILogger with one scope per actor (one bar); logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted (not implemented) |
 | [0013](0013-call-durations-are-first-class.md) | Call durations inside each actor are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked actor bars (up to ~50 calls) | Accepted (not implemented) |
+| [0014](0014-ci-on-github-actions.md) | GitHub Actions CI: restore, build, test (TRX artifact + summary) on every push/PR | Accepted |

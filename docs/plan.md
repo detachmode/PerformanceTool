@@ -91,7 +91,7 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] GitHub: composite action / reusable workflow (artifact, `$GITHUB_STEP_SUMMARY`, PR comment, optional push).
 - [ ] Container image with the CLI (ACR / GHCR).
 - [ ] Baseline comparison: fail on regression vs last good run on the default branch.
-- [ ] CI for this repo itself: build + `dotnet test` on push.
+- [x] CI for this repo itself: build + `dotnet test` on push (`.github/workflows/ci.yml`, brain 0014).
 
 ## 5. Agent integration (proposal only, not decided)
 - [ ] `perftool mcp`: MCP server over the same API (list_runs, get_run_summary, query_executions, errors, compare_runs, list_scenarios, start_run).
