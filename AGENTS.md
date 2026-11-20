@@ -54,7 +54,8 @@ JS modules via the importmap in `index.html`. Pages allows no custom HTTP header
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
-it, used as a filter and isolated. Don't add read-only data views.
+it, used as a filter and isolated. Don't add read-only data views. **Every counter or figure drills down** to the
+details behind it (brain 0029), e.g. an errors counter opens the failed actors.
 
 ## Screenshots in the repo and in PRs
 - Never overwrite or rename existing files in `docs/screenshots/`; earlier PR descriptions link to them.

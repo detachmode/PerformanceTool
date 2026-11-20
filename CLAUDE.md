@@ -13,3 +13,4 @@
 - **Calm UI (brain 0016):** show less, reveal on demand. Every agent brief for UI work must include this principle.
 - **Screenshots:** never overwrite old screenshot files; use a new folder per set and commit-pinned links in PRs (see `AGENTS.md`).
 - **Always open a PR when a step is done:** after merging an agent's finished work into the working branch, open a PR to `main` (screenshots in a new folder, commit-pinned links) and watch its CI. If a PR from the branch is already open, add the step to it and update its description.
+- **Every info drills down (brain 0029):** any counter or figure in the UI is clickable and opens the details behind it. Every UI brief must say so.
