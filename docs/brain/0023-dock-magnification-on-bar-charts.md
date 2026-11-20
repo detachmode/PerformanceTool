@@ -29,3 +29,6 @@ and calm (0016) but makes precise selection easy.
 - In the popup, the **hovered (magnified) bar shows, inside the bar, the actor number and its timestamps**
   (e.g. `#192 · 10:42:05 → 10:42:11`, or start time and duration). Which exact fields is up to the draft;
   keep it short.
+- **Less aggressive grouping in the popup (user):** because magnification makes thin bars easy to pick, the popup
+  chart shows many more individual actor bars before it groups them into time buckets. The bar count stays bounded
+  (0021), with a much higher limit than before.
