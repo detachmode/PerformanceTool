@@ -54,3 +54,15 @@ and calm (0016) but makes precise selection easy.
 - Per-frame work stays in JS; reads (bar rect, card size) happen before the frame's writes. Reduced motion: no transitions, instant zoom. Touch drag shows the same labels. Click and touch hit-testing use the magnified layout (verified: clicking the widest bar selects it).
 - Frame timing, synthetic sweep over 239 bars (3 x 150 moves, 1440x900 headless): rAF interval median 16.7 ms, p95 16.7 ms, max 33.4 ms (1 to 3 frames over 20 ms of about 460); JS time per frame median 4.3 ms, p95 7.7 ms, max 13 ms.
 - Screenshots: `docs/screenshots/2026-11-20-chart-polish/`. Debug runs: `?simulate=360s` gives about 239 single-actor bars in the first scenario, `?simulate=3h` the bucketed case.
+
+## Update 3 (user feedback, 2026-11-20)
+- **No nested scroll views:** selecting a group of actors (a bucket) must not open a second scrollable list under the
+  scrollable popup. Instead, a **list at the side of the popup** shows all actors in the current time frame, sorted
+  failed → slow → successful, then by time (0028).
+- **Hovered group label:** inside the hovered bar of a group, show how many actors were **successful, failed and slow**
+  (nicely designed).
+- **Brush to zoom (like Kibana/Elastic):** the user can drag a region on the chart to zoom into that time frame. Works
+  well while live data comes in (the zoomed window stays put; a way back to the full/live view).
+- **Settings panel:** zoom strength and the max bar count before grouping are adjustable by the user.
+- **Live actors while hovering:** actors already running when the chart froze still get their final colour if they
+  finish while hovering.

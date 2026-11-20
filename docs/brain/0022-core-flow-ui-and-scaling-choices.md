@@ -8,7 +8,7 @@
   (median of a sliding window of the latest 51 durations, needs at least 5 samples). An actor is slow if any call is slow. The rule lives
   only in `Services/SlowCallRule.cs`. Cards and bars are red when errors occurred, amber when only slow calls occurred.
 - **Bounded data:** `RunStore` keeps a tiny record per finished actor for the whole run, counters incrementally, and calls and log
-  lines only for the latest 1500 actors per scenario (the UI says so). The log index is a time-sorted list that is merged incrementally.
+  lines for at most 1500 actors per scenario, configurable (the UI says so); since brain 0028 successful actors lose their detail first, then slow, then failed. The log index is a time-sorted list that is merged incrementally.
 - **Bounded charts:** up to 48 bars is one bar per actor, more is aggregated into time buckets of a nice width (red/amber if any actor in
   it failed/was slow); a bucket opens a virtualised list of its actors. Card mini charts show the latest 32 actors.
 - **Own `VirtualList` (small JS scroll reporter) instead of Blazor `Virtualize`:** with .NET 10, `Virtualize`

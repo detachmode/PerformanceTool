@@ -28,3 +28,12 @@ run status always in view on every page.
 - Phone (<= 760px): play, stop, elapsed with track, running, errors and a details toggle; actors/min, slow, state text and Logs appear when it is open.
 - Space toggles play/pause (`wwwroot/player-bar.js`) unless focus is in an input, button, link or similar. A visually hidden polite status announces only state changes; readouts are not live. `prefers-reduced-motion` stops the lamp pulse and the progress transition.
 - The fake source starts as a finished pre-seeded run, so "Idle" is not visible on load; the first screenshots show the Finished state.
+
+## Update (user feedback, 2026-11-20)
+Make the player bar's UI **nicer**, and the **play / stop buttons more prominent**. Keep the calm, cockpit-inspired
+look (no glow-heavy or skeuomorphic styling).
+
+## Update 2 (polish and drill-down, 2026-11-20)
+- Play/Pause is a 54px round disc (violet idle/paused/finished, blue running, hover/active/focus states) with a short desktop label ("Start run", "Pause", "Resume", "Run again"; hidden below 1100px). Stop is a smaller round secondary button with a red hover.
+- Bar surface: lighter top edge plus soft shadow, more spacing, recessed progress track with ticks.
+- Brain 0029: Running, Errors and Slow readouts are buttons opening the Logs popup (Errors pre-filtered to Failed, Slow to Slow, Running all logs). Calm affordance: faint background and underlined label on hover/focus. LogsPopupState.Show got an optional ActorShow outcome, read by LogsDialog on init. Actors/min and the clock are not drill-down yet.

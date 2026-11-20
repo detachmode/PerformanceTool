@@ -85,9 +85,13 @@ public sealed class FakeRunSource : IRunSource
     /// <summary>Raised whenever <see cref="Current"/> changes. Pages must marshal with InvokeAsync.</summary>
     public event Action? Changed;
 
-    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0)
+    /// <summary>Limits of the next run's <see cref="RunStore"/> (brain 0028). Changing a value also applies to the run in progress.</summary>
+    public RunStoreOptions StoreOptions { get; }
+
+    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null)
     {
         this.catalog = catalog;
+        StoreOptions = storeOptions ?? new RunStoreOptions();
         LoadBlackFriday();
         Presets.Add(new("Black Friday mix", Plan.Clone(), [.. Profiles]));
         Presets.Add(MakeSmoke());
@@ -227,7 +231,7 @@ public sealed class FakeRunSource : IRunSource
         runProfiles = [.. Profiles];
         var n = runPlan.Scenarios.Count;
         pending.Clear();
-        store = new RunStore(n);
+        store = new RunStore(n, StoreOptions);
         typicals = new CallTypicals();
         starts = new int[n]; inFlight = new int[n]; failed = new int[n]; slowActors = new int[n]; slowCalls = new int[n];
         // First fire at a random offset inside the first interval, like independent arrival streams.
@@ -291,12 +295,13 @@ public sealed class FakeRunSource : IRunSource
         var ran = failAt >= 0 ? failAt + 1 : count;
         var slowAt = rng.NextDouble() < profile.TailChance ? rng.Next(ran) : -1;
 
+        var errorId = store.Errors.Intern(error);
         var seq = sequence++;
         var calls = new List<FakeCall>(count);
         var offset = 0.0;
         for (var i = 0; i < count; i++)
         {
-            if (i >= ran) { calls.Add(new(i, spec[i].Name, offset, 0, null, null, true, 0)); continue; }
+            if (i >= ran) { calls.Add(new(i, spec[i].Name, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors)); continue; }
             var gap = i > 0 && spec[i].Pause ? Math.Round(profile.ThinkMs * (0.6 + 0.8 * rng.NextDouble()), 1) : 0;
             offset += gap;
             var d = spec[i].MedianMs * Math.Exp(spec[i].Sigma * Gaussian());
@@ -304,7 +309,7 @@ public sealed class FakeRunSource : IRunSource
             var isFailed = i == failAt;
             if (isFailed && status is null) d = profile.CallTimeoutMs;
             d = Math.Round(Math.Clamp(d, 3, profile.CallTimeoutMs), 1);
-            calls.Add(new(i, spec[i].Name, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? error : null, false, gap));
+            calls.Add(new(i, spec[i].Name, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors));
             offset += d;
         }
         var ms = Math.Round(offset, 1);
@@ -327,7 +332,7 @@ public sealed class FakeRunSource : IRunSource
             if (isSlow) slow++;
             calls.Add(c with { Slow = isSlow, TypicalMs = typical });
         }
-        var record = new ActorRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, p.Error);
+        var record = new ActorRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors);
         if (record.Failed) failed[p.Entry]++;
         else if (slow > 0) slowActors[p.Entry]++;
         slowCalls[p.Entry] += slow;
@@ -335,12 +340,12 @@ public sealed class FakeRunSource : IRunSource
         var cfg = runPlan.Scenarios[p.Entry];
         var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
         var run = (id: runId, started: runStartedUtc);
-        store.Complete(record, new ActorDetail(p.Sequence, p.Entry, calls, () => MakeLogs(record, label, calls, p.Profile, run.id, run.started)));
+        store.Complete(record, new ActorDetail(p.Sequence, p.Entry, calls, () => MakeLogs(record, label, calls, p.Profile, run.id, run.started, store.Errors)));
     }
 
     // ---------- fake log statements (brain 0012), generated on first use ----------
 
-    private static List<FakeLogEntry> MakeLogs(ActorRecord actor, string label, List<FakeCall> calls, FakeProfile profile, string runId, DateTimeOffset runStarted)
+    private static List<FakeLogEntry> MakeLogs(ActorRecord actor, string label, List<FakeCall> calls, FakeProfile profile, string runId, DateTimeOffset runStarted, ErrorDictionary errors)
     {
         var rng = new Random(actor.Sequence * 31 + 17);
         var seq = actor.Sequence;
@@ -349,15 +354,23 @@ public sealed class FakeRunSource : IRunSource
         var error = actor.Error;
         var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Actor"] = $"#{seq + 1}" };
         var list = new List<FakeLogEntry>(calls.Count * 2 + 4);
-        void Log(double offsetMs, string level, string message, string? ex = null, FakeCall? call = null)
+        var callScopes = new Dictionary<int, IReadOnlyDictionary<string, string>>();
+        // Exception texts are always interned (brain 0028); messages only where the caller knows they repeat (intern: true).
+        void Log(double offsetMs, string level, string message, string? ex = null, FakeCall? call = null, bool intern = false)
         {
-            var s = scope;
-            if (call is not null) s = new Dictionary<string, string>(scope) { ["Call"] = $"{call.Index + 1}/{calls.Count} {call.Name}" };
-            list.Add(new(at + offsetMs / 1000, runStarted.AddSeconds(at + offsetMs / 1000), level, message, ex, actor.Entry, seq, s, call?.Index));
+            IReadOnlyDictionary<string, string> s = scope;
+            if (call is not null && !callScopes.TryGetValue(call.Index, out s!))
+                callScopes[call.Index] = s = new Dictionary<string, string>(scope) { ["Call"] = $"{call.Index + 1}/{calls.Count} {call.Name}" };
+            var t = at + offsetMs / 1000;
+            list.Add(intern
+                ? new(t, runStarted.AddSeconds(t), level, errors.Intern(message), errors.Intern(ex), errors, actor.Entry, seq, s, call?.Index)
+                : ex is null
+                    ? new(t, runStarted.AddSeconds(t), level, message, null, actor.Entry, seq, s, call?.Index)
+                    : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, actor.Entry, seq, s, call?.Index));
         }
 
         Log(0, "Debug", $"Actor #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
-        if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0", call: calls[0]);
+        if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0", call: calls[0], intern: true);
 
         foreach (var c in calls)
         {
@@ -377,14 +390,14 @@ public sealed class FakeRunSource : IRunSource
             }
             else if (c.Status is null)
             {
-                Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c);
-                Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c);
+                Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c, intern: true);
+                Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c, intern: true);
                 Log(end, "Error", $"Timeout after {c.DurationMs:0} ms while calling https://partner.example.com/api/v1/orders/{seq + 90000}/shipping-options?country=DE&postcode=10115&weight=2.4&express=true. The partner did not answer within the configured limit.\nThe request will not be retried again; the actor stops here.",
                     $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {profile.CallTimeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
             }
             else
             {
-                if (profile.Errors is { Count: > 1 } && c.Status == 500) Log(c.OffsetMs + c.DurationMs * 0.5, "Warning", "Retrying partner call (attempt 2)", call: c);
+                if (profile.Errors is { Count: > 1 } && c.Status == 500) Log(c.OffsetMs + c.DurationMs * 0.5, "Warning", "Retrying partner call (attempt 2)", call: c, intern: true);
                 Log(end, "Error", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms",
                     $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n   at PerformanceTool.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at PerformanceTool.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38", c);
             }

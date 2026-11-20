@@ -2,7 +2,7 @@
    Neutral by default; red when errors occurred, amber when only slow calls occurred (brain 0018). The chart is bounded to the latest actors (brain 0021). *@
 @using System.Globalization
 @{
-    var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : "";
+    var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
     var actual = Elapsed > 0 ? View.Starts / (Elapsed / 60) : 0;
     var runNow = Running is { Count: > 0 } ? Running.Skip(Math.Max(0, Running.Count - 12)).ToList() : [];
     var take = Math.Min(View.Finished, MaxBars - runNow.Count);
@@ -34,6 +34,19 @@
             <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
             <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
         </span>
+        @if (stats.HasData)
+        {
+            var fin = Math.Max(1, View.Finished);
+            var errPct = 100.0 * View.Failed / fin;
+            var slowPct = 100.0 * View.SlowActors / fin;
+            <span class="card-stats" title="Typical duration, slowest 5 %, longest, errors and slow actors of finished actors. Click to open details.">
+                <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
+                <span class="st @(stats.P95Slow ? "warn" : "")"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
+                <span class="st @(stats.LongestSlow ? "warn" : "")"><small>longest</small> <b>@Format.Ms(stats.Longest)</b></span>
+                <span class="st @(View.Failed > 0 ? "bad" : "")"><small>errors</small> <b>@Pc(errPct)</b></span>
+                <span class="st @(View.SlowActors > 0 ? "warn" : "")"><small>slow</small> <b>@Pc(slowPct)</b></span>
+            </span>
+        }
     }
     <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
         @foreach (var a in recent)
@@ -67,6 +80,15 @@
     /// <summary>Changed since the preset was loaded or last saved.</summary>
     [Parameter] public bool Edited { get; set; }
     [Parameter] public EventCallback<int> OnOpen { get; set; }
+
+    private readonly ScenarioStats stats = new();
+
+    protected override void OnParametersSet()
+    {
+        if (!Idle) stats.Update(Actors, View.Finished);
+    }
+
+    private static string Pc(double p) => p <= 0 ? "0%" : p < 10 ? p.ToString("0.0", CultureInfo.InvariantCulture) + "%" : p.ToString("0", CultureInfo.InvariantCulture) + "%";
 
     private static string Pct(double f) => Math.Clamp(f * 100, 4, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 }

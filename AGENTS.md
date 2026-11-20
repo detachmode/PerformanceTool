@@ -26,7 +26,7 @@ Three projects plus tests (brain 0015), all `net11.0`:
   - `Services/IRunSource.cs` is the seam to the data: `FakeRunSource` (in-browser simulation, the default) and `ApiRunSource` (stub, throws until the REST API exists).
     Choose with `"DataSource": "Fake" | "Api"` in `wwwroot/appsettings.json`.
   - `Pages/`, `Layout/` (top bar and the bottom `PlayerBar` with play/pause, stop, run readouts and Logs, brain 0027), `Components/` (`ScenarioCard`, popups `ScenarioDetailDialog` and `LogsDialog`, `VirtualList`, `ActorBars`, `Parameters/`), `wwwroot/app.css` (dark tokens; flat, dark only; colour only means failed = red or slow = amber, brain 0018).
-  - **Slow rule (placeholder):** `Services/SlowCallRule.cs` is the one place that defines "slow". **Scale (brain 0021/0022):** `RunStore` keeps tiny actor records for the whole run and calls/logs only for the latest 1500 actors per scenario; long lists use `VirtualList`, charts are bounded (`ActorBars`). Debug: open the app with `?simulate=3h` to pre-generate a 3 hour run.
+  - **Slow rule (placeholder):** `Services/SlowCallRule.cs` is the one place that defines "slow". **Scale (brain 0021/0022):** `RunStore` keeps tiny actor records for the whole run and calls/logs for at most `RunStoreOptions.MaxDetailedActorsPerScenario` (1500) actors per scenario, dropping successful actors first, then slow, then failed (brain 0028); each distinct error text is stored once in `ErrorDictionary` (`store.Errors`; `ActorRecord`/`FakeCall`/`FakeLogEntry` hold ids, `Error`/`Message`/`Exception` resolve them; `store.HasDetail(seq)` tells whether detail is kept); long lists use `VirtualList`, charts are bounded (`ActorBars`). Debug: open the app with `?simulate=3h` to pre-generate a 3 hour run.
   - **Trimming:** Release publish trims. `PerformanceTool.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
 - `src/PerformanceTool` — ASP.NET Core host. `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
   `GET /api/scenarios`. It serves the client (project reference, static web assets via `MapStaticAssets`, `MapFallbackToFile("index.html")`). No Razor UI of its own.
@@ -54,7 +54,8 @@ JS modules via the importmap in `index.html`. Pages allows no custom HTTP header
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
-it, used as a filter and isolated. Don't add read-only data views.
+it, used as a filter and isolated. Don't add read-only data views. **Every counter or figure drills down** to the
+details behind it (brain 0029), e.g. an errors counter opens the failed actors.
 
 ## Screenshots in the repo and in PRs
 - Never overwrite or rename existing files in `docs/screenshots/`; earlier PR descriptions link to them.
