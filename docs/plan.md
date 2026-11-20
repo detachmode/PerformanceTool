@@ -17,7 +17,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 - **Done (C):** player bar polish + drill-down counters (0027 update 2, 0029).
 
-- **Running (D):** editor fixes: change detection while typing, missing scrollbars (0019 update).
+- **Done (D):** editor fixes: change detection while typing, missing scrollbars (0019 update).
+- **Done:** green card outline when no failed/slow (0018 update).
 
 - **Done (E):** compact statistics on the overview cards (0030); card figures open the popup unfiltered until the popup gets a pre-filter.
 
