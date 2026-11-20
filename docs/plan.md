@@ -8,19 +8,14 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
-- Done: core-flow simplification (brain 0020, 0021, 0022): editor, overview, scenario popup, Logs popup; scales to 3 h runs.
-- **Done:** Dock-like magnification on the actor bar charts (brain 0023).
-- **Done:** bar colours green/yellow/red and blue running actors (brain 0018).
-- **Done:** editor uses the overview's scenario cards (brain 0024).
-- **Done:** full word-wrapped log rows (variable-height virtual list).
-- **Done:** magnification only in the popup, bar labels (actor + times), popup bar limit 240 (brain 0023 update).
-- **Done:** build info (commit + deploy date) and no stale cache (brain 0025).
-- **Done:** popup chart polish: hover card, adaptive zoom, neighbour labels, x-axis (0023 update 2).
-- **Done:** stable clicking on live charts (brain 0026).
-- **Done:** run player bar at the bottom (brain 0027).
+- Done: …, player bar (0027), stable clicking (0026).
+- **Running (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
+  ordering and outcome-coloured actor numbers in the Logs popup.
+- **Running (B):** popup chart, 0023 update 3: side list instead of nested scroll, group counts in the hovered bar,
+  brush-to-zoom with live data, settings panel (zoom strength, max bars), live actors finishing while hovering;
+  outcome-coloured actor numbers and ordering in the popup.
 
-Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
-what counts as "slow"; duration summary.
+Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)

@@ -16,6 +16,9 @@ scenarios, actors and calls, and ask the user when unsure.
 ## Colours
 Bars and status: **green = good**, **yellow = slow**, **red = failed**; actors **in flight** are shown as running (blue/grey and/or animated, style open) (brain 0018). No colour per scenario.
 
+## Ordering rule
+Where actors are listed or grouped: **failed → slow → successful**, then by time (brain 0028). Actor numbers always show their outcome colour.
+
 ## Terms
 
 | Term | Meaning | Code | Status |
