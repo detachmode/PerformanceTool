@@ -67,3 +67,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0027](0027-run-player-bar.md) | Run controls as a bottom "player bar" (play/pause/stop + run details), subtle cockpit look | Accepted (not implemented) |
 | [0028](0028-interesting-actors-first.md) | Failed and slow actors first: outcome-coloured actor numbers, failed→slow→ok ordering, kept longer, error dictionary | Accepted (not implemented) |
 | [0029](0029-every-info-drills-down.md) | UI principle: every shown info (counter, figure, status) is clickable and drills down to the details | Accepted |
+| [0030](0030-compact-statistics.md) | Some statistics come back: compact inline, coloured good/bad, no boxes, clickable | Accepted (figures/placement Proposed) |
