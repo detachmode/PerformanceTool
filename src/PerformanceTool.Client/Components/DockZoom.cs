@@ -7,7 +7,7 @@ namespace PerformanceTool.Client.Components;
 /// <summary>
 /// Wraps a bar chart in an element and gives it Dock-like magnification (brain 0023). The per-frame work is in
 /// <c>wwwroot/dock-magnify.js</c>; Blazor only hears about a selection once (click or touch release) through <see cref="OnPick"/>
-/// with the index of the child bar. Keyboard activation of the bar buttons is not touched.
+/// with the key of the bar. Keyboard activation of the bar buttons is not touched.
 /// </summary>
 public sealed class DockZoom : ComponentBase, IAsyncDisposable
 {
@@ -18,7 +18,10 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     [Parameter] public bool Select { get; set; }
     /// <summary>False on the cards: no magnification there (brain 0023), only the clock-driven growth of running bars.</summary>
     [Parameter] public bool Magnify { get; set; } = true;
-    [Parameter] public EventCallback<int> OnPick { get; set; }
+    /// <summary>Called once with the key of the picked bar (<c>data-key</c>: actor, running actor or time bucket), not its index (brain 0026).</summary>
+    [Parameter] public EventCallback<string> OnPick { get; set; }
+    /// <summary>True while the user is aiming at the chart (pointer over it, finger down, keyboard focus), so the owner can hold back new bars (brain 0026).</summary>
+    [Parameter] public EventCallback<bool> OnAim { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
 
@@ -50,7 +53,16 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
         catch (OperationCanceledException) { }
     }
 
-    [JSInvokable] public Task Pick(int index) => OnPick.InvokeAsync(index);
+    [JSInvokable] public Task Pick(string key) => OnPick.InvokeAsync(key);
+    [JSInvokable] public Task Aim(bool aiming) => OnAim.InvokeAsync(aiming);
+
+    /// <summary>The owner resumes by itself (badge click): the script forgets its aiming state.</summary>
+    public async Task ReleaseAsync()
+    {
+        try { if (module is not null && attached) await module.InvokeVoidAsync("release", element); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
 
     public async ValueTask DisposeAsync()
     {

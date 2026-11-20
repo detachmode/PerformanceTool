@@ -10,7 +10,7 @@
 
 @{
     var s = Sim.Current;
-    var state = s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle";
+    var state = s.Paused ? "Paused" : s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle";
 }
 
 <div class="page">

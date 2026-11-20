@@ -57,12 +57,51 @@ export function attach(el, ref, options) {
     if (options && options.magnify === false) { el.__dock = () => { tracked.delete(el); watch.disconnect(); }; return; }
     const select = !!(options && options.select);
     const selector = ':scope > .bar-hit, :scope > i';
-    let items = [], rest = [], cur = [], width = -1;     // rest layout, current (eased) magnification 0..1 per item
+    let items = [], rest = [], cur = [], width = -1, minW = 0;     // rest layout, current (eased) magnification 0..1 per item
     let layout = [];                                     // last applied {left, width} per item, relative to el
     const tip = el.querySelector(':scope > .dz-label');   // hover card, set per frame (no Blazor render)
     const strip = el.querySelector(':scope > .dz-strip'); // faint labels of the neighbours, under the bars
     const axis = el.querySelector(':scope > .dz-axis');   // run-time axis with the hovered bar's timeframe
     let active = false, px = 0, raf = 0, last = 0, touchDone = -1e9;
+    // ---- aiming (brain 0026): while the pointer is over the popup chart, a finger is down or the keyboard focus is in it, Blazor is told
+    // once (Aim true) and stops applying new bars. After a short grace period Blazor is told again and the chart catches up; the bars that
+    // are still there glide from their old to their new place (snapshot + FLIP in idle).
+    let hover = false, down = false, focused = false, notified = false, aimTimer = 0, snap = null, snapAt = 0;
+    const aimNow = () => hover || down || focused;
+    const keyed = () => Array.from(el.querySelectorAll(':scope > .bar-hit[data-key]'));
+    const snapshot = () => {
+        const er = el.getBoundingClientRect(); snap = new Map(); snapAt = performance.now();
+        for (const it of keyed()) snap.set(it.dataset.key, it.getBoundingClientRect().left - er.left);
+    };
+    const syncAim = () => {
+        if (!select) return;
+        if (aimNow()) {
+            if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; }
+            if (!notified) { notified = true; ref.invokeMethodAsync('Aim', true); }
+        } else if (notified && !aimTimer) {
+            aimTimer = setTimeout(() => {
+                aimTimer = 0;
+                if (aimNow() || !notified) return;
+                notified = false; snapshot(); ref.invokeMethodAsync('Aim', false);
+            }, 300);
+        }
+    };
+    const glide = () => {
+        if (!snap) return;
+        const old = snap; snap = null;
+        if (performance.now() - snapAt > 1500 || reduced()) return;
+        const er = el.getBoundingClientRect(), moved = [];
+        for (const it of keyed()) {
+            const o = old.get(it.dataset.key), r = it.getBoundingClientRect();
+            if (o === undefined) { moved.push([it, null]); continue; }
+            const dx = o - (r.left - er.left);
+            if (Math.abs(dx) > 0.5) moved.push([it, dx]);
+        }
+        for (const [it, dx] of moved) { it.style.transition = 'none'; if (dx === null) it.style.opacity = '0'; else it.style.transform = `translateX(${dx}px)`; }
+        void el.offsetWidth;
+        for (const [it, dx] of moved) { it.style.transition = 'transform 260ms ease-out, opacity 260ms ease-out'; it.style.transform = ''; it.style.opacity = ''; }
+        setTimeout(() => { for (const [it] of moved) it.style.transition = ''; }, 300);
+    };
     window.__dock = window.__dock || { calls: 0, frames: 0 };
 
     // ---- hover card: dot, #id, duration, secondary line; tail points at the bar. Built once, filled per hovered bar.
@@ -87,6 +126,9 @@ export function attach(el, ref, options) {
         const er = el.getBoundingClientRect();   // fractional widths (offsetWidth rounds, which matters for 1.5px bars on a phone)
         rest = items.map(it => { const r = it.getBoundingClientRect(); return { left: r.left - er.left - el.clientLeft, width: r.width }; });
         width = el.clientWidth;
+        // a bar cannot be narrower than its own padding (border-box): the layout below must not promise less, or the hit test drifts from what is drawn
+        const cs = items.length ? getComputedStyle(items[0]) : null;
+        minW = cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0;
     };
     let axisDirty = true;
     const refresh = () => {
@@ -209,11 +251,19 @@ export function attach(el, ref, options) {
             w[i] = rest[i].width * (1 + (peak - 1) * c);
             sum += w[i]; total += rest[i].width;
         }
-        const f = total / sum;                    // keeps the total width fixed
+        // keeps the total width fixed; bars that would get narrower than minW stay at minW and the others share the rest
+        const fin = new Array(n); let f = total / sum;
+        for (let pass = 0; pass < 4; pass++) {
+            let fixed = 0, free = 0, again = false;
+            for (let i = 0; i < n; i++) { if (fin[i] === minW) fixed++; else free += w[i]; }
+            f = free > 0 ? Math.max(0, total - fixed * minW) / free : 1;
+            for (let i = 0; i < n; i++) if (fin[i] !== minW && w[i] * f < minW) { fin[i] = minW; again = true; }
+            if (!again) break;
+        }
         let x = rest[0].left;
         layout = new Array(n);
         for (let i = 0; i < n; i++) {
-            const wi = w[i] * f;
+            const wi = fin[i] === minW ? minW : w[i] * f;
             const gap = i < n - 1 ? rest[i + 1].left - rest[i].left - rest[i].width : 0;
             layout[i] = { left: x, width: wi + gap };
             const it = items[i];
@@ -228,9 +278,9 @@ export function attach(el, ref, options) {
     };
     // static axis at rest, redrawn when bars change (Blazor re-render) or the chart is resized
     let idleRaf = 0;
-    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); drawAxis(rest, -1); }); };
+    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); drawAxis(rest, -1); glide(); }); };
     const attrWatch = new MutationObserver(idle);
-    attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1'], subtree: true });
+    attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1', 'data-key'], subtree: true });
     const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; idle(); }) : null;
     if (sizeWatch) sizeWatch.observe(el);
     idle();
@@ -243,34 +293,50 @@ export function attach(el, ref, options) {
             if (x >= layout[i].left && x < layout[i].left + layout[i].width) return items[i].classList.contains('empty') ? -1 : i;
         return -1;
     };
-    const pick = e => { const i = hit(rel(e)); if (i >= 0) { window.__dock.calls++; ref.invokeMethodAsync('Pick', i); } };
+    // Blazor gets the key of the bar (actor or time bucket), not its index, so a render between pointer-down and the call cannot change the target.
+    const pick = e => { const i = hit(rel(e)); const key = i >= 0 ? items[i].dataset.key : null; if (key) { window.__dock.calls++; window.__dock.lastKey = key; ref.invokeMethodAsync('Pick', key); } };
 
     const onMove = e => { px = rel(e); active = true; kick(); };
-    const onDown = e => { if (e.pointerType === 'touch' && select) onMove(e); };
-    const onPointerMove = e => { if (e.pointerType === 'touch' && !select) return; onMove(e); };
-    const onLeave = e => { if (e.pointerType !== 'touch') { active = false; kick(); } };
+    const onDown = e => {
+        if (e.pointerType === 'touch') { if (select) { down = true; onMove(e); syncAim(); } }
+        else if (select && e.button === 0) pick(e);        // mouse and pen pick on pointer-down, from the layout the user sees now (brain 0026)
+    };
+    const onPointerMove = e => {
+        if (e.pointerType === 'touch') { if (!select) return; }
+        else if (!hover) { hover = true; syncAim(); }
+        onMove(e);
+    };
+    const onEnter = e => { if (e.pointerType !== 'touch' && !hover) { hover = true; syncAim(); } };
+    const onLeave = e => { if (e.pointerType !== 'touch') { active = false; hover = false; kick(); syncAim(); } };
     const onUp = e => {
         if (e.pointerType !== 'touch' || !select) return;
         px = rel(e);
         if (e.type === 'pointerup') { pick(e); touchDone = performance.now(); }
-        active = false; kick();
+        down = false; active = false; kick(); syncAim();
     };
     const onClick = e => {
         if (!select || e.detail === 0) return;      // keyboard activation goes straight to Blazor
-        e.stopPropagation(); e.preventDefault();
-        if (performance.now() - touchDone < 700) return;   // already handled on touch release
-        pick(e);
+        e.stopPropagation(); e.preventDefault();    // mouse/pen picked on pointer-down, touch on release
     };
+    const onFocusIn = e => { if (e.target.matches && e.target.matches(':focus-visible')) { focused = true; syncAim(); } };
+    const onFocusOut = () => { focused = false; syncAim(); };
+    // Blazor resumes (badge click): forget the aiming state without telling Blazor again.
+    el.__release = () => { if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; } if (notified) { notified = false; snapshot(); } hover = down = focused = false; };
     el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointerenter', onEnter);
     el.addEventListener('pointermove', onPointerMove);
     el.addEventListener('pointerleave', onLeave);
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('click', onClick, true);
+    el.addEventListener('focusin', onFocusIn);
+    el.addEventListener('focusout', onFocusOut);
     el.__dock = () => {
         el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onPointerMove);
         el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerup', onUp);
         el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true);
+        el.removeEventListener('pointerenter', onEnter); el.removeEventListener('focusin', onFocusIn); el.removeEventListener('focusout', onFocusOut);
+        if (aimTimer) clearTimeout(aimTimer);
         if (raf) cancelAnimationFrame(raf);
         clear(); attrWatch.disconnect(); if (sizeWatch) sizeWatch.disconnect();
         if (idleRaf) cancelAnimationFrame(idleRaf);
@@ -278,5 +344,7 @@ export function attach(el, ref, options) {
         tracked.delete(el); watch.disconnect();
     };
 }
+
+export function release(el) { if (el && el.__release) el.__release(); }
 
 export function detach(el) { if (el && el.__dock) { el.__dock(); el.__dock = null; } }

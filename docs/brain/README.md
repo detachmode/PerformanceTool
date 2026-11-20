@@ -64,3 +64,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0024](0024-editor-and-overview-share-the-loaded-plan.md) | Editor and overview show the same view of the loaded scenarios; editing the loaded plan, not a preset; editor uses the overview's cards | Accepted (not implemented) |
 | [0025](0025-build-info-and-no-stale-cache.md) | Show build commit and deploy date; avoid stale cached builds | Accepted, implemented |
 | [0026](0026-stable-clicking-on-live-charts.md) | Stable clicking on live charts: freeze while aiming, pick on pointer-down, selection sticks to the actor | Accepted (not implemented) |
+| [0027](0027-run-player-bar.md) | Run controls as a bottom "player bar" (play/pause/stop + run details), subtle cockpit look | Accepted (not implemented) |

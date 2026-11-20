@@ -11,14 +11,28 @@
     var label = s.Labels[Index];
     var actual = s.Elapsed > 0 ? view.Starts / (s.Elapsed / 60) : 0;
     var target = s.Plan.Scenarios[Index].RatePerMinute;
-    var bars = ActorBars.Build(actors, view.Finished, show, out var total, out var width);
-    var bucketed = width > 0;
     var runningNow = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
-    var scale = bars.Count == 0 ? 1 : Math.Max(1, bars.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
-    if (show == ActorShow.All) bars = ActorBars.WithRunning(bars, runningNow, width, s.Elapsed);
-    if (bars.Count > 0 && scale <= 1) scale = Math.Max(1, bars.Max(b => b.MaxMs));
+    // While the user aims at the chart (brain 0026) the bars of the moment of aiming are shown again; running bars still grow with the clock.
+    ChartData cd;
+    if (aiming && fz is not null) cd = fz;
+    else
+    {
+        var b0 = ActorBars.Build(actors, view.Finished, show, out var total0, out var width0);
+        var scale0 = b0.Count == 0 ? 1 : Math.Max(1, b0.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
+        if (show == ActorShow.All) b0 = ActorBars.WithRunning(b0, runningNow, width0, s.Elapsed);
+        if (b0.Count > 0 && scale0 <= 1) scale0 = Math.Max(1, b0.Max(b => b.MaxMs));
+        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts);
+        lastChart = cd;
+        if (aiming) fz = cd;
+    }
+    var bars = cd.Bars; var scale = cd.Scale; var width = cd.Width; var total = cd.Total;
+    var bucketed = width > 0;
+    var newCount = aiming ? Math.Max(0, view.Starts - cd.Starts) : 0;
+    var selSeq = selected?.Sequence ?? selRunning;
     var selBucketActors = bucketed && bucket is { } bs ? BucketList(actors, view.Finished, bs, width) : null;
-    var selectedBucket = selected is { } sa0 && bucketed ? ActorBars.BucketOf(sa0.StartedAt, width) : bucket;
+    // The selected actor stays selected when it is folded into a time bucket: that bucket shows as selected.
+    double? selStart = selected?.StartedAt ?? (selRunning is { } rs0 ? runningNow.FirstOrDefault(r => r.Sequence == rs0)?.StartedAt : null);
+    var selectedBucket = selStart is { } sa0 && bucketed ? ActorBars.BucketOf(sa0, width) : bucket;
 }
 
 <div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">
@@ -53,8 +67,15 @@
         }
         else
         {
+            <div class="chart-wrap">
+            <div class="chart-status">
+                @if (aiming)
+                {
+                    <button class="live-paused" @onclick="Resume" title="Show the newest actors now">● Live paused · @(newCount == 0 ? "no new actors" : Format.Plural(newCount, "new actor", "new actors"))</button>
+                }
+            </div>
             <div class="chart-scroll">
-                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
@@ -68,8 +89,9 @@
                         }
                         else
                         {
-                            var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : bar.IsRunningActor ? selRunning == bar.Sequence : (selected is { } sel && sel.Sequence == bar.Sequence);
-                            <button class="bar-hit @(on ? "on" : "")" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
+                            var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
+                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -89,6 +111,7 @@
                         }
                     }
                 </DockZoom>
+            </div>
             </div>
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
@@ -191,6 +214,11 @@
     private int? selRunning;
     private double? bucket;
     private bool refocus = true;
+    private DockZoom? zoom;
+    // Freeze while aiming (brain 0026): the chart data of the last normal render, and the data held while the user aims.
+    private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts);
+    private ChartData? lastChart, fz;
+    private bool aiming;
     private List<ActorRecord>? bucketCache;
     private (double, double, ActorShow, int) bucketKey;
 
@@ -230,11 +258,33 @@
         if (e.Key == "Escape") OnClose.InvokeAsync();
     }
 
-    private void SetShow(ActorShow s) { show = s; bucket = null; }
+    private void SetShow(ActorShow s) { show = s; bucket = null; fz = null; }
 
-    private void PickAt(List<ActorBar> bars, int index)
+    private void SetAiming(bool on)
     {
-        if (index >= 0 && index < bars.Count && bars[index].Total > 0) PickBar(bars[index]);
+        aiming = on;
+        fz = on ? lastChart : null;
+    }
+
+    private async Task Resume()
+    {
+        aiming = false; fz = null;
+        if (zoom is not null) await zoom.ReleaseAsync();
+    }
+
+    /// <summary>A bar was picked (on pointer-down): "a12" actor, "r12" running actor, "bNN" time bucket. Actors are found by sequence, so the pick is right even if the bar has changed since (a running actor may have finished).</summary>
+    private void PickKey(string key)
+    {
+        if (key.Length < 2) return;
+        if (key[0] == 'b')
+        {
+            if (double.TryParse(key.AsSpan(1), NumberStyles.Float, CultureInfo.InvariantCulture, out var start)) PickBar(new ActorBar(0, 0, 0, 0, -1, start));
+        }
+        else if (int.TryParse(key.AsSpan(1), out var seq))
+        {
+            var inFlight = Snapshot.ActorsInFlight is { } rn && Index < rn.Length && rn[Index].Any(r => r.Sequence == seq);
+            PickBar(new ActorBar(inFlight ? 0 : 1, 0, 0, 0, seq, 0, inFlight ? 1 : 0));
+        }
     }
 
     private void PickBar(ActorBar bar)

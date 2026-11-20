@@ -5,7 +5,7 @@ namespace PerformanceTool.Client.Services;
 // What the pages read from an IRunSource. Everything is bounded (brain 0021): counters are kept incrementally, actor records are tiny,
 // and the heavy detail (calls, log lines) is only held for the most recent actors of each scenario.
 
-public enum FakeRunState { Idle, Running, Finished }
+public enum FakeRunState { Idle, Running, Paused, Finished }
 
 /// <summary>How an actor ended. Drives the only colours of the run views: failed = red, slow = amber (brain 0018).</summary>
 public enum ActorOutcome : byte { Ok = 0, Slow = 1, Failed = 2 }
@@ -88,6 +88,8 @@ public sealed record RunSnapshot(
     RunStore Store,
     IReadOnlyList<RunningActor>[]? ActorsInFlight = null)
 {
-    public bool Running => State == FakeRunState.Running;
+    /// <summary>True while a run is active (running or paused).</summary>
+    public bool Running => State is FakeRunState.Running or FakeRunState.Paused;
+    public bool Paused => State == FakeRunState.Paused;
     public int Count => Plan.Scenarios.Count;
 }
