@@ -20,7 +20,7 @@ conversations. When a term changes, update it here first.
 | **Scenario mix / load plan** | All entries plus duration, max in-flight and timeout. Two names for the same thing. | `LoadPlan` | Current |
 | **Preset** | A saved, named load plan. | `Preset`, `PresetStore` | Current |
 | **Run (load run)** | Executing a whole load plan once, from start until the duration ends or the user stops it. Contains many executions. | `LoadRunner.RunAsync` | Current |
-| **Rate** | How often an entry is started, per minute. The UI labels it "Runs / minute", which clashes with **Run** above: it means executions per minute. | `RatePerMinute` | Current, **inconsistent** |
+| **Rate** | How often an entry is started: **executions per minute**. UI label: **"Executions / minute"** (never "runs / minute", because a run is the whole load run). | `RatePerMinute` | **Decided** |
 | **In flight** | Executions that have started and not finished yet. | in-flight counts | Current |
 | **Max in-flight** | Upper limit of executions in flight across the run. | `MaxConcurrency` | Current |
 | **Dropped** | An execution that was due but not started because max in-flight was reached. | `onDropped` | Current |
