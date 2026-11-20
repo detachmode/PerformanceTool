@@ -39,7 +39,7 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | # | Decision | Status |
 |---|----------|--------|
 | [0001](0001-blazor-server-on-dotnet-11.md) | Blazor Server (interactive server rendering) on .NET 11 | UI part superseded by 0015 |
-| [0002](0002-live-bar-chart-in-html-css.md) | Live bar chart in plain HTML/CSS, one bar per execution, coloured per scenario | Colour part questioned by 0018 |
+| [0002](0002-live-bar-chart-in-html-css.md) | Live bar chart in plain HTML/CSS, one bar per execution, coloured per scenario | Colour part superseded by 0018 |
 | [0003](0003-code-defined-scenarios.md) | Scenarios are defined in C# code, configured in the UI | Accepted |
 | [0004](0004-open-model-rate-scheduling.md) | Open-model scheduling: runs per minute per scenario, drop when saturated | Accepted |
 | [0005](0005-presets-as-json-files.md) | Presets stored as one JSON file each | Accepted |
@@ -55,5 +55,6 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted, implemented (UI, Pages) |
 | [0016](0016-calm-ui-less-information.md) | Calm UI: show less, reveal on demand; avoid information overload | Accepted |
 | [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor in a separate Logs popup | Accepted |
-| [0018](0018-colour-carries-meaning.md) | Colour must carry meaning, not arbitrary identity/decoration (scheme open) | Accepted (scheme open) |
+| [0018](0018-colour-carries-meaning.md) | Colour carries meaning: no colour per scenario; colour only when errors or slow calls occur | Accepted |
 | [0019](0019-visible-state-and-feedback.md) | Visible selection everywhere; editor gives immediate feedback on changes | Accepted |
+| [0020](0020-simple-first-features-one-by-one.md) | Simple first: core flow (set up, run, presets, inspect), then features one by one | Accepted |

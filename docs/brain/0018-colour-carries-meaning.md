@@ -1,6 +1,6 @@
 # 0018. Colour must carry meaning
 
-- Status: Accepted (user principle); the concrete colour scheme is open
+- Status: Accepted (user principle and scheme direction)
 - Date: 2026-11-20
 - Questions 0002 (a categorical colour per scenario entry) and the colour choices in 0008/0013.
 
@@ -13,6 +13,11 @@ tints per call group). From now on, **colour is only used to transport meaning**
 Colour is a strong signal. Spent on decoration or arbitrary identity, it adds noise (0016) and hides the signals that
 matter.
 
+**Decided by the user:**
+- **No separate colour per scenario.** Scenarios are told apart by name, not by colour. This supersedes the colour part of 0002.
+- **Colour changes when errors or slow calls occur.** By default things are neutral. Colour appears only to signal a
+  problem (errors, slow calls).
+
 ## Open (to decide with the user)
-- Which meanings get a colour (e.g. running/active, error, warning/slow), and which colours.
-- Whether scenarios keep an identity colour at all, or are told apart by name and position only.
+- What counts as "slow" (threshold per scenario/call, or relative to the usual duration).
+- The exact colours for "error" and "slow".

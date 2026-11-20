@@ -7,16 +7,13 @@ or tick the item here.
 Until the user is happy with the UI/UX, we build **UI drafts only, with fake data** (no real runner or storage
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
-## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4, review/a11y passes, demo speed, CI (0014), WebAssembly + Pages (0015).
-- **Running (A):** logs rework: separate Logs popup filterable by scenario/actor, compact statistics,
-  no decorative colours (0012, 0016, 0017, 0018).
-- **Running (B):** editor UX rework + visible selection on the overview (0019, 0016, 0018).
-- **Next:** calm-UI simplification pass over the whole UI (0016, 0017), once A and B are merged.
-- Draft iterations from user feedback jump the queue.
+## Agent queue
+- Stopped by the user: logs rework and editor rework (too much at once).
+- **Waiting for the user** to agree on the first small step of the core flow (brain 0020).
 
-Open questions for the user (ask one at a time): colour scheme (do scenarios keep an identity colour?) (asked);
-which duration summary instead of p50/p95/p99; call grouping by name or position.
+Core flow to get right, one step at a time (brain 0020): set up scenarios → run → save/load presets → inspect the run.
+
+Open questions for the user (ask one at a time): what counts as "slow"; which duration summary; call grouping.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
