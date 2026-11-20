@@ -42,3 +42,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0003](0003-code-defined-scenarios.md) | Scenarios are defined in C# code, configured in the UI | Accepted |
 | [0004](0004-open-model-rate-scheduling.md) | Open-model scheduling: runs per minute per scenario, drop when saturated | Accepted |
 | [0005](0005-presets-as-json-files.md) | Presets stored as one JSON file each | Accepted |
+| [0006](0006-ux-everything-clickable-and-inspectable.md) | UX principle: everything clickable, inspectable, filterable, isolatable | Accepted |

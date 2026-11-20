@@ -8,6 +8,17 @@ or tick the item here.
 - [x] Scenarios defined in code, mixed with parameters and runs per minute (brain 0003, 0004)
 - [x] Save/load presets (brain 0005)
 
+## 0. Interactive UX (requirement, see brain 0006)
+Everything that shows data is clickable, inspectable, filterable and isolatable.
+- [ ] Click a bar → details panel for that execution (scenario, params, timing, status, error, bytes, start time).
+- [ ] Click a legend entry / table row / scenario card → toggle that scenario; "only" (or Alt+click) isolates it.
+- [ ] Click a stat tile (Errors, Dropped, p95…) → filter to the executions behind it (e.g. failed only, slower than p95).
+- [ ] Filters for status code, success/failure and latency range; drag on the chart to select a time window.
+- [ ] Active filters shown as removable chips; chart, stats and table all use the same filtered set.
+- [ ] Bar hover: rich tooltip instead of the native `title`; highlight the same scenario's bars.
+- [ ] Error grouping: click an error message → all executions with that error.
+- [ ] Keyboard access (focusable bars/rows, Esc closes panels); works during a live run.
+
 ## 1. Shared core + persisted run history (prerequisite for 2 and 3)
 Today results only live in the browser circuit. The CLI and CI need the same data as the UI.
 - [ ] Extract `Services/*` (scenarios, `LoadPlan`, `LoadRunner`, `PresetStore`, stats) into a class library

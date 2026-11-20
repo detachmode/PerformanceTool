@@ -28,6 +28,10 @@ dotnet run --project src/PerformanceTool
 If only an older SDK is available (the cloud agent environment has .NET 10), verify by building a **copy**
 with the target framework changed to `net10.0`. Don't change the committed `net11.0` target.
 
+## UX bar
+The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect
+it, used as a filter and isolated. Don't add read-only data views.
+
 ## UI changes need a screenshot
 Whenever you change the UI, run the app, drive it with Playwright (a real run, not just the empty page) and
 **show the user a screenshot**. Run with `ASPNETCORE_ENVIRONMENT=Development` so static assets resolve.
