@@ -3,6 +3,7 @@
 @using System.Globalization
 @implements IDisposable
 @inject LogsPopupState Logs
+@inject ViewSettings Settings
 
 @{
     var s = Snapshot;
@@ -11,42 +12,66 @@
     var label = s.Labels[Index];
     var actual = s.Elapsed > 0 ? view.Starts / (s.Elapsed / 60) : 0;
     var target = s.Plan.Scenarios[Index].RatePerMinute;
-    var runningNow = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
-    // While the user aims at the chart (brain 0026) the bars of the moment of aiming are shown again; running bars still grow with the clock.
+    var runningAll = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+    // The brushed time window (brain 0023, update 3): actors that started in [from, to). A window that reaches the live edge follows it (to = open).
+    var from = win?.From ?? double.NegativeInfinity;
+    var to = win is { Follow: false } w1 ? w1.To : double.PositiveInfinity;
+    IReadOnlyList<RunningActor> runningNow = win is null ? runningAll : runningAll.Where(r => r.StartedAt >= from && r.StartedAt < to).ToList();
+    // While the user aims at the chart (brain 0026) the bars of the moment of aiming are shown again; running bars still grow with the clock,
+    // and actors that were running at that moment get their final colour in place once they finish.
     ChartData cd;
-    if (aiming && fz is not null) cd = fz;
+    if (aiming && fz is not null)
+    {
+        var resolved = show == ActorShow.All ? ActorBars.ResolveFinished(fz.Bars, fz.Running, actors, fz.Finished, view.Finished, fz.Width) : fz.Bars;
+        cd = ReferenceEquals(resolved, fz.Bars) ? fz : fz with { Bars = resolved };
+    }
     else
     {
-        var b0 = ActorBars.Build(actors, view.Finished, show, out var total0, out var width0);
+        var b0 = ActorBars.Build(actors, view.Finished, show, out var total0, out var width0, from, to, Settings.MaxBars);
         var scale0 = b0.Count == 0 ? 1 : Math.Max(1, b0.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
         if (show == ActorShow.All) b0 = ActorBars.WithRunning(b0, runningNow, width0, s.Elapsed);
         if (b0.Count > 0 && scale0 <= 1) scale0 = Math.Max(1, b0.Max(b => b.MaxMs));
-        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts);
+        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts, view.Finished, runningNow);
         lastChart = cd;
         if (aiming) fz = cd;
     }
     var bars = cd.Bars; var scale = cd.Scale; var width = cd.Width; var total = cd.Total;
     var bucketed = width > 0;
-    var newCount = aiming ? Math.Max(0, view.Starts - cd.Starts) : 0;
+    var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
-    var selBucketActors = bucketed && bucket is { } bs ? BucketList(actors, view.Finished, bs, width) : null;
+    var stats = StatsFor(actors, view.Finished, from, to);
+    var activeBucket = bucketed ? bucket : null;
+    var sideRows = SideRows(actors, view.Finished, runningNow, show, from, to, activeBucket, width);
     // The selected actor stays selected when it is folded into a time bucket: that bucket shows as selected.
     double? selStart = selected?.StartedAt ?? (selRunning is { } rs0 ? runningNow.FirstOrDefault(r => r.Sequence == rs0)?.StartedAt : null);
     var selectedBucket = selStart is { } sa0 && bucketed ? ActorBars.BucketOf(sa0, width) : bucket;
 }
 
 <div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
+    <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
         <div class="dlg-head">
             <h2 id="scn-title">@label</h2>
+            <span class="spacer"></span>
+            <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">⚙</button>
             <button class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
         </div>
 
+        <div class="pop-body">
+        <div class="pop-main">
         <p class="figures">
-            <span>@Format.Plural(view.Finished, "actor", "actors")</span>
-            <span class="@(view.Failed > 0 ? "bad" : "")">@Format.Plural(view.Failed, "error", "errors")</span>
-            <span class="@(view.SlowCalls > 0 ? "warn" : "")">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</span>
+            <button class="fig" @onclick="() => SetShow(ActorShow.All)" title="Show all actors" aria-pressed="@Aria.Bool(show == ActorShow.All)">@Format.Plural(view.Finished, "actor", "actors")</button>
+            <button class="fig @(view.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(view.Failed == 0)" title="Show only the failed actors" aria-pressed="@Aria.Bool(show == ActorShow.Failed)">@Format.Plural(view.Failed, "error", "errors")</button>
+            <button class="fig @(view.SlowCalls > 0 ? "warn" : "")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(view.SlowActors == 0)" title="Show only the slow actors" aria-pressed="@Aria.Bool(show == ActorShow.Slow)">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</button>
             <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort</span>
+            @if (stats.Count > 0)
+            {
+                <span class="fig-sep" aria-hidden="true"></span>
+                <button class="fig" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median of @Format.Plural(stats.Count, "actor", "actors")): open the actor in the middle">typical <b>@Format.Ms(stats.Median)</b></button>
+                <button class="fig @(stats.TailIsSlow ? "warn" : "")" @onclick="() => TailOnly(stats.P95)" title="The slowest 5 % take at least @Format.Ms(stats.P95): list them" aria-pressed="@Aria.Bool(tailMs is not null)">slowest 5% <b>@Format.Ms(stats.P95)</b></button>
+                <button class="fig @(stats.LongestIsSlow ? "warn" : "")" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest actor">longest <b>@Format.Ms(stats.Longest)</b></button>
+                <button class="fig @(stats.Failed > 0 ? "bad" : "good")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(stats.Failed == 0)" title="Failed actors: @stats.Failed of @stats.Count">error rate <b>@Pc(stats.ErrorRate)</b></button>
+                <button class="fig @(stats.Slow > 0 ? "warn" : "good")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(stats.Slow == 0)" title="Slow actors: @stats.Slow of @stats.Count">slow rate <b>@Pc(stats.SlowRate)</b></button>
+            }
         </p>
 
         <div class="actors-bar">
@@ -69,17 +94,22 @@
         {
             <div class="chart-wrap">
             <div class="chart-status">
-                @if (aiming)
+                @if (win is { } wz)
+                {
+                    <span class="zoom-chip"><span class="muted">Zoomed to</span> <b>@Format.Time(wz.From)@(wz.Follow ? " → now" : $" – {Format.Time(wz.To)}")</b>@(wz.Follow ? " (follows live)" : "")<button class="link-btn" @onclick="ResetZoom" title="Back to the whole run (live)">Reset zoom</button></span>
+                }
+                @if (aiming && newCount >= 0 && win is not { Follow: false })
                 {
                     <button class="live-paused" @onclick="Resume" title="Show the newest actors now">● Live paused · @(newCount == 0 ? "no new actors" : Format.Plural(newCount, "new actor", "new actors"))</button>
                 }
             </div>
             <div class="chart-scroll">
-                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" OnBrush="Brush" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
                     <span class="dz-axis" aria-hidden="true"></span>
+                    <span class="dz-brush" aria-hidden="true"><span></span></span>
                     @foreach (var b in bars)
                     {
                         var bar = b;
@@ -91,7 +121,7 @@
                         {
                             var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -116,23 +146,8 @@
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
                 else { <text>One bar per actor, taller = slower. The axis shows the run time of the actors at that position. Click an actor to see its calls.</text> }
+                <text> Drag across the chart to zoom into a time frame (touch: press and hold, then drag).</text>
             </p>
-        }
-
-        @if (selBucketActors is not null)
-        {
-            <section class="bucket" aria-label="Actors in this time bucket">
-                <h3>@Format.Plural(selBucketActors.Count, "actor", "actors") from @Format.Time(bucket!.Value) to @Format.Time(bucket.Value + width)</h3>
-                <VirtualList Class="actor-list" Items="selBucketActors" RowHeight="34" ResetKey="@bucket">
-                    <ItemContent Context="a">
-                        <button class="actor-row @(selected is { } sel2 && sel2.Sequence == a.Sequence ? "on" : "")" aria-pressed="@Aria.Bool(selected is { } sel3 && sel3.Sequence == a.Sequence)" @onclick="() => selected = a">
-                            <span class="name">@a.Name</span>
-                            <span class="dur">@Format.Ms(a.DurationMs)</span>
-                            <span class="state @Cls(a.Outcome)">@(a.Failed ? "Failed" : a.SlowCalls > 0 ? "Slow" : "")</span>
-                        </button>
-                    </ItemContent>
-                </VirtualList>
-            </section>
         }
 
         @if (selRunning is { } rseq && runningNow.FirstOrDefault(r => r.Sequence == rseq) is { } ra)
@@ -141,7 +156,7 @@
             var denom = Math.Max(1, Math.Max(scale, elapsedMs));
             <section class="actor-panel p-run" aria-label="@ra.Name">
                 <div class="actor-head">
-                    <b>@ra.Name</b>
+                    <b class="actor-title">Actor <ActorChip Sequence="ra.Sequence" State="ActorState.Running" /></b>
                     <span class="state run">Running</span>
                     <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
@@ -170,7 +185,7 @@
             var detail = s.Store.Detail(actor.Sequence);
             <section class="actor-panel p-@Cls(actor.Outcome)" aria-label="@actor.Name">
                 <div class="actor-head">
-                    <b>@actor.Name</b>
+                    <b class="actor-title">Actor <ActorChip Sequence="actor.Sequence" State="ActorOrder.StateOf(actor.Outcome)" /></b>
                     <span class="state @Cls(actor.Outcome)">@(actor.Failed ? "Failed" : actor.SlowCalls > 0 ? "Slow" : "Ok")</span>
                     <span class="muted">@Format.Ms(actor.DurationMs) · started @Format.Time(actor.StartedAt)</span>
                     <span class="spacer"></span>
@@ -180,7 +195,7 @@
                 @if (actor.Error is not null) { <p class="actor-error bad">@actor.Error</p> }
                 @if (detail is null)
                 {
-                    <p class="muted">The calls of this actor are no longer kept (only the latest @Format.Num(RunStore.DetailPerScenario) actors of each scenario keep their calls and logs).</p>
+                    <p class="muted">The calls and logs of this actor are no longer kept (details of older successful actors are dropped first).</p>
                 }
                 else
                 {
@@ -200,6 +215,32 @@
                 }
             </section>
         }
+        </div>
+        <aside class="pop-side" aria-label="Actors in view" @onpointerenter="() => listHover = true" @onpointerleave="() => listHover = false">
+            <div class="side-head">
+                <h3>Actors in view <span class="n">@Format.Num(sideRows.Count)</span></h3>
+                <p class="side-scope muted">
+                    @(win is { } ws ? $"{Format.Time(ws.From)}{(ws.Follow ? " → now" : $" – {Format.Time(ws.To)}")}" : "whole run")
+                    @if (tailMs is { } tm)
+                    {
+                        <button class="chip" @onclick="() => tailMs = null" title="Show all actors of the time frame again">slowest 5% (≥ @Format.Ms(tm)) ✕</button>
+                    }
+                    @if (activeBucket is { } ab)
+                    {
+                        <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">bucket @Format.Time(ab)–@Format.Time(ab + width) ✕</button>
+                        <button class="link-btn" @onclick="() => ZoomTo(ab, ab + width)" title="Zoom the chart into this bucket">Zoom in</button>
+                    }
+                </p>
+                <p class="side-counts">
+                    <button class="cnt bad" @onclick="() => SetShow(ActorShow.Failed, true)" disabled="@(sideCounts[0] == 0)" title="Show only failed actors"><i></i>@Format.Num(sideCounts[0]) failed</button>
+                    <button class="cnt warn" @onclick="() => SetShow(ActorShow.Slow, true)" disabled="@(sideCounts[1] == 0)" title="Show only slow actors"><i></i>@Format.Num(sideCounts[1]) slow</button>
+                    <button class="cnt good" @onclick="() => SetShow(ActorShow.All, true)" title="Show all actors"><i></i>@Format.Num(sideCounts[3]) ok</button>
+                    @if (sideCounts[2] > 0) { <span class="cnt run"><i></i>@Format.Num(sideCounts[2]) running</span> }
+                </p>
+            </div>
+            <ActorSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" />
+        </aside>
+        </div>
     </div>
 </div>
 
@@ -207,26 +248,79 @@
     [Parameter, EditorRequired] public int Index { get; set; }
     [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
     [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Optional: what to list when the popup opens (the overview card figures lead here, brain 0029).</summary>
+    [Parameter] public DetailFilter InitialShow { get; set; }
 
     private ElementReference root;
     private ActorShow show = ActorShow.All;
     private ActorRecord? selected;
     private int? selRunning;
     private double? bucket;
+    private sealed record Win(double From, double To, bool Follow);
+    private Win? win;
+    private bool listHover;
+    private List<ActorRow> sideCache = [];
+    private int[] sideCounts = new int[4];
+    private (double, double, ActorShow, double?) sideKey;
+    private (int, int) sideCountKey;
+    private long sideAt;
+    private string sideReset = "";
+    private double? tailMs;
+    private ActorStats statsCache = ActorStats.Empty;
+    private (double, double) statsKey;
+    private int statsCount = -1;
+    private long statsAt;
+
+    /// <summary>Statistics of the actors in the visible window (brain 0030), recomputed when the window changes and at most every 0.7 s otherwise.</summary>
+    private ActorStats StatsFor(IReadOnlyList<ActorRecord> actors, int count, double from, double to)
+    {
+        var key = (from, to);
+        if (key == statsKey && (count == statsCount || Environment.TickCount64 - statsAt < 700)) return statsCache;
+        statsCache = ActorStats.Compute(actors, count, from, to);
+        statsKey = key; statsCount = count; statsAt = Environment.TickCount64;
+        return statsCache;
+    }
+
+    private static string Pc(double v) => v == 0 ? "0%" : v < 10 ? v.ToString("0.0", CultureInfo.InvariantCulture) + "%" : v.ToString("0", CultureInfo.InvariantCulture) + "%";
+
+    private void SelectIndex(int index)
+    {
+        var actors = Snapshot.Store.Actors(Index);
+        if (index >= 0 && index < actors.Count) { selRunning = null; selected = actors[index]; }
+    }
+
+    private void TailOnly(double ms) { tailMs = tailMs is null ? ms : null; show = ActorShow.All; bucket = null; }
     private bool refocus = true;
     private DockZoom? zoom;
     // Freeze while aiming (brain 0026): the chart data of the last normal render, and the data held while the user aims.
-    private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts);
+    private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts, int Finished, IReadOnlyList<RunningActor> Running);
     private ChartData? lastChart, fz;
     private bool aiming;
-    private List<ActorRecord>? bucketCache;
-    private (double, double, ActorShow, int) bucketKey;
 
     private string StepWord => show == ActorShow.Slow ? "slow" : "failed";
     private ActorOutcome StepOutcome => show == ActorShow.Slow ? ActorOutcome.Slow : ActorOutcome.Failed;
     private int StepCount(ScenarioView v) => show == ActorShow.Slow ? v.SlowActors : v.Failed;
 
-    protected override void OnInitialized() => Logs.Changed += OnLogsChanged;
+    protected override void OnInitialized()
+    {
+        Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged;
+        switch (InitialShow)
+        {
+            case DetailFilter.Failed: show = ActorShow.Failed; break;
+            case DetailFilter.Slow: show = ActorShow.Slow; break;
+            case DetailFilter.Slowest5Pct:
+                var st = ActorStats.Compute(Snapshot.Store.Actors(Index), Snapshot.Scenarios[Index].Finished, double.NegativeInfinity, double.PositiveInfinity);
+                if (st.Count > 0) tailMs = st.P95;
+                break;
+        }
+    }
+
+    private void OnSettingsChanged()
+    {
+        fz = null;
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
 
     // A selected running actor turns into its finished record in place once it completes.
     protected override void OnParametersSet()
@@ -258,7 +352,42 @@
         if (e.Key == "Escape") OnClose.InvokeAsync();
     }
 
-    private void SetShow(ActorShow s) { show = s; bucket = null; fz = null; }
+    private void SetShow(ActorShow s, bool keepBucket = false) { show = s; tailMs = null; if (!keepBucket) bucket = null; fz = null; }
+
+    private void Brush(BrushRange r)
+    {
+        win = new Win(Math.Max(0, r.From), r.To, r.ToEnd);
+        bucket = null; fz = null; tailMs = null;
+    }
+    private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
+    private void ResetZoom() { win = null; bucket = null; fz = null; tailMs = null; }
+
+    private void SelectRow(ActorRow row)
+    {
+        if (row.IsRunning) { selected = null; selRunning = row.Sequence; return; }
+        var actors = Snapshot.Store.Actors(Index);
+        if (row.Index >= 0 && row.Index < actors.Count) { selRunning = null; selected = actors[row.Index]; }
+    }
+
+    /// <summary>
+    /// The side list rows (failed, slow, running, ok; each by time) for the visible time frame, narrowed to the selected bucket. Rebuilt when the frame or filter
+    /// changes, and at most every 0.7 s when actors finished; held still while the pointer is over the list (like brain 0026).
+    /// </summary>
+    private List<ActorRow> SideRows(IReadOnlyList<ActorRecord> actors, int count, IReadOnlyList<RunningActor> running, ActorShow sh, double from, double to, double? bucketStart, double width)
+    {
+        var lo = bucketStart is { } b ? Math.Max(from, b) : from;
+        var hi = bucketStart is { } b2 ? Math.Min(to, b2 + width) : to;
+        var key = (lo, hi, sh, tailMs);
+        var countKey = (count, running.Count);
+        var stale = key != sideKey || (countKey != sideCountKey && !listHover && Environment.TickCount64 - sideAt > 700);
+        if (!stale) return sideCache;
+        sideCache = ActorOrder.Rows(actors, count, running, sh, lo, hi, tailMs ?? 0);
+        sideKey = key; sideCountKey = countKey; sideAt = Environment.TickCount64;
+        sideReset = $"{lo}|{hi}|{sh}|{tailMs}";
+        sideCounts = new int[4];
+        foreach (var r in sideCache) sideCounts[(int)r.State]++;
+        return sideCache;
+    }
 
     private void SetAiming(bool on)
     {
@@ -308,14 +437,6 @@
         bucket = null;
     }
 
-    /// <summary>The actors of the selected time bucket, rebuilt only when the bucket, filter or number of actors changes.</summary>
-    private List<ActorRecord> BucketList(IReadOnlyList<ActorRecord> actors, int count, double start, double width)
-    {
-        var key = (start, width, show, count);
-        if (bucketCache is null || bucketKey != key) { bucketCache = ActorBars.BucketActors(actors, count, show, start, width); bucketKey = key; }
-        return bucketCache;
-    }
-
     private static string BarCls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "good" };
     private static string Cls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "" };
     private static string Ms(double v) => v.ToString("0", CultureInfo.InvariantCulture);
@@ -337,11 +458,7 @@
     private static string LabelSub(ActorBar b)
     {
         if (!b.IsBucket) return $"started {Format.Time(b.BucketStart)}";
-        var parts = new List<string>();
-        if (b.Failed > 0) parts.Add($"{b.Failed} failed");
-        if (b.Slow > 0) parts.Add($"{b.Slow} slow");
-        if (b.Running > 0) parts.Add($"{b.Running} running");
-        return string.Join(" · ", parts);
+        return "";   // buckets show coloured counts instead (data-bad / data-slow / data-ok / data-runn, drawn by dock-magnify.js)
     }
 
     private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : "good";
@@ -364,5 +481,5 @@
     private static string CallStatus(FakeCall c) =>
         c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? "timeout") : c.Slow ? "slow" : c.Status?.ToString() ?? "";
 
-    public void Dispose() => Logs.Changed -= OnLogsChanged;
+    public void Dispose() { Logs.Changed -= OnLogsChanged; Settings.Changed -= OnSettingsChanged; }
 }

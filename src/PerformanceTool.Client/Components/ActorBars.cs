@@ -35,41 +35,43 @@ public static class ActorBars
     };
 
     /// <summary>Returns the bars; <paramref name="bucketWidth"/> is 0 when every bar is one actor.</summary>
-    public static List<ActorBar> Build(IReadOnlyList<ActorRecord> actors, int count, ActorShow show, out int total, out double bucketWidth)
+    /// <remarks>Only actors that started in [from, to) count (the brushed time window); maxBars is the user setting (brain 0023, update 3).</remarks>
+    public static List<ActorBar> Build(IReadOnlyList<ActorRecord> actors, int count, ActorShow show, out int total, out double bucketWidth,
+        double from = double.NegativeInfinity, double to = double.PositiveInfinity, int maxBars = MaxBars)
     {
         total = 0;
         double min = double.MaxValue, max = double.MinValue;
         for (var i = 0; i < count; i++)
         {
             var a = actors[i];
-            if (!Includes(show, a)) continue;
+            if (!Includes(show, a) || a.StartedAt < from || a.StartedAt >= to) continue;
             total++;
             if (a.StartedAt < min) min = a.StartedAt;
             if (a.StartedAt > max) max = a.StartedAt;
         }
         bucketWidth = 0;
-        var bars = new List<ActorBar>(Math.Min(total, MaxBars + 1));
+        var bars = new List<ActorBar>(Math.Min(total, maxBars + 1));
         if (total == 0) return bars;
 
-        if (total <= MaxBars)
+        if (total <= maxBars)
         {
             for (var i = 0; i < count; i++)
             {
                 var a = actors[i];
-                if (Includes(show, a)) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt));
+                if (Includes(show, a) && a.StartedAt >= from && a.StartedAt < to) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt));
             }
             return bars;
         }
 
         var span = Math.Max(max - min, 1);
-        bucketWidth = Widths.FirstOrDefault(w => span / w < MaxBars, Widths[^1]);
+        bucketWidth = Widths.FirstOrDefault(w => span / w < maxBars, Widths[^1]);
         var first = (long)Math.Floor(min / bucketWidth);
         var slots = (int)((long)Math.Floor(max / bucketWidth) - first + 1);
         var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots];
         for (var i = 0; i < count; i++)
         {
             var a = actors[i];
-            if (!Includes(show, a)) continue;
+            if (!Includes(show, a) || a.StartedAt < from || a.StartedAt >= to) continue;
             var k = (int)((long)Math.Floor(a.StartedAt / bucketWidth) - first);
             n[k]++;
             if (a.Failed) f[k]++;
@@ -103,6 +105,39 @@ public static class ActorBars
             result[k] = b with { Running = b.Running + 1, MaxMs = Math.Max(b.MaxMs, (elapsed - r.StartedAt) * 1000) };
         }
         return result;
+    }
+
+    /// <summary>
+    /// Actors that were running when the chart froze for aiming (brain 0026) and have finished since get their final colour, in place
+    /// (brain 0023, update 3): a running bar becomes a finished bar at the same position, a running actor of a time bucket moves into
+    /// the bucket's counts. Only the actors finished since the freeze (frozenCount..nowCount) are looked at.
+    /// </summary>
+    public static List<ActorBar> ResolveFinished(List<ActorBar> bars, IReadOnlyList<RunningActor> frozenRunning, IReadOnlyList<ActorRecord> actors, int frozenCount, int nowCount, double bucketWidth)
+    {
+        if (frozenRunning.Count == 0 || nowCount <= frozenCount || bars.Count == 0) return bars;
+        var seqs = new HashSet<int>(frozenRunning.Count);
+        foreach (var r in frozenRunning) seqs.Add(r.Sequence);
+        List<ActorBar>? result = null;
+        for (var i = frozenCount; i < nowCount; i++)
+        {
+            var a = actors[i];
+            if (!seqs.Contains(a.Sequence)) continue;
+            result ??= new List<ActorBar>(bars);
+            var done = new ActorBar(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt);
+            if (bucketWidth <= 0)
+            {
+                var k = result.FindIndex(b => b.IsRunningActor && b.Sequence == a.Sequence);
+                if (k >= 0) result[k] = done;
+            }
+            else
+            {
+                var k = (int)Math.Round((BucketOf(a.StartedAt, bucketWidth) - result[0].BucketStart) / bucketWidth);
+                if (k < 0 || k >= result.Count || result[k].Running == 0) continue;
+                var b = result[k];
+                result[k] = b with { Running = b.Running - 1, Count = b.Count + 1, Failed = b.Failed + done.Failed, Slow = b.Slow + done.Slow, MaxMs = Math.Max(b.MaxMs, a.DurationMs) };
+            }
+        }
+        return result ?? bars;
     }
 
     /// <summary>The actors of one time bucket, in completion order.</summary>

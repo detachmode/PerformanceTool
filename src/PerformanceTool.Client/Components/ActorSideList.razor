@@ -1,0 +1,50 @@
+@* The actors of the visible time frame, failed first, then slow, then successful, each by time (brain 0028, 0023 update 3).
+   Wide screens: a virtualised list at the side of the popup. Narrow screens: the same rows below the chart, shown a page at a time, so the popup
+   never holds a second scrolling list (CSS shows one of the two). Clicking a row selects the actor. *@
+@{
+    var visible = Math.Min(Rows.Count, pageCount * PageSize);
+}
+
+<VirtualList Class="actor-list side-virtual" Items="Rows" RowHeight="34" ResetKey="@ResetKey" Label="Actors in view" Role="list">
+    <ItemContent Context="a">
+        @Row(a)
+    </ItemContent>
+    <Empty><p class="muted empty">@EmptyText</p></Empty>
+</VirtualList>
+
+<div class="side-paged" role="list" aria-label="Actors in view">
+    @for (var i = 0; i < visible; i++)
+    {
+        var a = Rows[i];
+        @Row(a)
+    }
+    @if (Rows.Count == 0) { <p class="muted empty">@EmptyText</p> }
+    @if (visible < Rows.Count)
+    {
+        <button class="btn ghost small side-more" @onclick="() => pageCount++">Show @Math.Min(PageSize, Rows.Count - visible) more (@Format.Num(Rows.Count - visible) left)</button>
+    }
+</div>
+
+@code {
+    private const int PageSize = 25;
+    private int pageCount = 1;
+    private object? lastKey;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ActorRow> Rows { get; set; } = [];
+    [Parameter] public int? SelectedSequence { get; set; }
+    [Parameter] public EventCallback<ActorRow> OnSelect { get; set; }
+    [Parameter] public object? ResetKey { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "No actors in this time frame.";
+
+    protected override void OnParametersSet()
+    {
+        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; pageCount = 1; }
+    }
+
+    private RenderFragment Row(ActorRow a) => @<button class="actor-row @(SelectedSequence == a.Sequence ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(SelectedSequence == a.Sequence)" @onclick="() => OnSelect.InvokeAsync(a)">
+        <ActorChip Sequence="a.Sequence" State="a.State" />
+        <span class="dur">@(a.IsRunning ? "running" : Format.Ms(a.DurationMs))</span>
+        <span class="at">@Format.Time(a.StartedAt)</span>
+        <span class="state @ActorOrder.Css(a.State)">@(a.State is ActorState.Failed or ActorState.Slow ? ActorOrder.Word(a.State) : "")</span>
+    </button>;
+}

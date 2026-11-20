@@ -205,7 +205,7 @@ label { font-size: .72rem; color: var(--muted); }
 .logrow.lv-Trace, .logrow.lv-Debug { color: var(--muted); }
 .logrow.on { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent2); }
 .actor-chip { font-family: var(--mono); font-size: .72rem; padding: .22rem .45rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--input); color: var(--muted); cursor: pointer; }
-.actor-chip:hover { border-color: var(--accent2); color: var(--text); }
+.actor-chip:hover { border-color: var(--accent2); }
 .logrow .msg { text-align: left; background: none; border: 0; padding: .1rem 0; cursor: pointer; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; font: inherit; color: inherit; }
 .logrow.lv-Error .msg { color: #ffc2c7; } .logrow.lv-Warning .msg { color: #f1d6a3; }
 .log-detail { max-height: 38%; overflow-y: auto; padding: .6rem .8rem; background: var(--panel); border: 1px solid var(--accent2); border-radius: var(--radius); font-size: .82rem; }
@@ -408,3 +408,95 @@ button.inst:focus-visible { outline: 2px solid var(--accent); outline-offset: -2
 .chart-status { height: 1.45rem; margin-bottom: .25rem; display: flex; justify-content: flex-end; align-items: center; }  /* fixed strip above the chart (outside it), so the badge never moves the chart and the pointer is not over the chart when it is clicked */
 .live-paused { font: inherit; font-size: .72rem; padding: .15rem .55rem; border-radius: 999px; border: 1px solid var(--border); line-height: 1.2; background: var(--panel2); color: var(--muted); cursor: pointer; }
 .live-paused:hover { color: var(--text); }
+
+/* ===== popup side list, outcome-coloured actor numbers, brush zoom, settings (brain 0023 update 3, 0028, 0029) ===== */
+.achip { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+.achip.bad { color: var(--failed); } .achip.warn { color: var(--slow); } .achip.good { color: var(--good); } .achip.run { color: var(--running); }
+.actor-chip.achip { font-size: .72rem; }
+.chip .achip { margin: 0 .1rem; }
+.actor-title { display: inline-flex; align-items: baseline; gap: .4rem; }
+
+.dialog.wide { width: min(1280px, 100%); }
+.pop-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1.1rem; align-items: start; }
+.pop-main { display: flex; flex-direction: column; gap: .9rem; min-width: 0; }
+.pop-side { position: sticky; top: .5rem; display: flex; flex-direction: column; min-width: 0; height: min(660px, calc(100vh - 5rem)); border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.side-head { padding: .7rem .8rem .5rem; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: .35rem; }
+.side-head h3 { margin: 0; font-size: .95rem; font-weight: 600; display: flex; align-items: baseline; gap: .5rem; }
+.side-head h3 .n { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.side-scope { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; font-size: .78rem; min-height: 1.3rem; }
+.side-scope .chip { padding: .1rem .4rem; font-size: .7rem; }
+.side-counts { margin: 0; display: flex; flex-wrap: wrap; gap: .2rem .8rem; font-size: .78rem; }
+.cnt { display: inline-flex; align-items: center; gap: .35rem; padding: .1rem .2rem; margin: 0 -.2rem; background: none; border: 0; border-radius: 4px; color: var(--text); font: inherit; font-size: .78rem; cursor: pointer; font-variant-numeric: tabular-nums; }
+.cnt i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--good); flex: none; }
+.cnt.bad i { background: var(--failed); } .cnt.warn i { background: var(--slow); } .cnt.run i { background: var(--running); }
+span.cnt { cursor: default; }
+button.cnt:hover:not(:disabled) { background: var(--panel2); }
+button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disabled i { opacity: .45; }
+.pop-side .side-virtual { flex: 1; min-height: 0; height: auto; border: 0; border-radius: 0; background: transparent; }
+.side-paged { display: none; }
+.pop-side .actor-row { gap: .6rem; padding: 0 .7rem; font-size: .85rem; }
+.actor-row .achip { min-width: 3.1rem; }
+.actor-row .dur { min-width: 3.6rem; }
+.actor-row .at { color: var(--faint); font-variant-numeric: tabular-nums; }
+.actor-row .state { margin-left: auto; font-size: .72rem; }
+.side-paged .actor-row { height: 34px; }
+.side-more { margin: .5rem .7rem; }
+.empty { padding: .8rem; margin: 0; }
+@media (max-width: 1000px) {
+    .pop-body { grid-template-columns: minmax(0, 1fr); }
+    .pop-side { position: static; height: auto; }
+    .pop-side .side-virtual { display: none; }
+    .side-paged { display: block; padding-bottom: .1rem; }
+}
+
+/* clickable figures (brain 0029): calm, no button chrome until hovered or focused */
+.figures .fig { background: none; border: 0; padding: 0 .1rem; margin: 0 -.1rem; font: inherit; color: inherit; cursor: pointer; border-radius: 3px; text-decoration: underline dotted transparent; text-underline-offset: .25em; }
+.figures .fig.bad { color: var(--bad); } .figures .fig.warn { color: var(--warn); }
+.figures .fig:hover:not(:disabled) { text-decoration-color: currentColor; background: var(--panel2); }
+.figures .fig:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.figures .fig[aria-pressed="true"] { text-decoration-color: currentColor; }
+.figures .fig:disabled { cursor: default; }
+
+.zoom-chip { margin-right: auto; display: inline-flex; align-items: baseline; gap: .4rem; font-size: .78rem; }
+.zoom-chip b { font-family: var(--mono); font-weight: 600; font-size: .75rem; color: var(--title); }
+.link-btn { background: none; border: 0; padding: 0; margin-left: .3rem; font: inherit; font-size: .78rem; color: var(--accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
+.link-btn:hover { color: var(--title); }
+.link-btn:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; border-radius: 2px; }
+
+/* hover card: outcome-coloured number and the counts of a group */
+.dz-id.good { color: var(--good); } .dz-id.warn { color: var(--slow); } .dz-id.bad { color: var(--failed); } .dz-id.run { color: var(--running); }
+.dz-counts { display: flex; gap: .15rem .7rem; margin-top: .22rem; font-size: .72rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.dz-counts span { display: inline-flex; align-items: center; gap: .3rem; color: var(--text); }
+.dz-counts span.zero { opacity: .4; }
+.dz-counts i { width: .45rem; height: .45rem; border-radius: 50%; background: var(--good); }
+.dz-counts .bad i { background: var(--failed); } .dz-counts .warn i { background: var(--slow); } .dz-counts .run i { background: var(--running); }
+.dz-counts b { font-family: var(--mono); font-weight: 600; }
+.dz-n a { font-weight: 600; }
+.dz-n a.good { color: var(--good); } .dz-n a.warn { color: var(--slow); } .dz-n a.bad { color: var(--failed); } .dz-n a.run { color: var(--running); }
+
+/* brush to zoom */
+.chart { user-select: none; -webkit-user-select: none; }
+.chart[data-brushing], .chart[data-brushing] * { cursor: ew-resize; }
+.dz-brush { position: absolute; top: 0; bottom: 28px; left: 0; width: 0; z-index: 2; display: none; pointer-events: none; background: #7b68ee26; border-left: 1px solid var(--accent2); border-right: 1px solid var(--accent2); }
+.dz-brush.show { display: block; }
+.dz-brush > span { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); padding: 1px 8px; border-radius: 999px; background: #17141f; border: 1px solid #4a4360; color: var(--title); font-family: var(--mono); font-size: .68rem; white-space: nowrap; }
+
+/* settings */
+.gear { margin-left: .25rem; color: var(--muted); }
+.gear:hover { color: var(--text); }
+.overlay.settings { z-index: 120; background: transparent; justify-content: flex-end; padding: 3.2rem 1.2rem; }
+.settings-dialog { width: min(360px, 100%); gap: .9rem; box-shadow: 0 12px 32px #000a; }
+.set-field { display: flex; flex-direction: column; gap: .3rem; }
+.set-field label { display: flex; justify-content: space-between; font-weight: 600; font-size: .88rem; }
+.set-val { font-family: var(--mono); font-weight: 400; color: var(--title); }
+.set-field .help { font-size: .75rem; color: var(--muted); }
+.set-foot { display: flex; justify-content: flex-end; }
+@media (max-width: 760px) { .overlay.settings { padding: 3rem 0 0; } .settings-dialog { min-height: 0; border-radius: var(--radius); margin: 0 .6rem; } }
+.figures .fig b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.figures .fig-sep { width: 1px; height: 1em; background: var(--border); align-self: center; }
+.figures .fig.good b { color: var(--good); }   /* positive is green (brain 0018): a 0 % error rate */
+.logrow.lv-Information { border-left-color: var(--good); }
+.figures .fig b { color: var(--text); }
+.figures .fig.bad b { color: var(--bad); } .figures .fig.warn b { color: var(--warn); } .figures .fig.good b { color: var(--good); }
+.figures .fig { display: inline-block; }
+.figures .fig b { font-size: inherit; line-height: inherit; font-weight: 600; }

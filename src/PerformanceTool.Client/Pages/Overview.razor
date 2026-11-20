@@ -24,18 +24,19 @@
         {
             var idx = i;
             <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Actors="s.Store.Actors(idx)" Running="s.ActorsInFlight?[idx]"
-                          Target="s.Plan.Scenarios[idx].RatePerMinute" Elapsed="s.Elapsed" OnOpen="i => open = i" />
+                          Target="s.Plan.Scenarios[idx].RatePerMinute" Elapsed="s.Elapsed" OnOpen="i => { open = i; openFilter = DetailFilter.All; }" OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />
         }
     </div>
 </div>
 
 @if (open is { } o && o < s.Count)
 {
-    <ScenarioDetailDialog Index="o" Snapshot="s" OnClose="() => open = null" />
+    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" OnClose="() => open = null" />
 }
 
 @code {
     private int? open;
+    private DetailFilter openFilter;
 
     protected override void OnInitialized() => Sim.Changed += OnChanged;
 
