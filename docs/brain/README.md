@@ -43,3 +43,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0004](0004-open-model-rate-scheduling.md) | Open-model scheduling: runs per minute per scenario, drop when saturated | Accepted |
 | [0005](0005-presets-as-json-files.md) | Presets stored as one JSON file each | Accepted |
 | [0006](0006-ux-everything-clickable-and-inspectable.md) | UX principle: everything clickable, inspectable, filterable, isolatable | Accepted |
+| [0007](0007-scenario-editor-derived-from-typed-spec.md) | Scenario editor UI generated from a typed parameter spec (enum → dropdown, bool → toggle, …) | Accepted (not implemented) |

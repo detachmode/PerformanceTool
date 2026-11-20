@@ -19,6 +19,17 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Error grouping: click an error message → all executions with that error.
 - [ ] Keyboard access (focusable bars/rows, Esc closes panels); works during a live run.
 
+## 0b. Typed scenario parameters, generated editor (requirement, see brain 0007)
+- [ ] `Scenario<TParameters>` base: parameters as a typed record. Migrate the 4 built-ins.
+- [ ] Reflection metadata model (cached per type): name, description, order, group, required, range, default.
+- [ ] Generated editor components: text / multiline / URL, toggle for `bool`, dropdown for `enum`,
+      number with range, duration for `TimeSpan`, list editor, key/value editor (headers), nested groups,
+      masked `[Secret]`.
+- [ ] Validation from the same attributes, shared by UI, presets, CLI and CI.
+- [ ] JSON Schema export per scenario (for the CLI and harnesses).
+- [ ] Startup check: unsupported property types fail loudly.
+- [ ] Preset compatibility: presets saved with the current string parameters still load.
+
 ## 1. Shared core + persisted run history (prerequisite for 2 and 3)
 Today results only live in the browser circuit. The CLI and CI need the same data as the UI.
 - [ ] Extract `Services/*` (scenarios, `LoadPlan`, `LoadRunner`, `PresetStore`, stats) into a class library

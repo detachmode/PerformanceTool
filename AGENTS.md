@@ -16,6 +16,7 @@ to the index. Commit it in the same change as the code.
 ## Project
 - `src/PerformanceTool` — Blazor Web App, interactive **server** rendering, `net11.0`.
   - `Services/Scenarios/` — `IScenario` and the built-in scenarios. New scenario = new class + `AddScenario<T>()` in `Program.cs`.
+    Scenario editor UI must be **generated** from the scenario's parameter spec, never hand-written per scenario (brain 0007).
   - `Services/LoadRunner.cs` — open-model scheduler; `Services/LoadPlan.cs` — the plan (also the preset format).
   - `Services/PresetStore.cs` — presets as JSON files (`Presets:Directory`, default `presets/`).
   - `Components/Pages/Home.razor` — the page; `LiveChart.razor`, `ScenarioEntryCard.razor`, `Stat.razor`.

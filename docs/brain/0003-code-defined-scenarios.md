@@ -1,6 +1,6 @@
 # 0003. Scenarios are defined in C# code, configured in the UI
 
-- Status: Accepted
+- Status: Accepted. The parameter mechanism is to be replaced by typed specs, see 0007.
 - Date: 2026-11-20
 
 ## What
