@@ -18,7 +18,7 @@ scenarios, instances and calls, and ask the user when unsure.
 | Term | Meaning | Code | Status |
 |---|---|---|---|
 | **Instance** | One instance of a scenario: one run-through of the scenario's code. **One instance = one bar** in the charts = **one logging scope**. An instance can contain several **calls**. Has a start time, duration, outcome and an optional error. | today `ExecutionResult`, `ScenarioOutcome`, `IScenario.ExecuteAsync` (to be renamed) | **Decided** (replaces "execution") |
-| **Call** | One step inside an instance, e.g. one HTTP request. A scenario can chain multiple calls; together they make up the instance. | — (inside scenario code, e.g. user journey steps) | **Decided** |
+| **Call** | One step inside an instance, e.g. one HTTP request. A scenario can chain multiple calls; together they make up the instance. | recorded automatically from `HttpClient` (DelegatingHandler, brain 0013) | **Decided** |
 | **Logging scope** | The `ILogger` scope created for each instance, so every log line belongs to exactly one instance (one bar). | — (not implemented) | **Decided** (brain 0012) |
 | **Scenario** | A kind of load, defined in code as a class with typed parameters (e.g. "HTTP GET", "User journey"). | `IScenario`, `Scenario<TParameters>` | Current |
 | **Scenario parameters** | The typed settings of a scenario; the editor is generated from them. | `TParameters`, `ParameterSpec` | Current |
