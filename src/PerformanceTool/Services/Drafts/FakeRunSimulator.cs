@@ -7,27 +7,34 @@ namespace PerformanceTool.Services.Drafts;
 
 public enum FakeRunState { Idle, Running, Finished }
 
-/// <summary>How a fake scenario behaves: latency distribution, failure rate and failure kinds.</summary>
+/// <summary>One call of a story: its name and typical duration. Repeated calls (e.g. five product pages) get their own entry.</summary>
+/// <summary>
+/// <paramref name="Group"/> bundles related calls (e.g. "Images") so a 50-call instance can be coloured by a handful of groups.
+/// <paramref name="Pause"/>: whether the user pauses (think time) before this call; false for calls a page fires together.
+/// </summary>
+public sealed record CallSpec(string Name, double MedianMs, double Sigma = 0.35, string? Group = null, bool Pause = true);
+
+/// <summary>
+/// How a fake scenario (a whole user story, docs/context.md) behaves: its chained calls with their typical durations, think time
+/// between them, failure rate and failure kinds. The instance's duration is the sum of its calls and the think times.
+/// </summary>
 public sealed record FakeProfile(
     string? Description,
-    double MedianMs,
-    double Sigma,
+    IReadOnlyList<CallSpec> Calls,
+    double ThinkMs = 0,
     double TailChance = 0,
     double ErrorRate = 0,
     long BytesMedian = 20_000,
     IReadOnlyList<FakeError>? Errors = null,
-    string Method = "GET",
-    string Path = "/",
-    int Steps = 1,
-    string[]? CallNames = null,
     int MinCalls = 0,
     int? FailAtCall = null,
-    double ThinkMs = 0,
     int? SpikeCall = null,
     double SpikeChance = 0,
-    int? ForceFailOn = null)
+    int? ForceFailOn = null,
+    double CallTimeoutMs = 10_000,
+    bool RandomFail = false)
 {
-    public static FakeProfile Generic => new(null, 150, 0.4, 0.02, 0.01, 8_000,
+    public static FakeProfile Generic => new(null, [new("GET /", 150)], 0, 0.02, 0.01, 8_000,
         [new(500, "HTTP 500 Internal Server Error", 1)]);
 }
 
@@ -47,7 +54,8 @@ public sealed record FakeCall(
     int? Status,
     string? Error,
     bool Skipped,
-    double ThinkBeforeMs)
+    double ThinkBeforeMs,
+    string? Group = null)
 {
     public bool Failed => !Skipped && Error is not null;
 }
@@ -310,15 +318,10 @@ public sealed class FakeRunSimulator : IDisposable
     {
         if (inFlight.Sum() >= runPlan.MaxConcurrency) { dropped[entry]++; return; }
         var profile = runProfiles[entry];
-        var timeoutMs = runPlan.TimeoutSeconds * 1000.0;
-        var ms = profile.MedianMs * Math.Exp(profile.Sigma * Gaussian());
-        var slow = rng.NextDouble() < profile.TailChance;
-        if (slow) ms *= 2.5 + rng.NextDouble() * 3;
-        // A spike makes one particular call of the instance much slower (e.g. POST /cart), which stretches the instance.
-        var spike = profile.SpikeCall is not null && rng.NextDouble() < profile.SpikeChance;
-        if (spike) ms += profile.MedianMs * 0.6;
-        ms = Math.Clamp(ms, 3, timeoutMs);
 
+        // Decide the shape of the story first: how many calls it has, whether (and where) it fails, which call is slow.
+        var spec = profile.Calls;
+        var count = profile.MinCalls > 0 && profile.MinCalls < spec.Count ? rng.Next(profile.MinCalls, spec.Count + 1) : spec.Count;
         int? status = 200;
         string? error = null;
         if ((rng.NextDouble() < profile.ErrorRate || starts[entry] == profile.ForceFailOn) && profile.Errors is { Count: > 0 } errors)
@@ -326,54 +329,41 @@ public sealed class FakeRunSimulator : IDisposable
             var pick = Pick(errors);
             status = pick.Status;
             error = pick.Message;
-            if (status is null) ms = timeoutMs;
         }
-        var bytes = status is null ? 0 : (long)(profile.BytesMedian * (0.8 + rng.NextDouble() * 0.4));
+        var failAt = error is null ? -1 : profile.RandomFail ? rng.Next(count / 3, count) : Math.Min(profile.FailAtCall ?? count - 1, count - 1);
+        var ran = failAt >= 0 ? failAt + 1 : count;
+        var slowAt = rng.NextDouble() < profile.TailChance ? rng.Next(ran) : -1;
+        var spikeAt = profile.SpikeCall is { } sc && sc < ran && rng.NextDouble() < profile.SpikeChance ? sc : -1;
+
         var seq = sequence++;
-        ms = Math.Round(ms, 1);
+        var calls = new List<FakeCall>();
+        var offset = 0.0;
+        for (var i = 0; i < count; i++)
+        {
+            if (i >= ran) { calls.Add(new(seq, i, spec[i].Name, offset, 0, null, null, true, 0, spec[i].Group)); continue; }
+            var gap = i > 0 && spec[i].Pause ? Math.Round(profile.ThinkMs * (0.6 + 0.8 * rng.NextDouble()), 1) : 0;
+            offset += gap;
+            var d = spec[i].MedianMs * Math.Exp(spec[i].Sigma * Gaussian());
+            if (i == slowAt) d *= 2.5 + rng.NextDouble() * 3;
+            if (i == spikeAt) d += spec[i].MedianMs * 3;
+            var failed = i == failAt;
+            if (failed && status is null) d = profile.CallTimeoutMs;
+            d = Math.Round(Math.Clamp(d, 3, profile.CallTimeoutMs), 1);
+            calls.Add(new(seq, i, spec[i].Name, Math.Round(offset, 1), d, failed ? status : 200, failed ? error : null, false, gap, spec[i].Group));
+            offset += d;
+        }
+        var ms = Math.Round(offset, 1);
+        var bytes = status is null ? 0 : (long)(profile.BytesMedian * (0.8 + rng.NextDouble() * 0.4));
         var result = new ExecutionResult(seq, entry, at, ms, status, bytes, error);
-        var calls = MakeCalls(seq, ms, status, error, profile, spike);
-        pending.Add(new(entry, at + ms / 1000, result, MakeLogs(entry, seq, at, ms, status, error, slow, profile, timeoutMs, calls), calls));
+        pending.Add(new(entry, at + ms / 1000, result, MakeLogs(entry, seq, at, ms, status, error, slowAt >= 0, profile, calls), calls));
         inFlight[entry]++;
         starts[entry]++;
         lastStart[entry] = at;
     }
 
-    // ---------- fake calls of an instance ----------
-
-    /// <summary>
-    /// Splits an instance into its chained calls. A failing instance has exactly one failing call; the calls after it
-    /// are skipped (no time, no status). Think time sits between calls and is part of the instance's duration.
-    /// </summary>
-    private List<FakeCall> MakeCalls(int seq, double ms, int? status, string? error, FakeProfile profile, bool spike)
-    {
-        var names = profile.CallNames is { Length: > 0 } n ? n : [$"{profile.Method} {profile.Path}"];
-        var count = profile.MinCalls > 0 && profile.MinCalls < names.Length ? rng.Next(profile.MinCalls, names.Length + 1) : names.Length;
-        var failAt = error is null ? -1 : Math.Min(profile.FailAtCall ?? count - 1, count - 1);
-        var ran = failAt >= 0 ? failAt + 1 : count;
-        var think = ran > 1 ? Math.Min(profile.ThinkMs, ms * 0.3 / (ran - 1)) : 0;
-        var avail = ms - think * (ran - 1);
-        var weights = Enumerable.Range(0, ran).Select(i => (0.7 + rng.NextDouble() * 0.6) * (spike && i == profile.SpikeCall ? 6 : 1)).ToArray();
-        var total = weights.Sum();
-        var list = new List<FakeCall>();
-        var offset = 0.0;
-        for (var i = 0; i < count; i++)
-        {
-            if (i >= ran) { list.Add(new(seq, i, names[i], ms, 0, null, null, true, 0)); continue; }
-            var gap = i > 0 ? Math.Round(think, 1) : 0;
-            offset += gap;
-            var d = Math.Round(avail * weights[i] / total, 1);
-            if (i == ran - 1) d = Math.Round(Math.Max(0.1, ms - offset), 1); // the last call ends with the instance
-            var failed = i == failAt;
-            list.Add(new(seq, i, names[i], Math.Round(offset, 1), d, failed ? status : 200, failed ? error : null, false, gap));
-            offset += d;
-        }
-        return list;
-    }
-
     // ---------- fake log statements (brain 0012) ----------
 
-    private List<FakeLogEntry> MakeLogs(int entry, int seq, double at, double ms, int? status, string? error, bool slow, FakeProfile profile, double timeoutMs, List<FakeCall> calls)
+    private List<FakeLogEntry> MakeLogs(int entry, int seq, double at, double ms, int? status, string? error, bool slow, FakeProfile profile, List<FakeCall> calls)
     {
         var cfg = runPlan.Scenarios[entry];
         var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
@@ -389,7 +379,7 @@ public sealed class FakeRunSimulator : IDisposable
         Log(0, "Debug", $"Instance #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
         if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0", call: calls[0]);
 
-        var journey = profile.Steps > 1;
+        var journey = calls.Count > 1;
         var slowest = calls.Where(c => !c.Skipped).MaxBy(c => c.DurationMs);
         foreach (var c in calls)
         {
@@ -403,14 +393,14 @@ public sealed class FakeRunSimulator : IDisposable
             if (c.Error is null)
             {
                 Log(end - 0.5, "Information", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms", call: c);
-                if (slow && c == slowest && c.DurationMs > profile.MedianMs * 2.5 / calls.Count) Log(end - 0.2, "Warning", $"Slow response: {c.DurationMs:0} ms", call: c);
+                if (slow && c == slowest) Log(end - 0.2, "Warning", $"Slow response: {c.DurationMs:0} ms", call: c);
             }
             else if (c.Status is null)
             {
                 Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c);
                 Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c);
-                Log(end, "Error", $"Timeout after {timeoutMs:0} ms",
-                    $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {timeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
+                Log(end, "Error", $"Timeout after {c.DurationMs:0} ms",
+                    $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {profile.CallTimeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
             }
             else
             {
@@ -472,42 +462,84 @@ public sealed class FakeRunSimulator : IDisposable
         return c;
     }
 
+    /// <summary>Repeated calls of a story: "GET /products/{id}" five times becomes five calls with a number, so each has its own row.</summary>
+    private static IEnumerable<CallSpec> Repeat(string name, int times, double ms, double sigma = 0.35) =>
+        Enumerable.Range(1, times).Select(i => new CallSpec($"{name} · {i}", ms, sigma));
+
+    /// <summary>~48 calls: search, 4 more result pages, 10 product views (each with images, price and stock), 2 cart adds, the cart.</summary>
+    private static List<CallSpec> SearchStory()
+    {
+        var l = new List<CallSpec> { new("GET /search?q=…", 450, 0.4, "Search") };
+        var n = 0;
+        for (var page = 1; page <= 5; page++)
+        {
+            if (page > 1) l.Add(new($"GET /search?q=…&page={page}", 320, 0.35, "Results"));
+            for (var v = 0; v < 2; v++)
+            {
+                n++;
+                l.Add(new($"GET /products/{{id}} · {n}", 240, 0.35, "Product"));
+                l.Add(new($"GET /products/{{id}}/images · {n}", 140, 0.5, "Images", Pause: false));
+                l.Add(new($"GET /products/{{id}}/price · {n}", 70, 0.3, "Price & stock", Pause: false));
+                l.Add(new($"GET /products/{{id}}/availability · {n}", 110, 0.45, "Price & stock", Pause: false));
+            }
+        }
+        l.Add(new("POST /cart/items · 1", 320, 0.35, "Cart"));
+        l.Add(new("POST /cart/items · 2", 340, 0.35, "Cart"));
+        l.Add(new("GET /cart", 200, 0.3, "Cart", Pause: false));
+        return l;
+    }
+
+    private static Action<JsonObject> urls(params string[] u) => j => j["urls"] = new JsonArray(u.Select(x => (JsonNode)JsonValue.Create(x)!).ToArray());
+
     private void LoadBlackFriday()
     {
-        Plan = new LoadPlan { DurationSeconds = 60, MaxConcurrency = 50, TimeoutSeconds = 3 };
+        Plan = new LoadPlan { DurationSeconds = 120, MaxConcurrency = 40, TimeoutSeconds = 60 };
         Profiles = [];
         void Add(ScenarioRunConfig c, FakeProfile p) { Plan.Scenarios.Add(c); Profiles.Add(p); }
 
-        Add(Entry("http-get", "Product list GET", 600, "https://shop.example.com/api/products?page=1"),
-            new("Browse the catalogue: the hottest read path of the shop.", 85, 0.35, 0.02, 0.003, 48_000,
-                [new(503, "HTTP 503 Service Unavailable", 1)], "GET", "/api/products?page=1"));
-        Add(Entry("http-post-json", "Checkout POST", 120, "https://shop.example.com/api/checkout",
+        // Each entry is a whole user story; its calls are the requests of that story.
+        Add(Entry("user-journey", "Search & add to cart", 12, "",
+                urls("https://shop.example.com/search?q=running+shoes", "https://shop.example.com/search?q=running+shoes&page=2", "https://shop.example.com/products/1042",
+                     "https://shop.example.com/products/1042/images", "https://shop.example.com/products/1042/price", "https://shop.example.com/cart")),
+            new("Search for a product, page through 5 result pages, open 10 products (images, price, stock) and add 2 of them to the cart.",
+                SearchStory(), ThinkMs: 1100, TailChance: 0.06, ErrorRate: 0.1, BytesMedian: 640_000,
+                Errors: [new(503, "HTTP 503 Service Unavailable on POST /cart/items", 2), new(500, "HTTP 500 Internal Server Error on GET /products/{id}/availability", 1)],
+                RandomFail: true, SpikeCall: 45, SpikeChance: 0.15, ForceFailOn: 2));
+        Add(Entry("http-post-json", "Guest checkout", 12, "https://shop.example.com/api/checkout",
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
-            new("Places an order with a fixed demo cart.", 240, 0.45, 0.03, 0.015, 1_200,
-                [new(500, "HTTP 500 Internal Server Error", 2), new(422, "HTTP 422 Payment declined", 1)], "POST", "/api/checkout",
-                CallNames: ["GET /api/cart/{id}", "POST /api/checkout", "GET /api/orders/{id}"], MinCalls: 2, FailAtCall: 1, ThinkMs: 60));
-        Add(Entry("http-get", "Search", 300, "https://shop.example.com/api/search?q=shoes"),
-            new("Full-text search for a popular term.", 140, 0.5, 0.04, 0.005, 22_000,
-                [new(500, "HTTP 500 Internal Server Error", 1)], "GET", "/api/search?q=shoes"));
-        Add(Entry("user-journey", "User journey", 40, ""),
-            new("Home, product, cart and checkout pages with think time.", 1500, 0.2, 0.02, 0.03, 160_000,
-                [new(502, "Step 3 failed: HTTP 502 Bad Gateway", 1)], "GET", "/", 4,
-                ["GET /", "GET /products/{id}", "POST /cart", "GET /checkout"], FailAtCall: 2, ThinkMs: 250,
-                SpikeCall: 2, SpikeChance: 0.14, ForceFailOn: 14));
-        Add(Entry("http-custom", "Flaky partner API", 90, "https://partner.example.com/v2/stock"),
-            new("Third-party stock service that fails and times out under load.", 320, 0.6, 0.05, 0.13, 3_400,
-                [new(500, "HTTP 500 Internal Server Error", 5), new(null, "Timed out after 3 s", 3), new(503, "HTTP 503 Service Unavailable", 2)],
-                "GET", "/v2/stock"));
+            new("Check out as a guest: cart, address, shipping, payment, confirmation.",
+                [new("GET /cart", 220), new("POST /checkout/address", 380), new("POST /checkout/shipping", 310), new("POST /payments", 900, 0.5), new("GET /orders/{id}/confirmation", 260)],
+                ThinkMs: 2500, TailChance: 0.04, ErrorRate: 0.12, BytesMedian: 14_000,
+                Errors: [new(422, "HTTP 422 Payment declined", 3), new(500, "HTTP 500 Internal Server Error on POST /payments", 2), new(null, "Payment provider timed out after 10 s", 1)],
+                FailAtCall: 3, ForceFailOn: 3));
+        Add(Entry("user-journey", "Browse categories", 60, "",
+                urls("https://shop.example.com/", "https://shop.example.com/categories/12", "https://shop.example.com/categories/7", "https://shop.example.com/categories/31",
+                     "https://shop.example.com/categories/31?page=2", "https://shop.example.com/products/918", "https://shop.example.com/products/204")),
+            new("Open the home page, look through 3 categories with pagination, open 2 products.",
+                [new("GET /", 200), .. Repeat("GET /categories/{id}", 3, 260), new("GET /categories/{id}?page=2", 280), new("GET /products/{id} · 1", 240), new("GET /products/{id} · 2", 240)],
+                ThinkMs: 900, MinCalls: 5, TailChance: 0.03, ErrorRate: 0.01, BytesMedian: 120_000,
+                Errors: [new(503, "HTTP 503 Service Unavailable on GET /categories/{id}", 1)], FailAtCall: 2));
+        Add(Entry("http-custom", "Sign up & first order", 8, "https://shop.example.com/api/accounts"),
+            new("Create an account, log in, get recommendations and place a first order.",
+                [new("POST /accounts", 520), new("POST /login", 300), new("GET /recommendations", 700, 0.5), new("POST /cart/items", 320), new("POST /checkout", 1100, 0.45), new("GET /orders/{id}/confirmation", 280)],
+                ThinkMs: 1800, TailChance: 0.05, ErrorRate: 0.06, BytesMedian: 36_000,
+                Errors: [new(500, "HTTP 500 Internal Server Error on POST /checkout", 2), new(422, "HTTP 422 Payment declined", 1)], FailAtCall: 4));
+        Add(Entry("user-journey", "Order history & return", 6, "",
+                urls("https://shop.example.com/login", "https://shop.example.com/orders", "https://shop.example.com/orders/88231", "https://shop.example.com/orders/88231/items")),
+            new("Log in, look up an old order and return one item.",
+                [new("POST /login", 300), new("GET /orders", 450), new("GET /orders/{id}", 380), new("GET /orders/{id}/items", 300), new("POST /returns", 850, 0.5), new("POST /returns/{id}/label", 500)],
+                ThinkMs: 2000, TailChance: 0.04, ErrorRate: 0.1, BytesMedian: 22_000,
+                Errors: [new(502, "HTTP 502 Bad Gateway on POST /returns", 1), new(409, "HTTP 409 Item is not returnable", 1)], FailAtCall: 4));
     }
 
     private FakePreset MakeSmoke()
     {
-        var plan = new LoadPlan { DurationSeconds = 20, MaxConcurrency = 10, TimeoutSeconds = 5 };
+        var plan = new LoadPlan { DurationSeconds = 60, MaxConcurrency = 10, TimeoutSeconds = 60 };
         var profiles = new List<FakeProfile>();
         foreach (var i in new[] { 0, 2 })
         {
             var c = Plan.Scenarios[i].Clone();
-            c.RatePerMinute = 30;
+            c.RatePerMinute = 12;
             plan.Scenarios.Add(c);
             profiles.Add(Profiles[i]);
         }

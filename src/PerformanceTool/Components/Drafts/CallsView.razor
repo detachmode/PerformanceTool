@@ -1,167 +1,99 @@
-@* DRAFT (brain 0013): how long every call inside each instance took, across all instances of one scenario entry.
-   Three alternative views to compare (A stacked bars, B per-call cards, C heatmap) plus one per-call summary list.
-   Everything is clickable (brain 0006): a call (card, legend chip, heatmap row, list row) filters the details popup to that
-   call; a bar, segment or cell selects its instance. The call name is only ever read from FakeCall.Name. *@
+@* DRAFT (brain 0013): how long every call inside each instance took, across all instances of one scenario entry. Variant A (user
+   decision): one stacked bar per instance, one segment per call. An instance can have ~50 calls, so segments are coloured by
+   call GROUP (a handful of tints, 1 px separators), hovering a segment (or a list row) highlights that call in every bar, the
+   slowest call of each instance gets a light outline, and the per-call list below (search, sort, group filter) is how you pick
+   one call out of 50. Clicking a call, legend group, bar or list row filters (brain 0006). Names come from FakeCall.Name. *@
 @using System.Globalization
 @using PerformanceTool.Services.Drafts
 
 <section class="panel calls-panel cv" style="--series:@Color" aria-label="Call durations">
     <div class="panel-head cv-head">
-        <h3>@Terms.CallsCap <span class="muted">durations across @Terms.Count(insts.Count) · click a call to filter, click a bar or cell to open its @Terms.Instance</span></h3>
-        <div class="variant-switch" role="group" aria-label="Draft variant A / B / C">
-            <span class="variant-label">Draft variant</span>
-            @foreach (var (key, title) in Variants)
-            {
-                var k = key;
-                <button class="variant-btn @(variant == k ? "on" : "")" aria-pressed="@(variant == k)" aria-label="Draft variant @k: @title" title="@title" @onclick="() => variant = k">@k</button>
-            }
-        </div>
+        <h3>@Terms.CallsCap <span class="muted">durations across @Terms.Count(insts.Count) · click a call to filter, click a bar to open its @Terms.Instance</span></h3>
     </div>
 
     @if (insts.Count == 0 || stats.Count == 0)
     {
-        <div class="muted center cv-empty">No calls recorded yet.</div>
+        <div class="muted center cv-empty">No @Terms.Calls recorded yet.</div>
     }
     else
     {
-        <p class="cv-caption"><b>@variant</b> · @Variants.First(v => v.Key == variant).Title</p>
+        <div class="cv-legend" role="group" aria-label="Call groups">
+            @foreach (var g in groups)
+            {
+                var gg = g;
+                <button class="cv-key @(group == gg.Name ? "on" : "") @(group is not null && group != gg.Name ? "off" : "")" aria-pressed="@(group == gg.Name)"
+                        title="Show only the calls of @gg.Name (@Terms.CallCount(gg.Calls))" @onclick="() => PickGroup(gg.Name)">
+                    <i class="cv-sw" style="--seg:@GroupColor(gg.Name)"></i>@gg.Name <span class="cv-n">@gg.Calls</span>
+                </button>
+            }
+            <span class="cv-key static"><i class="cv-sw failed"></i>failed</span>
+            <span class="cv-key static"><i class="cv-sw top"></i>slowest of its @Terms.Instance</span>
+        </div>
 
-        @if (variant == "A")
-        {
-            <div class="cv-legend" role="group" aria-label="Calls">
-                @foreach (var st in stats)
-                {
-                    var s = st;
-                    <button class="cv-key @(Call == s.Index ? "on" : "") @(Call is not null && Call != s.Index ? "off" : "")" aria-pressed="@(Call == s.Index)" title="Click to filter to this call"
-                            @onclick="() => Pick(s.Index)">
-                        <i class="cv-sw" style="--seg:@Shade(s.Index)"></i>@s.Name
-                    </button>
-                }
-                <span class="cv-key static"><i class="cv-sw failed"></i>failed</span>
-            </div>
-        }
-
-        @if (variant == "A")
-        {
-            var cols = Recent;
-            var max = Math.Max(1, cols.Max(i => RanSum(i)));
-            var top = Nice(max);
-            <div class="cv-chart" role="group" aria-label="Instances, stacked by call">
-                <div class="cv-yaxis"><span>@LiveChart.Fmt(top)</span><span>@LiveChart.Fmt(top / 2)</span><span>0</span></div>
-                <div class="cv-plot">
-                    <i class="cv-grid" style="bottom:0"></i><i class="cv-grid" style="bottom:50%"></i><i class="cv-grid" style="bottom:100%"></i>
-                    <div class="stk-row">
-                        @foreach (var inst in cols)
-                        {
-                            var i = inst;
-                            <div class="stk @(SelectedSequence == i.R.Sequence ? "sel" : "") @(i.R.Success ? "" : "bad")" role="button" tabindex="0"
-                                 aria-label="@Terms.InstanceCap #@(i.R.Sequence + 1), @LiveChart.Fmt(i.R.ElapsedMs)"
-                                 @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)" @onkeydown="e => Key(e, i.R.Sequence)">
-                                @foreach (var c in i.Calls)
-                                {
-                                    if (c.Skipped) { continue; }
-                                    <i class="seg @(c.Failed ? "failed" : "") @(Call is not null && Call != c.Index ? "dim" : "")"
-                                       style="height:@Pc(c.DurationMs, top);--seg:@Shade(c.Index)" data-tip="@Tip(i.R, c)"></i>
-                                }
-                            </div>
-                        }
-                    </div>
+        var cols = Recent;
+        var max = Math.Max(1, cols.Max(i => RanSum(i)));
+        var top = Nice(max);
+        <div class="cv-chart" role="group" aria-label="@ChartSummary(cols)">
+            <div class="cv-yaxis" aria-hidden="true"><span>@LiveChart.Fmt(top)</span><span>@LiveChart.Fmt(top / 2)</span><span>0</span></div>
+            <div class="cv-plot">
+                <i class="cv-grid" style="bottom:0"></i><i class="cv-grid" style="bottom:50%"></i><i class="cv-grid" style="bottom:100%"></i>
+                <div class="stk-row">
+                    @foreach (var inst in cols)
+                    {
+                        var i = inst;
+                        var slowest = i.Calls.Where(c => !c.Skipped).MaxBy(c => c.DurationMs);
+                        <div class="stk @(SelectedSequence == i.R.Sequence ? "sel" : "") @(i.R.Success ? "" : "bad")" role="button" tabindex="0"
+                             aria-label="@InstanceLabel(i)"
+                             @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)" @onkeydown="e => Key(e, i.R.Sequence)">
+                            @foreach (var c in i.Calls)
+                            {
+                                if (c.Skipped) { continue; }
+                                <i class="seg @(c.Failed ? "failed" : "") @(c == slowest ? "top" : "") @(Dim(c) ? "dim" : "")" data-call="@c.Index"
+                                   style="height:@Pc(c.DurationMs, top);--seg:@GroupColor(GroupOf(c))" data-tip="@Tip(i.R, c)"></i>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
-            <div class="cv-xaxis"><span>@Terms.InstanceCap #@(cols[0].R.Sequence + 1)</span><span>@(cols.Count < insts.Count ? $"latest {cols.Count} of {insts.Count:N0}" : $"{cols.Count} {Terms.Instances}")</span><span>#@(cols[^1].R.Sequence + 1)</span></div>
-        }
-        else if (variant == "B")
-        {
-            <div class="cv-cards">
-                @foreach (var st in stats)
-                {
-                    var s = st;
-                    var bars = s.Items.Skip(Math.Max(0, s.Items.Count - CardBars)).ToList();
-                    var top = Math.Max(1, bars.Count == 0 ? 1 : bars.Max(b => b.C.DurationMs));
-                    <div class="cv-card @(Call == s.Index ? "on" : "") @(Call is not null && Call != s.Index ? "off" : "")" role="button" tabindex="0" aria-pressed="@(Call == s.Index)"
-                         title="Click to filter to @s.Name" @onclick="() => Pick(s.Index)" @onkeydown="e => PickKey(e, s.Index)">
-                        <div class="cv-card-head">
-                            <span class="cv-name" title="@s.Name"><i class="cv-sw" style="--seg:@Shade(s.Index)"></i>@s.Name</span>
-                            @if (s.Failed > 0) { <span class="badge bad" title="@s.Failed failed @(s.Failed == 1 ? "call" : "calls")">@s.Failed @(s.Failed == 1 ? "error" : "errors")</span> }
-                            else { <span class="badge ok">no errors</span> }
-                        </div>
-                        <div class="cv-value"><b>@PerMinute(s).ToString("0.#", CultureInfo.InvariantCulture)</b><span> calls/min</span></div>
-                        <div class="cv-sub"><span>typical <b>@LiveChart.Fmt(s.Typical)</b></span><span>slowest <b class="@(s.Slowest > s.Typical * 2.5 ? "warn" : "")">@LiveChart.Fmt(s.Slowest)</b></span></div>
-                        <div class="cv-mini" role="group" aria-label="Durations of @s.Name over the run">
-                            <i class="cv-median" style="bottom:@Pc(s.Typical, top)" title="typical @LiveChart.Fmt(s.Typical)"></i>
-                            @foreach (var b in bars)
-                            {
-                                var bi = b;
-                                <i class="mb @(bi.C.Failed ? "failed" : "") @(SelectedSequence == bi.I.R.Sequence ? "sel" : "")" style="height:@(Pc(bi.C.DurationMs, top, 5))"
-                                   data-tip="@Tip(bi.I.R, bi.C)" @onclick="() => OnInstance.InvokeAsync(bi.I.R.Sequence)" @onclick:stopPropagation></i>
-                            }
-                        </div>
-                        <div class="cv-mini-axis"><span>@(bars.Count == s.Items.Count ? "whole run" : $"latest {bars.Count}")</span><span>0 – @LiveChart.Fmt(top)</span></div>
-                    </div>
-                }
-            </div>
-        }
-        else
-        {
-            var cols = Recent;
-            var gmax = Math.Max(1, cols.SelectMany(i => i.Calls).Where(c => !c.Skipped).DefaultIfEmpty().Max(c => c?.DurationMs ?? 0));
-            <div class="cv-toolbar">
-                <span class="muted">Colour scale</span>
-                <button class="chip toggle-chip @(!sharedScale ? "on" : "")" aria-pressed="@(!sharedScale)" @onclick="() => sharedScale = false">each call on its own</button>
-                <button class="chip toggle-chip @(sharedScale ? "on" : "")" aria-pressed="@sharedScale" @onclick="() => sharedScale = true">all calls together</button>
-            </div>
-            <div class="hm" role="group" aria-label="Heatmap of calls by instance">
-                @foreach (var st in stats)
-                {
-                    var s = st;
-                    var rowMax = sharedScale ? gmax : Math.Max(1, s.Slowest);
-                    <div class="hm-row @(Call is not null && Call != s.Index ? "off" : "") @(Call == s.Index ? "on" : "")">
-                        <button class="hm-name" aria-pressed="@(Call == s.Index)" title="Click to filter to @s.Name" @onclick="() => Pick(s.Index)"><i class="cv-sw" style="--seg:@Shade(s.Index)"></i>@s.Name</button>
-                        <div class="hm-cells" style="grid-template-columns:repeat(@cols.Count, minmax(0, 1fr))">
-                            @foreach (var inst in cols)
-                            {
-                                var i = inst;
-                                var c = i.Calls.Count > s.Index ? i.Calls[s.Index] : null;
-                                if (c is null) { <i class="cell none"></i>; continue; }
-                                if (c.Skipped) { <button class="cell skip @(SelectedSequence == i.R.Sequence ? "sel" : "")" data-tip="@Tip(i.R, c)" aria-label="@Tip(i.R, c)" @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)"></button>; continue; }
-                                <button class="cell @(c.Failed ? "failed" : "") @(SelectedSequence == i.R.Sequence ? "sel" : "")" style="--heat:@Heat(c.DurationMs, rowMax)"
-                                        data-tip="@Tip(i.R, c)" aria-label="@Tip(i.R, c)" @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)"></button>
-                            }
-                        </div>
-                        <span class="hm-max" title="Slowest @s.Name">@LiveChart.Fmt(s.Slowest)</span>
-                    </div>
-                }
-            </div>
-            <div class="cv-xaxis hm-axis"><span>@Terms.InstanceCap #@(cols[0].R.Sequence + 1)</span><span>@(cols.Count < insts.Count ? $"latest {cols.Count} of {insts.Count:N0}" : $"{cols.Count} {Terms.Instances}")</span><span>#@(cols[^1].R.Sequence + 1)</span></div>
-            <div class="hm-legend">
-                <span class="muted">faster</span><i class="ramp"></i><span class="muted">@(sharedScale ? LiveChart.Fmt(gmax) : "slowest of the call")</span>
-                <span class="hm-key"><i class="cell failed"></i>failed</span>
-                <span class="hm-key"><i class="cell skip"></i>skipped (earlier call failed)</span>
-            </div>
-        }
+        </div>
+        <div class="cv-xaxis"><span>@Terms.InstanceCap #@(cols[0].R.Sequence + 1)</span><span>@(cols.Count < insts.Count ? $"latest {cols.Count} of {insts.Count:N0}" : $"{cols.Count} {Terms.Instances}")</span><span>#@(cols[^1].R.Sequence + 1)</span></div>
     }
 </section>
 
 @if (stats.Count > 0)
 {
-    <section class="panel calls-list" style="--series:@Color" aria-label="Per-call summary">
+    var rows = ListRows();
+    <section class="panel calls-list cv" style="--series:@Color" aria-label="Per-call summary">
         <div class="panel-head">
-            <h3>Per call <span class="muted">click a row to filter to that call</span></h3>
+            <h3>Per call <span class="muted">@(rows.Count == stats.Count ? $"{stats.Count} {Terms.Calls}" : $"{rows.Count} of {stats.Count} {Terms.Calls}") · click a row to filter to that call</span></h3>
+            <input type="search" class="log-search" placeholder="Search calls…" aria-label="Search calls" autocomplete="off" @bind="search" @bind:event="oninput" />
         </div>
-        <div class="table-scroll">
+        <div class="table-scroll call-scroll">
             <table class="breakdown call-table">
-                <thead><tr><th>Call</th><th>Count</th><th>Typical</th><th>Slowest</th><th>Errors</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th aria-sort="@Aria(SortKey.Index)"><button class="th-btn" @onclick="() => SortBy(SortKey.Index)">Call @Arrow(SortKey.Index)</button></th>
+                        <th aria-sort="@Aria(SortKey.Count)"><button class="th-btn" @onclick="() => SortBy(SortKey.Count)">Count @Arrow(SortKey.Count)</button></th>
+                        <th aria-sort="@Aria(SortKey.Typical)"><button class="th-btn" title="Median duration" @onclick="() => SortBy(SortKey.Typical)">Typical @Arrow(SortKey.Typical)</button></th>
+                        <th aria-sort="@Aria(SortKey.Slowest)"><button class="th-btn" @onclick="() => SortBy(SortKey.Slowest)">Slowest @Arrow(SortKey.Slowest)</button></th>
+                        <th aria-sort="@Aria(SortKey.Errors)"><button class="th-btn" @onclick="() => SortBy(SortKey.Errors)">Errors @Arrow(SortKey.Errors)</button></th>
+                    </tr>
+                </thead>
                 <tbody>
-                    @foreach (var st in stats)
+                    @foreach (var st in rows)
                     {
                         var s = st;
-                        <tr class="clickable @(Call == s.Index ? "selected" : "")" tabindex="0" aria-selected="@(Call == s.Index)" @onclick="() => Pick(s.Index)" @onkeydown="e => PickKey(e, s.Index)">
-                            <td class="call-name"><i class="cv-sw" style="--seg:@Shade(s.Index)"></i>@s.Name</td>
+                        <tr class="clickable @(Call == s.Index ? "selected" : "")" data-call="@s.Index" tabindex="0" aria-selected="@(Call == s.Index)" @onclick="() => Pick(s.Index)" @onkeydown="e => PickKey(e, s.Index)">
+                            <td class="call-name" title="@(s.Group is null ? s.Name : $"{s.Name} · {s.Group}")"><i class="cv-sw" style="--seg:@GroupColor(s.Group ?? s.Name)"></i>@s.Name</td>
                             <td>@s.Count.ToString("N0")@if (s.Skipped > 0) { <span class="faint" title="@s.Skipped skipped because an earlier call failed"> +@s.Skipped skipped</span> }</td>
                             <td>@LiveChart.Fmt(s.Typical)</td>
                             <td class="@(s.Slowest > s.Typical * 2.5 ? "warn-cell" : "")">@LiveChart.Fmt(s.Slowest)</td>
                             <td class="@(s.Failed > 0 ? "bad" : "faint")">@(s.Failed > 0 ? s.Failed.ToString("N0") : "0")</td>
                         </tr>
+                    }
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="5" class="muted center">No @Terms.Calls match.</td></tr>
                     }
                 </tbody>
             </table>
@@ -171,23 +103,18 @@
 
 @code {
     private const int MaxColumns = 70;
-    private const int CardBars = 50;
 
-    private static readonly (string Key, string Title)[] Variants =
-    [
-        ("A", "Stacked instance bars: one bar per instance, one segment per call"),
-        ("B", "Call cards: one small box chart per call"),
-        ("C", "Heatmap: calls as rows, instances as columns"),
-    ];
+    private enum SortKey { Index, Count, Typical, Slowest, Errors }
 
     private sealed record Inst(ExecutionResult R, IReadOnlyList<FakeCall> Calls);
     private sealed record Item(Inst I, FakeCall C);
     private sealed class CallStat
     {
-        public int Index; public string Name = ""; public int Count, Skipped, Failed;
+        public int Index; public string Name = ""; public string? Group; public int Count, Skipped, Failed;
         public double Typical, Slowest;
         public List<Item> Items = [];
     }
+    private sealed record GroupInfo(string Name, int Calls);
 
     /// <summary>The instances to describe (already filtered by the dialog, except for the call filter).</summary>
     [Parameter, EditorRequired] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
@@ -200,10 +127,13 @@
     [Parameter] public int? SelectedSequence { get; set; }
     [Parameter] public EventCallback<int> OnInstance { get; set; }
 
-    private string variant = "A";
-    private bool sharedScale;
+    private string? group;
+    private string search = "";
+    private SortKey sort = SortKey.Index;
+    private bool desc;
     private List<Inst> insts = [];
     private List<CallStat> stats = [];
+    private List<GroupInfo> groups = [];
     private List<Inst> Recent => insts.Count <= MaxColumns ? insts : insts.GetRange(insts.Count - MaxColumns, MaxColumns);
 
     protected override void OnParametersSet()
@@ -217,7 +147,7 @@
         foreach (var inst in insts)
             foreach (var c in inst.Calls)
             {
-                if (!byIndex.TryGetValue(c.Index, out var st)) byIndex[c.Index] = st = new CallStat { Index = c.Index, Name = c.Name };
+                if (!byIndex.TryGetValue(c.Index, out var st)) byIndex[c.Index] = st = new CallStat { Index = c.Index, Name = c.Name, Group = c.Group };
                 if (c.Skipped) { st.Skipped++; continue; }
                 st.Count++;
                 if (c.Failed) st.Failed++;
@@ -233,36 +163,70 @@
             }
         }
         stats = [.. byIndex.Values];
+        // Groups in order of first appearance. A call without a group is its own group, so small scenarios keep one tint per call.
+        groups = stats.GroupBy(s => s.Group ?? s.Name).Select(g => new GroupInfo(g.Key, g.Count())).ToList();
+        if (group is not null && groups.All(g => g.Name != group)) group = null;
     }
 
     private Task Pick(int index) => CallChanged.InvokeAsync(Call == index ? null : index);
+    private void PickGroup(string name) => group = group == name ? null : name;
     private void Key(KeyboardEventArgs e, int sequence) { if (e.Key is "Enter" or " ") _ = OnInstance.InvokeAsync(sequence); }
     private void PickKey(KeyboardEventArgs e, int index) { if (e.Key is "Enter" or " ") _ = Pick(index); }
 
-    private static double RanSum(Inst i) => i.Calls.Where(c => !c.Skipped).Sum(c => c.DurationMs);
-    private double PerMinute(CallStat s) => s.Count / Math.Max(ElapsedSeconds / 60, 1e-6);
+    private static string GroupOf(FakeCall c) => c.Group ?? c.Name;
+    private bool Dim(FakeCall c) => (Call is not null && Call != c.Index) || (group is not null && GroupOf(c) != group);
 
-    /// <summary>One tint of the scenario colour per call: lighter for the first calls, darker for the last.</summary>
-    private string Shade(int index)
+    private List<CallStat> ListRows()
     {
-        var n = Math.Max(1, stats.Count);
+        IEnumerable<CallStat> q = stats;
+        if (group is not null) q = q.Where(s => (s.Group ?? s.Name) == group);
+        var term = search.Trim();
+        if (term.Length > 0) q = q.Where(s => s.Name.Contains(term, StringComparison.OrdinalIgnoreCase) || (s.Group?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        Func<CallStat, double> key = sort switch
+        {
+            SortKey.Count => s => s.Count,
+            SortKey.Typical => s => s.Typical,
+            SortKey.Slowest => s => s.Slowest,
+            SortKey.Errors => s => s.Failed,
+            _ => s => s.Index,
+        };
+        return (desc ? q.OrderByDescending(key) : q.OrderBy(key)).ToList();
+    }
+
+    private void SortBy(SortKey k)
+    {
+        if (sort == k) desc = !desc;
+        else { sort = k; desc = k != SortKey.Index; }
+    }
+    private string Arrow(SortKey k) => sort == k ? (desc ? "↓" : "↑") : "";
+    private string Aria(SortKey k) => sort == k ? (desc ? "descending" : "ascending") : "none";
+
+    private static string InstanceLabel(Inst i) =>
+        $"{Terms.InstanceCap} #{i.R.Sequence + 1}, {LiveChart.Fmt(i.R.ElapsedMs)}, {i.Calls.Count(c => !c.Skipped)} of {i.Calls.Count} {Terms.Calls}" + (i.R.Success ? "" : ", failed");
+
+    private static double RanSum(Inst i) => i.Calls.Where(c => !c.Skipped).Sum(c => c.DurationMs);
+
+    private string ChartSummary(List<Inst> cols) =>
+        $"{cols.Count} {Terms.Instances}, stacked by {Terms.Call}. Slowest {Terms.Instance} {LiveChart.Fmt(cols.Max(RanSum))}, {stats.Count} {Terms.Calls} in {groups.Count} groups, {cols.Count(i => !i.R.Success)} failed.";
+
+    /// <summary>One tint of the scenario colour per group: lighter for the first groups, darker for the last.</summary>
+    private string GroupColor(string name)
+    {
+        var n = Math.Max(1, groups.Count);
+        var gi = Math.Max(0, groups.FindIndex(g => g.Name == name));
         if (n == 1) return "var(--series)";
-        var t = (double)index / (n - 1);
+        var t = (double)gi / (n - 1);
         return t < 0.5
             ? $"color-mix(in srgb, var(--series), white {((1 - 2 * t) * 58).ToString("0", CultureInfo.InvariantCulture)}%)"
             : $"color-mix(in srgb, var(--series), black {((2 * t - 1) * 42).ToString("0", CultureInfo.InvariantCulture)}%)";
     }
-
-    /// <summary>Single-hue ramp: the scenario colour mixed into the dark surface, 12 % (fast) to 100 % (slow).</summary>
-    private static string Heat(double ms, double max) =>
-        (12 + 88 * Math.Pow(Math.Clamp(ms / Math.Max(1, max), 0, 1), 0.85)).ToString("0", CultureInfo.InvariantCulture) + "%";
 
     private static string Pc(double v, double span, double min = 0) =>
         Math.Clamp(v * 100 / Math.Max(1e-6, span), min, 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
 
     private static string Tip(ExecutionResult r, FakeCall c)
     {
-        var head = $"{Terms.InstanceCap} #{r.Sequence + 1} · {c.Name}";
+        var head = $"{Terms.InstanceCap} #{r.Sequence + 1} · {c.Name}" + (c.Group is null ? "" : $" ({c.Group})");
         if (c.Skipped) return head + "\nskipped: an earlier call failed";
         var status = c.Failed ? $"failed · {(c.Status is { } s ? "HTTP " + s : "timeout")}" : $"HTTP {c.Status}";
         return head + $"\n{LiveChart.Fmt(c.DurationMs)} · {status}" + (c.Failed && c.Error is not null ? "\n" + c.Error : "");

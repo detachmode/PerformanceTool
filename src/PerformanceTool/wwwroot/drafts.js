@@ -20,3 +20,27 @@ window.drFocus = function (id) {
 document.addEventListener("keydown", function (e) {
     if ((e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Home" || e.key === "End") && e.target && e.target.closest && e.target.closest(".dr-rows")) e.preventDefault();
 });
+
+// DRAFT calls view (brain 0013): hovering a call (a segment of a bar or a row of the per-call list) highlights the same call in
+// every bar. Pure client side: classes are set on the .cv section, no round trip.
+(function () {
+    var root = null, hot = [];
+    function clear() {
+        hot.forEach(function (el) { el.classList.remove("hl"); });
+        hot = [];
+        document.querySelectorAll(".cv.hl-on").forEach(function (el) { el.classList.remove("hl-on"); });
+        root = null;
+    }
+    document.addEventListener("mouseover", function (e) {
+        var t = e.target && e.target.closest ? e.target.closest(".cv [data-call]") : null;
+        if (!t) { if (root) clear(); return; }
+        var idx = t.getAttribute("data-call");
+        if (root && hot.length && hot[0].getAttribute("data-call") === idx) return;
+        clear();
+        var dlg = t.closest(".dialog") || document;
+        hot = Array.prototype.slice.call(dlg.querySelectorAll('.cv-chart [data-call="' + idx + '"], .call-table [data-call="' + idx + '"]'));
+        hot.forEach(function (el) { el.classList.add("hl"); });
+        dlg.querySelectorAll(".cv").forEach(function (el) { el.classList.add("hl-on"); });
+        root = dlg;
+    });
+})();
