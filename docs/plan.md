@@ -8,11 +8,13 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4 (overview, editor, popup logs; 0006 interactions; instance rename, call waterfall, editor validation,
-  running/rate headline; call-duration variants A/B/C).
-1. **Running:** draft review pass: consistency with `docs/context.md`, accessibility (contrast, keyboard, focus), phone widths;
-   fix small issues and list the bigger ones for the user.
-2. Draft iteration from the user's feedback, e.g. their choice of A/B/C (jumps the queue once feedback arrives).
+- Done: drafts 1–4, review pass (story scenarios, 48-call stacked actor bars, actor rename, contrast/focus/responsive fixes).
+1. **Running:** a11y follow-ups without product impact (card as stretched-link instead of nested interactive content,
+   keyboard-accessible popup chart, tab ARIA, dialog initial focus) + a demo speed control for the fake run.
+2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
+
+Open questions for the user (ask one at a time): which duration summary to show instead of p50/p95/p99 everywhere;
+group repeated calls by name (IDs collapsed) or by position; colours for call groups.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
