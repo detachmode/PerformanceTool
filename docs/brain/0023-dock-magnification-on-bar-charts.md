@@ -38,3 +38,10 @@ and calm (0016) but makes precise selection easy.
 - Popup: a static `span.dz-label` inside the chart is positioned per frame by `dock-magnify.js` over the hovered bar (no Blazor render). It reads `data-l1` / `data-l2` from the bar button: actor `#192` and `start · duration` (or `start · running`), for a time bucket `range` and `N actors`. Times are run time (m:ss), as everywhere else in the tool. Layout: horizontal inside the bar if wide, vertical inside if tall enough, otherwise just above the bar. Dark text on the bar colours. On touch it follows the finger.
 - **More individual bars in the popup:** `ActorBars.MaxBars` raised from 48 to **240** (still bounded, brain 0021), because the magnification makes thin bars easy to hit. Beyond 240 actors the chart groups into time buckets as before. Minimum bar width is 4px above 60 bars. Measured with `?simulate=3h` (180 bars): a synthetic mouse sweep ran at a steady 16.7 ms per frame, no frame over 20 ms.
 - Screenshots: `docs/screenshots/2026-11-20-popup-zoom-labels/`.
+
+## Update 2 (user feedback, 2026-11-20)
+- Improve the look of the hover chart: **cooler labels/panels**.
+- **The zoom must be big enough even when the chart is full** (at the bar limit). Magnification should adapt so the
+  hovered bar always becomes comfortably wide, whatever the bar count.
+- **Neighbouring bars also show info**, in slightly more transparent text, fading with distance.
+- **An x-axis under the chart** gives a rough guide to which timeframe the user is looking at and hovering over.
