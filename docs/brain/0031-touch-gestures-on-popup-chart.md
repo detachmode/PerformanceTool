@@ -15,6 +15,8 @@ On touch devices the popup chart uses these gestures:
 - **Tap** a bar: select it (highlight, like a click on desktop). No magnification.
 - **Tap and hold**: turn on the Dock-like magnification at the finger. **Dragging** while still holding moves the
   magnifier along the bars. Lifting the finger ends it.
+- **Swipe** (finger moves before the hold starts): just scrolls the page or popup, even when it starts on the chart.
+  No magnification, no selection, no zoom.
 - **Pinch**: zoom into or out of the time range (the touch version of the desktop brush zoom).
 
 The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
