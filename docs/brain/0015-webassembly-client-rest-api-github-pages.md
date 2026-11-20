@@ -12,6 +12,9 @@
 - The WebAssembly app is published to **GitHub Pages with fake data** (the fake run simulator runs in the browser), so
   the user can try the UX without a server.
 
+- **No API key for the UI (user decision):** the Blazor WebAssembly UI calls the tool's own API endpoints without
+  an API key. How coding agents authenticate (0009) is a separate, still open question.
+
 ## Why
 - REST APIs are needed anyway for agents (0009). A WebAssembly UI forces the UI onto those same APIs, so there is
   one source of truth and agents can see everything the UI sees.
