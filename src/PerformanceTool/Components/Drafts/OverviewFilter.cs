@@ -1,6 +1,6 @@
 namespace PerformanceTool.Components.Drafts;
 
-public enum SortKey { Plan, Name, P95, Errors, Rate, Executions }
+public enum SortKey { Plan, Name, P95, Errors, Rate, Instances }
 public enum GroupKey { None, Type }
 
 /// <summary>Open the details popup of one entry, optionally pre-filtered to a one-second time window (brain 0006).</summary>
@@ -56,6 +56,6 @@ public sealed class OverviewFilter
     public static string Title(SortKey k) => k switch
     {
         SortKey.Plan => "Plan order", SortKey.Name => "Name", SortKey.P95 => "p95",
-        SortKey.Errors => "Errors", SortKey.Rate => "Rate", _ => Terms.ExecutionsCap,
+        SortKey.Errors => "Errors", SortKey.Rate => "Rate", _ => Terms.InstancesCap,
     };
 }

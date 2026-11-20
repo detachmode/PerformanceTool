@@ -1,4 +1,4 @@
-@* One bar per scenario execution, coloured by scenario entry. Pure HTML/CSS, see docs/brain/0002. *@
+@* One bar per scenario instance, coloured by scenario entry. Pure HTML/CSS, see docs/brain/0002. *@
 @using System.Globalization
 @using PerformanceTool.Components.Drafts
 
@@ -44,23 +44,23 @@
     </div>
     @if (Results.Count > MaxBars)
     {
-        <div class="chart-note">Showing the latest @MaxBars of @Results.Count @Terms.Executions. Statistics include all of them.</div>
+        <div class="chart-note">Showing the latest @MaxBars of @Results.Count @Terms.Instances. Statistics include all of them.</div>
     }
 </section>
 
 @code {
     public const int MaxBars = 600;
 
-    [Parameter] public string EmptyText { get; set; } = "Pick scenarios and start a run — bars appear live, one per execution.";
+    [Parameter] public string EmptyText { get; set; } = "Pick scenarios and start a run — bars appear live, one per instance.";
 
     [Parameter, EditorRequired] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
     [Parameter] public double Average { get; set; }
-    [Parameter] public string Title { get; set; } = "Response time per execution";
+    [Parameter] public string Title { get; set; } = "Response time per instance";
     [Parameter] public bool ShowLegend { get; set; } = true;
     /// <summary>Renders without the card frame, e.g. inside the scenario dialog.</summary>
     [Parameter] public bool Embedded { get; set; }
-    /// <summary>Click a bar to inspect that execution (docs/brain/0006).</summary>
+    /// <summary>Click a bar to inspect that instance (docs/brain/0006).</summary>
     [Parameter] public EventCallback<ExecutionResult> OnBarClick { get; set; }
     [Parameter] public int? SelectedSequence { get; set; }
 

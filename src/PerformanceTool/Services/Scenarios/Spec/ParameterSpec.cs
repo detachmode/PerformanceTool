@@ -268,6 +268,36 @@ public sealed partial class ParameterSpec
         return errors;
     }
 
+    /// <summary>
+    /// Same checks as <see cref="Validate"/>, but per field, for inline messages. Keys are the field's JSON name, nested
+    /// groups joined with "-" (matching the editor's element ids); "" holds messages that belong to no single field.
+    /// </summary>
+    public Dictionary<string, List<string>> ValidateByField(JsonObject? json)
+    {
+        var map = new Dictionary<string, List<string>>();
+        ValidateFieldsOf(Bind(json), "", map);
+        return map;
+    }
+
+    private void ValidateFieldsOf(object obj, string prefix, Dictionary<string, List<string>> map)
+    {
+        var results = new List<ValidationResult>();
+        Validator.TryValidateObject(obj, new ValidationContext(obj), results, validateAllProperties: true);
+        foreach (var r in results)
+        {
+            var members = r.MemberNames.Any() ? r.MemberNames : [""];
+            foreach (var m in members)
+            {
+                var key = prefix + (Fields.FirstOrDefault(f => f.Property.Name == m)?.JsonName ?? "");
+                if (!map.TryGetValue(key, out var list)) map[key] = list = [];
+                list.Add(r.ErrorMessage ?? "Invalid value.");
+            }
+        }
+        foreach (var f in Fields.Where(f => f.Kind == FieldKind.Group))
+            if (f.Property.GetValue(obj) is { } child)
+                f.Children!.ValidateFieldsOf(child, prefix + f.JsonName + "-", map);
+    }
+
     private void ValidateObject(object obj, string prefix, List<string> errors)
     {
         var results = new List<ValidationResult>();

@@ -40,7 +40,7 @@ public sealed class LoadPlan
             var label = string.IsNullOrWhiteSpace(entry.Label) ? entry.ScenarioId : entry.Label;
             if (scenario is null) { errors.Add($"{label}: unknown scenario '{entry.ScenarioId}'."); continue; }
             if (entry.RatePerMinute is <= 0 or > MaxRatePerMinute || double.IsNaN(entry.RatePerMinute))
-                errors.Add($"{label}: runs per minute must be between 0 and {MaxRatePerMinute:N0}.");
+                errors.Add($"{label}: instances per minute must be between 0 and {MaxRatePerMinute:N0}.");
             foreach (var err in scenario.Spec.Validate(entry.Parameters))
                 errors.Add($"{label}: {err}");
         }

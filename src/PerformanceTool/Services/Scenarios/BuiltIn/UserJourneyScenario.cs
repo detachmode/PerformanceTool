@@ -13,7 +13,7 @@ public sealed class UserJourneyParameters
     [Range(typeof(TimeSpan), "00:00:00", "00:01:00")]
     public TimeSpan ThinkTime { get; set; } = TimeSpan.Zero;
 
-    [Display(Name = "Repeat", Description = "How many times the whole journey runs per execution.")]
+    [Display(Name = "Repeat", Description = "How many times the whole journey runs per instance.")]
     [Range(1, 10)]
     public int Iterations { get; set; } = 1;
 

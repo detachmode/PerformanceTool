@@ -8,11 +8,9 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: UI draft 1 (overview, editor, popup logs), draft 2 (0006 interactions on the overview).
-1. **Running:** draft 3: rename "execution" → **instance** in all draft UI (`Terms.cs`); show an instance's **chained calls** in the popup (fake data); then 0006 on the editor page.
-2. Draft 4: call durations (brain 0013). Show variants side by side with fake data: (A) instance bars stacked by call,
-   (B) per-call box-chart cards under a scenario, (C) instances × calls heatmap, so the user can choose.
-3. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
+- Done: drafts 1–3 (overview, editor, popup logs; 0006 interactions; instance rename, call waterfall, editor validation, running/rate headline).
+1. **Running:** draft 4: call durations (brain 0013), variants A stacked bars / B per-call box-chart cards / C heatmap, fake data.
+2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)

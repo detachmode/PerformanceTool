@@ -18,7 +18,11 @@ public sealed record FakeProfile(
     IReadOnlyList<FakeError>? Errors = null,
     string Method = "GET",
     string Path = "/",
-    int Steps = 1)
+    int Steps = 1,
+    string[]? CallNames = null,
+    int MinCalls = 0,
+    int? FailAtCall = null,
+    double ThinkMs = 0)
 {
     public static FakeProfile Generic => new(null, 150, 0.4, 0.02, 0.01, 8_000,
         [new(500, "HTTP 500 Internal Server Error", 1)]);
@@ -27,9 +31,27 @@ public sealed record FakeProfile(
 /// <summary>A failure kind. <see cref="Status"/> null means no response (timeout).</summary>
 public sealed record FakeError(int? Status, string Message, double Weight);
 
+/// <summary>
+/// One call inside an instance (docs/context.md). Times are relative to the start of the instance. A skipped call never ran
+/// because an earlier call of the instance failed. <see cref="ThinkBeforeMs"/> is the pause that precedes it.
+/// </summary>
+public sealed record FakeCall(
+    int Sequence,
+    int Index,
+    string Name,
+    double OffsetMs,
+    double DurationMs,
+    int? Status,
+    string? Error,
+    bool Skipped,
+    double ThinkBeforeMs)
+{
+    public bool Failed => !Skipped && Error is not null;
+}
+
 public sealed record FakePreset(string Name, LoadPlan Plan, List<FakeProfile> Profiles);
 
-/// <summary>One log statement of one execution (brain 0012): level, message, optional exception and the execution's scope values.</summary>
+/// <summary>One log statement of one instance (brain 0012): level, message, optional exception and the instance's scope values.</summary>
 public sealed record FakeLogEntry(
     long Id,
     double AtSeconds,
@@ -39,7 +61,8 @@ public sealed record FakeLogEntry(
     string? Exception,
     int Entry,
     int Sequence,
-    IReadOnlyDictionary<string, string> Scope)
+    IReadOnlyDictionary<string, string> Scope,
+    int? CallIndex = null)
 {
     public static readonly string[] Levels = ["Trace", "Debug", "Information", "Warning", "Error"];
     public static int Rank(string level) => Array.IndexOf(Levels, level);
@@ -58,7 +81,8 @@ public sealed record RunSnapshot(
     int[] InFlight,
     int[] Starts,
     int[] Dropped,
-    double?[] SinceLastStart)
+    double?[] SinceLastStart,
+    IReadOnlyDictionary<int, IReadOnlyList<FakeCall>> Calls)
 {
     public bool Running => State == FakeRunState.Running;
     public int Count => Plan.Scenarios.Count;
@@ -66,7 +90,7 @@ public sealed record RunSnapshot(
 
 /// <summary>
 /// Simulates a run of a few scenarios with different rates, realistic latencies and some failures, so the UI can be
-/// designed without the real runner. Executions are in flight for their duration (tiles light up) and write fake log
+/// designed without the real runner. Instances are in flight for their duration (tiles light up) and write fake log
 /// statements that line up with their outcome. It starts out with a finished run so screenshots are never empty.
 /// Scoped: one simulation per circuit.
 /// </summary>
@@ -99,7 +123,9 @@ public sealed class FakeRunSimulator : IDisposable
     private string runId = "";
     private DateTimeOffset runStartedUtc;
 
-    private sealed record Pending(int Entry, double EndAt, ExecutionResult Result, List<FakeLogEntry> Logs);
+    private sealed record Pending(int Entry, double EndAt, ExecutionResult Result, List<FakeLogEntry> Logs, List<FakeCall> Calls);
+    // Calls by instance number: append-only, so snapshots can share it. A new run gets a new dictionary.
+    private System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyList<FakeCall>> calls = new();
 
     public RunSnapshot Current { get; private set; } = default!;
     public bool IsRunning => Current.Running;
@@ -138,6 +164,25 @@ public sealed class FakeRunSimulator : IDisposable
         if (index < 0 || index >= Plan.Scenarios.Count) return;
         Plan.Scenarios.RemoveAt(index);
         Profiles.RemoveAt(index);
+    }
+
+    public void DuplicateEntry(int index)
+    {
+        if (index < 0 || index >= Plan.Scenarios.Count || Plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
+        var copy = Plan.Scenarios[index].Clone();
+        copy.Label = string.IsNullOrWhiteSpace(copy.Label) ? copy.ScenarioId + " copy" : copy.Label + " copy";
+        Plan.Scenarios.Insert(index + 1, copy);
+        Profiles.Insert(index + 1, Profiles[index]);
+    }
+
+    /// <summary>Moves an entry by <paramref name="delta"/> places (negative = up). Returns the new index.</summary>
+    public int MoveEntry(int index, int delta)
+    {
+        var to = Math.Clamp(index + delta, 0, Plan.Scenarios.Count - 1);
+        if (index < 0 || index >= Plan.Scenarios.Count || to == index) return index;
+        var c = Plan.Scenarios[index]; Plan.Scenarios.RemoveAt(index); Plan.Scenarios.Insert(to, c);
+        var p = Profiles[index]; Profiles.RemoveAt(index); Profiles.Insert(to, p);
+        return to;
     }
 
     public void SavePreset(string name)
@@ -211,6 +256,7 @@ public sealed class FakeRunSimulator : IDisposable
             var n = runPlan.Scenarios.Count;
             all.Clear();
             pending.Clear();
+            calls = new();
             byEntry = Enumerable.Range(0, n).Select(_ => new List<ExecutionResult>()).ToArray();
             logs = Enumerable.Range(0, n).Select(_ => new List<FakeLogEntry>()).ToArray();
             starts = new int[n]; dropped = new int[n]; inFlight = new int[n];
@@ -226,7 +272,7 @@ public sealed class FakeRunSimulator : IDisposable
         }
     }
 
-    /// <summary>Advances the simulation to <paramref name="now"/> seconds: fires due executions, completes finished ones.</summary>
+    /// <summary>Advances the simulation to <paramref name="now"/> seconds: fires due instances, completes finished ones.</summary>
     private void Step(double now)
     {
         lock (gate)
@@ -250,6 +296,7 @@ public sealed class FakeRunSimulator : IDisposable
                 inFlight[p.Entry]--;
                 all.Add(p.Result);
                 byEntry[p.Entry].Add(p.Result);
+                calls[p.Result.Sequence] = p.Calls;
                 foreach (var l in p.Logs) logs[p.Entry].Add(l with { Id = logId++ });
             }
             if (now >= runPlan.DurationSeconds && pending.Count == 0) FinishLocked(runPlan.DurationSeconds);
@@ -279,69 +326,99 @@ public sealed class FakeRunSimulator : IDisposable
         var seq = sequence++;
         ms = Math.Round(ms, 1);
         var result = new ExecutionResult(seq, entry, at, ms, status, bytes, error);
-        pending.Add(new(entry, at + ms / 1000, result, MakeLogs(entry, seq, at, ms, status, error, slow, profile, timeoutMs)));
+        var calls = MakeCalls(seq, ms, status, error, profile);
+        pending.Add(new(entry, at + ms / 1000, result, MakeLogs(entry, seq, at, ms, status, error, slow, profile, timeoutMs, calls), calls));
         inFlight[entry]++;
         starts[entry]++;
         lastStart[entry] = at;
     }
 
-    // ---------- fake log statements (brain 0012) ----------
+    // ---------- fake calls of an instance ----------
 
-    private List<FakeLogEntry> MakeLogs(int entry, int seq, double at, double ms, int? status, string? error, bool slow, FakeProfile profile, double timeoutMs)
+    /// <summary>
+    /// Splits an instance into its chained calls. A failing instance has exactly one failing call; the calls after it
+    /// are skipped (no time, no status). Think time sits between calls and is part of the instance's duration.
+    /// </summary>
+    private List<FakeCall> MakeCalls(int seq, double ms, int? status, string? error, FakeProfile profile)
     {
-        var cfg = runPlan.Scenarios[entry];
-        var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
-        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Execution"] = $"#{seq + 1}" };
-        var list = new List<FakeLogEntry>();
-        void Log(double offsetMs, string level, string message, string? ex = null) =>
-            list.Add(new(0, at + offsetMs / 1000, runStartedUtc.AddSeconds(at + offsetMs / 1000), level, message, ex, entry, seq, scope));
-
-        var request = $"{profile.Method} {profile.Path}";
-        Log(0, "Debug", $"Execution #{seq + 1} started");
-        if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0");
-
-        if (profile.Steps > 1)
+        var names = profile.CallNames is { Length: > 0 } n ? n : [$"{profile.Method} {profile.Path}"];
+        var count = profile.MinCalls > 0 && profile.MinCalls < names.Length ? rng.Next(profile.MinCalls, names.Length + 1) : names.Length;
+        var failAt = error is null ? -1 : Math.Min(profile.FailAtCall ?? count - 1, count - 1);
+        var ran = failAt >= 0 ? failAt + 1 : count;
+        var think = ran > 1 ? Math.Min(profile.ThinkMs, ms * 0.3 / (ran - 1)) : 0;
+        var avail = ms - think * (ran - 1);
+        var weights = Enumerable.Range(0, ran).Select(_ => 0.7 + rng.NextDouble() * 0.6).ToArray();
+        var total = weights.Sum();
+        var list = new List<FakeCall>();
+        var offset = 0.0;
+        for (var i = 0; i < count; i++)
         {
-            // User journey: one line per step that completed; the failing step carries the error.
-            var failedStep = error is null ? 0 : 3; // 1-based; matches "Step 3 failed" in the error text
-            var per = ms / profile.Steps;
-            for (var s = 1; s <= profile.Steps; s++)
-            {
-                var stepMs = per * (0.7 + rng.NextDouble() * 0.6);
-                var path = StepPaths[Math.Min(s - 1, StepPaths.Length - 1)];
-                if (s == failedStep)
-                {
-                    Log(per * s, "Error", $"Step {s}/{profile.Steps} GET {path} → {status} in {stepMs:0} ms",
-                        $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {status}.\n   at PerformanceTool.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at PerformanceTool.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38");
-                    break;
-                }
-                Log(per * s, "Information", $"Step {s}/{profile.Steps} GET {path} → 200 in {stepMs:0} ms");
-                if (s < profile.Steps) Log(per * s + 0.3, "Debug", "Think time 400 ms");
-            }
+            if (i >= ran) { list.Add(new(seq, i, names[i], ms, 0, null, null, true, 0)); continue; }
+            var gap = i > 0 ? Math.Round(think, 1) : 0;
+            offset += gap;
+            var d = Math.Round(avail * weights[i] / total, 1);
+            if (i == ran - 1) d = Math.Round(Math.Max(0.1, ms - offset), 1); // the last call ends with the instance
+            var failed = i == failAt;
+            list.Add(new(seq, i, names[i], Math.Round(offset, 1), d, failed ? status : 200, failed ? error : null, false, gap));
+            offset += d;
         }
-        else if (error is null)
-        {
-            Log(ms - 0.5, "Information", $"{request} → {status} in {ms:0.#} ms");
-            if (slow && ms > profile.MedianMs * 2.5) Log(ms - 0.2, "Warning", $"Slow response: {ms:0} ms (median {profile.MedianMs:0} ms)");
-        }
-        else if (status is null)
-        {
-            Log(ms * 0.4, "Warning", "Retrying partner call (attempt 2)");
-            Log(ms * 0.8, "Warning", "Retrying partner call (attempt 3)");
-            Log(ms, "Error", $"Timeout after {timeoutMs:0} ms",
-                $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {timeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)");
-        }
-        else
-        {
-            if (profile.Errors is { Count: > 1 } && status == 500) Log(ms * 0.5, "Warning", "Retrying partner call (attempt 2)");
-            Log(ms, "Error", $"{request} → {status} in {ms:0.#} ms",
-                $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {status} ({error}).\n   at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()\n   at PerformanceTool.Scenarios.HttpScenarioBase.SendAsync(HttpRequestMessage request, CancellationToken ct)");
-        }
-        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"Execution #{seq + 1} finished" : $"Execution #{seq + 1} finished with failure: {error}");
         return list;
     }
 
-    private static readonly string[] StepPaths = ["/", "/products/42", "/cart", "/checkout"];
+    // ---------- fake log statements (brain 0012) ----------
+
+    private List<FakeLogEntry> MakeLogs(int entry, int seq, double at, double ms, int? status, string? error, bool slow, FakeProfile profile, double timeoutMs, List<FakeCall> calls)
+    {
+        var cfg = runPlan.Scenarios[entry];
+        var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
+        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Instance"] = $"#{seq + 1}" };
+        var list = new List<FakeLogEntry>();
+        void Log(double offsetMs, string level, string message, string? ex = null, FakeCall? call = null)
+        {
+            var s = scope;
+            if (call is not null) s = new Dictionary<string, string>(scope) { ["Call"] = $"{call.Index + 1}/{calls.Count} {call.Name}" };
+            list.Add(new(0, at + offsetMs / 1000, runStartedUtc.AddSeconds(at + offsetMs / 1000), level, message, ex, entry, seq, s, call?.Index));
+        }
+
+        Log(0, "Debug", $"Instance #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
+        if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0", call: calls[0]);
+
+        var journey = profile.Steps > 1;
+        var slowest = calls.Where(c => !c.Skipped).MaxBy(c => c.DurationMs);
+        foreach (var c in calls)
+        {
+            if (c.Skipped)
+            {
+                Log(ms + 0.1, "Debug", $"Skipped {c.Name}: an earlier call failed", call: c);
+                continue;
+            }
+            if (c.ThinkBeforeMs > 0) Log(c.OffsetMs - c.ThinkBeforeMs + 0.3, "Debug", $"Think time {c.ThinkBeforeMs:0} ms", call: c);
+            var end = c.OffsetMs + c.DurationMs;
+            if (c.Error is null)
+            {
+                Log(end - 0.5, "Information", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms", call: c);
+                if (slow && c == slowest && c.DurationMs > profile.MedianMs * 2.5 / calls.Count) Log(end - 0.2, "Warning", $"Slow response: {c.DurationMs:0} ms", call: c);
+            }
+            else if (c.Status is null)
+            {
+                Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c);
+                Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c);
+                Log(end, "Error", $"Timeout after {timeoutMs:0} ms",
+                    $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {timeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
+            }
+            else
+            {
+                if (profile.Errors is { Count: > 1 } && c.Status == 500) Log(c.OffsetMs + c.DurationMs * 0.5, "Warning", "Retrying partner call (attempt 2)", call: c);
+                var where = journey
+                    ? "   at PerformanceTool.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at PerformanceTool.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38"
+                    : "   at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()\n   at PerformanceTool.Scenarios.HttpScenarioBase.SendAsync(HttpRequestMessage request, CancellationToken ct)";
+                Log(end, "Error", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms",
+                    $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n{where}", c);
+            }
+        }
+        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"Instance #{seq + 1} finished" : $"Instance #{seq + 1} finished with failure: {error}");
+        return list;
+    }
 
     private FakeError Pick(IReadOnlyList<FakeError> errors)
     {
@@ -354,7 +431,7 @@ public sealed class FakeRunSimulator : IDisposable
 
     private void FinishLocked(double at)
     {
-        // Executions still in flight when the run is stopped are cancelled (no result), like the real runner.
+        // Instances still in flight when the run is stopped are cancelled (no result), like the real runner.
         pending.Clear();
         Array.Clear(inFlight);
         elapsed = at;
@@ -372,7 +449,7 @@ public sealed class FakeRunSimulator : IDisposable
             return new RunSnapshot(state, elapsed, runPlan, labels, descriptions, all.ToArray(),
                 byEntry.Select(l => (IReadOnlyList<ExecutionResult>)l.ToArray()).ToArray(),
                 logs.Select(l => (IReadOnlyList<FakeLogEntry>)l.ToArray()).ToArray(),
-                (int[])inFlight.Clone(), (int[])starts.Clone(), (int[])dropped.Clone(), sinceLast);
+                (int[])inFlight.Clone(), (int[])starts.Clone(), (int[])dropped.Clone(), sinceLast, calls);
         }
     }
 
@@ -401,13 +478,15 @@ public sealed class FakeRunSimulator : IDisposable
         Add(Entry("http-post-json", "Checkout POST", 120, "https://shop.example.com/api/checkout",
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
             new("Places an order with a fixed demo cart.", 240, 0.45, 0.03, 0.015, 1_200,
-                [new(500, "HTTP 500 Internal Server Error", 2), new(422, "HTTP 422 Payment declined", 1)], "POST", "/api/checkout"));
+                [new(500, "HTTP 500 Internal Server Error", 2), new(422, "HTTP 422 Payment declined", 1)], "POST", "/api/checkout",
+                CallNames: ["GET /api/cart/demo-42", "POST /api/checkout", "GET /api/orders/latest"], MinCalls: 2, FailAtCall: 1, ThinkMs: 60));
         Add(Entry("http-get", "Search", 300, "https://shop.example.com/api/search?q=shoes"),
             new("Full-text search for a popular term.", 140, 0.5, 0.04, 0.005, 22_000,
                 [new(500, "HTTP 500 Internal Server Error", 1)], "GET", "/api/search?q=shoes"));
         Add(Entry("user-journey", "User journey", 40, ""),
             new("Home, product, cart and checkout pages with think time.", 1700, 0.22, 0.02, 0.02, 160_000,
-                [new(502, "Step 3 failed: HTTP 502 Bad Gateway", 1)], "GET", "/", 4));
+                [new(502, "Step 3 failed: HTTP 502 Bad Gateway", 1)], "GET", "/", 4,
+                ["GET /", "GET /products/42", "POST /cart", "GET /checkout"], FailAtCall: 2, ThinkMs: 250));
         Add(Entry("http-custom", "Flaky partner API", 90, "https://partner.example.com/v2/stock"),
             new("Third-party stock service that fails and times out under load.", 320, 0.6, 0.05, 0.13, 3_400,
                 [new(500, "HTTP 500 Internal Server Error", 5), new(null, "Timed out after 3 s", 3), new(503, "HTTP 503 Service Unavailable", 2)],
