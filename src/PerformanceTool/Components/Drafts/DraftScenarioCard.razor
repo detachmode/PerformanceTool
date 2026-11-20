@@ -1,19 +1,19 @@
 @* DRAFT scenario card, modelled on the Aspire 17 Metrics instrument cards (docs/brain/0008, 0011), with the 0006 interactions:
+   - stretched-link pattern: the title is a real <button> whose ::after covers the whole card, so a click anywhere on the card (and
+     Enter / Space on the focused button) opens the details popup. The chips, the menu and the chart are siblings above it (z-index),
+     so no interactive element is nested inside another one.
    - click / Enter opens the details popup; Alt+click isolates the scenario, Shift+click hides it; the "..." menu offers the same
    - the type chip filters the overview to that type, the rate chip sorts by rate
    - the little box chart is a fixed grid of Slots one-second slots (newest right). Hover shows a CSS-only tooltip, a click opens
      the popup pre-filtered to that second. The chart is one tab stop: Left/Right move between buckets, Enter opens. *@
 
-<div class="dr-card @(Active ? "active" : "") @(MenuOpen ? "menu-open" : "")" style="--series:@Color" role="button" tabindex="0"
-     aria-label="@Label: @(stats.Count == 0 ? "no actors yet" : $"p95 {valueText}, {Terms.Count(stats.Count)}, {stats.Errors} errors"). Open details. Alt+click shows only this, Shift+click hides."
-     title="Click: details · Alt+click: only this · Shift+click: hide"
-     data-card="@Index" @onclick="OnClick" @onkeydown="OnKey">
+<div class="dr-card @(Active ? "active" : "") @(MenuOpen ? "menu-open" : "")" style="--series:@Color" data-card="@Index" @onkeydown="OnKey">
     <div class="chips">
         <button class="chip chip-btn @(TypeActive ? "on" : "")" aria-pressed="@TypeActive" title="@(TypeActive ? "Remove the type filter" : $"Show only {TypeName} scenarios")"
-                @onclick="() => OnFilterType.InvokeAsync(TypeName)" @onclick:stopPropagation @onkeydown:stopPropagation><i class="dot"></i>@TypeName</button>
-        <button class="chip chip-btn" title="Target rate. Click to sort by rate" @onclick="() => OnSortRate.InvokeAsync()" @onclick:stopPropagation @onkeydown:stopPropagation>@DraftFormat.Rate(TargetPerMinute) @Terms.PerMinuteShort</button>
+                @onclick="() => OnFilterType.InvokeAsync(TypeName)" @onclick:stopPropagation><i class="dot"></i>@TypeName</button>
+        <button class="chip chip-btn" title="Target rate. Click to sort by rate" @onclick="() => OnSortRate.InvokeAsync()" @onclick:stopPropagation>@DraftFormat.Rate(TargetPerMinute) @Terms.PerMinuteShort</button>
         <button class="dr-more" aria-haspopup="menu" aria-expanded="@MenuOpen" aria-label="Actions for @Label" title="Actions"
-                @onclick="() => OnToggleMenu.InvokeAsync(Index)" @onclick:stopPropagation @onkeydown:stopPropagation>⋯</button>
+                @onclick="() => OnToggleMenu.InvokeAsync(Index)" @onclick:stopPropagation>⋯</button>
     </div>
     @if (MenuOpen)
     {
@@ -25,10 +25,11 @@
             <li role="none"><button role="menuitem" @onclick="() => Act(() => OnFilterType.InvokeAsync(TypeName))">@(TypeActive ? "Remove type filter" : $"Only type {TypeName}")</button></li>
         </ul>
     }
-    <div class="dr-title" title="@Label">
+    <button type="button" class="dr-title dr-open" title="Click: details · Alt+click: only this · Shift+click: hide" @onclick="OnClick"
+            aria-label="@Label: @(stats.Count == 0 ? "no actors yet" : $"p95 {valueText}, {Terms.Count(stats.Count)}, {stats.Errors} errors"). Open details.">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 12.5l3.5-4 2.5 2.5L13.5 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 14h12" stroke="currentColor" stroke-width="1" opacity=".5"/></svg>
         <span>@Label</span>
-    </div>
+    </button>
     <div class="dr-desc" title="@Description">@Description</div>
 
     <div class="dr-live">
@@ -50,7 +51,7 @@
         @if (Dropped > 0) { <span class="badge warn" title="Due but not started: max in-flight reached">@Dropped dropped</span> }
     </div>
 
-    <div class="dr-chart" role="group" tabindex="0" aria-label="@Label, last @Slots seconds. Left and right arrows move between time buckets, Enter opens the details for that second."
+    <div class="dr-chart" role="group" tabindex="0" data-kbnav aria-label="@Label, last @Slots seconds. Left and right arrows move between time buckets, Enter opens the details for that second."
          @onkeydown="OnChartKey" @onkeydown:stopPropagation @onclick:stopPropagation>
         @for (var i = 0; i < Slots; i++)
         {
@@ -175,7 +176,6 @@
     private async Task OnKey(KeyboardEventArgs e)
     {
         if (e.Key == "Escape" && MenuOpen) await OnToggleMenu.InvokeAsync(Index);
-        else if (e.Key is "Enter" or " ") await OnOpen.InvokeAsync(new OpenRequest(Index));
     }
 
     private async Task OnChartKey(KeyboardEventArgs e)

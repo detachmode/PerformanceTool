@@ -37,14 +37,27 @@
             <div class="cv-yaxis" aria-hidden="true"><span>@LiveChart.Fmt(top)</span><span>@LiveChart.Fmt(top / 2)</span><span>0</span></div>
             <div class="cv-plot">
                 <i class="cv-grid" style="bottom:0"></i><i class="cv-grid" style="bottom:50%"></i><i class="cv-grid" style="bottom:100%"></i>
-                <div class="stk-row">
-                    @foreach (var inst in cols)
+                @* One tab stop for all bars (a listbox): Left/Right/Home/End move between bars, Enter opens the actor. *@
+                <div class="stk-row" role="listbox" aria-orientation="horizontal" tabindex="0" data-kbnav style="--stk-max:@(cols.Count <= 30 ? 44 : 24)px"
+                     aria-label="@ChartSummary(cols) Left and right arrows move between bars, Enter selects the actor."
+                     aria-activedescendant="@(kbSeq is { } ks && cols.Any(c => c.R.Sequence == ks) ? StkId(ks) : null)" @onkeydown="e => ChartKey(e, cols)">
+                    @for (var ci = 0; ci < cols.Count; ci++)
                     {
-                        var i = inst;
+                        var i = cols[ci];
+                        var kb = kbSeq == i.R.Sequence;
                         var slowest = i.Calls.Where(c => !c.Skipped).MaxBy(c => c.DurationMs);
-                        <div class="stk @(SelectedSequence == i.R.Sequence ? "sel" : "") @(i.R.Success ? "" : "bad")" role="button" tabindex="0"
-                             aria-label="@InstanceLabel(i)"
-                             @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)" @onkeydown="e => Key(e, i.R.Sequence)">
+                        <div id="@StkId(i.R.Sequence)" class="stk @(SelectedSequence == i.R.Sequence ? "sel" : "") @(i.R.Success ? "" : "bad") @(kb ? "kb" : "")" role="option"
+                             aria-selected="@(SelectedSequence == i.R.Sequence ? "true" : "false")" aria-label="@InstanceLabel(i)"
+                             @onclick="() => OnInstance.InvokeAsync(i.R.Sequence)">
+                            @if (kb)
+                            {
+                                <span class="tip @(ci < 6 ? "tip-left" : ci >= cols.Count - 6 ? "tip-right" : "")" aria-hidden="true">
+                                    <b>@Terms.InstanceCap #@(i.R.Sequence + 1)</b>
+                                    <span>@LiveChart.Fmt(i.R.ElapsedMs) · @i.Calls.Count(c => !c.Skipped) of @i.Calls.Count @Terms.Calls</span>
+                                    <span class="@(i.R.Success ? "" : "bad")">@(i.R.Error ?? "succeeded")</span>
+                                    <em>Enter to open</em>
+                                </span>
+                            }
                             @foreach (var c in i.Calls)
                             {
                                 if (c.Skipped) { continue; }
@@ -170,7 +183,26 @@
 
     private Task Pick(int index) => CallChanged.InvokeAsync(Call == index ? null : index);
     private void PickGroup(string name) => group = group == name ? null : name;
-    private void Key(KeyboardEventArgs e, int sequence) { if (e.Key is "Enter" or " ") _ = OnInstance.InvokeAsync(sequence); }
+    private int? kbSeq;
+    private string StkId(int sequence) => $"stk-{sequence}";
+
+    private async Task ChartKey(KeyboardEventArgs e, List<Inst> cols)
+    {
+        if (cols.Count == 0) return;
+        var cur = kbSeq is { } k ? cols.FindIndex(c => c.R.Sequence == k) : -1;
+        switch (e.Key)
+        {
+            case "ArrowLeft": cur = cur < 0 ? cols.Count - 1 : Math.Max(0, cur - 1); break;
+            case "ArrowRight": cur = cur < 0 ? cols.Count - 1 : Math.Min(cols.Count - 1, cur + 1); break;
+            case "Home": cur = 0; break;
+            case "End": cur = cols.Count - 1; break;
+            case "Enter" or " ":
+                if (cur >= 0) await OnInstance.InvokeAsync(cols[cur].R.Sequence);
+                return;
+            default: return;
+        }
+        kbSeq = cols[cur].R.Sequence;
+    }
     private void PickKey(KeyboardEventArgs e, int index) { if (e.Key is "Enter" or " ") _ = Pick(index); }
 
     private static string GroupOf(FakeCall c) => c.Group ?? c.Name;

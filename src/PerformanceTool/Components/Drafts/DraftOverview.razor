@@ -44,6 +44,14 @@
         </div>
         <div class="dr-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)pct)"><div style="width:@(pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
         <span class="dr-time">@DraftFormat.Time(s.Elapsed) / @DraftFormat.Time(s.Plan.DurationSeconds)</span>
+        <div class="dr-demo" role="group" aria-label="Demo speed, draft only" title="DRAFT ONLY: speeds up the clock of the fake run, so a 2 minute run is over in 12 s at 10×">
+            <span class="dr-label">Demo speed</span>
+            @foreach (var sp in FakeRunSimulator.DemoSpeeds)
+            {
+                var speed = sp;
+                <button class="dr-seg @(Sim.DemoSpeed == speed ? "on" : "")" aria-pressed="@(Sim.DemoSpeed == speed ? "true" : "false")" @onclick="() => Sim.DemoSpeed = speed">@speed×</button>
+            }
+        </div>
         @if (s.Running)
         {
             <button class="btn stop" @onclick="Sim.Stop">■ Stop</button>

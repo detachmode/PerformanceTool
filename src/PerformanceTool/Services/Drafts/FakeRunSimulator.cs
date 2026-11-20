@@ -141,6 +141,11 @@ public sealed class FakeRunSimulator : IDisposable
     public RunSnapshot Current { get; private set; } = default!;
     public bool IsRunning => Current.Running;
 
+    /// <summary>DRAFT only: how much faster the simulated clock runs than the wall clock (1, 4 or 10). Can change during a run.</summary>
+    public static readonly int[] DemoSpeeds = [1, 4, 10];
+    private volatile int demoSpeed = 1;
+    public int DemoSpeed { get => demoSpeed; set => demoSpeed = Math.Max(1, value); }
+
     /// <summary>Raised on the simulation thread whenever <see cref="Current"/> changes. Pages must marshal with InvokeAsync.</summary>
     public event Action? Changed;
 
@@ -239,13 +244,18 @@ public sealed class FakeRunSimulator : IDisposable
     private async Task LoopAsync(CancellationToken ct)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
+        // Simulated time advances by the wall-clock delta times the demo speed (the speed may change mid-run).
+        double virtualNow = 0, lastWall = 0;
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
         var tick = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                Step(clock.Elapsed.TotalSeconds);
+                var wall = clock.Elapsed.TotalSeconds;
+                virtualNow += (wall - lastWall) * demoSpeed;
+                lastWall = wall;
+                Step(virtualNow);
                 var done = state != FakeRunState.Running;
                 if (++tick % 3 == 0 || done)
                 {

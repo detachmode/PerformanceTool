@@ -28,6 +28,10 @@
 .dr-link:hover { text-decoration: underline; }
 .dr-progress { flex: 1; height: 4px; background: var(--panel2); border-radius: 99px; overflow: hidden; min-width: 60px; }
 .dr-progress div { height: 100%; background: var(--accent2); transition: width .2s linear; }
+.dr-demo { display: inline-flex; align-items: center; gap: .35rem; padding: .15rem .25rem .15rem .55rem; border: 1px dashed var(--faint); border-radius: var(--radius-sm); }
+.dr-seg { background: none; border: 0; color: var(--muted); font: inherit; font-family: var(--mono); font-size: .74rem; padding: .22rem .5rem; border-radius: var(--radius-sm); cursor: pointer; }
+.dr-seg:hover { color: var(--text); background: #ffffff0f; }
+.dr-seg.on { color: #fff; background: #7b68ee40; box-shadow: inset 0 0 0 1px var(--accent2); }
 .dr-runbar .btn { min-width: 92px; padding: .4rem 1rem; }
 
 /* section header */
@@ -209,7 +213,14 @@
 
 /* card extras */
 .dr-card { position: relative; }
-.dr-card:focus-visible, .dr-chart:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.dr-chart:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+/* stretched link: the title button covers the whole card; everything else interactive sits above it */
+.dr-open { background: none; border: 0; padding: 0; margin: 0; font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.dr-open::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); z-index: 1; }
+.dr-open:focus-visible { outline: none; }
+.dr-open:focus-visible::after { outline: 2px solid var(--accent2); outline-offset: 2px; }
+.dr-card .chips, .dr-card .dr-chart { position: relative; z-index: 2; }
+.dr-card:hover, .dr-card:focus-within { z-index: 3; }
 .dr-card.menu-open { z-index: 32; }
 .dr-card .chips { align-items: center; }
 .chip-btn { font-family: var(--mono); cursor: pointer; }
@@ -336,7 +347,7 @@
 .cv-plot { position: relative; border-left: 1px solid var(--border); }
 .cv-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed #ffffff14; pointer-events: none; }
 .stk-row { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 3px; padding: 0 4px; }
-.stk { flex: 1 1 0; max-width: 24px; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; cursor: pointer; border-radius: 2px; }
+.stk { flex: 1 1 0; max-width: var(--stk-max, 24px); height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; cursor: pointer; border-radius: 2px; }
 .stk:hover { background: #ffffff0f; }
 .stk.sel { box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px #7b68ee44; background: #ffffff10; }
 .seg { display: block; flex: none; min-height: 1px; width: 100%; background: var(--seg); box-shadow: inset 0 -1px 0 #14131c; transition: opacity .12s; }
@@ -379,3 +390,22 @@
     .cv-xaxis { margin-left: 3.5rem; }
     .call-scroll { max-height: 320px; }
 }
+
+/* ---------- keyboard access of the actor bars (popup chart, stacked call bars) ---------- */
+.bars.kbnav:focus-visible, .stk-row:focus-visible { outline: 2px solid var(--accent2); outline-offset: 3px; border-radius: 2px; }
+.bars.kbnav .bar { position: relative; }
+.bars.kbnav:focus-visible .bar.kb { outline: 2px solid #fff; outline-offset: 2px; }
+.bars.kbnav:focus-visible .bar.kb > .tip, .stk-row:focus-visible .stk.kb > .tip { display: flex; }
+.bars.kbnav .bar > .tip, .stk > .tip { bottom: calc(100% + 8px); }
+.bars.kbnav .bar > .tip.tip-left { left: 0; transform: none; }
+.bars.kbnav .bar > .tip.tip-right { left: auto; right: 0; transform: none; }
+.stk { position: relative; }
+.stk-row:focus-visible .stk.kb { background: #ffffff18; box-shadow: inset 0 0 0 1px var(--accent2); }
+.stk > .tip { top: 4px; bottom: auto; }
+.stk > .tip.tip-left { left: 0; transform: none; }
+.stk > .tip.tip-right { left: auto; right: 0; transform: none; }
+
+/* dialog: the tab panel keeps the body's grid rhythm; the heading takes initial focus without a ring */
+.dlg-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: .9rem; min-width: 0; }
+.dlg-titles h2:focus { outline: none; }
+.tab:focus-visible { outline: 2px solid var(--accent2); outline-offset: -2px; border-radius: var(--radius-sm); }

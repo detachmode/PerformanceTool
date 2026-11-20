@@ -198,6 +198,7 @@ button.chip:hover { border-color: var(--accent); color: var(--text); }
 .avg-line { position: absolute; left: 0; right: 0; border-top: 1px solid #ffffff88; z-index: 2; pointer-events: none; transition: bottom .25s; }
 .avg-line span { position: absolute; right: 4px; top: -1.4rem; font-size: .7rem; background: var(--topbar); padding: 1px 6px; border-radius: var(--radius-sm); }
 .bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 2px; padding: 0 4px; overflow: hidden; }
+.bars.kbnav { overflow-x: clip; overflow-y: visible; }
 .bar { flex: 1 1 0; min-width: 1px; max-width: 46px; border-radius: 2px 2px 0 0; transform-origin: bottom; background: var(--c); animation: grow .3s ease-out; min-height: 2px; }
 .bar:hover { filter: brightness(1.35); }
 .bar.clickable { cursor: pointer; }

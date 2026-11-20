@@ -10,7 +10,7 @@
         <header class="dlg-head">
             <span class="swatch"></span>
             <div class="dlg-titles">
-                <h2 id="dlg-title">@Label</h2>
+                <h2 id="dlg-title" tabindex="-1" @ref="heading">@Label</h2>
                 <div class="chips">
                     <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
                     <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) @Terms.PerMinuteShort target</span>
@@ -38,17 +38,17 @@
 
             @if (HasLogs || HasCalls)
             {
-                <div class="tabs" role="tablist">
-                    <button role="tab" aria-selected="@(tab == "details")" class="tab @(tab == "details" ? "on" : "")" @onclick='() => tab = "details"'>Details</button>
+                <div class="tabs" role="tablist" aria-label="Details sections" @onkeydown="TabKey">
+                    <button id="dlg-tab-details" role="tab" aria-selected="@Sel("details")" aria-controls="dlg-panel" tabindex="@(tab == "details" ? 0 : -1)" class="tab @(tab == "details" ? "on" : "")" @onclick='() => SetTab("details")'>Details</button>
                     @if (HasCalls)
                     {
-                        <button role="tab" aria-selected="@(tab == "calls")" class="tab @(tab == "calls" ? "on" : "")" @onclick='() => tab = "calls"'>
+                        <button id="dlg-tab-calls" role="tab" aria-selected="@Sel("calls")" aria-controls="dlg-panel" tabindex="@(tab == "calls" ? 0 : -1)" class="tab @(tab == "calls" ? "on" : "")" @onclick='() => SetTab("calls")'>
                             Calls <span class="tab-count">@callNames.Count</span>
                         </button>
                     }
                     @if (HasLogs)
                     {
-                        <button role="tab" aria-selected="@(tab == "logs")" class="tab @(tab == "logs" ? "on" : "")" @onclick='() => tab = "logs"'>
+                        <button id="dlg-tab-logs" role="tab" aria-selected="@Sel("logs")" aria-controls="dlg-panel" tabindex="@(tab == "logs" ? 0 : -1)" class="tab @(tab == "logs" ? "on" : "")" @onclick='() => SetTab("logs")'>
                             Logs <span class="tab-count">@Logs!.Count.ToString("N0")</span>
                             @if (logErrors > 0) { <span class="tab-count bad">@logErrors.ToString("N0") @(logErrors == 1 ? "error" : "errors")</span> }
                         </button>
@@ -56,6 +56,7 @@
                 </div>
             }
 
+            <div class="dlg-panel" id="dlg-panel" role="@(HasLogs || HasCalls ? "tabpanel" : null)" aria-labelledby="@(HasLogs || HasCalls ? "dlg-tab-" + tab : null)">
             @if (HasFilter)
             {
                 <div class="filters" aria-label="Active filters">
@@ -293,6 +294,7 @@
                 }
             </section>
             }
+            </div>
         </div>
     </div>
 </div>
@@ -427,8 +429,33 @@
         return all.Count <= MaxLogRows ? all : all.GetRange(0, MaxLogRows);
     }
 
-    private ElementReference root;
+    private ElementReference root, heading;
     private bool focused;
+    private bool focusTab;
+
+    private string Sel(string t) => tab == t ? "true" : "false";
+    private void SetTab(string t) => tab = t;
+
+    /// <summary>Left/Right/Home/End switch tabs (automatic activation) and move focus with them.</summary>
+    private void TabKey(KeyboardEventArgs e)
+    {
+        var tabs = new List<string> { "details" };
+        if (HasCalls) tabs.Add("calls");
+        if (HasLogs) tabs.Add("logs");
+        var i = tabs.IndexOf(tab);
+        i = e.Key switch
+        {
+            "ArrowLeft" => (i - 1 + tabs.Count) % tabs.Count,
+            "ArrowRight" => (i + 1) % tabs.Count,
+            "Home" => 0,
+            "End" => tabs.Count - 1,
+            _ => -1,
+        };
+        if (i < 0) return;
+        tab = tabs[i];
+        focusTab = true;
+    }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     // Filters (shared by chart and list)
     // Setters re-run the derived data: OnParametersSet does not fire for state changes made inside the component.
@@ -496,10 +523,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (focusTab)
+        {
+            focusTab = false;
+            try { await JS.InvokeVoidAsync("drFocus", "dlg-tab-" + tab); } catch (Exception) { /* circuit gone */ }
+        }
         if (firstRender && !focused)
         {
             focused = true;
-            try { await root.FocusAsync(); } catch (Exception) { /* circuit gone or element detached */ }
+            try { await heading.FocusAsync(); } catch (Exception) { /* circuit gone or element detached */ }
         }
     }
 

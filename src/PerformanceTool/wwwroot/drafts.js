@@ -16,6 +16,12 @@ window.drFocus = function (id) {
     if (el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
     if (el.tagName === "INPUT" && el.type !== "range" && el.select) { try { el.select(); } catch (e) { } }
 };
+// Bars/tabs that handle the arrow keys themselves (Blazor cannot conditionally preventDefault): keep the page and dialog from scrolling.
+document.addEventListener("keydown", function (e) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+    var t = e.target;
+    if (t && t.hasAttribute && (t.hasAttribute("data-kbnav") || t.getAttribute("role") === "tab")) e.preventDefault();
+});
 // Up/Down in the scenario list move the selection, not the page.
 document.addEventListener("keydown", function (e) {
     if ((e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Home" || e.key === "End") && e.target && e.target.closest && e.target.closest(".dr-rows")) e.preventDefault();
@@ -56,7 +62,7 @@ document.addEventListener("keydown", function (e) {
         var items = Array.prototype.filter.call(dlg.querySelectorAll(FOCUSABLE), function (el) { return el.offsetParent !== null; });
         if (!items.length) return;
         var first = items[0], last = items[items.length - 1];
-        if (e.shiftKey && (e.target === first || !dlg.contains(e.target))) { e.preventDefault(); last.focus(); }
+        if (e.shiftKey && (e.target === first || !dlg.contains(e.target) || e.target.id === "dlg-title")) { e.preventDefault(); last.focus(); }
         else if (!e.shiftKey && e.target === last) { e.preventDefault(); first.focus(); }
     });
     new MutationObserver(function (records) {
@@ -71,7 +77,8 @@ document.addEventListener("keydown", function (e) {
             r.removedNodes.forEach(function (n) {
                 if (n.nodeType === 1 && n.classList.contains("overlay") && opener !== null) {
                     var card = document.querySelector('[data-card="' + opener + '"]');
-                    if (card) card.focus();
+                    var target = card && (card.querySelector(".dr-open") || card);
+                    if (target) target.focus();
                     opener = null;
                 }
             });
