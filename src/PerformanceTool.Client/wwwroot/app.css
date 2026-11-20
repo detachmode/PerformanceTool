@@ -221,7 +221,8 @@ label { font-size: .72rem; color: var(--muted); }
 .ed-hint { margin: 0 0 .75rem; }
 .ed-split { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 1rem; align-items: start; }
 .ed-split .ed-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
-.ed-split .detail { position: sticky; top: 1rem; }
+/* The panel is as tall as its content up to the visible area (minus the player bar), then its body scrolls; head and foot stay put (brain 0019). */
+.ed-split .detail { position: sticky; top: 1rem; max-height: calc(100vh - 1rem - 5.5rem); max-height: calc(100dvh - 1rem - 5.5rem); }
 .detail { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
 .empty { padding: 1rem; }
 .ed-grid .add-menu { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -229,15 +230,20 @@ label { font-size: .72rem; color: var(--muted); }
 .add-menu button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; background: transparent; border: 0; padding: .45rem .6rem; border-radius: var(--radius-sm); cursor: pointer; }
 .add-menu button:hover { background: var(--selected); }
 .add-menu span { color: var(--muted); font-size: .76rem; }
-.detail { padding: 1rem 1.1rem 1.2rem; display: grid; gap: .9rem; min-width: 0; }
-.detail-head { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.detail { padding: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.detail.none { overflow: visible; }
+.detail-head { display: flex; align-items: center; gap: .6rem; flex: none; padding: .7rem 1.1rem; border-bottom: 1px solid var(--border); background: var(--panel); }
+.detail-head .spacer { flex: 1; }
+.unsaved.small { font-size: .78rem; }
+.detail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 1rem 1.1rem; display: grid; gap: .9rem; align-content: start; }
 .entry-label { flex: 1 1 220px; min-width: 0; font-size: 1.05rem; font-weight: 600; }
 
 /* generated parameter editor (brain 0007) */
 .form { display: flex; flex-wrap: wrap; gap: .8rem; }
 .field { display: flex; flex-direction: column; gap: .3rem; width: calc(50% - .4rem); min-width: 0; }
 .field.wide { width: 100%; }
-.field input, .field select, .field textarea { width: 100%; }
+.field input, .field select, .field textarea { width: 100%; box-sizing: border-box; }
+.field textarea { max-height: 40vh; }
 .field.rate { width: 160px; }
 .field label .opt { margin-left: .35rem; font-size: .66rem; color: var(--faint); }
 .field .help { font-size: .72rem; color: var(--muted); line-height: 1.35; }
@@ -301,12 +307,12 @@ label { font-size: .72rem; color: var(--muted); }
 .card-add .plus { font-size: 1.6rem; line-height: 1; color: var(--accent); }
 .card-add:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .card-add:disabled { opacity: .45; cursor: default; }
-.detail-foot { border-top: 1px solid var(--border); padding-top: .8rem; }
+.detail-foot { flex: none; border-top: 1px solid var(--border); padding: .6rem 1.1rem; background: var(--panel); }
 .ed-split .detail .field.rate { width: 160px; }
 @media (max-width: 1000px) { .ed-split { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) {
     .ed-split .detail.none { display: none; }
-    .ed-split .detail { position: fixed; inset: 0; z-index: 90; border-radius: 0; overflow-y: auto; align-content: start; }
+    .ed-split .detail { position: fixed; inset: 0; z-index: 90; max-height: none; border-radius: 0; border: 0; padding-bottom: env(safe-area-inset-bottom); }
 }
 
 /* ----- build info (brain 0025) ----- */
