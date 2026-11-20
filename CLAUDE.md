@@ -1,0 +1,12 @@
+@AGENTS.md
+
+## How we work in Claude sessions
+- The main chat is for **brainstorming and recording decisions** with the user (`docs/brain/`, `docs/plan.md`).
+- **Implementation runs in background agents** (model: Sonnet 5.5), each in its own git worktree, so the chat
+  stays free. The main session briefs them (they start cold: point them to `AGENTS.md`, the brain records and the
+  plan items), reviews their result, merges it into the working branch, pushes, and shows the user screenshots.
+- **The user guides the decisions.** Propose little, don't decide on the user's behalf, and ask **one question at a
+  time**. Record Claude-only ideas as `Proposed`, never `Accepted`.
+- **Current phase: UI drafts with fake data** (see `docs/plan.md`). Show the user screenshots after every draft iteration.
+- **Always keep a background agent busy** while talking with the user. Keep the queue in `docs/plan.md` ("Agent queue") and start the next item as soon as one finishes. User feedback goes to the front of the queue.
+- **Use the tool's own language** (`docs/context.md`), not standard load-testing vocabulary or metrics, in UI, docs and agent briefs.

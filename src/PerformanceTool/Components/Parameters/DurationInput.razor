@@ -1,0 +1,45 @@
+@using PerformanceTool.Services.Scenarios.Spec
+
+<input id="@Id" type="text" class="@(error is null ? "" : "invalid")" value="@text" placeholder="e.g. 500ms, 2s, 1m 30s"
+       disabled="@Disabled" @onchange="OnChange" />
+@if (error is not null)
+{
+    <small class="help warn">@error</small>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    [Parameter] public TimeSpan Value { get; set; }
+    [Parameter] public EventCallback<TimeSpan> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private string text = "";
+    private string? error;
+    private TimeSpan? shown;
+
+    protected override void OnParametersSet()
+    {
+        if (shown != Value)
+        {
+            shown = Value;
+            text = DurationFormat.Format(Value);
+            error = null;
+        }
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        text = e.Value?.ToString() ?? "";
+        if (DurationFormat.TryParse(text, out var value) && value >= TimeSpan.Zero)
+        {
+            error = null;
+            shown = value;
+            text = DurationFormat.Format(value);
+            await ValueChanged.InvokeAsync(value);
+        }
+        else
+        {
+            error = "Use a duration like 500ms, 2s or 1m 30s.";
+        }
+    }
+}

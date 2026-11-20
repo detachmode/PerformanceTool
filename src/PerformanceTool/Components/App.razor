@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["PerformanceTool.styles.css"]" />
+    <link rel="stylesheet" href="@Assets["drafts.css"]" /> @* DRAFT: UI drafts under /drafts *@
+    <ImportMap />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes @rendermode="PageRenderMode" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["drafts.js"]"></script> @* DRAFT: "/" focuses the filter box *@
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    // DRAFT: all /drafts pages share one interactive circuit, so the scoped FakeRunSimulator survives navigation between them.
+    // The existing pages keep their own @rendermode.
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext?.Request.Path.StartsWithSegments("/drafts") == true ? InteractiveServer : null;
+}

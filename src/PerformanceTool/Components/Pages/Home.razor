@@ -1,0 +1,382 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject LoadRunner Runner
+@inject ScenarioCatalog Catalog
+@inject PresetStore Presets
+
+<PageTitle>Performance Tool</PageTitle>
+
+<header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true">⚡</span> Performance<span>Tool</span></div>
+    <div class="run-state">
+        @if (running || results.Count > 0)
+        {
+            <div class="progress" title="@($"{Elapsed:0}s of {activePlan.DurationSeconds}s")">
+                <div style="width:@(Math.Clamp(Elapsed / activePlan.DurationSeconds, 0, 1).ToString("P0", System.Globalization.CultureInfo.InvariantCulture).Replace(" ", ""))"></div>
+            </div>
+            <span class="muted">@($"{Elapsed:0}s / {activePlan.DurationSeconds}s")</span>
+        }
+        <div class="status @(running ? "live" : results.Count > 0 ? "done" : "")"><i class="status-dot"></i>@(running ? "Running" : results.Count > 0 ? "Finished" : "Idle")</div>
+    </div>
+</header>
+
+<main class="container">
+    <section class="card presets">
+        <div class="preset-group">
+            <label for="preset">Preset</label>
+            <select id="preset" @bind="selectedPreset" disabled="@running">
+                <option value="">— choose a preset —</option>
+                @foreach (var p in presets)
+                {
+                    <option value="@p.Name">@p.Name</option>
+                }
+            </select>
+            <button class="btn ghost" @onclick="LoadPreset" disabled="@(running || selectedPreset == "")">Load</button>
+            <button class="btn ghost danger" @onclick="DeletePreset" disabled="@(running || selectedPreset == "")">Delete</button>
+        </div>
+        <div class="preset-group">
+            <input @bind="presetName" placeholder="Preset name" aria-label="Preset name" disabled="@running" />
+            <button class="btn ghost" @onclick="SavePreset" disabled="@running">Save current</button>
+        </div>
+        @if (presetMessage is not null)
+        {
+            <div class="preset-msg">@presetMessage</div>
+        }
+    </section>
+
+    <section class="card">
+        <div class="section-head">
+            <h2>Scenario mix</h2>
+            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") actors/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") instances</span>
+        </div>
+        <div class="entries">
+            @for (var i = 0; i < plan.Scenarios.Count; i++)
+            {
+                var entry = plan.Scenarios[i];
+                <ScenarioEntryCard @key="entry" Config="entry" Scenario="Catalog.Find(entry.ScenarioId)" Color="@SeriesPalette.For(i)"
+                                   Disabled="running" OnRemove="() => plan.Scenarios.Remove(entry)" />
+            }
+        </div>
+        <div class="add-row">
+            <select @bind="addScenarioId" disabled="@(running || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-label="Scenario to add">
+                @foreach (var s in Catalog.All)
+                {
+                    <option value="@s.Id">@s.Name — @s.Description</option>
+                }
+            </select>
+            <button class="btn ghost" @onclick="AddScenario" disabled="@(running || plan.Scenarios.Count >= LoadPlan.MaxEntries)">+ Add scenario</button>
+        </div>
+
+        <div class="controls run-settings">
+            <div class="field">
+                <label for="dur">Duration (s)</label>
+                <input id="dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@running" />
+            </div>
+            <div class="field">
+                <label for="conc">Max in-flight</label>
+                <input id="conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@running" />
+            </div>
+            <div class="field">
+                <label for="to">Timeout (s)</label>
+                <input id="to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@running" />
+            </div>
+            <div class="spacer"></div>
+            @if (running)
+            {
+                <button class="btn stop" @onclick="Stop">■ Stop</button>
+            }
+            else
+            {
+                <button class="btn start" @onclick="Start">▶ Start run</button>
+            }
+        </div>
+    </section>
+
+    @if (errors.Count > 0)
+    {
+        <div class="error"><ul>@foreach (var e in errors) { <li>@e</li> }</ul></div>
+    }
+
+    @{ var all = LatencyStats.From(results); }
+    <section class="stats">
+        <Stat Label="Actors" Value="@all.Count.ToString("N0")" />
+        <Stat Label="Errors" Value="@all.Errors.ToString("N0")" Bad="@(all.Errors > 0)" />
+        <Stat Label="Dropped" Value="@dropped.Sum().ToString("N0")" Bad="@(dropped.Sum() > 0)" />
+        <Stat Label="Actors/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
+        <Stat Label="Avg" Value="@LiveChart.Fmt(all.Avg)" />
+        <Stat Label="p50" Value="@LiveChart.Fmt(all.P50)" />
+        <Stat Label="p95" Value="@LiveChart.Fmt(all.P95)" />
+        <Stat Label="p99" Value="@LiveChart.Fmt(all.P99)" />
+        <Stat Label="Max" Value="@LiveChart.Fmt(all.Max)" />
+    </section>
+
+    <section class="tiles-section" aria-label="Scenarios">
+        <div class="group-head">
+            <h2>Scenarios</h2>
+            <span class="count">@viewPlan.Scenarios.Count</span>
+            <span class="dotted"></span>
+            <div class="toolbar">
+                <label for="sort" class="visually-hidden">Sort by</label>
+                <select id="sort" @bind="sortBy" title="Sort tiles">
+                    <option value="plan">Sort: plan order</option>
+                    <option value="name">Sort: name</option>
+                    <option value="p95">Sort: p95</option>
+                    <option value="errors">Sort: errors</option>
+                    <option value="rate">Sort: rate</option>
+                </select>
+                <label for="group" class="visually-hidden">Group by</label>
+                <select id="group" @bind="groupBy" title="Group tiles">
+                    <option value="">Group: none</option>
+                    <option value="type">Group: scenario type</option>
+                </select>
+            </div>
+        </div>
+        @if (viewPlan.Scenarios.Count == 0)
+        {
+            <div class="muted tiles-empty">Add a scenario to see its live tile here.</div>
+        }
+        @foreach (var group in TileGroups())
+        {
+            @if (group.Title is not null)
+            {
+                <div class="group-head sub"><h3>@group.Title</h3><span class="count">@group.Items.Count</span><span class="dotted"></span></div>
+            }
+            <div class="tiles">
+                @foreach (var i in group.Items)
+                {
+                    var idx = i;
+                    <ScenarioTile @key="viewPlan.Scenarios[idx]" Index="idx" Config="viewPlan.Scenarios[idx]" Scenario="Catalog.Find(viewPlan.Scenarios[idx].ScenarioId)"
+                                  Label="@LabelOf(idx)" Results="ResultsOf(idx)" Dropped="Count(dropped, idx)" InFlight="Count(inFlightNow, idx)"
+                                  Starts="Count(starts, idx)" SinceLastStart="SinceLastStart(idx)" ElapsedSeconds="Elapsed" Running="running"
+                                  OnOpen="OpenDetails" />
+                }
+            </div>
+        }
+    </section>
+
+    <LiveChart Results="results" Labels="activeLabels" Average="all.Avg" />
+
+    @if (activePlan.Scenarios.Count > 0 && (running || results.Count > 0))
+    {
+        <section class="card table-card">
+            <table class="breakdown">
+                <thead>
+                    <tr><th>Scenario</th><th>Target actors/min</th><th>Actual actors/min</th><th>Actors</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < activePlan.Scenarios.Count; i++)
+                    {
+                        var entry = i;
+                        var st = LatencyStats.From(results.Where(r => r.Entry == entry).ToList());
+                        <tr class="clickable" tabindex="0" @onclick="() => OpenDetails(entry)" @onkeydown="e => RowKey(e, entry)">
+                            <td><i class="swatch" style="background:@SeriesPalette.For(i)"></i>@activeLabels[i]</td>
+                            <td>@activePlan.Scenarios[i].RatePerMinute.ToString("0.#")</td>
+                            <td>@((st.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("0.#"))</td>
+                            <td>@st.Count</td>
+                            <td class="@(st.Errors > 0 ? "bad" : "")">@st.Errors</td>
+                            <td class="@(dropped[i] > 0 ? "bad" : "")">@dropped[i]</td>
+                            <td>@LiveChart.Fmt(st.Avg)</td>
+                            <td>@LiveChart.Fmt(st.P50)</td>
+                            <td>@LiveChart.Fmt(st.P95)</td>
+                            <td>@LiveChart.Fmt(st.Max)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</main>
+
+@if (detailEntry is { } de && de < viewPlan.Scenarios.Count)
+{
+    <ScenarioDetailDialog Index="de" Config="viewPlan.Scenarios[de]" Scenario="Catalog.Find(viewPlan.Scenarios[de].ScenarioId)" Label="@LabelOf(de)"
+                          Labels="viewLabels" Results="ResultsOf(de)" Dropped="Count(dropped, de)" InFlight="Count(inFlightNow, de)" Starts="Count(starts, de)"
+                          ElapsedSeconds="Elapsed" Running="running" OnClose="CloseDetails" />
+}
+
+@code {
+    private LoadPlan plan = new();
+    private LoadPlan activePlan = new();          // snapshot of the plan that is/was running
+    private List<string> activeLabels = [];
+    private readonly List<ExecutionResult> results = [];
+    private int[] dropped = [];
+    // Per entry of activePlan (brain 0008): results, instances in flight now, instances started, last start time.
+    private List<ExecutionResult>[] byEntry = [];
+    private int[] inFlightNow = [];
+    private int[] starts = [];
+    private double[] lastStartAt = [];
+    private int? detailEntry;
+    private string sortBy = "plan";
+    private string groupBy = "";
+    private List<string> errors = [];
+    private bool running;
+    private string addScenarioId = "";
+    private System.Diagnostics.Stopwatch clock = new();
+    private CancellationTokenSource? cts;
+
+    private IReadOnlyList<Preset> presets = [];
+    private string selectedPreset = "";
+    private string presetName = "";
+    private string? presetMessage;
+
+    private double? finishedElapsed;
+    // A run that completes covers its whole scheduled window; a stopped run only the time until Stop.
+    private double Elapsed => finishedElapsed ?? Math.Min(clock.Elapsed.TotalSeconds, activePlan.DurationSeconds);
+
+    protected override async Task OnInitializedAsync()
+    {
+        addScenarioId = Catalog.All.FirstOrDefault()?.Id ?? "";
+        if (Catalog.Find("http-get") is { } get) plan.Scenarios.Add(ScenarioRunConfig.CreateFor(get));
+        presets = await Presets.ListAsync();
+    }
+
+    private void AddScenario()
+    {
+        if (Catalog.Find(addScenarioId) is not { } scenario || plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
+        var config = ScenarioRunConfig.CreateFor(scenario);
+        var sameKind = plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
+        if (sameKind > 0) config.Label += $" #{sameKind + 1}";
+        plan.Scenarios.Add(config);
+    }
+
+    private async Task Start()
+    {
+        errors = plan.Validate(Catalog);
+        if (errors.Count > 0) return;
+
+        activePlan = plan.Clone();
+        activeLabels = activePlan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
+        results.Clear();
+        var n = activePlan.Scenarios.Count;
+        dropped = new int[n];
+        byEntry = Enumerable.Range(0, n).Select(_ => new List<ExecutionResult>()).ToArray();
+        inFlightNow = new int[n];
+        starts = new int[n];
+        lastStartAt = Enumerable.Repeat(double.NaN, n).ToArray();
+        detailEntry = null;
+        running = true;
+        finishedElapsed = null;
+        cts = new CancellationTokenSource();
+        clock = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            var run = Runner.RunAsync(activePlan,
+                r => new ValueTask(InvokeAsync(() => { results.Add(r); byEntry[r.Entry].Add(r); })),
+                entry => new ValueTask(InvokeAsync(() => dropped[entry]++)),
+                cts.Token,
+                a => new ValueTask(InvokeAsync(() =>
+                {
+                    // Count by event, not by the runner's snapshot: InvokeAsync may reorder events of different instances.
+                    if (a.Started) { inFlightNow[a.Entry]++; starts[a.Entry]++; lastStartAt[a.Entry] = clock.Elapsed.TotalSeconds; }
+                    else inFlightNow[a.Entry]--;
+                })));
+
+            // Re-render on a fixed cadence instead of per result, so fast runs don't flood the SignalR circuit.
+            using var ticker = new PeriodicTimer(TimeSpan.FromMilliseconds(150));
+            while (!run.IsCompleted && await ticker.WaitForNextTickAsync())
+                StateHasChanged();
+            await run;
+        }
+        catch (Exception ex)
+        {
+            errors = [ex.Message];
+        }
+        finally
+        {
+            clock.Stop();
+            finishedElapsed = cts!.IsCancellationRequested ? Math.Min(clock.Elapsed.TotalSeconds, activePlan.DurationSeconds) : activePlan.DurationSeconds;
+            running = false;
+            cts?.Dispose();
+            cts = null;
+        }
+    }
+
+    private void Stop() => cts?.Cancel();
+
+    // ----- tiles (brain 0008) -----
+    private bool HasRun => running || results.Count > 0;
+    /// <summary>The plan the tiles describe: the run's snapshot once there is one, otherwise the plan being edited.</summary>
+    private LoadPlan viewPlan => HasRun ? activePlan : plan;
+    private IReadOnlyList<string> viewLabels => HasRun ? activeLabels : plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
+    private string LabelOf(int i) => i < viewLabels.Count ? viewLabels[i] : "";
+    private IReadOnlyList<ExecutionResult> ResultsOf(int i) => HasRun && i < byEntry.Length ? byEntry[i] : [];
+    private static int Count(int[] values, int i) => i < values.Length ? values[i] : 0;
+    private double? SinceLastStart(int i) => running && i < lastStartAt.Length && !double.IsNaN(lastStartAt[i]) ? clock.Elapsed.TotalSeconds - lastStartAt[i] : null;
+
+    private sealed record TileGroup(string? Title, List<int> Items);
+
+    private IEnumerable<TileGroup> TileGroups()
+    {
+        var order = Enumerable.Range(0, viewPlan.Scenarios.Count);
+        order = sortBy switch
+        {
+            "name" => order.OrderBy(i => LabelOf(i), StringComparer.OrdinalIgnoreCase),
+            "p95" => order.OrderByDescending(i => LatencyStats.From(ResultsOf(i).ToList()).P95),
+            "errors" => order.OrderByDescending(i => ResultsOf(i).Count(r => !r.Success)),
+            "rate" => order.OrderByDescending(i => viewPlan.Scenarios[i].RatePerMinute),
+            _ => order,
+        };
+        if (groupBy == "type")
+            return order.GroupBy(i => Catalog.Find(viewPlan.Scenarios[i].ScenarioId)?.Name ?? viewPlan.Scenarios[i].ScenarioId)
+                        .Select(g => new TileGroup(g.Key, g.ToList()));
+        return [new TileGroup(null, order.ToList())];
+    }
+
+    private void OpenDetails(int entry) => detailEntry = entry;
+    private void CloseDetails() => detailEntry = null;
+    private void RowKey(KeyboardEventArgs e, int entry) { if (e.Key is "Enter" or " ") OpenDetails(entry); }
+
+    private async Task SavePreset()
+    {
+        var name = presetName.Trim();
+        if (name.Length == 0) { presetMessage = "Enter a name to save the preset."; return; }
+        var existed = presets.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        // Secrets never go into preset files; ${env:NAME} references are kept (brain 0007).
+        var toSave = plan.Clone();
+        var stripped = toSave.Scenarios.Sum(e => Catalog.Find(e.ScenarioId)?.Spec.StripSecrets(e.Parameters) ?? 0);
+        await Presets.SaveAsync(name, toSave);
+        presets = await Presets.ListAsync();
+        selectedPreset = presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Name ?? "";
+        presetMessage = (existed ? $"Updated preset “{name}”." : $"Saved preset “{name}”.")
+            + (stripped > 0 ? $" {stripped} secret value(s) were not saved; use ${{env:NAME}} to reference an environment variable." : "");
+    }
+
+    private void LoadPreset()
+    {
+        if (presets.FirstOrDefault(p => p.Name == selectedPreset) is not { } preset) return;
+        var loaded = preset.Plan.Clone();
+        var missing = new List<string>();
+        var problems = new List<string>();
+        foreach (var entry in loaded.Scenarios.ToList())
+        {
+            if (Catalog.Find(entry.ScenarioId) is { } scenario)
+            {
+                var entryProblems = new List<string>();
+                entry.Normalize(scenario, entryProblems);
+                problems.AddRange(entryProblems.Select(p => $"{entry.Label}: {p}"));
+            }
+            else { missing.Add(entry.ScenarioId); loaded.Scenarios.Remove(entry); }
+        }
+        if (loaded.Scenarios.Count > LoadPlan.MaxEntries) loaded.Scenarios.RemoveRange(LoadPlan.MaxEntries, loaded.Scenarios.Count - LoadPlan.MaxEntries);
+
+        plan = loaded;
+        presetName = preset.Name;
+        errors = [];
+        presetMessage = $"Loaded preset “{preset.Name}”."
+            + (missing.Count > 0 ? $" Skipped scenarios that no longer exist in code: {string.Join(", ", missing)}." : "")
+            + (problems.Count > 0 ? $" Some values were reset to defaults: {string.Join(" · ", problems)}" : "");
+    }
+
+    private async Task DeletePreset()
+    {
+        if (selectedPreset == "") return;
+        await Presets.DeleteAsync(selectedPreset);
+        presetMessage = $"Deleted preset “{selectedPreset}”.";
+        selectedPreset = "";
+        presets = await Presets.ListAsync();
+    }
+
+    public void Dispose() => cts?.Cancel();
+}
