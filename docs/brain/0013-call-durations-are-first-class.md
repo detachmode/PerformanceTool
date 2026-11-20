@@ -28,7 +28,9 @@ A scenario chains several calls. The instance total hides *which* call is slow o
 per-call timing to act on the results.
 
 ## Open (to decide with the user)
-- **How it's shown.** Draft options to compare:
+- ~~How it's shown~~ **Decided:** variant **A, stacked instance bars** (each instance bar split into call segments).
+  The user finds it the best and most scalable; an instance can have **around 50 calls**, so the view must stay
+  readable with that many segments. Variants B and C are dropped. Earlier options were:
   - (A) instance bars stacked by call segments
   - (B) small "box chart" cards per call, like the Aspire metric cards, under each scenario
   - (C) a matrix/heatmap of instances × calls
