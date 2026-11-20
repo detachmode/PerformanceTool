@@ -99,7 +99,7 @@
 
     protected override void OnInitialized()
     {
-        (scenario, actor) = (Popup.Entry, Popup.Actor);
+        (scenario, actor, outcome) = (Popup.Entry, Popup.Actor, Popup.Outcome);
         Sim.Changed += OnChanged;
     }
 

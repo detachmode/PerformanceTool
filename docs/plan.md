@@ -9,13 +9,15 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 ## Agent queue
 - Done: …, player bar (0027), stable clicking (0026).
-- **Running (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
+- **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
   ordering and outcome-coloured actor numbers in the Logs popup.
 - **Running (B):** popup chart, 0023 update 3: side list instead of nested scroll, group counts in the hovered bar,
   brush-to-zoom with live data, settings panel (zoom strength, max bars), live actors finishing while hovering;
   outcome-coloured actor numbers and ordering in the popup.
 
-- **Running (C):** player bar polish: nicer UI, more prominent play/stop (0027 update).
+- **Done (C):** player bar polish + drill-down counters (0027 update 2, 0029).
+
+- **Running (D):** editor fixes: change detection while typing, missing scrollbars (0019 update).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
