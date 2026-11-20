@@ -63,3 +63,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts, only in the scenario popup; hovered bar shows actor number and timestamps | Accepted (update pending) |
 | [0024](0024-editor-and-overview-share-the-loaded-plan.md) | Editor and overview show the same view of the loaded scenarios; editing the loaded plan, not a preset; editor uses the overview's cards | Accepted (not implemented) |
 | [0025](0025-build-info-and-no-stale-cache.md) | Show build commit and deploy date; avoid stale cached builds | Accepted, implemented |
+| [0026](0026-stable-clicking-on-live-charts.md) | Stable clicking on live charts: freeze while aiming, pick on pointer-down, selection sticks to the actor | Accepted (not implemented) |

@@ -123,12 +123,36 @@ label { font-size: .72rem; color: var(--muted); }
 @media (pointer: coarse) { .chart { min-width: 0 !important; } .bar-hit { min-width: 0; } }
 .bar { display: block; width: 100%; background: var(--bar); border-radius: 2px 2px 0 0; min-height: 3px; }
 .bar-hit.on .bar { outline: 2px solid #fff; outline-offset: 1px; }
-.dz-label { position: absolute; display: none; z-index: 2; pointer-events: none; box-sizing: border-box; padding: 3px 2px; overflow: hidden; align-items: center; justify-content: flex-start; text-align: center; font-size: .7rem; line-height: 1.15; font-weight: 600; color: #10131a; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dz-label.in-h { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
-.dz-label.in-v { display: flex; writing-mode: vertical-rl; transform: rotate(180deg); justify-content: flex-start; align-items: center; gap: .15em; }
-.dz-label.in-v.two { flex-direction: column; }
-.dz-label.above { display: block; color: var(--text, #e8e6f0); background: #14131c; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 6px; }
-.dz-label.above span + span::before { content: " · "; }
+/* Popup chart polish (brain 0023, update 2): hover card with a tail, faint neighbour labels under the bars, run-time axis. All positioned by dock-magnify.js. */
+.chart:has(> .dz-axis) { height: 246px; padding-top: 3.1rem; padding-bottom: 58px; }
+.dz-label { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box; white-space: nowrap; visibility: hidden; opacity: 0;
+    transition: opacity .14s ease, visibility 0s .14s; font-variant-numeric: tabular-nums; }
+.dz-label.show { visibility: visible; opacity: 1; transition-delay: 0s; }
+.dz-body { display: block; padding: .32rem .6rem .36rem; border-radius: 9px; background: #17141fee; border: 1px solid #4a4360; box-shadow: 0 6px 16px #00000066; transform: translateY(5px); transition: transform .16s ease; }
+.dz-label.show .dz-body { transform: none; }
+.dz-row { display: flex; align-items: center; gap: .45rem; line-height: 1.2; }
+.dz-dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--bar); flex: none; }
+.dz-dot.good { background: var(--good); } .dz-dot.warn { background: var(--slow); } .dz-dot.bad { background: var(--failed); } .dz-dot.run { background: var(--running); }
+.dz-id { font-family: var(--mono); font-size: .82rem; font-weight: 700; color: var(--title); letter-spacing: .01em; }
+.dz-meta { margin-left: auto; padding-left: .5rem; font-family: var(--mono); font-size: .74rem; color: var(--text); }
+.dz-sub { display: block; margin-top: .08rem; font-size: .68rem; color: var(--muted); line-height: 1.2; }
+.dz-tail { position: absolute; top: 100%; left: var(--tx, 50%); width: 9px; height: 9px; margin: -5px 0 0 -4.5px; transform: rotate(45deg); background: #17141f; border-right: 1px solid #4a4360; border-bottom: 1px solid #4a4360; }
+.dz-label.inside .dz-tail { display: none; }
+.dz-label.inside .dz-body { background: #17141fd8; }
+/* neighbours: faint two-line labels in a strip under the bars, one slot per neighbour, shown only if the bar is wide enough */
+.dz-strip { position: absolute; left: 0; right: 0; bottom: 28px; height: 26px; pointer-events: none; overflow: hidden; }
+.dz-n { position: absolute; left: 0; top: 2px; display: flex; flex-direction: column; align-items: center; opacity: 0; font-family: var(--mono); font-size: 10px; line-height: 12px; color: var(--text); white-space: nowrap; overflow: hidden; transition: opacity .12s ease; }
+.dz-n b { font-weight: 400; color: var(--muted); }
+/* x axis: run time, a few ticks; the hovered bar's timeframe is a bracket plus an exact readout */
+.dz-axis { position: absolute; left: 0; right: 0; bottom: 0; height: 28px; pointer-events: none; border-top: 1px solid var(--border); }
+.dz-tick { position: absolute; top: -1px; font-size: .68rem; color: var(--faint); font-variant-numeric: tabular-nums; transition: opacity .12s ease; }
+.dz-tick i { position: absolute; top: 0; left: 0; width: 1px; height: 5px; background: var(--faint); }
+.dz-tick em { position: absolute; top: 7px; left: 0; font-style: normal; transform: translateX(-50%); white-space: nowrap; }
+.dz-tick.first em { transform: none; } .dz-tick.lastt em { transform: translateX(-100%); }
+.dz-mark { position: absolute; left: 0; top: -2px; height: 6px; opacity: 0; border-radius: 2px; background: var(--accent2); }
+.dz-readout { position: absolute; left: 0; top: 7px; opacity: 0; padding: 1px 8px; border-radius: 999px; background: #17141f; border: 1px solid #4a4360; color: var(--title); font-family: var(--mono); font-size: .68rem; line-height: 1.35; white-space: nowrap; }
+.dz-readout::before { content: ""; position: absolute; left: var(--tx, 50%); top: -4px; width: 1px; height: 4px; background: var(--accent2); }
+@media (prefers-reduced-motion: reduce) { .dz-label, .dz-body, .dz-n, .dz-tick { transition: none; } .dz-body { transform: none; } }
 .chart-note { margin: 0; }
 .chart-empty { padding: 1.5rem 0; text-align: center; background: var(--panel); border-radius: var(--radius); }
 
@@ -294,3 +318,5 @@ label { font-size: .72rem; color: var(--muted); }
 .build-stamp a { color: inherit; text-decoration: underline dotted; }
 .build-stamp a:hover { color: var(--text); }
 .build-stamp .build-new { color: var(--text); text-decoration: none; border-bottom: 1px solid currentColor; }
+.chart.dense .bar-hit { padding: 0 .5px; }
+@media (pointer: coarse) { .chart.dense .bar-hit { padding: 0; } }

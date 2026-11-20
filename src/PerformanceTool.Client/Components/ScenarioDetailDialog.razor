@@ -54,20 +54,22 @@
         else
         {
             <div class="chart-scroll">
-                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * (bars.Count > 60 ? 4 : 14)}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
+                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
+                    <span class="dz-strip" aria-hidden="true"></span>
+                    <span class="dz-axis" aria-hidden="true"></span>
                     @foreach (var b in bars)
                     {
                         var bar = b;
                         @if (bar.Total == 0)
                         {
-                            <span class="bar-hit empty"></span>
+                            <span class="bar-hit empty" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.BucketStart + width)"></span>
                         }
                         else
                         {
                             var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : bar.IsRunningActor ? selRunning == bar.Sequence : (selected is { } sel && sel.Sequence == bar.Sequence);
-                            <button class="bar-hit @(on ? "on" : "")" data-l1="@LabelTop(bar, width)" data-l2="@LabelSub(bar, width)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "")" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -90,7 +92,7 @@
             </div>
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
-                else { <text>One bar per actor, taller = slower. Click an actor to see its calls.</text> }
+                else { <text>One bar per actor, taller = slower. The axis shows the run time of the actors at that position. Click an actor to see its calls.</text> }
             </p>
         }
 
@@ -272,11 +274,31 @@
     /// <summary>Label inside the hovered bar (brain 0023): actor number or time range, then start time and duration or actor count. Times are run time (m:ss).</summary>
     private static string LabelTop(ActorBar b, double width) => b.IsBucket ? $"{Format.Time(b.BucketStart)}–{Format.Time(b.BucketStart + width)}" : $"#{b.Sequence + 1}";
 
-    private static string LabelSub(ActorBar b, double width)
+    private static string T(double seconds) => seconds.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>Right-hand figure of the hover label: duration (with the outcome in words, brain 0018), or the actor count of a bucket.</summary>
+    private static string LabelMeta(ActorBar b)
     {
         if (b.IsBucket) return Format.Plural(b.Total, "actor", "actors");
-        return b.IsRunningActor ? $"{Format.Time(b.BucketStart)} · running" : $"{Format.Time(b.BucketStart)} · {Format.Ms(b.MaxMs)}";
+        if (b.IsRunningActor) return "running";
+        return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : "");
     }
+
+    private static string LabelSub(ActorBar b)
+    {
+        if (!b.IsBucket) return $"started {Format.Time(b.BucketStart)}";
+        var parts = new List<string>();
+        if (b.Failed > 0) parts.Add($"{b.Failed} failed");
+        if (b.Slow > 0) parts.Add($"{b.Slow} slow");
+        if (b.Running > 0) parts.Add($"{b.Running} running");
+        return string.Join(" · ", parts);
+    }
+
+    private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : "good";
+
+    /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
+    private static string Near1(ActorBar b) => b.IsBucket ? Format.Time(b.BucketStart) : $"#{b.Sequence + 1}";
+    private static string Near2(ActorBar b) => b.IsBucket ? Format.Num(b.Total) : b.IsRunningActor ? "…" : b.MaxMs < 1000 ? $"{b.MaxMs:0}ms" : b.MaxMs < 60_000 ? $"{b.MaxMs / 1000:0.0}s" : Format.Time(b.MaxMs / 1000);
 
     private static string BarTitle(ActorBar b, double width)
     {
