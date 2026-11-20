@@ -12,7 +12,7 @@
   (stats row, full chart, latency distribution, status codes, errors, parameters).
 
 - **User feedback on draft 1:** the rate wasn't prominent enough. The overview must make it very prominent **how many
-  instances are running**: live instances running now and instances per minute are the headline of each card
+  actors are running**: live actors running now and actors per minute are the headline of each card
   (and of the run bar). Latency is secondary.
 
 ## Why
