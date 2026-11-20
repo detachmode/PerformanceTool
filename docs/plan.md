@@ -7,14 +7,14 @@ or tick the item here.
 Until the user is happy with the UI/UX, we build **UI drafts only, with fake data** (no real runner or storage
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
-## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4, review pass, a11y passes, demo speed, CI (0014).
-1. Done: WebAssembly restructure (brain 0015): Core library + WebAssembly client + server host; GitHub Pages workflow (repo owner must set Pages source to "GitHub Actions").
-   Next: REST API on the server + `ApiRunSource`, real-run UI through it.
-2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
+## Agent queue
+- Done: core-flow simplification (brain 0020, 0021, 0022): editor, overview, scenario popup, Logs popup; scales to 3 h runs.
+- **Running:** Dock-like magnification on the actor bar charts (brain 0023).
+- Next (after the magnification merges, same files): editor uses the overview's scenario cards (brain 0024).
+- Agreed, not started: full word-wrapped log rows (variable-height virtual list).
 
-Open questions for the user (ask one at a time): which duration summary to show instead of p50/p95/p99;
-group repeated calls by name (IDs collapsed) or by position; colours for call groups.
+Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
+log rows: fixed two lines + detail panel, or full word wrap in the list; what counts as "slow"; duration summary.
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)

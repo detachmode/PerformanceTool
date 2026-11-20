@@ -38,20 +38,20 @@ public sealed class CustomRequestParameters
     [Display(Name = "URL"), Required, HttpUrl]
     public string Url { get; set; } = "https://example.com";
 
-    [Display(Name = "Headers", Description = "Request headers. Content headers are applied to the body.")]
+    [Advanced, Display(Name = "Headers", Description = "Request headers. Content headers are applied to the body.")]
     public Dictionary<string, string> Headers { get; set; } = new() { ["Accept"] = "*/*" };
 
-    [Display(Name = "Content-Type")]
+    [Advanced, Display(Name = "Content-Type")]
     public string ContentType { get; set; } = "application/json";
 
     [Display(Name = "Body", Description = "Sent when not empty."), Multiline]
     public string Body { get; set; } = "";
 
-    [Display(Name = "Authentication")]
+    [Advanced, Display(Name = "Authentication")]
     public AuthParameters Auth { get; set; } = new();
 
     [Display(Name = "Expected status", Description = "Fail unless the response has exactly this status. Empty = any 2xx/3xx.", Prompt = "any 2xx/3xx")]
-    [Range(100, 599)]
+    [Range(100, 599), Advanced]
     public int? ExpectedStatus { get; set; }
 }
 

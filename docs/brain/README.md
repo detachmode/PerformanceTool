@@ -39,7 +39,7 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | # | Decision | Status |
 |---|----------|--------|
 | [0001](0001-blazor-server-on-dotnet-11.md) | Blazor Server (interactive server rendering) on .NET 11 | UI part superseded by 0015 |
-| [0002](0002-live-bar-chart-in-html-css.md) | Live bar chart in plain HTML/CSS, one bar per execution, coloured per scenario | Accepted |
+| [0002](0002-live-bar-chart-in-html-css.md) | Live bar chart in plain HTML/CSS, one bar per execution, coloured per scenario | Colour part superseded by 0018 |
 | [0003](0003-code-defined-scenarios.md) | Scenarios are defined in C# code, configured in the UI | Accepted |
 | [0004](0004-open-model-rate-scheduling.md) | Open-model scheduling: runs per minute per scenario, drop when saturated | Accepted |
 | [0005](0005-presets-as-json-files.md) | Presets stored as one JSON file each | Accepted |
@@ -53,3 +53,12 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0013](0013-call-durations-are-first-class.md) | Call durations inside each actor are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked actor bars (up to ~50 calls) | Accepted, implemented (UI, Pages) |
 | [0014](0014-ci-on-github-actions.md) | GitHub Actions CI: restore, build, test (TRX artifact + summary) on every push/PR | Accepted |
 | [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted, implemented (UI, Pages) |
+| [0016](0016-calm-ui-less-information.md) | Calm UI: show less, reveal on demand; avoid information overload | Accepted |
+| [0017](0017-easy-navigation-runs-scenarios-actors-logs.md) | Easy navigation runs → scenarios → actors → logs; filter logs by scenario or actor in a separate Logs popup | Accepted |
+| [0018](0018-colour-carries-meaning.md) | Colour carries meaning: no colour per scenario; colour only when errors or slow calls occur | Accepted |
+| [0019](0019-visible-state-and-feedback.md) | Visible selection everywhere; editor gives immediate feedback on changes | Accepted |
+| [0020](0020-simple-first-features-one-by-one.md) | Simple first: core flow (set up, run, presets, inspect), then features one by one | Accepted |
+| [0021](0021-ui-scales-to-long-runs.md) | UI must scale to runs of hours with many actors, calls and logs | Accepted |
+| [0022](0022-core-flow-ui-and-scaling-choices.md) | Core-flow UI choices: placeholder slow rule, bounded data, own VirtualList | Accepted (slow rule Proposed) |
+| [0023](0023-dock-magnification-on-bar-charts.md) | macOS-Dock-like magnification on bar charts to make small bars easy to click | Accepted (not implemented) |
+| [0024](0024-editor-and-overview-share-the-loaded-plan.md) | Editor and overview show the same view of the loaded scenarios; editing the loaded plan, not a preset; editor uses the overview's cards | Accepted (not implemented) |

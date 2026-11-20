@@ -9,15 +9,15 @@ public sealed class UserJourneyParameters
     [Display(Name = "Steps (URLs)", Description = "Fetched with GET, in this order."), HttpUrl, MinLength(1)]
     public List<string> Urls { get; set; } = ["https://example.com", "https://example.com/about"];
 
-    [Display(Name = "Think time", Description = "Pause between steps, like a user reading the page. Not counted in the measured time.")]
+    [Advanced, Display(Name = "Think time", Description = "Pause between steps, like a user reading the page. Not counted in the measured time.")]
     [Range(typeof(TimeSpan), "00:00:00", "00:01:00")]
     public TimeSpan ThinkTime { get; set; } = TimeSpan.Zero;
 
-    [Display(Name = "Repeat", Description = "How many times the whole journey runs per actor.")]
+    [Advanced, Display(Name = "Repeat", Description = "How many times the whole journey runs per actor.")]
     [Range(1, 10)]
     public int Iterations { get; set; } = 1;
 
-    [Display(Name = "Stop at first failing step")]
+    [Advanced, Display(Name = "Stop at first failing step")]
     public bool StopOnFailure { get; set; } = true;
 }
 

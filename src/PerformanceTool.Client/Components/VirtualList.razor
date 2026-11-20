@@ -1,0 +1,90 @@
+@* A scrolling list with fixed row height that only puts the visible rows into the DOM (brain 0021). Own implementation instead of Blazor's
+   Virtualize, because that one estimates row heights at run time and went wrong with 100k+ rows. Rows must be exactly RowHeight tall. *@
+@typeparam TItem
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="@Class" @ref="root" role="@Role" aria-label="@Label" style="overflow-y:auto;position:relative">
+    <div style="height:@(Items.Count * RowHeight)px;position:relative">
+        <div style="position:absolute;left:0;right:0;top:@(first * RowHeight)px">
+            @for (var i = first; i < last; i++)
+            {
+                var item = Items[i];
+                <div class="vrow" style="height:@(RowHeight)px" @key="i">@ItemContent(item)</div>
+            }
+        </div>
+    </div>
+    @if (Items.Count == 0 && Empty is not null) { @Empty }
+</div>
+
+@code {
+    private const int Overscan = 6;
+
+    [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public RenderFragment<TItem> ItemContent { get; set; } = default!;
+    [Parameter] public int RowHeight { get; set; } = 34;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Role { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public RenderFragment? Empty { get; set; }
+    /// <summary>When this value changes (e.g. the filters), the list scrolls back to the top.</summary>
+    [Parameter] public object? ResetKey { get; set; }
+
+    private ElementReference root;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<VirtualList<TItem>>? self;
+    private double top, height = 800;
+    private int first, last;
+    private object? lastKey;
+    private bool reset;
+
+    protected override void OnParametersSet()
+    {
+        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; }
+        Window();
+    }
+
+    private void Window()
+    {
+        first = Math.Clamp((int)(top / RowHeight) - Overscan, 0, Math.Max(0, Items.Count));
+        last = Math.Clamp((int)Math.Ceiling((top + height) / RowHeight) + Overscan, first, Items.Count);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/VirtualList.razor.js");
+                self = DotNetObjectReference.Create(this);
+                await module.InvokeVoidAsync("attach", root, self);
+            }
+            if (reset && module is not null)
+            {
+                reset = false;
+                await module.InvokeVoidAsync("scrollToTop", root);
+            }
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public void OnViewport(double scrollTop, double clientHeight)
+    {
+        if (Math.Abs(scrollTop - top) < 1 && Math.Abs(clientHeight - height) < 1) return;
+        (top, height) = (scrollTop, clientHeight);
+        Window();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (module is not null) { await module.InvokeVoidAsync("detach", root); await module.DisposeAsync(); }
+        }
+        catch (Exception) { /* page is going away */ }
+        self?.Dispose();
+    }
+}

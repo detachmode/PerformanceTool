@@ -1,0 +1,156 @@
+@* Logs popup (brain 0017, 0020, 0021): all logs of the run. Filters, each removable: scenario, a single actor, outcome of the actor (all / failed / slow),
+   levels and search. The list is virtualised and filtered in one pass, so it stays fast with 100k+ lines. *@
+@implements IDisposable
+@inject IRunSource Sim
+@inject LogsPopupState Popup
+
+@{
+    var s = Sim.Current;
+    Rebuild(s);
+    var allLevels = level.All(x => x);
+}
+
+<div class="overlay logs" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="Popup.Close" role="presentation">
+    <div class="dialog logs-dialog" role="dialog" aria-modal="true" aria-labelledby="logs-title" @onclick:stopPropagation="true">
+        <div class="dlg-head">
+            <h2 id="logs-title">Logs</h2>
+            <span class="muted">all logs of the run</span>
+            <span class="spacer"></span>
+            <button class="icon-btn" @onclick="Popup.Close" aria-label="Close">✕</button>
+        </div>
+
+        <div class="log-filters" role="group" aria-label="Log filters">
+            <label class="visually-hidden" for="log-scenario">Scenario</label>
+            <select id="log-scenario" value="@(scenario?.ToString() ?? "")" @onchange="SetScenario">
+                <option value="">All scenarios</option>
+                @for (var i = 0; i < s.Count; i++) { <option value="@i">@s.Labels[i]</option> }
+            </select>
+
+            <div class="seg" role="group" aria-label="Actors">
+                <button class="@(outcome == ActorShow.All ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.All)" @onclick="() => outcome = ActorShow.All">All actors</button>
+                <button class="@(outcome == ActorShow.Failed ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Failed)" @onclick="() => outcome = ActorShow.Failed">Failed</button>
+                <button class="@(outcome == ActorShow.Slow ? "on" : "")" aria-pressed="@Aria.Bool(outcome == ActorShow.Slow)" @onclick="() => outcome = ActorShow.Slow">Slow</button>
+            </div>
+
+            @if (actor is { } a)
+            {
+                <button class="chip" @onclick="() => actor = null" title="Remove the actor filter">Actor #@(a + 1) ✕</button>
+            }
+
+            <div class="dd">
+                <button class="btn ghost" aria-haspopup="true" aria-expanded="@Aria.Bool(levelsOpen)" @onclick="() => levelsOpen = !levelsOpen">@(allLevels ? "All levels" : $"{level.Count(x => x)} of 5 levels") ▾</button>
+                @if (levelsOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => levelsOpen = false"></div>
+                    <div class="dd-menu" role="group" aria-label="Levels">
+                        @for (var i = 0; i < FakeLogEntry.Levels.Length; i++)
+                        {
+                            var li = i;
+                            <label class="dd-item"><input type="checkbox" checked="@level[li]" @onchange="e => level[li] = (bool)(e.Value ?? false)" /> @FakeLogEntry.Levels[li]</label>
+                        }
+                    </div>
+                }
+            </div>
+
+            <input class="search" type="search" placeholder="Search messages…" aria-label="Search messages" autocomplete="off" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
+        </div>
+
+        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" RowHeight="48" ResetKey="@builtSig">
+            <ItemContent Context="l">
+                <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
+                    <button class="actor-chip" @onclick="() => FilterActor(l)" title="Show only the logs of actor #@(l.Sequence + 1)">#@(l.Sequence + 1)</button>
+                    <button class="msg" aria-pressed="@Aria.Bool(ReferenceEquals(expanded, l))" title="Show details" @onclick="() => expanded = ReferenceEquals(expanded, l) ? null : l"><span class="visually-hidden">@l.Level: </span>@l.Message</button>
+                </div>
+            </ItemContent>
+            <Empty><p class="muted empty">No log lines match the filters.</p></Empty>
+        </VirtualList>
+
+        @if (expanded is { } x)
+        {
+            <section class="log-detail" aria-label="Log line details">
+                <div class="log-detail-head"><b>Actor #@(x.Sequence + 1)</b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
+                <p class="log-full">@x.Message</p>
+                <dl>@foreach (var (k, v) in x.Scope) { <dt>@k</dt><dd>@v</dd> }</dl>
+                @if (x.Exception is not null) { <pre>@x.Exception</pre> }
+            </section>
+        }
+
+        <div class="log-foot muted">
+            @Format.Plural(filtered.Count, "line", "lines")
+            @if (s.Store.DetailTrimmed) { <text> · logs of older actors are no longer kept (latest @Format.Num(RunStore.DetailPerScenario) actors per scenario)</text> }
+        </div>
+    </div>
+</div>
+
+@code {
+    private ElementReference root;
+    private int? scenario, actor;
+    private ActorShow outcome = ActorShow.All;
+    private readonly bool[] level = [true, true, true, true, true];
+    private string search = "";
+    private bool levelsOpen;
+    private FakeLogEntry? expanded;
+
+    private List<FakeLogEntry> filtered = [];
+    private string builtSig = "";
+    private int builtSource = -1;
+    private long builtAt;
+
+    protected override void OnInitialized()
+    {
+        (scenario, actor) = (Popup.Entry, Popup.Actor);
+        Sim.Changed += OnChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { try { await root.FocusAsync(); } catch (Exception) { } }
+    }
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (levelsOpen) levelsOpen = false; else Popup.Close();
+    }
+
+    private void SetScenario(ChangeEventArgs e) => scenario = int.TryParse(e.Value?.ToString(), out var i) ? i : null;
+
+    private void FilterActor(FakeLogEntry l) { actor = l.Sequence; scenario = l.Entry; }
+
+    /// <summary>
+    /// One pass over the kept lines, only when a filter changed or (at most every 0.7 s) when lines were added or dropped.
+    /// The list is not copied again by the virtualiser; only the visible rows become DOM.
+    /// </summary>
+    private void Rebuild(RunSnapshot s)
+    {
+        var source = s.Store.Logs();
+        var sig = $"{scenario}|{actor}|{string.Concat(level.Select(x => x ? '1' : '0'))}|{outcome}|{search}";
+        var changed = sig != builtSig;
+        if (!changed && (source.Count == builtSource || Environment.TickCount64 - builtAt < 700)) return;
+
+        var needle = search.Trim();
+        var list = new List<FakeLogEntry>();
+        for (var i = 0; i < source.Count; i++)
+        {
+            var l = source[i];
+            if (scenario is { } sc && l.Entry != sc) continue;
+            if (actor is { } ac && l.Sequence != ac) continue;
+            if (!level[l.LevelRank]) continue;
+            if (outcome != ActorShow.All && s.Store.OutcomeOf(l.Sequence) != (outcome == ActorShow.Failed ? ActorOutcome.Failed : ActorOutcome.Slow)) continue;
+            if (needle.Length > 0 && !l.Message.Contains(needle, StringComparison.OrdinalIgnoreCase)) continue;
+            list.Add(l);
+        }
+        filtered = list;
+        builtSig = sig;
+        builtSource = source.Count;
+        builtAt = Environment.TickCount64;
+    }
+
+    public void Dispose() => Sim.Changed -= OnChanged;
+}

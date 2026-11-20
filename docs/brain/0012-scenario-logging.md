@@ -11,6 +11,10 @@
   artifacts later; they belong in the **full artifact** from 0010, not the small summary one.
 - The **UI shows the log statements when inspecting a scenario** (the scenario details popup).
 
+- **User feedback (UI):** the logs are the **focus** of the scenario popup. Statistics are kept small and compact (an
+  inline strip, not big stat boxes), and secondary panels must not take up much space. Log rows show each message
+  in full with word wrap; the level is a subtle marker plus a compact level dropdown, not a text column.
+
 ## Why
 - `ILogger` is the standard .NET logging API, so scenario authors need nothing new to learn and can use existing
   libraries that log.
