@@ -7,13 +7,13 @@
         <div class="list-row">
             <span class="idx">@(index + 1)</span>
             <input id="@(index == 0 ? Id : $"{Id}-{index}")" type="@(Urls ? "url" : "text")" value="@Item(index)" disabled="@Disabled"
-                   aria-label="@($"Item {index + 1}")" @onchange="e => Items[index] = e.Value?.ToString() ?? string.Empty" />
-            <button type="button" class="icon-btn" title="Move up" aria-label="Move up" disabled="@(Disabled || index == 0)" @onclick="() => Move(index, -1)">↑</button>
-            <button type="button" class="icon-btn" title="Move down" aria-label="Move down" disabled="@(Disabled || index == Items.Count - 1)" @onclick="() => Move(index, 1)">↓</button>
-            <button type="button" class="icon-btn danger" title="Remove" aria-label="Remove" disabled="@Disabled" @onclick="() => Items.RemoveAt(index)">✕</button>
+                   aria-label="@($"Item {index + 1}")" @oninput="e => { Items[index] = e.Value?.ToString() ?? string.Empty; return OnEdited.InvokeAsync(); }" @onchange="OnCommit" />
+            <button type="button" class="icon-btn" title="Move up" aria-label="Move up" disabled="@(Disabled || index == 0)" @onclick="() => { Move(index, -1); return OnCommit.InvokeAsync(); }">↑</button>
+            <button type="button" class="icon-btn" title="Move down" aria-label="Move down" disabled="@(Disabled || index == Items.Count - 1)" @onclick="() => { Move(index, 1); return OnCommit.InvokeAsync(); }">↓</button>
+            <button type="button" class="icon-btn danger" title="Remove" aria-label="Remove" disabled="@Disabled" @onclick="() => { Items.RemoveAt(index); return OnCommit.InvokeAsync(); }">✕</button>
         </div>
     }
-    <button type="button" class="btn ghost small" disabled="@Disabled" @onclick="() => Items.Add(string.Empty)">+ Add</button>
+    <button type="button" class="btn ghost small" disabled="@Disabled" @onclick="() => { Items.Add(string.Empty); return OnCommit.InvokeAsync(); }">+ Add</button>
 </div>
 
 @code {
@@ -21,6 +21,8 @@
     [Parameter, EditorRequired] public JsonArray Items { get; set; } = default!;
     [Parameter] public bool Urls { get; set; }
     [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnEdited { get; set; }
+    [Parameter] public EventCallback OnCommit { get; set; }
 
     private string Item(int i) => Items[i] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
 

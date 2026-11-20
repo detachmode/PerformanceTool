@@ -17,9 +17,8 @@
     if (selected < -1) selected = -1;
     var cfg = selected >= 0 ? plan.Scenarios[selected] : null;
     var scenario = cfg is null ? null : Catalog.Find(cfg.ScenarioId);
-    var planErr = PlanErrors(plan);
-    var entryErr = plan.Scenarios.Select(EntryErrors).ToList();
-    var cfgErr = cfg is null ? null : entryErr[selected];
+    var planErr = planSnap ??= PlanErrors(plan);
+    var cfgErr = cfg is null ? null : ShownErrors(cfg);
     var hasAdvanced = scenario?.Spec.Fields.Any(f => f.Advanced) ?? false;
     var advancedInvalid = cfgErr is not null && scenario is not null
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
@@ -65,9 +64,9 @@
     @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
 
     <section class="settings" aria-label="Plan settings">
-        <div class="num @(planErr.ContainsKey("dur") ? "is-invalid" : "")"><label for="p-dur">Duration (s)</label><input id="p-dur" type="number" min="1" @bind="plan.DurationSeconds" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" /></div>
-        <div class="num @(planErr.ContainsKey("conc") ? "is-invalid" : "")"><label for="p-conc">Max in-flight</label><input id="p-conc" type="number" min="1" max="1000" @bind="plan.MaxConcurrency" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" /></div>
-        <div class="num @(planErr.ContainsKey("to") ? "is-invalid" : "")"><label for="p-to">Timeout (s)</label><input id="p-to" type="number" min="1" max="300" @bind="plan.TimeoutSeconds" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" /></div>
+        <div class="num @(planErr.ContainsKey("dur") ? "is-invalid" : "")"><label for="p-dur">Duration (s)</label><input id="p-dur" type="number" min="1" value="@plan.DurationSeconds" @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" /></div>
+        <div class="num @(planErr.ContainsKey("conc") ? "is-invalid" : "")"><label for="p-conc">Max in-flight</label><input id="p-conc" type="number" min="1" max="1000" value="@plan.MaxConcurrency" @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" /></div>
+        <div class="num @(planErr.ContainsKey("to") ? "is-invalid" : "")"><label for="p-to">Timeout (s)</label><input id="p-to" type="number" min="1" max="300" value="@plan.TimeoutSeconds" @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" /></div>
         @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
     </section>
 
@@ -108,29 +107,33 @@
                 <div class="detail-head">
                     <span class="muted" title="@scenario.Description">@scenario.Name</span>
                     <span class="spacer"></span>
+                    @if (dirty) { <span class="unsaved small" role="status"><i></i>Unsaved</span> }
+                    <button class="btn primary small" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
                     <button class="icon-btn" @onclick="() => selected = -1" aria-label="Close settings">✕</button>
                 </div>
+                <div class="detail-body">
                 <div class="form" @key="cfg">
                     <div class="field wide">
                         <label for="entry-label">Label</label>
-                        <input id="entry-label" class="entry-label" @bind="cfg.Label" @bind:event="oninput" disabled="@locked" />
+                        <input id="entry-label" class="entry-label" value="@cfg.Label" @oninput="e => { cfg.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
                     </div>
                     <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
                         <label for="entry-rate">Actors / minute</label>
-                        <input id="entry-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
+                        <input id="entry-rate" type="number" min="0.1" step="any" value="@cfg.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
                         @if (cfgErr.Rate is not null) { <small class="field-error" role="alert">@cfgErr.Rate</small> }
                     </div>
-                    <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Essential" />
+                    <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
                 </div>
                 @if (hasAdvanced)
                 {
                     <details class="more" open="@advancedInvalid" @key="@((cfg, "more"))">
                         <summary>More options</summary>
                         <div class="form">
-                            <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Advanced" />
+                            <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Advanced" Edited="Edited" Committed="Committed" />
                         </div>
                     </details>
                 }
+                </div>
                 <div class="detail-foot">
                     <button class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove scenario</button>
                 </div>
@@ -149,7 +152,55 @@
     private static readonly ScenarioView Empty = new(0, 0, 0, 0, 0, 0);
     private static readonly ActorRecord[] NoActors = [];
 
-    private void Select(int i) { selected = i; addOpen = false; }
+    private void Select(int i) { selected = i; addOpen = false; ResetErrors(); }
+
+    // ---------- change detection while typing ----------
+    // Dirty state is derived from the live plan on every render, so each input event only has to re-render this page (cheap: the
+    // fingerprint of one plan plus the selected entry's validation). Errors are calmer: they are shown from a snapshot that is taken
+    // when the user leaves a field (change event) or stops typing for 300 ms, never on each keystroke.
+    private ScenarioRunConfig? snapFor;
+    private EntryProblems? snap;
+    private Dictionary<string, string>? planSnap;
+    private CancellationTokenSource? debounce;
+
+    private void ResetErrors() { snapFor = null; snap = null; planSnap = null; debounce?.Cancel(); }
+
+    private EntryProblems ShownErrors(ScenarioRunConfig c)
+    {
+        if (!ReferenceEquals(snapFor, c) || snap is null) { snapFor = c; snap = EntryErrors(c); }
+        return snap;
+    }
+
+    private void Edited()
+    {
+        debounce?.Cancel();
+        debounce = new CancellationTokenSource();
+        _ = SnapshotLater(debounce.Token);
+    }
+
+    private async Task SnapshotLater(CancellationToken ct)
+    {
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        if (disposed || ct.IsCancellationRequested) return;
+        snap = null; planSnap = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Committed() { debounce?.Cancel(); snap = null; planSnap = null; }
+
+    private void SetRate(ChangeEventArgs e)
+    {
+        if (selected < 0) return;
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            Sim.Plan.Scenarios[selected].RatePerMinute = d;
+        Edited();
+    }
+
+    private void SetPlanInt(ChangeEventArgs e, Action<int> set)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v)) set(v);
+        Edited();
+    }
     private bool addOpen, saveAsOpen, savedNote;
     private string saveAsName = "";
     private string? pendingLoad;
@@ -190,6 +241,7 @@
     private void Add(IScenario scenario)
     {
         Sim.AddEntry(scenario);
+        ResetErrors();
         selected = Sim.Plan.Scenarios.Count - 1;
         addOpen = false;
     }
@@ -198,6 +250,7 @@
     {
         Sim.RemoveEntry(selected);
         selected = -1;
+        ResetErrors();
     }
 
     // ---------- presets ----------
@@ -221,6 +274,7 @@
     {
         Sim.LoadPreset(name);
         selected = -1;
+        ResetErrors();
         saveAsOpen = false;
     }
 
@@ -249,6 +303,7 @@
     public void Dispose()
     {
         disposed = true;
+        debounce?.Cancel();
         Sim.Changed -= OnChanged;
     }
 }
