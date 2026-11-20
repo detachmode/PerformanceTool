@@ -12,3 +12,4 @@
 - **Use the tool's own language** (`docs/context.md`), not standard load-testing vocabulary or metrics, in UI, docs and agent briefs.
 - **Calm UI (brain 0016):** show less, reveal on demand. Every agent brief for UI work must include this principle.
 - **Screenshots:** never overwrite old screenshot files; use a new folder per set and commit-pinned links in PRs (see `AGENTS.md`).
+- **Always open a PR when a step is done:** after merging an agent's finished work into the working branch, open a PR to `main` (screenshots in a new folder, commit-pinned links) and watch its CI. If a PR from the branch is already open, add the step to it and update its description.
