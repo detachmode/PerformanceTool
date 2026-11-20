@@ -28,3 +28,7 @@ run status always in view on every page.
 - Phone (<= 760px): play, stop, elapsed with track, running, errors and a details toggle; actors/min, slow, state text and Logs appear when it is open.
 - Space toggles play/pause (`wwwroot/player-bar.js`) unless focus is in an input, button, link or similar. A visually hidden polite status announces only state changes; readouts are not live. `prefers-reduced-motion` stops the lamp pulse and the progress transition.
 - The fake source starts as a finished pre-seeded run, so "Idle" is not visible on load; the first screenshots show the Finished state.
+
+## Update (user feedback, 2026-11-20)
+Make the player bar's UI **nicer**, and the **play / stop buttons more prominent**. Keep the calm, cockpit-inspired
+look (no glow-heavy or skeuomorphic styling).

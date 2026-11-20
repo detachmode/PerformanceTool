@@ -15,6 +15,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
   brush-to-zoom with live data, settings panel (zoom strength, max bars), live actors finishing while hovering;
   outcome-coloured actor numbers and ordering in the popup.
 
+- **Running (C):** player bar polish: nicer UI, more prominent play/stop (0027 update).
+
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done
