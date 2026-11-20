@@ -163,17 +163,16 @@ label { font-size: .72rem; color: var(--muted); }
 .log-list { flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .log-list .empty { padding: 2rem; text-align: center; }
 .vrow { overflow: hidden; }
-.logrow { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .6rem; height: 100%; padding: 0 .6rem 0 .5rem; border-left: 3px solid transparent; border-bottom: 1px solid #3a344588; }
+.logrow { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .6rem; padding: .35rem .6rem .35rem .5rem; border-left: 3px solid transparent; border-bottom: 1px solid #3a344588; }
 .logrow.lv-Error { border-left-color: var(--bad); } .logrow.lv-Warning { border-left-color: var(--warn); }
 .logrow.lv-Trace, .logrow.lv-Debug { color: var(--muted); }
 .logrow.on { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent2); }
 .actor-chip { font-family: var(--mono); font-size: .72rem; padding: .22rem .45rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--input); color: var(--muted); cursor: pointer; }
 .actor-chip:hover { border-color: var(--accent2); color: var(--text); }
-.logrow .msg { text-align: left; background: none; border: 0; padding: .1rem 0; cursor: pointer; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; min-width: 0; max-height: 100%; }
+.logrow .msg { text-align: left; background: none; border: 0; padding: .1rem 0; cursor: pointer; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; font: inherit; color: inherit; }
 .logrow.lv-Error .msg { color: #ffc2c7; } .logrow.lv-Warning .msg { color: #f1d6a3; }
 .log-detail { max-height: 38%; overflow-y: auto; padding: .6rem .8rem; background: var(--panel); border: 1px solid var(--accent2); border-radius: var(--radius); font-size: .82rem; }
 .log-detail-head { display: flex; align-items: center; gap: .7rem; }
-.log-full { margin: .4rem 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .log-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .9rem; margin: 0 0 .4rem; }
 .log-detail dt { color: var(--muted); } .log-detail dd { margin: 0; font-family: var(--mono); font-size: .76rem; overflow-wrap: anywhere; }
 .log-detail pre { margin: 0; padding: .6rem; background: var(--input); border-radius: var(--radius-sm); overflow-x: auto; font-size: .74rem; color: #ffc2c7; }

@@ -11,9 +11,13 @@
   lines only for the latest 1500 actors per scenario (the UI says so). The log index is a time-sorted list that is merged incrementally.
 - **Bounded charts:** up to 48 bars is one bar per actor, more is aggregated into time buckets of a nice width (red/amber if any actor in
   it failed/was slow); a bucket opens a virtualised list of its actors. Card mini charts show the latest 32 actors.
-- **Own `VirtualList` (fixed row height, a small JS scroll reporter) instead of Blazor `Virtualize`:** with .NET 10, `Virtualize`
-  mis-estimated row heights with 100k+ rows and the list went blank after scrolling. Consequence: log rows have a fixed height
-  (two wrapped lines); the full message, scope and exception show in a detail panel under the list when a row is selected.
+- **Own `VirtualList` (small JS scroll reporter) instead of Blazor `Virtualize`:** with .NET 10, `Virtualize`
+  mis-estimated row heights with 100k+ rows and the list went blank after scrolling. It has a fixed-height mode (actor lists) and a
+  **variable-height mode** (log rows, which show the full message word-wrapped, `overflow-wrap: anywhere`; the user asked for this, superseding the
+  earlier fixed two-line rows). Variable mode: unmeasured rows use an estimate, the rendered rows are measured after each render, heights are cached
+  per item, offsets are kept as prefix sums (binary search for the window, one shifting pass per measurement). A JS MutationObserver keeps the first
+  visible row in place when rows appear above it (before paint); a width change clears the cache and keeps the first visible row. Scope, call and
+  exception still show in the detail panel under the list.
 - `?simulate=3h` (or `90m`, `600s`) pre-generates a long run to test scaling.
 
 ## Why

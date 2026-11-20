@@ -342,13 +342,15 @@ public sealed class FakeRunSource : IRunSource
             if (c.Error is null)
             {
                 Log(end - 0.5, "Information", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms", call: c);
+                if (rng.NextDouble() < 0.12) Log(end - 0.6, "Trace", $"GET https://shop.example.com/api/v2/catalog/items?category=electronics&sort=popularity&filter[brand]=acme,globex,initech&filter[price][min]=10&filter[price][max]=2500&session={runId}-{seq:x8}&include=reviews,variants,related&page=3&pageSize=50", call: c);
+                if (rng.NextDouble() < 0.08) Log(end - 0.55, "Debug", $"Response body ({(int)(c.DurationMs * 3)} bytes): {{\"id\":{seq + 1000},\"status\":\"ok\",\"items\":[{{\"sku\":\"A-{seq:x4}\",\"name\":\"Wireless headphones with noise cancelling\",\"price\":129.9,\"stock\":14}},{{\"sku\":\"B-{seq:x4}\",\"name\":\"USB-C charging cable, 2 m\",\"price\":9.5,\"stock\":210}}],\"links\":{{\"next\":\"/api/v2/catalog/items?page=4\"}}}}", call: c);
                 if (c.Slow) Log(end - 0.2, "Warning", $"Slow response: {c.DurationMs:0} ms, typical for this call is {c.TypicalMs:0} ms", call: c);
             }
             else if (c.Status is null)
             {
                 Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c);
                 Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c);
-                Log(end, "Error", $"Timeout after {c.DurationMs:0} ms",
+                Log(end, "Error", $"Timeout after {c.DurationMs:0} ms while calling https://partner.example.com/api/v1/orders/{seq + 90000}/shipping-options?country=DE&postcode=10115&weight=2.4&express=true. The partner did not answer within the configured limit.\nThe request will not be retried again; the actor stops here.",
                     $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {profile.CallTimeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
             }
             else

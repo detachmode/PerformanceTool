@@ -1,16 +1,22 @@
-@* A scrolling list with fixed row height that only puts the visible rows into the DOM (brain 0021). Own implementation instead of Blazor's
-   Virtualize, because that one estimates row heights at run time and went wrong with 100k+ rows. Rows must be exactly RowHeight tall. *@
+@* A scrolling list that only puts the visible rows into the DOM (brain 0021, 0022). Own implementation instead of Blazor's Virtualize, because that one
+   estimates row heights at run time and went wrong with 100k+ rows.
+   Fixed mode (default): every row is exactly RowHeight tall.
+   Variable mode (Variable="true"): rows are as tall as their content (e.g. word-wrapped text). Unmeasured rows use RowHeight as the estimate; the rendered
+   rows are measured right after every render and the heights are cached per item (reference identity, so TItem must be a class). Rows that appear above
+   the first visible row (scrolling up) push it down by their real height; the JS side keeps the first visible row where it was (synchronously after the
+   DOM change, before the browser paints), so the content does not jump. A width change clears the cache and keeps the first visible row in place. *@
 @typeparam TItem
 @implements IAsyncDisposable
 @inject IJSRuntime JS
+@using System.Runtime.CompilerServices
 
-<div class="@Class" @ref="root" role="@Role" aria-label="@Label" style="overflow-y:auto;position:relative">
-    <div style="height:@(Items.Count * RowHeight)px;position:relative">
-        <div style="position:absolute;left:0;right:0;top:@(first * RowHeight)px">
+<div class="@Class" @ref="root" role="@Role" aria-label="@Label" style="overflow-y:auto;position:relative;overflow-anchor:none">
+    <div style="height:@(Math.Round(Total))px;position:relative">
+        <div style="position:absolute;left:0;right:0;top:@(Math.Round(Offset(first)))px">
             @for (var i = first; i < last; i++)
             {
                 var item = Items[i];
-                <div class="vrow" style="height:@(RowHeight)px" @key="i">@ItemContent(item)</div>
+                <div class="vrow" data-i="@i" style="@(Variable ? "" : $"height:{RowHeight}px")" @key="i">@ItemContent(item)</div>
             }
         </div>
     </div>
@@ -18,11 +24,13 @@
 </div>
 
 @code {
-    private const int Overscan = 6;
+    private const double OverscanPx = 360;
 
     [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
     [Parameter, EditorRequired] public RenderFragment<TItem> ItemContent { get; set; } = default!;
+    /// <summary>Fixed mode: the row height. Variable mode: the estimate for rows not measured yet.</summary>
     [Parameter] public int RowHeight { get; set; } = 34;
+    [Parameter] public bool Variable { get; set; }
     [Parameter] public string? Class { get; set; }
     [Parameter] public string? Role { get; set; }
     [Parameter] public string? Label { get; set; }
@@ -30,24 +38,71 @@
     /// <summary>When this value changes (e.g. the filters), the list scrolls back to the top.</summary>
     [Parameter] public object? ResetKey { get; set; }
 
+    private sealed class Box { public double H; }
+
     private ElementReference root;
     private IJSObjectReference? module;
     private DotNetObjectReference<VirtualList<TItem>>? self;
-    private double top, height = 800;
+    private double top, height = 800, width = -1;
     private int first, last;
     private object? lastKey;
     private bool reset;
 
+    // variable mode: pos[i] = top of row i, pos[n] = total height; valid for rows below validTo
+    private double[] pos = [0];
+    private int n, validTo;
+    private ConditionalWeakTable<object, Box> heights = new();
+    private object? builtFor;
+    private double? pendingScrollTo;
+
+    private double Total => Variable ? pos[n] : Items.Count * (double)RowHeight;
+
+    private double Offset(int i) => Variable ? pos[Math.Clamp(i, 0, n)] : i * (double)RowHeight;
+
     protected override void OnParametersSet()
     {
         if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; }
+        if (Variable) Rebuild();
         Window();
+    }
+
+    /// <summary>Recomputes the offsets from row <c>validTo</c> on; all rows when the item list itself changed.</summary>
+    private void Rebuild()
+    {
+        if (!ReferenceEquals(builtFor, Items) || n != Items.Count)
+        {
+            builtFor = Items; n = Items.Count; validTo = 0;
+            if (pos.Length < n + 1) pos = new double[Math.Max(n + 1, pos.Length * 2)];
+        }
+        if (validTo >= n && n > 0) return;
+        pos[0] = 0;
+        for (var i = validTo; i < n; i++)
+            pos[i + 1] = pos[i] + (Items[i] is { } it && heights.TryGetValue(it, out var b) ? b.H : RowHeight);
+        validTo = n;
+    }
+
+    /// <summary>Index of the row that contains the vertical position <paramref name="y"/>.</summary>
+    private int IndexAt(double y)
+    {
+        var count = Items.Count;
+        if (count == 0) return 0;
+        if (!Variable) return Math.Clamp((int)(y / RowHeight), 0, count - 1);
+        int lo = 0, hi = count - 1;
+        while (lo < hi)
+        {
+            var mid = (lo + hi + 1) >> 1;
+            if (pos[mid] <= y) lo = mid; else hi = mid - 1;
+        }
+        return lo;
     }
 
     private void Window()
     {
-        first = Math.Clamp((int)(top / RowHeight) - Overscan, 0, Math.Max(0, Items.Count));
-        last = Math.Clamp((int)Math.Ceiling((top + height) / RowHeight) + Overscan, first, Items.Count);
+        var count = Items.Count;
+        if (count == 0) { first = last = 0; return; }
+        var overscan = Variable ? OverscanPx : 6.0 * RowHeight;
+        first = IndexAt(Math.Max(0, top - overscan));
+        last = Math.Min(count, IndexAt(top + height + overscan) + 1);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -60,19 +115,69 @@
                 self = DotNetObjectReference.Create(this);
                 await module.InvokeVoidAsync("attach", root, self);
             }
-            if (reset && module is not null)
+            if (module is null) return;
+            if (reset)
             {
-                reset = false;
+                reset = false; pendingScrollTo = null;
                 await module.InvokeVoidAsync("scrollToTop", root);
             }
+            else if (pendingScrollTo is { } to) { pendingScrollTo = null; await module.InvokeVoidAsync("scrollTo", root, to); }
+            if (Variable) await Measure();
         }
         catch (JSDisconnectedException) { }
     }
 
-    [JSInvokable]
-    public void OnViewport(double scrollTop, double clientHeight)
+    /// <summary>Reads the real heights of the rendered rows and corrects the offsets behind them. The rendered rows themselves do not move.</summary>
+    private async Task Measure()
     {
-        if (Math.Abs(scrollTop - top) < 1 && Math.Abs(clientHeight - height) < 1) return;
+        var m = await module!.InvokeAsync<double[]>("measure", root);
+        if (m.Length < 1 || n == 0) return;
+        var scrollTop = m[0];
+        var lowest = int.MaxValue;
+        var changes = new List<(int Index, double Diff)>();
+        for (var k = 1; k + 1 < m.Length; k += 2)
+        {
+            var i = (int)m[k];
+            if (i < 0 || i >= n || i >= Items.Count) continue;
+            var h = m[k + 1];
+            if (h <= 0) continue; // not laid out (hidden)
+            var old = pos[i + 1] - pos[i];
+            if (Math.Abs(h - old) < 0.5) continue;
+            heights.AddOrUpdate(Items[i]!, new Box { H = h });
+            changes.Add((i, h - old));
+            lowest = Math.Min(lowest, i);
+        }
+        if (changes.Count == 0) return;
+        // shift the offsets behind each changed row in one pass (no per-item lookups)
+        double run = 0;
+        var c = 0;
+        for (var j = lowest + 1; j <= n; j++)
+        {
+            while (c < changes.Count && changes[c].Index < j) run += changes[c++].Diff;
+            pos[j] += run;
+        }
+        top = scrollTop;
+        Window();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnViewport(double scrollTop, double clientHeight, double clientWidth)
+    {
+        var widthChanged = Variable && width >= 0 && Math.Abs(clientWidth - width) >= 1;
+        width = clientWidth;
+        if (!widthChanged && Math.Abs(scrollTop - top) < 1 && Math.Abs(clientHeight - height) < 1) return;
+        if (widthChanged && n > 0)
+        {
+            // Wrapping changes with the width: forget the measured heights, keep the first visible row where it is.
+            var a = IndexAt(scrollTop);
+            var within = scrollTop - pos[a];
+            heights = new();
+            validTo = 0;
+            Rebuild();
+            scrollTop = pos[a] + within;
+            pendingScrollTo = scrollTop;
+        }
         (top, height) = (scrollTop, clientHeight);
         Window();
         StateHasChanged();

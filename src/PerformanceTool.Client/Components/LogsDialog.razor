@@ -1,5 +1,5 @@
 @* Logs popup (brain 0017, 0020, 0021): all logs of the run. Filters, each removable: scenario, a single actor, outcome of the actor (all / failed / slow),
-   levels and search. The list is virtualised and filtered in one pass, so it stays fast with 100k+ lines. *@
+   levels and search. Rows show the full message, word-wrapped (variable row height). The list is virtualised and filtered in one pass, so it stays fast with 100k+ lines. *@
 @implements IDisposable
 @inject IRunSource Sim
 @inject LogsPopupState Popup
@@ -55,7 +55,7 @@
             <input class="search" type="search" placeholder="Search messages…" aria-label="Search messages" autocomplete="off" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
         </div>
 
-        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" RowHeight="48" ResetKey="@builtSig">
+        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
                     <button class="actor-chip" @onclick="() => FilterActor(l)" title="Show only the logs of actor #@(l.Sequence + 1)">#@(l.Sequence + 1)</button>
@@ -69,7 +69,6 @@
         {
             <section class="log-detail" aria-label="Log line details">
                 <div class="log-detail-head"><b>Actor #@(x.Sequence + 1)</b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
-                <p class="log-full">@x.Message</p>
                 <dl>@foreach (var (k, v) in x.Scope) { <dt>@k</dt><dd>@v</dd> }</dl>
                 @if (x.Exception is not null) { <pre>@x.Exception</pre> }
             </section>
