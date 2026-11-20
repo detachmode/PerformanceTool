@@ -14,6 +14,15 @@ each instance took** (terms: `docs/context.md`). So:
 **`DelegatingHandler`** in the scenario's HTTP pipeline. It measures each request inside the current instance (and its
 logging scope) without any extra code in the scenario.
 
+**Naming/tagging a call (decided: on the request).** Scenario code names a call by attaching it to the
+`HttpRequestMessage`, e.g. an extension that stores a name and optional tags in `request.Options`, which the handler
+reads:
+```csharp
+await ctx.Http.SendAsync(new HttpRequestMessage(HttpMethod.Post, url) { Content = body }
+    .AsCall("Place order", tags: new() { ["step"] = "payment" }), ct);
+```
+Exact API names are still open.
+
 ## Why
 A scenario chains several calls. The instance total hides *which* call is slow or failing. The user needs
 per-call timing to act on the results.
@@ -24,4 +33,5 @@ per-call timing to act on the results.
   - (B) small "box chart" cards per call, like the Aspire metric cards, under each scenario
   - (C) a matrix/heatmap of instances × calls
   - the per-instance waterfall already in draft 3
-- How calls are named and grouped (e.g. per step name vs per URL).
+- Default name for untagged calls (e.g. method + path with IDs collapsed) and how calls are grouped.
+- Whether an ambient block style (`using (ctx.Call("…"))`, for SDKs/typed clients) is added later as a secondary option.
