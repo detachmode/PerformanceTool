@@ -13,7 +13,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done:** bar colours green/yellow/red and blue running actors (brain 0018).
 - **Done:** editor uses the overview's scenario cards (brain 0024).
 - **Done:** full word-wrapped log rows (variable-height virtual list).
-- **Running:** magnification only in the popup, bar labels (actor + timestamps), less aggressive grouping (brain 0023 update).
+- **Done:** magnification only in the popup, bar labels (actor + times), popup bar limit 240 (brain 0023 update).
+- **Running:** build info (commit + deploy date) and no stale cache (brain 0025).
 
 Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
 what counts as "slow"; duration summary.
