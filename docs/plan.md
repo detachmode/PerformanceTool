@@ -35,7 +35,7 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Restyle the app after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
       toolbar with icon buttons, collapsible left list, group/sort menus). Re-validate the palette on the new surfaces.
 
-## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009)
+## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009, proposed)
 - [ ] Extract `Services/*` into `src/PerformanceTool.Core` (scenarios, plan, runner, presets, stats), used by web, CLI and server.
 - [ ] Run bundle writer: `manifest.json`, `summary.json`, `results.ndjson(.gz)` (appended live), `summary.md`, `junit.xml`;
       JSON schemas with `schemaVersion`, documented in `docs/`.
@@ -51,7 +51,7 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] `runs pull --from azdo|github --build <id>` downloads CI artifacts via `az` / `gh`.
 - [ ] Document the CLI for agents in `AGENTS.md`.
 
-## 3. Results server + API keys
+## 3. Results server + API keys (proposal only, not decided)
 - [ ] REST API in the web app: `POST /api/runs` (upload a bundle | start a remote run), `GET /api/runs` (filters, paging),
       `GET /api/runs/{id}` (summary), `/executions` (filters, paging), `/errors`, `/compare/{other}`, `/bundle` (zip).
 - [ ] API keys: scopes `runs:read`, `runs:write`, `runs:execute`; hashed at rest; created/revoked in the UI; `Authorization: Bearer`.
@@ -60,6 +60,9 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Later: OIDC / workload identity federation for pipelines instead of static keys.
 
 ## 4. CI/CD integration (Azure DevOps first, then GitHub)
+- [ ] **Azure DevOps (decided, brain 0010):** the CLI runs in the pipeline and publishes two artifacts per run:
+      a full one (all logs and details) and a small summary one (overview, little data).
+- [ ] Open: contents of the summary vs full artifact, names, retention, how results appear in Azure DevOps.
 - [ ] Thresholds in the plan/preset (`p95 < 300ms`, `errorRate < 1%`, `dropped == 0`; global or per scenario) → exit code + JUnit.
 - [ ] Azure DevOps: YAML template (run → publish artifact → PublishTestResults → upload summary → optional push to server → PR comment).
 - [ ] GitHub: composite action / reusable workflow (artifact, `$GITHUB_STEP_SUMMARY`, PR comment, optional push).
@@ -67,7 +70,7 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Baseline comparison: fail on regression vs last good run on the default branch.
 - [ ] CI for this repo itself: build + `dotnet test` on push.
 
-## 5. Agent integration
+## 5. Agent integration (proposal only, not decided)
 - [ ] `perftool mcp`: MCP server over the same API (list_runs, get_run_summary, query_executions, errors, compare_runs, list_scenarios, start_run).
 - [ ] PR comment / summary always contains the run id and copy-paste commands for agents to drill down.
 

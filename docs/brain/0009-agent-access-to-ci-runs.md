@@ -1,6 +1,6 @@
 # 0009. Agents can inspect CI performance runs: run bundles + one API/CLI (+ MCP)
 
-- Status: Accepted (design, not implemented, see `docs/plan.md` §1–3)
+- Status: Proposed (Claude's proposal, not decided by the user). Azure DevOps part decided in 0010.
 - Date: 2026-11-20
 
 ## What
