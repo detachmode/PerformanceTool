@@ -28,11 +28,11 @@ Everything that shows data is clickable, inspectable, filterable and isolatable.
 - [ ] Conditional fields (e.g. show Token only when Scheme = Bearer).
 
 ## 0c. Live scenario tiles + Aspire-inspired restyle (requirement, see brain 0008)
-- [ ] Runner reports execution-started events and in-flight counts per entry.
-- [ ] Tile per scenario: chips, title, description, big value + unit, mini bar chart (last ~100 executions), error/drop badges.
-- [ ] Live overview grid during a run; a tile pulses or glows while its scenario is executing; target vs actual runs/min.
-- [ ] Click a tile → dialog with parameters, full chart, latency distribution, status codes, errors, recent executions.
-- [ ] Restyle the app after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
+- [x] Runner reports execution-started events and in-flight counts per entry.
+- [x] Tile per scenario: chips, title, description, big value + unit, mini bar chart (last ~100 executions), error/drop badges.
+- [x] Live overview grid during a run; a tile pulses or glows while its scenario is executing; target vs actual runs/min.
+- [x] Click a tile → dialog with parameters, full chart, latency distribution, status codes, errors, recent executions.
+- [x] Restyle the app (done except: collapsible left list, chart/table toggle; sort/group menus added) after the Aspire 17 Metrics page (flat purple-tinted dark surfaces, chips, small radius,
       toolbar with icon buttons, collapsible left list, group/sort menus). Re-validate the palette on the new surfaces.
 
 ## 1. Shared core + run bundles (prerequisite for 2 and 3, see brain 0009)

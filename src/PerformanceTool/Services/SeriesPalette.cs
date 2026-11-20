@@ -3,7 +3,7 @@ namespace PerformanceTool.Services;
 /// <summary>
 /// Categorical colours for scenario entries, in fixed order (never cycled — that is why a plan has at most
 /// <see cref="LoadPlan.MaxEntries"/> entries). Validated for colour-blind separation and 3:1 contrast against
-/// the dark panel surface #131a2e. Failed runs use <see cref="Error"/> plus a hatch texture. See docs/brain/0002.
+/// the dark card surface #2a2534 (and page #221d2d). Failed runs use <see cref="Error"/> plus a hatch texture. See docs/brain/0002.
 /// </summary>
 public static class SeriesPalette
 {

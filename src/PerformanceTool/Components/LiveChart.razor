@@ -1,18 +1,21 @@
 @* One bar per scenario execution, coloured by scenario entry. Pure HTML/CSS, see docs/brain/0002. *@
 @using System.Globalization
 
-<section class="card chart-card">
+<section class="@(Embedded ? "chart-embedded" : "card chart-card")">
     <div class="chart-title">
-        <h2>Response time per execution</h2>
+        <h2>@Title</h2>
         <div class="legend">
-            @for (var i = 0; i < Labels.Count; i++)
+            @if (ShowLegend)
             {
-                <span><i style="background:@SeriesPalette.For(i)"></i>@Labels[i]</span>
+                @for (var i = 0; i < Labels.Count; i++)
+                {
+                    <span><i style="background:@SeriesPalette.For(i)"></i>@Labels[i]</span>
+                }
             }
             <span><i class="err"></i>failed</span>
         </div>
     </div>
-    <div class="chart">
+    <div class="chart @(Embedded ? "short" : "")">
         <div class="y-axis">
             <span>@Fmt(scale)</span><span>@Fmt(scale / 2)</span><span>0</span>
         </div>
@@ -26,14 +29,15 @@
             <div class="bars">
                 @foreach (var r in visible)
                 {
-                    <div class="bar @(r.Success ? "" : "failed")"
+                    <div class="bar @(r.Success ? "" : "failed") @(r.Sequence == SelectedSequence ? "selected" : "") @(OnBarClick.HasDelegate ? "clickable" : "")"
+                         @onclick="() => OnBarClick.InvokeAsync(r)"
                          style="height:@Pct(r.ElapsedMs);--c:@SeriesPalette.For(r.Entry)"
                          title="#@(r.Sequence + 1) · @Label(r.Entry) · @Fmt(r.ElapsedMs) · @(r.Error ?? $"HTTP {r.StatusCode}")"></div>
                 }
             </div>
             @if (Results.Count == 0)
             {
-                <div class="empty">Pick scenarios and start a run — bars appear live, one per execution.</div>
+                <div class="empty">@EmptyText</div>
             }
         </div>
     </div>
@@ -46,9 +50,18 @@
 @code {
     public const int MaxBars = 600;
 
+    [Parameter] public string EmptyText { get; set; } = "Pick scenarios and start a run — bars appear live, one per execution.";
+
     [Parameter, EditorRequired] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
     [Parameter] public double Average { get; set; }
+    [Parameter] public string Title { get; set; } = "Response time per execution";
+    [Parameter] public bool ShowLegend { get; set; } = true;
+    /// <summary>Renders without the card frame, e.g. inside the scenario dialog.</summary>
+    [Parameter] public bool Embedded { get; set; }
+    /// <summary>Click a bar to inspect that execution (docs/brain/0006).</summary>
+    [Parameter] public EventCallback<ExecutionResult> OnBarClick { get; set; }
+    [Parameter] public int? SelectedSequence { get; set; }
 
     private List<ExecutionResult> visible = [];
     private double scale = 100;
@@ -74,4 +87,10 @@
     private string Pct(double ms) => (Math.Clamp(ms / scale, 0, 1) * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
 
     public static string Fmt(double ms) => ms >= 1000 ? $"{ms / 1000:0.00} s" : $"{ms:0.#} ms";
+
+    /// <summary>Value and unit separately, for big-number tiles: ("142", "ms") or ("1.24", "s").</summary>
+    public static (string Value, string Unit) FmtParts(double ms) =>
+        ms >= 1000 ? ((ms / 1000).ToString("0.00", CultureInfo.InvariantCulture), "s")
+        : ms >= 100 ? (ms.ToString("0", CultureInfo.InvariantCulture), "ms")
+        : (ms.ToString("0.#", CultureInfo.InvariantCulture), "ms");
 }

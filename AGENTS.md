@@ -21,6 +21,8 @@ to the index. Commit it in the same change as the code.
   - `Services/LoadRunner.cs` — open-model scheduler; `Services/LoadPlan.cs` — the plan (also the preset format).
   - `Services/PresetStore.cs` — presets as JSON files (`Presets:Directory`, default `presets/`).
   - `Components/Pages/Home.razor` — the page; `LiveChart.razor`, `ScenarioEntryCard.razor`, `Stat.razor`.
+  - `Components/ScenarioTile.razor` (live tile per entry) and `ScenarioDetailDialog.razor` (click a tile); `Services/Scenarios/Spec/ParameterSummary.cs` (read-only parameter view). `LoadRunner` reports `ExecutionActivity` (start/end, in-flight) for them (brain 0008).
+  - Styling: dark Aspire-like tokens at the top of `wwwroot/app.css` (brain 0008); keep it flat, dark only.
 - Interactive pages need `@rendermode InteractiveServer`, otherwise buttons do nothing.
 
 ## Build, test and run

@@ -8,7 +8,7 @@
 <PageTitle>Performance Tool</PageTitle>
 
 <header class="topbar">
-    <div class="brand"><span class="logo">⚡</span> Performance<span>Tool</span></div>
+    <div class="brand"><span class="logo" aria-hidden="true">⚡</span> Performance<span>Tool</span></div>
     <div class="run-state">
         @if (running || results.Count > 0)
         {
@@ -17,7 +17,7 @@
             </div>
             <span class="muted">@($"{Elapsed:0}s / {activePlan.DurationSeconds}s")</span>
         }
-        <div class="status @(running ? "live" : "")">@(running ? "LIVE" : results.Count > 0 ? "DONE" : "IDLE")</div>
+        <div class="status @(running ? "live" : results.Count > 0 ? "done" : "")"><i class="status-dot"></i>@(running ? "Running" : results.Count > 0 ? "Finished" : "Idle")</div>
     </div>
 </header>
 
@@ -111,6 +111,50 @@
         <Stat Label="Max" Value="@LiveChart.Fmt(all.Max)" />
     </section>
 
+    <section class="tiles-section" aria-label="Scenarios">
+        <div class="group-head">
+            <h2>Scenarios</h2>
+            <span class="count">@viewPlan.Scenarios.Count</span>
+            <span class="dotted"></span>
+            <div class="toolbar">
+                <label for="sort" class="visually-hidden">Sort by</label>
+                <select id="sort" @bind="sortBy" title="Sort tiles">
+                    <option value="plan">Sort: plan order</option>
+                    <option value="name">Sort: name</option>
+                    <option value="p95">Sort: p95</option>
+                    <option value="errors">Sort: errors</option>
+                    <option value="rate">Sort: rate</option>
+                </select>
+                <label for="group" class="visually-hidden">Group by</label>
+                <select id="group" @bind="groupBy" title="Group tiles">
+                    <option value="">Group: none</option>
+                    <option value="type">Group: scenario type</option>
+                </select>
+            </div>
+        </div>
+        @if (viewPlan.Scenarios.Count == 0)
+        {
+            <div class="muted tiles-empty">Add a scenario to see its live tile here.</div>
+        }
+        @foreach (var group in TileGroups())
+        {
+            @if (group.Title is not null)
+            {
+                <div class="group-head sub"><h3>@group.Title</h3><span class="count">@group.Items.Count</span><span class="dotted"></span></div>
+            }
+            <div class="tiles">
+                @foreach (var i in group.Items)
+                {
+                    var idx = i;
+                    <ScenarioTile @key="viewPlan.Scenarios[idx]" Index="idx" Config="viewPlan.Scenarios[idx]" Scenario="Catalog.Find(viewPlan.Scenarios[idx].ScenarioId)"
+                                  Label="@LabelOf(idx)" Results="ResultsOf(idx)" Dropped="Count(dropped, idx)" InFlight="Count(inFlightNow, idx)"
+                                  Starts="Count(starts, idx)" SinceLastStart="SinceLastStart(idx)" ElapsedSeconds="Elapsed" Running="running"
+                                  OnOpen="OpenDetails" />
+                }
+            </div>
+        }
+    </section>
+
     <LiveChart Results="results" Labels="activeLabels" Average="all.Avg" />
 
     @if (activePlan.Scenarios.Count > 0 && (running || results.Count > 0))
@@ -125,7 +169,7 @@
                     {
                         var entry = i;
                         var st = LatencyStats.From(results.Where(r => r.Entry == entry).ToList());
-                        <tr>
+                        <tr class="clickable" tabindex="0" @onclick="() => OpenDetails(entry)" @onkeydown="e => RowKey(e, entry)">
                             <td><i class="swatch" style="background:@SeriesPalette.For(i)"></i>@activeLabels[i]</td>
                             <td>@activePlan.Scenarios[i].RatePerMinute.ToString("0.#")</td>
                             <td>@((st.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("0.#"))</td>
@@ -144,12 +188,27 @@
     }
 </main>
 
+@if (detailEntry is { } de && de < viewPlan.Scenarios.Count)
+{
+    <ScenarioDetailDialog Index="de" Config="viewPlan.Scenarios[de]" Scenario="Catalog.Find(viewPlan.Scenarios[de].ScenarioId)" Label="@LabelOf(de)"
+                          Labels="viewLabels" Results="ResultsOf(de)" Dropped="Count(dropped, de)" InFlight="Count(inFlightNow, de)" Starts="Count(starts, de)"
+                          ElapsedSeconds="Elapsed" Running="running" OnClose="CloseDetails" />
+}
+
 @code {
     private LoadPlan plan = new();
     private LoadPlan activePlan = new();          // snapshot of the plan that is/was running
     private List<string> activeLabels = [];
     private readonly List<ExecutionResult> results = [];
     private int[] dropped = [];
+    // Per entry of activePlan (brain 0008): results, executions in flight now, executions started, last start time.
+    private List<ExecutionResult>[] byEntry = [];
+    private int[] inFlightNow = [];
+    private int[] starts = [];
+    private double[] lastStartAt = [];
+    private int? detailEntry;
+    private string sortBy = "plan";
+    private string groupBy = "";
     private List<string> errors = [];
     private bool running;
     private string addScenarioId = "";
@@ -189,7 +248,13 @@
         activePlan = plan.Clone();
         activeLabels = activePlan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
         results.Clear();
-        dropped = new int[activePlan.Scenarios.Count];
+        var n = activePlan.Scenarios.Count;
+        dropped = new int[n];
+        byEntry = Enumerable.Range(0, n).Select(_ => new List<ExecutionResult>()).ToArray();
+        inFlightNow = new int[n];
+        starts = new int[n];
+        lastStartAt = Enumerable.Repeat(double.NaN, n).ToArray();
+        detailEntry = null;
         running = true;
         finishedElapsed = null;
         cts = new CancellationTokenSource();
@@ -198,9 +263,15 @@
         try
         {
             var run = Runner.RunAsync(activePlan,
-                r => new ValueTask(InvokeAsync(() => results.Add(r))),
+                r => new ValueTask(InvokeAsync(() => { results.Add(r); byEntry[r.Entry].Add(r); })),
                 entry => new ValueTask(InvokeAsync(() => dropped[entry]++)),
-                cts.Token);
+                cts.Token,
+                a => new ValueTask(InvokeAsync(() =>
+                {
+                    // Count by event, not by the runner's snapshot: InvokeAsync may reorder events of different executions.
+                    if (a.Started) { inFlightNow[a.Entry]++; starts[a.Entry]++; lastStartAt[a.Entry] = clock.Elapsed.TotalSeconds; }
+                    else inFlightNow[a.Entry]--;
+                })));
 
             // Re-render on a fixed cadence instead of per result, so fast runs don't flood the SignalR circuit.
             using var ticker = new PeriodicTimer(TimeSpan.FromMilliseconds(150));
@@ -223,6 +294,39 @@
     }
 
     private void Stop() => cts?.Cancel();
+
+    // ----- tiles (brain 0008) -----
+    private bool HasRun => running || results.Count > 0;
+    /// <summary>The plan the tiles describe: the run's snapshot once there is one, otherwise the plan being edited.</summary>
+    private LoadPlan viewPlan => HasRun ? activePlan : plan;
+    private IReadOnlyList<string> viewLabels => HasRun ? activeLabels : plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
+    private string LabelOf(int i) => i < viewLabels.Count ? viewLabels[i] : "";
+    private IReadOnlyList<ExecutionResult> ResultsOf(int i) => HasRun && i < byEntry.Length ? byEntry[i] : [];
+    private static int Count(int[] values, int i) => i < values.Length ? values[i] : 0;
+    private double? SinceLastStart(int i) => running && i < lastStartAt.Length && !double.IsNaN(lastStartAt[i]) ? clock.Elapsed.TotalSeconds - lastStartAt[i] : null;
+
+    private sealed record TileGroup(string? Title, List<int> Items);
+
+    private IEnumerable<TileGroup> TileGroups()
+    {
+        var order = Enumerable.Range(0, viewPlan.Scenarios.Count);
+        order = sortBy switch
+        {
+            "name" => order.OrderBy(i => LabelOf(i), StringComparer.OrdinalIgnoreCase),
+            "p95" => order.OrderByDescending(i => LatencyStats.From(ResultsOf(i).ToList()).P95),
+            "errors" => order.OrderByDescending(i => ResultsOf(i).Count(r => !r.Success)),
+            "rate" => order.OrderByDescending(i => viewPlan.Scenarios[i].RatePerMinute),
+            _ => order,
+        };
+        if (groupBy == "type")
+            return order.GroupBy(i => Catalog.Find(viewPlan.Scenarios[i].ScenarioId)?.Name ?? viewPlan.Scenarios[i].ScenarioId)
+                        .Select(g => new TileGroup(g.Key, g.ToList()));
+        return [new TileGroup(null, order.ToList())];
+    }
+
+    private void OpenDetails(int entry) => detailEntry = entry;
+    private void CloseDetails() => detailEntry = null;
+    private void RowKey(KeyboardEventArgs e, int entry) { if (e.Key is "Enter" or " ") OpenDetails(entry); }
 
     private async Task SavePreset()
     {
