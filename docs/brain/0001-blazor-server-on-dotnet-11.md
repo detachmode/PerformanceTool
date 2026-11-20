@@ -1,6 +1,6 @@
 # 0001. Blazor Server (interactive server rendering) on .NET 11
 
-- Status: Accepted
+- Status: UI part superseded by 0015 (WebAssembly client); server-side load generation still holds
 - Date: 2026-11-20
 
 ## What

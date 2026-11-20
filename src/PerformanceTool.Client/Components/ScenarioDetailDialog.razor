@@ -1,0 +1,574 @@
+@* Details of one scenario entry: parameters, full-size chart, latency histogram, status codes, grouped errors and
+   recent instances. Everything is clickable and acts as a filter that the chart and the list share (docs/brain/0006, 0008).
+   Esc or a click outside closes it. *@
+@using System.Globalization
+@using PerformanceTool.Client.Services
+@using PerformanceTool.Client.Components
+
+<div class="overlay" tabindex="-1" @ref="root" @onclick="Close" @onkeydown="OnKey" role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" style="--series:@Color" @onclick:stopPropagation>
+        <header class="dlg-head">
+            <span class="swatch"></span>
+            <div class="dlg-titles">
+                <h2 id="dlg-title" tabindex="-1" @ref="heading">@Label</h2>
+                <div class="chips">
+                    <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
+                    <span class="chip">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) @Terms.PerMinuteShort target</span>
+                    @if (Running)
+                    {
+                        <span class="chip live"><i class="pulse-dot"></i>@InFlight in flight</span>
+                    }
+                </div>
+            </div>
+            <button class="icon-btn close" @onclick="Close" aria-label="Close details" title="Close (Esc)">✕</button>
+        </header>
+
+        <div class="dlg-body">
+            <section class="dlg-stats">
+                <Stat Label="@Terms.InstancesCap" Value="@stats.Count.ToString("N0")" />
+                <Stat Label="Errors" Value="@stats.Errors.ToString("N0")" Bad="@(stats.Errors > 0)" />
+                <Stat Label="Dropped" Value="@Dropped.ToString("N0")" Bad="@(Dropped > 0)" />
+                <Stat Label="@Terms.PerMinuteShort" Value="@($"{Actual:0.#} / {Config.RatePerMinute:0.#}")" />
+                <Stat Label="Avg" Value="@LiveChart.Fmt(stats.Avg)" />
+                <Stat Label="p50" Value="@LiveChart.Fmt(stats.P50)" />
+                <Stat Label="p95" Value="@LiveChart.Fmt(stats.P95)" />
+                <Stat Label="p99" Value="@LiveChart.Fmt(stats.P99)" />
+                <Stat Label="Max" Value="@LiveChart.Fmt(stats.Max)" />
+            </section>
+
+            @if (HasLogs || HasCalls)
+            {
+                <div class="tabs" role="tablist" aria-label="Details sections" @onkeydown="TabKey">
+                    <button id="dlg-tab-details" role="tab" aria-selected="@Sel("details")" aria-controls="dlg-panel" tabindex="@(tab == "details" ? 0 : -1)" class="tab @(tab == "details" ? "on" : "")" @onclick='() => SetTab("details")'>Details</button>
+                    @if (HasCalls)
+                    {
+                        <button id="dlg-tab-calls" role="tab" aria-selected="@Sel("calls")" aria-controls="dlg-panel" tabindex="@(tab == "calls" ? 0 : -1)" class="tab @(tab == "calls" ? "on" : "")" @onclick='() => SetTab("calls")'>
+                            Calls <span class="tab-count">@callNames.Count</span>
+                        </button>
+                    }
+                    @if (HasLogs)
+                    {
+                        <button id="dlg-tab-logs" role="tab" aria-selected="@Sel("logs")" aria-controls="dlg-panel" tabindex="@(tab == "logs" ? 0 : -1)" class="tab @(tab == "logs" ? "on" : "")" @onclick='() => SetTab("logs")'>
+                            Logs <span class="tab-count">@Logs!.Count.ToString("N0")</span>
+                            @if (logErrors > 0) { <span class="tab-count bad">@logErrors.ToString("N0") @(logErrors == 1 ? "error" : "errors")</span> }
+                        </button>
+                    }
+                </div>
+            }
+
+            <div class="dlg-panel" id="dlg-panel" role="@(HasLogs || HasCalls ? "tabpanel" : null)" aria-labelledby="@(HasLogs || HasCalls ? "dlg-tab-" + tab : null)">
+            @if (HasFilter)
+            {
+                <div class="filters" aria-label="Active filters">
+                    <span class="muted">Filtered: @filtered.Count of @Results.Count</span>
+                    @if (failedOnly) { <button class="chip removable" @onclick="() => failedOnly = false">failed only ✕</button> }
+                    @if (status is not null) { <button class="chip removable" @onclick="() => status = null">status @status ✕</button> }
+                    @if (error is not null) { <button class="chip removable" title="@error" @onclick="() => error = null">error: @Trunc(error, 40) ✕</button> }
+                    @if (window is { } w) { <button class="chip removable" title="Time window" @onclick="() => window = null">@Format.Time(w.Lo) – @Format.Time(w.Hi) ✕</button> }
+                    @if (callFilter is { } cfi) { <button class="chip removable" title="Only this call" @onclick="() => callFilter = null">call: @CallName(cfi) ✕</button> }
+                    @if (bucket is { } b) { <button class="chip removable" @onclick="() => bucket = null">@LiveChart.Fmt(b.Lo) – @LiveChart.Fmt(b.Hi) ✕</button> }
+                    <button class="btn ghost small" @onclick="ClearFilters">Clear all</button>
+                </div>
+            }
+
+            @if (tab != "calls")
+            {
+            <LiveChart Embedded="true" Title="@($"Duration per {Terms.Instance}")" ShowLegend="false" Results="filtered" Labels="Labels"
+                       Average="avgFiltered" OnBarClick="Select" SelectedSequence="selected?.Sequence"
+                       EmptyText="@(Results.Count == 0 ? $"No {Terms.Instances} yet." : $"No {Terms.Instances} match the filters.")" />
+            }
+
+            @if (selected is { } s)
+            {
+                <div class="selected-exec" role="status">
+                    <b>@Terms.InstanceCap #@(s.Sequence + 1)</b>
+                    <span>started @s.StartedAtSeconds.ToString("0.00", CultureInfo.InvariantCulture) s into the run</span>
+                    <span>@LiveChart.Fmt(s.ElapsedMs)</span>
+                    <span>@(s.StatusCode is { } sc ? $"HTTP {sc}" : "no response")</span>
+                    <span>@s.Bytes.ToString("N0") bytes</span>
+                    @if (s.Error is not null) { <span class="bad">@s.Error</span> }
+                    @if (HasLogs && tab != "logs") { <button class="chip" @onclick="() => ShowLogs(s)">View logs</button> }
+                    <button class="icon-btn" @onclick="() => selected = null" aria-label="Clear selection">✕</button>
+                </div>
+            }
+
+            @if (tab != "calls") { @WaterfallPanel() }
+
+            @if (tab == "calls" && HasCalls)
+            {
+                <CallsView Results="callBase" CallsByInstance="Calls" Color="@Color" ElapsedSeconds="ElapsedSeconds" Call="callFilter" CallChanged="PickCallFilter"
+                           SelectedSequence="selected?.Sequence" OnInstance="SelectInstance" />
+                @WaterfallPanel()
+            }
+
+            @if (tab == "logs" && HasLogs)
+            {
+                var rows = LogRows(out var matching);
+                <section class="panel logs" aria-label="Logs">
+                    <div class="panel-head">
+                        <h3>Logs <span class="muted">@matching.ToString("N0") of @Logs!.Count.ToString("N0")@(selected is not null ? $" · {Terms.Instance} #{selected.Sequence + 1}" : "")</span></h3>
+                        <div class="log-tools">
+                            <div class="lvls" role="group" aria-label="Level filter">
+                                @foreach (var lvl in FakeLogEntry.Levels)
+                                {
+                                    var l = lvl;
+                                    <button class="lvl lvl-@l.ToLowerInvariant() @(logLevels.Contains(l) ? "on" : "")" aria-pressed="@Aria.Bool(logLevels.Contains(l))"
+                                            title="@l: click to toggle, Alt+click to show only this level"
+                                            @onclick="e => ToggleLevel(l, e.AltKey)">@Short(l) <span>@LevelCount(l)</span></button>
+                                }
+                            </div>
+                            <input type="search" class="log-search" placeholder="Search message, exception, scope…" aria-label="Search logs" @bind="logSearch" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    @if (selected is not null || logSearch.Length > 0 || window is not null || callFilter is not null)
+                    {
+                        <div class="filters">
+                            @if (selected is not null) { <button class="chip removable" @onclick="() => { selected = null; callFilter = null; }">@Terms.Instance #@(selected.Sequence + 1) ✕</button> }
+                            @if (window is { } lw) { <button class="chip removable" title="Time window" @onclick="() => window = null">@Format.Time(lw.Lo) – @Format.Time(lw.Hi) ✕</button> }
+                            @if (logSearch.Length > 0) { <button class="chip removable" @onclick='() => logSearch = ""'>“@Trunc(logSearch, 30)” ✕</button> }
+                        </div>
+                    }
+                    <div class="log-list" role="list">
+                        @foreach (var row in rows)
+                        {
+                            var entry = row;
+                            var open = expandedLogs.Contains(entry.Id);
+                            <div class="log-row lvl-@entry.Level.ToLowerInvariant() @(open ? "open" : "")" role="listitem">
+                                <div class="log-main" tabindex="0" role="button" aria-expanded="@Aria.Bool(open)" @onclick="() => ToggleLog(entry.Id)" @onkeydown="e => LogKey(e, entry.Id)">
+                                    <span class="caret" aria-hidden="true">@(open ? "▾" : "▸")</span>
+                                    <span class="log-lvl">@Short(entry.Level)</span>
+                                    <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
+                                    <button class="log-exec @(selected?.Sequence == entry.Sequence ? "on" : "")" aria-pressed="@Aria.Bool(selected?.Sequence == entry.Sequence)" title="Show only the logs of @Terms.Instance #@(entry.Sequence + 1)"
+                                            @onclick="() => SelectSequence(entry.Sequence)" @onclick:stopPropagation>#@(entry.Sequence + 1)</button>
+                                    @if (entry.CallIndex is { } ci) { <button class="log-call @(selected?.Sequence == entry.Sequence && callFilter == ci ? "on" : "")" aria-pressed="@Aria.Bool(selected?.Sequence == entry.Sequence && callFilter == ci)" title="Show only the logs of call @(ci + 1) of #@(entry.Sequence + 1)"
+                                            @onclick="() => SelectCall(entry.Sequence, ci)" @onclick:stopPropagation>call @(ci + 1)</button> }
+                                    <span class="log-msg">@entry.Message</span>
+                                    @if (entry.Exception is not null) { <span class="log-ex-flag" title="Has exception details">exception</span> }
+                                </div>
+                                @if (open)
+                                {
+                                    <div class="log-detail">
+                                        <div class="scope">
+                                            <span class="muted">Scope</span>
+                                            @foreach (var kv in entry.Scope)
+                                            {
+                                                var value = kv.Value;
+                                                <button class="chip" title="Search for this value" @onclick="() => logSearch = value">@kv.Key=@value</button>
+                                            }
+                                            <span class="chip">Timestamp=@entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)</span>
+                                        </div>
+                                        @if (entry.Exception is not null) { <pre class="exception">@entry.Exception</pre> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (rows.Count == 0)
+                        {
+                            <div class="muted center log-empty">@(Logs!.Count == 0 ? "No log statements yet." : "No log statements match the filters.")</div>
+                        }
+                    </div>
+                    @if (matching > rows.Count) { <div class="chart-note">Showing the latest @rows.Count of @matching.ToString("N0") matching statements.</div> }
+                </section>
+            }
+
+            @if (tab == "details")
+            {
+            <div class="dlg-grid">
+                <section class="panel">
+                    <h3>Duration distribution</h3>
+                    @if (Results.Count == 0)
+                    {
+                        <div class="muted">No @Terms.Instances yet.</div>
+                    }
+                    else
+                    {
+                        <div class="hist" role="group" aria-label="Duration histogram, click a bar to filter">
+                            @for (var i = 0; i < histogram.Length; i++)
+                            {
+                                var idx = i;
+                                var (lo, hi) = Range(idx);
+                                <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")" aria-pressed="@Aria.Bool(bucket is { } sb2 && sb2.Lo == lo)"
+                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
+                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
+                                        @onclick="() => ToggleBucket(idx)">
+                                    <i style="height:@HistHeight(histogram[idx])"></i>
+                                </button>
+                            }
+                        </div>
+                        <div class="hist-axis"><span>0</span><span>@LiveChart.Fmt(histMax / 2)</span><span>@LiveChart.Fmt(histMax)</span></div>
+                    }
+                </section>
+
+                <section class="panel">
+                    <h3>Status codes</h3>
+                    @if (statusCounts.Count == 0) { <div class="muted">No @Terms.Instances yet.</div> }
+                    <ul class="rows">
+                        @foreach (var (code, n) in statusCounts)
+                        {
+                            <li>
+                                <button class="row-btn @(status == code ? "on" : "")" aria-pressed="@Aria.Bool(status == code)" @onclick="() => status = status == code ? null : code">
+                                    <span class="code @(code.StartsWith('2') || code.StartsWith('3') ? "" : "bad")">@(code)</span>
+                                    <span class="grow"><i class="share" style="width:@Share(n)"></i></span>
+                                    <span class="n">@n.ToString("N0")</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </section>
+
+                <section class="panel">
+                    <h3>Errors</h3>
+                    @if (errorGroups.Count == 0) { <div class="muted">@(Results.Count == 0 ? $"No {Terms.Instances} yet." : "No errors.")</div> }
+                    <ul class="rows">
+                        @foreach (var (message, n) in errorGroups)
+                        {
+                            <li>
+                                <button class="row-btn @(error == message ? "on" : "")" aria-pressed="@Aria.Bool(error == message)" title="@message" @onclick="() => error = error == message ? null : message">
+                                    <span class="msg">@message</span>
+                                    <span class="n bad">@n.ToString("N0")</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </section>
+
+                <section class="panel">
+                    <h3>Parameters</h3>
+                    @if (Scenario is null) { <div class="muted">Scenario no longer exists in code.</div> }
+                    else
+                    {
+                        <dl class="params">
+                            @foreach (var line in paramLines)
+                            {
+                                @if (line.Heading)
+                                {
+                                    <dt class="heading" style="padding-left:@(line.Depth * 12)px">@line.Label</dt><dd></dd>
+                                }
+                                else
+                                {
+                                    <dt style="padding-left:@(line.Depth * 12)px">@line.Label</dt><dd>@line.Value</dd>
+                                }
+                            }
+                        </dl>
+                    }
+                </section>
+            </div>
+
+            <section class="panel recent">
+                <div class="panel-head">
+                    <h3>Recent @Terms.Instances</h3>
+                    <div class="toggles">
+                        <button class="chip toggle-chip @(failedOnly ? "on" : "")" aria-pressed="@Aria.Bool(failedOnly)" @onclick="() => failedOnly = !failedOnly">Failed only</button>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="breakdown exec-table">
+                        <thead><tr><th>#</th><th>Started</th><th>Time</th><th>Calls</th>@if (callFilter is { } hc) {<th>@CallName(hc)</th>}<th>Status</th><th>Bytes</th><th>Error</th>@if (HasLogs) {<th></th>}</tr></thead>
+                        <tbody>
+                            @foreach (var r in recentRows)
+                            {
+                                var row = r;
+                                <tr class="@(selected?.Sequence == row.Sequence ? "selected" : "") clickable" tabindex="0"
+                                    @onclick="() => Select(row)" @onkeydown="e => RowKey(e, row)">
+                                    <td>@(row.Sequence + 1)</td>
+                                    <td>@row.StartedAtSeconds.ToString("0.0", CultureInfo.InvariantCulture) s</td>
+                                    <td>@LiveChart.Fmt(row.ElapsedMs)</td>
+                                    <td class="calls-cell">@(CallsOf(row.Sequence) is { } rc ? (rc.Any(c => c.Skipped) ? $"{rc.Count(c => !c.Skipped)} of {rc.Count}" : rc.Count.ToString()) : "—")</td>
+                                    @if (callFilter is { } cc && CallsOf(row.Sequence) is { } rcl && rcl.Count > cc) { <td class="@(rcl[cc].Failed ? "bad" : "")">@LiveChart.Fmt(rcl[cc].DurationMs)</td> }
+                                    <td class="@(row.Success ? "" : "bad")">@(row.StatusCode?.ToString() ?? "—")</td>
+                                    <td>@row.Bytes.ToString("N0")</td>
+                                    <td class="err-cell">@row.Error</td>
+                                    @if (HasLogs) { <td class="log-cell"><button class="chip @(row.Success ? "" : "bad-chip")" title="Show the log statements of this @Terms.Instance" @onclick="() => ShowLogs(row)" @onclick:stopPropagation>logs</button></td> }
+                                </tr>
+                            }
+                            @if (recentRows.Count == 0)
+                            {
+                                <tr><td colspan="8" class="muted center">@(Results.Count == 0 ? $"No {Terms.Instances} yet." : $"No {Terms.Instances} match the filters.")</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (filtered.Count > RecentRows)
+                {
+                    <div class="chart-note">Showing the latest @RecentRows of @filtered.Count matching @Terms.Instances.</div>
+                }
+            </section>
+            }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int RecentRows = 40;
+    private const int Buckets = 20;
+
+    [Parameter, EditorRequired] public int Index { get; set; }
+    [Parameter, EditorRequired] public ScenarioRunConfig Config { get; set; } = default!;
+    [Parameter] public IScenario? Scenario { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
+    [Parameter] public int Dropped { get; set; }
+    [Parameter] public int InFlight { get; set; }
+    [Parameter] public int Starts { get; set; }
+    [Parameter] public double ElapsedSeconds { get; set; }
+    [Parameter] public bool Running { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Log statements of this scenario (brain 0012). Draft data for now; the Logs tab only shows when given.</summary>
+    [Parameter] public IReadOnlyList<FakeLogEntry>? Logs { get; set; }
+    /// <summary>Calls of each instance by instance number (draft data). Selecting an instance shows them as a waterfall.</summary>
+    [Parameter] public IReadOnlyDictionary<int, IReadOnlyList<FakeCall>>? Calls { get; set; }
+    private RenderFragment WaterfallPanel() => @<text>
+            @if (selected is { } ws && CallsOf(ws.Sequence) is { Count: > 0 } wcalls)
+            {
+                var span = Math.Max(1, ws.ElapsedMs);
+                <section class="panel waterfall" aria-label="Calls of actor #@(ws.Sequence + 1)">
+                    <div class="panel-head">
+                        <h3>@Terms.CallsCap <span class="muted">@wcalls.Count(c => !c.Skipped) of @wcalls.Count · click a call to see only its logs</span></h3>
+                    </div>
+                    <div class="wf-axis"><span></span><span class="wf-scale"><i>0</i><i>@LiveChart.Fmt(span / 2)</i><i>@LiveChart.Fmt(span)</i></span><span></span><span></span></div>
+                    <div class="wf-rows" role="list">
+                        @foreach (var c in wcalls)
+                        {
+                            var call = c;
+                            var prevEnd = call.Index == 0 ? 0 : wcalls[call.Index - 1].OffsetMs + wcalls[call.Index - 1].DurationMs;
+                            <button class="wf-row @(call.Failed ? "failed" : "") @(call.Skipped ? "skipped" : "") @(callFilter == call.Index ? "on" : "")" role="listitem"
+                                    title="@CallTitle(call)"
+                                    @onclick="() => PickCall(call)">
+                                <span class="wf-name"><b>@(call.Index + 1)</b> @call.Name</span>
+                                <span class="wf-track">
+                                    @if (!call.Skipped)
+                                    {
+                                        @if (call.ThinkBeforeMs > 0)
+                                        {
+                                            <i class="wf-think" style="left:@Pc(prevEnd, span);width:@Pc(call.ThinkBeforeMs, span)" title="Think time @call.ThinkBeforeMs.ToString("0") ms"></i>
+                                        }
+                                        <i class="wf-bar" style="left:@Pc(call.OffsetMs, span);width:@Pc(Math.Max(call.DurationMs, span * 0.006), span)"></i>
+                                    }
+                                </span>
+                                <span class="wf-status @(call.Failed ? "bad" : "")">@(call.Skipped ? "skipped" : call.Status?.ToString() ?? "timeout")</span>
+                                <span class="wf-dur">@(call.Skipped ? "—" : LiveChart.Fmt(call.DurationMs))</span>
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+</text>;
+
+    private int? _callFilter;
+    private int? callFilter { get => _callFilter; set { _callFilter = value; Recompute(); } }
+    private static string CallTitle(FakeCall c) =>
+        c.Skipped ? "Skipped: an earlier call failed" : $"{c.Name}: starts +{c.OffsetMs:0.#} ms, takes {c.DurationMs:0.#} ms" + (c.Error is not null ? " · " + c.Error : "");
+    private IReadOnlyList<FakeCall>? CallsOf(int sequence) => Calls is not null && Calls.TryGetValue(sequence, out var l) ? l : null;
+    private static string Pc(double v, double span) => Math.Clamp(v * 100 / span, 0, 100).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+    /// <summary>Click a call: only its log lines (the instance stays selected).</summary>
+    private void PickCall(FakeCall c)
+    {
+        if (callFilter == c.Index && tab == "logs") { callFilter = null; return; }
+        callFilter = c.Index;
+        if (HasLogs) tab = "logs";
+    }
+    private void SelectCall(int sequence, int index)
+    {
+        selected = Results.FirstOrDefault(r => r.Sequence == sequence);
+        callFilter = index;
+    }
+    /// <summary>Open pre-filtered to the instances (and logs) that started in the second [from, from + 1) of the run (brain 0006).</summary>
+    [Parameter] public double? InitialWindowFrom { get; set; }
+
+    private bool HasLogs => Logs is not null;
+    private string tab = "details";
+    private string logSearch = "";
+    private readonly HashSet<string> logLevels = [.. FakeLogEntry.Levels];
+    private readonly HashSet<long> expandedLogs = [];
+    private int logErrors;
+    private const int MaxLogRows = 300;
+
+    private static string Short(string level) => level switch { "Trace" => "TRC", "Debug" => "DBG", "Information" => "INF", "Warning" => "WRN", _ => "ERR" };
+    private int LevelCount(string level) => Logs?.Count(l => l.Level == level) ?? 0;
+
+    private void ToggleLevel(string level, bool only)
+    {
+        if (only) { logLevels.Clear(); logLevels.Add(level); }
+        else if (!logLevels.Remove(level)) logLevels.Add(level);
+    }
+
+    private void ToggleLog(long id) { if (!expandedLogs.Remove(id)) expandedLogs.Add(id); }
+    private void LogKey(KeyboardEventArgs e, long id) { if (e.Key is "Enter" or " ") ToggleLog(id); }
+
+    /// <summary>Jump to the logs of one instance (from a bar, a table row or a log line).</summary>
+    private void ShowLogs(ExecutionResult r) { selected = r; tab = "logs"; }
+    private void SelectSequence(int sequence) { selected = Results.FirstOrDefault(r => r.Sequence == sequence); }
+    private void SelectInstance(int sequence) { selected = Results.FirstOrDefault(r => r.Sequence == sequence); }
+    private void PickCallFilter(int? index) => callFilter = index;
+    private bool HasCalls => Calls is not null;
+    private List<string> callNames = [];
+    private string CallName(int index) => index < callNames.Count ? callNames[index] : $"call {index + 1}";
+    private List<ExecutionResult> callBase = [];
+
+    private List<FakeLogEntry> LogRows(out int matching)
+    {
+        IEnumerable<FakeLogEntry> q = Logs ?? [];
+        q = q.Where(l => logLevels.Contains(l.Level));
+        if (selected is { } s) q = q.Where(l => l.Sequence == s.Sequence);
+        if (callFilter is { } cf) q = q.Where(l => l.CallIndex == cf);
+        if (window is { } win)
+        {
+            var seqs = Results.Where(r => r.StartedAtSeconds >= win.Lo && r.StartedAtSeconds < win.Hi).Select(r => r.Sequence).ToHashSet();
+            q = q.Where(l => seqs.Contains(l.Sequence));
+        }
+        if (logSearch.Length > 0)
+            q = q.Where(l => l.Message.Contains(logSearch, StringComparison.OrdinalIgnoreCase)
+                || (l.Exception?.Contains(logSearch, StringComparison.OrdinalIgnoreCase) ?? false)
+                || l.Scope.Any(kv => kv.Value.Contains(logSearch, StringComparison.OrdinalIgnoreCase)));
+        var all = q.ToList();
+        matching = all.Count;
+        // Newest first, like Aspire's structured logs.
+        all.Reverse();
+        return all.Count <= MaxLogRows ? all : all.GetRange(0, MaxLogRows);
+    }
+
+    private ElementReference root, heading;
+    private bool focused;
+    private bool focusTab;
+
+    private string Sel(string t) => Aria.Bool(tab == t);
+    private void SetTab(string t) => tab = t;
+
+    /// <summary>Left/Right/Home/End switch tabs (automatic activation) and move focus with them.</summary>
+    private void TabKey(KeyboardEventArgs e)
+    {
+        var tabs = new List<string> { "details" };
+        if (HasCalls) tabs.Add("calls");
+        if (HasLogs) tabs.Add("logs");
+        var i = tabs.IndexOf(tab);
+        i = e.Key switch
+        {
+            "ArrowLeft" => (i - 1 + tabs.Count) % tabs.Count,
+            "ArrowRight" => (i + 1) % tabs.Count,
+            "Home" => 0,
+            "End" => tabs.Count - 1,
+            _ => -1,
+        };
+        if (i < 0) return;
+        tab = tabs[i];
+        focusTab = true;
+    }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    // Filters (shared by chart and list)
+    // Setters re-run the derived data: OnParametersSet does not fire for state changes made inside the component.
+    private (double Lo, double Hi)? _window; private bool windowInit;
+    private (double Lo, double Hi)? window { get => _window; set { _window = value; Recompute(); } }
+    private bool _failedOnly; private string? _status; private string? _error; private (double Lo, double Hi)? _bucket;
+    private bool failedOnly { get => _failedOnly; set { _failedOnly = value; Recompute(); } }
+    private string? status { get => _status; set { _status = value; Recompute(); } }
+    private string? error { get => _error; set { _error = value; Recompute(); } }
+    private (double Lo, double Hi)? bucket { get => _bucket; set { _bucket = value; Recompute(); } }
+    private ExecutionResult? selected;
+
+    private LatencyStats stats = LatencyStats.Empty;
+    private List<ExecutionResult> filtered = [];
+    private List<ExecutionResult> recentRows = [];
+    private double avgFiltered;
+    private int[] histogram = new int[Buckets];
+    private double histMax = 10;
+    private List<(string Code, int N)> statusCounts = [];
+    private List<(string Message, int N)> errorGroups = [];
+    private List<SummaryLine> paramLines = [];
+
+    private string Color => SeriesPalette.For(Index);
+    private double Actual => Starts / Math.Max(ElapsedSeconds / 60, 1e-6);
+    private bool HasFilter => window is not null || failedOnly || status is not null || error is not null || bucket is not null || callFilter is not null;
+
+    protected override void OnParametersSet()
+    {
+        logErrors = Logs?.Count(l => l.Level == "Error") ?? 0;
+        if (!windowInit) { windowInit = true; if (InitialWindowFrom is { } f) _window = (f, f + 1); }
+        Recompute();
+    }
+
+    private void Recompute()
+    {
+        stats = LatencyStats.From(Results is IReadOnlyCollection<ExecutionResult> c ? c : Results.ToList());
+        paramLines = Scenario is null ? [] : ParameterSummary.Describe(Scenario.Spec, Config.Parameters);
+
+        // Facets are computed over all of the entry's results so the filters stay visible while one is active.
+        statusCounts = Results.GroupBy(StatusKey).OrderByDescending(g => g.Count()).Select(g => (g.Key, g.Count())).ToList();
+        errorGroups = Results.Where(r => r.Error is not null).GroupBy(r => r.Error!).OrderByDescending(g => g.Count()).Select(g => (g.Key, g.Count())).ToList();
+
+        histMax = Results.Count == 0 ? 10 : NiceCeiling(Results.Max(r => r.ElapsedMs));
+        histogram = new int[Buckets];
+        foreach (var r in Results) histogram[Math.Min(Buckets - 1, (int)(r.ElapsedMs / histMax * Buckets))]++;
+
+        callNames = [];
+        if (Calls is not null)
+            foreach (var r in Results)
+                if (Calls.TryGetValue(r.Sequence, out var cl))
+                    for (var ci = callNames.Count; ci < cl.Count; ci++) callNames.Add(cl[ci].Name);
+
+        IEnumerable<ExecutionResult> q = Results;
+        if (window is { } win) q = q.Where(r => r.StartedAtSeconds >= win.Lo && r.StartedAtSeconds < win.Hi);
+        if (failedOnly) q = q.Where(r => !r.Success);
+        if (status is not null) q = q.Where(r => StatusKey(r) == status);
+        if (error is not null) q = q.Where(r => r.Error == error);
+        if (bucket is { } b) q = q.Where(r => r.ElapsedMs >= b.Lo && (r.ElapsedMs < b.Hi || (b.Hi >= histMax && r.ElapsedMs <= b.Hi)));
+        callBase = q.ToList();
+        if (callFilter is { } cfx) q = q.Where(r => CallsOf(r.Sequence) is { } cl && cl.Count > cfx && !cl[cfx].Skipped);
+        filtered = q.ToList();
+        avgFiltered = filtered.Count == 0 ? 0 : filtered.Average(r => r.ElapsedMs);
+        recentRows = filtered.Count <= RecentRows ? filtered.AsEnumerable().Reverse().ToList() : filtered.TakeLast(RecentRows).Reverse().ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusTab)
+        {
+            focusTab = false;
+            try { await JS.InvokeVoidAsync("drFocus", "dlg-tab-" + tab); } catch (Exception) { /* circuit gone */ }
+        }
+        if (firstRender && !focused)
+        {
+            focused = true;
+            try { await heading.FocusAsync(); } catch (Exception) { /* circuit gone or element detached */ }
+        }
+    }
+
+    private static string StatusKey(ExecutionResult r) => r.StatusCode?.ToString(CultureInfo.InvariantCulture) ?? "no response";
+
+    private (double Lo, double Hi) Range(int i) => (histMax / Buckets * i, histMax / Buckets * (i + 1));
+
+    private void ToggleBucket(int i)
+    {
+        var r = Range(i);
+        bucket = bucket is { } b && b.Lo == r.Lo ? null : r;
+    }
+
+    private string HistHeight(int n) => (n == 0 ? 0 : Math.Max(4, n * 100.0 / Math.Max(1, histogram.Max()))).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+    private string Share(int n) => (n * 100.0 / Math.Max(1, Results.Count)).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private void ClearFilters() { _window = null; _failedOnly = false; _status = null; _error = null; _bucket = null; _callFilter = null; Recompute(); }
+    private void Select(ExecutionResult r) { selected = selected?.Sequence == r.Sequence ? null : r; }
+    private Task Close() => OnClose.InvokeAsync();
+    private static string Trunc(string s, int n) => s.Length <= n ? s : s[..n] + "…";
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Close();
+    }
+
+    private void RowKey(KeyboardEventArgs e, ExecutionResult r)
+    {
+        if (e.Key is "Enter" or " ") Select(r);
+    }
+
+    private static double NiceCeiling(double value)
+    {
+        if (value <= 10) return 10;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
+        foreach (var step in new[] { 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10 })
+            if (step * magnitude >= value) return step * magnitude;
+        return 10 * magnitude;
+    }
+}

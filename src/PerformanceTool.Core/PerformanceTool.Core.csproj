@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared by the WebAssembly client and the server: scenarios, parameter specs, the load plan and the run DTOs.
+       Keep it free of ASP.NET and browser dependencies (brain 0015). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PerformanceTool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Only for AddScenario<T>() on IServiceCollection. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

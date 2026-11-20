@@ -16,28 +16,37 @@ trade-off, rejected alternative), add a record to `docs/brain/` using the templa
 to the index. Commit it in the same change as the code.
 
 ## Project
-- `src/PerformanceTool` — Blazor Web App, interactive **server** rendering, `net11.0`.
+Three projects plus tests (brain 0015), all `net11.0`:
+- `src/PerformanceTool.Core` — class library shared by client and server. Keep it free of ASP.NET and browser dependencies.
   - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios. A new scenario is a parameter class
-    plus a scenario class plus `AddScenario<T>()` in `Program.cs`. The editor is **generated** from the parameter
-    class (`Services/Scenarios/Spec/ParameterSpec.cs`, `Components/Parameters/`), never hand-written per scenario (brain 0007).
-  - `Services/LoadRunner.cs` — open-model scheduler; `Services/LoadPlan.cs` — the plan (also the preset format).
-  - `Services/PresetStore.cs` — presets as JSON files (`Presets:Directory`, default `presets/`).
-  - `Components/Pages/Home.razor` — the page; `LiveChart.razor`, `ScenarioEntryCard.razor`, `Stat.razor`.
-  - `Components/ScenarioTile.razor` (live tile per entry) and `ScenarioDetailDialog.razor` (click a tile); `Services/Scenarios/Spec/ParameterSummary.cs` (read-only parameter view). `LoadRunner` reports `ExecutionActivity` (start/end, in-flight) for them (brain 0008).
-  - Styling: dark Aspire-like tokens at the top of `wwwroot/app.css` (brain 0008); keep it flat, dark only.
-- Interactive pages need `@rendermode InteractiveServer`, otherwise buttons do nothing.
+    plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
+    parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Components/Parameters/`), never hand-written per scenario (brain 0007).
+  - `Services/LoadPlan.cs` (the plan, also the preset format), `LatencyStats`, `SeriesPalette`, `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
+- `src/PerformanceTool.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview) and `/editor` (the old `/drafts/*` routes are kept as aliases).
+  - `Services/IRunSource.cs` is the seam to the data: `FakeRunSource` (in-browser simulation, the default) and `ApiRunSource` (stub, throws until the REST API exists).
+    Choose with `"DataSource": "Fake" | "Api"` in `wwwroot/appsettings.json`.
+  - `Pages/`, `Layout/`, `Components/` (card, popup `ScenarioDetailDialog`, `CallsView`, `LiveChart`, `Parameters/`), `wwwroot/app.css` (dark Aspire-like tokens, brain 0008; flat, dark only), `drafts.css`, `drafts.js`.
+  - **Trimming:** Release publish trims. `PerformanceTool.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
+- `src/PerformanceTool` — ASP.NET Core host. `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
+  `GET /api/scenarios`. It serves the client (project reference, static web assets via `MapStaticAssets`, `MapFallbackToFile("index.html")`). No Razor UI of its own.
+- `tests/PerformanceTool.Tests` — references Core and the server.
 
 ## Build, test and run
 ```bash
 dotnet test
 ```
+Client alone (fake data): `dotnet run --project src/PerformanceTool.Client`. Server plus client:
 ```bash
 dotnet run --project src/PerformanceTool
 ```
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on every push and PR (brain 0014). Keep `dotnet test` green.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/` and the
 `.slnx` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
-the committed `net11.0` targets.
+the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.WebAssembly` `11.0.*-*` to `10.0.*` in the copy).
+
+**GitHub Pages:** `.github/workflows/pages.yml` publishes the client (Release, trimmed) on every push to `main` and on manual dispatch, rewrites
+`<base href>` to `/PerformanceTool/`, copies `index.html` to `404.html` (deep links like `/editor`) and adds `.nojekyll`. Site: https://detachmode.github.io/PerformanceTool/
+(fake data only). The repo setting Pages > Source must be "GitHub Actions". To test locally, publish, apply the same rewrite and serve under a `/PerformanceTool/` path.
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect

@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!-- ASP.NET Core host (brain 0015): REST API, load runner, preset store. It also serves the WebAssembly client. -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PerformanceTool.Core/PerformanceTool.Core.csproj" />
+    <ProjectReference Include="../PerformanceTool.Client/PerformanceTool.Client.csproj" />
+  </ItemGroup>
 
 </Project>

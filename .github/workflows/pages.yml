@@ -1,0 +1,67 @@
+name: Pages
+
+# Publishes the Blazor WebAssembly client with fake data (brain 0015) to https://detachmode.github.io/PerformanceTool/.
+# One-time repo setting: Settings > Pages > Source: "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same setup as ci.yml (newest 11.0 build, preview or GA).
+      - name: Set up .NET 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      # Release publish = trimmed. PerformanceTool.Core is a TrimmerRootAssembly so the generated editor keeps its metadata.
+      # No wasm-tools workload needed (no AOT, no native relinking).
+      - name: Publish client
+        run: dotnet publish src/PerformanceTool.Client -c Release -o out
+
+      - name: Prepare site
+        working-directory: out/wwwroot
+        run: |
+          # Pre-compressed copies are not used by GitHub Pages.
+          find . -name '*.br' -delete -o -name '*.gz' -delete
+          # The site lives under /PerformanceTool/.
+          sed -i 's|<base href="/" />|<base href="/PerformanceTool/" />|' index.html
+          grep -q '<base href="/PerformanceTool/" />' index.html
+          # SPA deep links (/editor) hit Pages' 404 page, which is the app itself.
+          cp index.html 404.html
+          # Do not run Jekyll (it would drop the _framework folder).
+          touch .nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/wwwroot
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
