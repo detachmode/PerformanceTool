@@ -18,13 +18,13 @@
         <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
         <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
     </span>
-    <span class="spark" aria-hidden="true">
+    <DockZoom Tag="span" class="spark" aria-hidden="true">
         @foreach (var a in recent)
         {
             <i class="@(a.Failed ? "bad" : a.SlowCalls > 0 ? "warn" : "")" style="height:@(Pct(a.DurationMs / max))%"></i>
         }
         @if (recent.Length == 0) { <em>No actors finished yet</em> }
-    </span>
+    </DockZoom>
     <span class="card-reason">@(reason.Length > 0 ? reason : " ")</span>
 </button>
 

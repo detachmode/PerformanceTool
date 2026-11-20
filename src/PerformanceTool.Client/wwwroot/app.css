@@ -84,6 +84,7 @@ label { font-size: .72rem; color: var(--muted); }
 .spark i { flex: 1 1 0; min-width: 2px; background: var(--bar); border-radius: 1px 1px 0 0; opacity: .8; }
 .spark i.bad, .bar.bad, .call.bad i { background: var(--bad); opacity: 1; }
 .spark i.warn, .bar.warn, .call.warn i { background: var(--warn); opacity: 1; }
+.spark i { transform: scaleY(var(--dz, 1)); transform-origin: 50% 100%; }
 .spark em { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: .75rem; font-style: normal; }
 .card-reason { font-size: .8rem; min-height: 1.1rem; font-weight: 600; }
 .card.bad .card-reason { color: var(--bad); }
@@ -107,6 +108,9 @@ label { font-size: .72rem; color: var(--muted); }
 .bar-hit.empty { cursor: default; }
 .bar-hit:hover { background: #ffffff10; }
 .bar-hit.on { background: var(--selected); box-shadow: inset 0 0 0 2px var(--accent2); }
+.bar-hit .bar { transform: scaleY(var(--dz, 1)); transform-origin: 50% 100%; }
+.chart { touch-action: none; }  /* press and drag magnifies under the finger (brain 0023) */
+@media (pointer: coarse) { .chart { min-width: 0 !important; } .bar-hit { min-width: 0; } }
 .bar { display: block; width: 100%; background: var(--bar); border-radius: 2px 2px 0 0; min-height: 3px; }
 .bar-hit.on .bar { outline: 2px solid #fff; outline-offset: 1px; }
 .chart-note { margin: 0; }
