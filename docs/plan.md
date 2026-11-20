@@ -7,6 +7,11 @@ or tick the item here.
 Until the user is happy with the UI/UX, we build **UI drafts only, with fake data** (no real runner or storage
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
+## Agent queue (background work, next item starts as soon as one finishes)
+1. **Running:** UI draft 1, `/drafts/overview` + `/drafts/editor` with fake data, fake logs in the details popup (0011, 0012, 0008).
+2. Draft: 0006 interactions on the overview (click to filter/isolate scenarios, filter chips, keyboard access), fake data.
+3. Draft iteration 2 from the user's feedback on draft 1 (jumps the queue once feedback arrives).
+
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
 - [x] Scenarios defined in code, mixed with parameters and runs per minute (brain 0003, 0004)

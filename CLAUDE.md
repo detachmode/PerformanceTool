@@ -8,3 +8,4 @@
 - **The user guides the decisions.** Propose little, don't decide on the user's behalf, and ask **one question at a
   time**. Record Claude-only ideas as `Proposed`, never `Accepted`.
 - **Current phase: UI drafts with fake data** (see `docs/plan.md`). Show the user screenshots after every draft iteration.
+- **Always keep a background agent busy** while talking with the user. Keep the queue in `docs/plan.md` ("Agent queue") and start the next item as soon as one finishes. User feedback goes to the front of the queue.
