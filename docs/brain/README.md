@@ -68,3 +68,5 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0028](0028-interesting-actors-first.md) | Failed and slow actors first: outcome-coloured actor numbers, failed→slow→ok ordering, kept longer, error dictionary | Accepted (not implemented) |
 | [0029](0029-every-info-drills-down.md) | UI principle: every shown info (counter, figure, status) is clickable and drills down to the details | Accepted |
 | [0030](0030-compact-statistics.md) | Some statistics come back: compact inline, coloured good/bad, no boxes, clickable | Accepted (figures/placement Proposed) |
+| [0031](0031-touch-gestures-on-popup-chart.md) | Touch on the popup chart: tap selects (no zoom), tap-and-hold magnifies and drags, pinch zooms the time range | Accepted, implemented |
+| [0032](0032-group-bars-look-different.md) | Group bars: lighter fill with outline plus a small count badge; single actors stay solid | Accepted (not implemented) |

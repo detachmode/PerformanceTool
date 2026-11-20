@@ -104,7 +104,7 @@
                 }
             </div>
             <div class="chart-scroll">
-                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" OnBrush="Brush" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
@@ -146,7 +146,7 @@
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
                 else { <text>One bar per actor, taller = slower. The axis shows the run time of the actors at that position. Click an actor to see its calls.</text> }
-                <text> Drag across the chart to zoom into a time frame (touch: press and hold, then drag).</text>
+                <text> Drag across the chart to zoom into a time frame (touch: hold to magnify, pinch to zoom).</text>
             </p>
         }
 
@@ -357,6 +357,18 @@
     private void Brush(BrushRange r)
     {
         win = new Win(Math.Max(0, r.From), r.To, r.ToEnd);
+        bucket = null; fz = null; tailMs = null;
+    }
+    /// <summary>Pinch on the chart (brain 0031): the same window as the brush, clamped to the run. As wide as the run it means the whole run; reaching the newest end follows the live edge.</summary>
+    private void PinchZoom(BrushRange r)
+    {
+        var elapsed = Snapshot.Elapsed;
+        var span = r.To - r.From;
+        if (span >= elapsed * 0.98) { ResetZoom(); return; }
+        var from = r.From < 0 ? 0 : r.From;
+        var to = from + span;
+        if (to >= elapsed - 0.02 * span) win = new Win(Math.Max(0, elapsed - span), elapsed, true);
+        else win = new Win(from, to, false);
         bucket = null; fz = null; tailMs = null;
     }
     private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
