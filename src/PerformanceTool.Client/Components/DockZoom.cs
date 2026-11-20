@@ -16,6 +16,8 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     [Parameter] public string Tag { get; set; } = "div";
     /// <summary>True when bars can be picked (popup chart); false for the passive card chart, where a click opens the card.</summary>
     [Parameter] public bool Select { get; set; }
+    /// <summary>False on the cards: no magnification there (brain 0023), only the clock-driven growth of running bars.</summary>
+    [Parameter] public bool Magnify { get; set; } = true;
     [Parameter] public EventCallback<int> OnPick { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
@@ -41,7 +43,7 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
         {
             module = await JS.InvokeAsync<IJSObjectReference>("import", "./dock-magnify.js");
             self = DotNetObjectReference.Create(this);
-            await module.InvokeVoidAsync("attach", element, self, new { select = Select });
+            await module.InvokeVoidAsync("attach", element, self, new { select = Select, magnify = Magnify });
             attached = true;
         }
         catch (JSDisconnectedException) { }

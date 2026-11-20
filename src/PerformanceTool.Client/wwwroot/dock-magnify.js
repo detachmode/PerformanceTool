@@ -1,4 +1,4 @@
-// Dock-like magnification for bar charts (brain 0023). All per-frame work happens here (requestAnimationFrame + inline widths),
+// Dock-like magnification for the scenario popup chart (brain 0023; not on cards). All per-frame work happens here (requestAnimationFrame + inline widths),
 // Blazor is only told once about a selection (click or touch release). The total width of the chart stays fixed: the bars under
 // the pointer grow, the others compress.
 const PEAK = 3;        // widest bar is about 3x its resting width (before compression)
@@ -34,10 +34,13 @@ export function attach(el, ref, options) {
     const watch = new MutationObserver(wakeGrow);
     watch.observe(el, { childList: true, subtree: true });
     wakeGrow();
+    // Cards (brain 0023, update): the chart only grows running bars with the clock, no magnification.
+    if (options && options.magnify === false) { el.__dock = () => { tracked.delete(el); watch.disconnect(); }; return; }
     const select = !!(options && options.select);
     const selector = ':scope > .bar-hit, :scope > i';
     let items = [], rest = [], cur = [], width = -1;     // rest layout, current (eased) magnification 0..1 per item
     let layout = [];                                     // last applied {left, width} per item, relative to el
+    const tip = el.querySelector(':scope > .dz-label');   // label inside the hovered bar, set per frame (no Blazor render)
     let active = false, px = 0, raf = 0, last = 0, touchDone = -1e9;
     window.__dock = window.__dock || { calls: 0, frames: 0 };
 
@@ -55,6 +58,27 @@ export function attach(el, ref, options) {
             const old = cur, keep = now.length === items.length;
             items = now; measure();
             cur = keep ? old : items.map(() => 0);
+        }
+    };
+    // Shows the hovered bar's data-l1 / data-l2 inside the bar: horizontal if wide, vertical if tall enough, else just above the bar.
+    const showLabel = i => {
+        if (!tip) return;
+        const it = i >= 0 ? items[i] : null, l1 = it && it.dataset.l1, l2 = it && it.dataset.l2;
+        const bar = it && it.querySelector('.bar-stack, .bar');
+        if (!bar || !l1) { tip.className = 'dz-label'; return; }
+        if (tip.__t !== l1 + '|' + l2) { tip.__t = l1 + '|' + l2; tip.replaceChildren(...[l1, l2].filter(Boolean).map(t => Object.assign(document.createElement('span'), { textContent: t }))); }
+        const br = bar.getBoundingClientRect(), er = el.getBoundingClientRect();
+        const bh = br.height, bw = Math.max(0, layout[i].width - 4), top = br.top - er.top - el.clientTop;
+        const left = layout[i].left + (layout[i].width - bw) / 2;
+        const fit = bw >= 76 && bh >= 36 ? 'in-h' : bw >= 30 && bh >= 72 ? 'in-v two' : bw >= 16 && bh >= 120 ? 'in-v' : '';
+        tip.className = 'dz-label ' + (fit || 'above');
+        const s = tip.style;
+        if (fit) { s.left = left + 'px'; s.top = top + 'px'; s.width = bw + 'px'; s.height = bh + 'px'; }
+        else {
+            s.width = 'auto'; s.height = 'auto';
+            const w = tip.offsetWidth;
+            s.left = Math.max(2, Math.min(el.clientWidth - w - 2, layout[i].left + layout[i].width / 2 - w / 2)) + 'px';
+            s.top = Math.max(2, top - tip.offsetHeight - 3) + 'px';
         }
     };
     const frame = ts => {
@@ -89,6 +113,7 @@ export function attach(el, ref, options) {
             it.style.setProperty('--dz', (1 + TALL * cur[i]).toFixed(3));
             x += wi + gap;
         }
+        showLabel(active ? hit(px) : -1);
         if (active || moving) raf = requestAnimationFrame(frame);
         else { clear(); layout = []; last = 0; }
     };
@@ -130,7 +155,7 @@ export function attach(el, ref, options) {
         el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerup', onUp);
         el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true);
         if (raf) cancelAnimationFrame(raf);
-        clear();
+        clear(); if (tip) tip.className = 'dz-label';
         tracked.delete(el); watch.disconnect();
     };
 }

@@ -7,7 +7,8 @@ public enum ActorShow { All, Failed, Slow }
 /// <summary>One bar of the actor chart: a single actor, or a time bucket of actors (brain 0021). Red if any actor in it failed, amber if any was slow.</summary>
 /// <remarks>
 /// <see cref="Running"/> counts actors in flight (brain 0018): a single running actor is a bar with Count 0 and Running 1 whose
-/// <see cref="BucketStart"/> holds its start time and <see cref="MaxMs"/> its elapsed time; in a time bucket it is the number of running actors.
+/// <see cref="MaxMs"/> is its elapsed time; in a time bucket <see cref="Running"/> is the number of running actors.
+/// <see cref="BucketStart"/> is the start time of a single actor (running or finished) or of a time bucket.
 /// </remarks>
 public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0)
 {
@@ -23,7 +24,7 @@ public readonly record struct ActorBar(int Count, int Failed, int Slow, double M
 /// </summary>
 public static class ActorBars
 {
-    public const int MaxBars = 48;
+    public const int MaxBars = 240;
     private static readonly double[] Widths = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 43200, 86400];
 
     public static bool Includes(ActorShow show, in ActorRecord a) => show switch
@@ -55,7 +56,7 @@ public static class ActorBars
             for (var i = 0; i < count; i++)
             {
                 var a = actors[i];
-                if (Includes(show, a)) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, double.NaN));
+                if (Includes(show, a)) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt));
             }
             return bars;
         }

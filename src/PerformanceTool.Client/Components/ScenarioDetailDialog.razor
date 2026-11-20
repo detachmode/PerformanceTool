@@ -54,8 +54,9 @@
         else
         {
             <div class="chart-scroll">
-                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
+                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * (bars.Count > 60 ? 4 : 14)}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
+                    <span class="dz-label" aria-hidden="true"></span>
                     @foreach (var b in bars)
                     {
                         var bar = b;
@@ -66,7 +67,7 @@
                         else
                         {
                             var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : bar.IsRunningActor ? selRunning == bar.Sequence : (selected is { } sel && sel.Sequence == bar.Sequence);
-                            <button class="bar-hit @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "")" data-l1="@LabelTop(bar, width)" data-l2="@LabelSub(bar, width)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -267,6 +268,15 @@
     private static string Cls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "" };
     private static string Ms(double v) => v.ToString("0", CultureInfo.InvariantCulture);
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
+
+    /// <summary>Label inside the hovered bar (brain 0023): actor number or time range, then start time and duration or actor count. Times are run time (m:ss).</summary>
+    private static string LabelTop(ActorBar b, double width) => b.IsBucket ? $"{Format.Time(b.BucketStart)}–{Format.Time(b.BucketStart + width)}" : $"#{b.Sequence + 1}";
+
+    private static string LabelSub(ActorBar b, double width)
+    {
+        if (b.IsBucket) return Format.Plural(b.Total, "actor", "actors");
+        return b.IsRunningActor ? $"{Format.Time(b.BucketStart)} · running" : $"{Format.Time(b.BucketStart)} · {Format.Ms(b.MaxMs)}";
+    }
 
     private static string BarTitle(ActorBar b, double width)
     {

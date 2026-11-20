@@ -1,6 +1,6 @@
 # 0023. Dock-like magnification on bar charts
 
-- Status: Accepted, implemented (user feature request)
+- Status: Accepted, implemented (user feature request; updated 2026-11-20: popup only, bar labels, 240 bars)
 - Date: 2026-11-20
 
 ## What
@@ -29,6 +29,15 @@ and calm (0016) but makes precise selection easy.
 - In the popup, the **hovered (magnified) bar shows, inside the bar, the actor number and its timestamps**
   (e.g. `#192 · 10:42:05 → 10:42:11`, or start time and duration). Which exact fields is up to the draft;
   keep it short.
+<<<<<<< HEAD
 - **Less aggressive grouping in the popup (user):** because magnification makes thin bars easy to pick, the popup
   chart shows many more individual actor bars before it groups them into time buckets. The bar count stays bounded
   (0021), with a much higher limit than before.
+=======
+
+### Implemented
+- Cards: `DockZoom Magnify="false"` keeps only the clock-driven growth of running bars; no magnification, a click still opens the card.
+- Popup: a static `span.dz-label` inside the chart is positioned per frame by `dock-magnify.js` over the hovered bar (no Blazor render). It reads `data-l1` / `data-l2` from the bar button: actor `#192` and `start · duration` (or `start · running`), for a time bucket `range` and `N actors`. Times are run time (m:ss), as everywhere else in the tool. Layout: horizontal inside the bar if wide, vertical inside if tall enough, otherwise just above the bar. Dark text on the bar colours. On touch it follows the finger.
+- **More individual bars in the popup:** `ActorBars.MaxBars` raised from 48 to **240** (still bounded, brain 0021), because the magnification makes thin bars easy to hit. Beyond 240 actors the chart groups into time buckets as before. Minimum bar width is 4px above 60 bars. Measured with `?simulate=3h` (180 bars): a synthetic mouse sweep ran at a steady 16.7 ms per frame, no frame over 20 ms.
+- Screenshots: `docs/screenshots/2026-11-20-popup-zoom-labels/`.
+>>>>>>> worktree-agent-a187cb097f9b4902d
