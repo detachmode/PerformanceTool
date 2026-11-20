@@ -192,18 +192,13 @@ label { font-size: .72rem; color: var(--muted); }
 .settings .num { display: flex; flex-direction: column; gap: .2rem; }
 .settings input { width: 7rem; padding: .3rem .5rem; font-size: .85rem; }
 .settings .field-error { flex-basis: 100%; }
-.split { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1rem; align-items: start; }
-.list, .detail { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
-.list-head { display: flex; align-items: center; gap: .6rem; padding: .7rem .8rem; border-bottom: 1px solid var(--border); }
-.rows { list-style: none; margin: 0; padding: .3rem; display: grid; gap: 2px; }
-.row { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; padding: .6rem .7rem .6rem .6rem; background: transparent; border: 0; border-left: 4px solid transparent; border-radius: var(--radius-sm); cursor: pointer; flex-wrap: wrap; }
-.row:hover { background: var(--panel2); }
-.row.on { background: var(--selected); border-left-color: var(--accent2); box-shadow: inset 0 0 0 1px #7b68ee66; }
-.row.on .nm { color: var(--title); font-weight: 700; }
-.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .rate { flex-basis: 100%; color: var(--muted); font-size: .76rem; }
-.row-err { color: var(--bad); font-weight: 700; }
+.ed-hint { margin: 0 0 .75rem; }
+.ed-split { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 1rem; align-items: start; }
+.ed-split .ed-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.ed-split .detail { position: sticky; top: 1rem; }
+.detail { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
 .empty { padding: 1rem; }
+.ed-grid .add-menu { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: var(--radius); }
 .add-menu { list-style: none; margin: 0; padding: .3rem; border-bottom: 1px solid var(--border); display: grid; gap: 2px; background: var(--panel2); }
 .add-menu button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left; background: transparent; border: 0; padding: .45rem .6rem; border-radius: var(--radius-sm); cursor: pointer; }
 .add-menu button:hover { background: var(--selected); }
@@ -255,7 +250,6 @@ label { font-size: .72rem; color: var(--muted); }
     .run-controls { flex-basis: 100%; margin-left: 0; justify-content: space-between; gap: .5rem; }
     .preset-name { flex: 1; min-width: 0; }
     .main { padding: 1rem; }
-    .split { grid-template-columns: minmax(0, 1fr); }
     .field { width: 100%; }
     .overlay { padding: 0; }
     .dialog { border-radius: 0; min-height: 100vh; }
@@ -270,3 +264,23 @@ label { font-size: .72rem; color: var(--muted); }
     display: none; left: 0; padding: .6rem 1.25rem .7rem 1.25rem; position: fixed; width: 100%; z-index: 1000;
 }
 #blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; top: .5rem; }
+
+/* ----- editor cards (brain 0024) ----- */
+.card.selected { background: var(--selected); border-color: var(--accent2); border-left-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
+.card.selected .card-title { font-weight: 700; }
+.card-title { display: flex; align-items: center; gap: .45rem; }
+.edit-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); }
+.card.edited .card-reason::before { content: "Changed"; color: var(--accent); font-weight: 600; }
+.card-kind { color: var(--muted); font-size: .78rem; margin-top: -.3rem; }
+.field .entry-label { flex: none; }
+.card-add { align-items: center; justify-content: center; gap: .3rem; border-style: dashed; border-left-style: dashed; min-height: 140px; align-self: stretch; color: var(--muted); font-weight: 600; }
+.card-add .plus { font-size: 1.6rem; line-height: 1; color: var(--accent); }
+.card-add:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.card-add:disabled { opacity: .45; cursor: default; }
+.detail-foot { border-top: 1px solid var(--border); padding-top: .8rem; }
+.ed-split .detail .field.rate { width: 160px; }
+@media (max-width: 1000px) { .ed-split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) {
+    .ed-split .detail.none { display: none; }
+    .ed-split .detail { position: fixed; inset: 0; z-index: 90; border-radius: 0; overflow-y: auto; align-content: start; }
+}

@@ -1,5 +1,5 @@
-@* Editor (brain 0020, 0019, 0016): set up scenarios and presets. Left: the scenarios of the plan with a clearly marked selection and "+ Add scenario".
-   Right: the selected scenario's label, actors/min and its generated parameters (essential first, the rest under "More options").
+@* Editor (brain 0024, 0020, 0019, 0016): edits the loaded scenarios, shown as the same ScenarioCards as the overview (idle state) plus an "Add scenario" tile.
+   A card opens that scenario's settings in a side panel (a full-screen sheet on phones): label, actors/min and the generated parameters (essential first, the rest under "More options").
    Feedback: "Unsaved changes", Save only when something changed, "Saved ✓", and a confirm before loading over unsaved changes. *@
 @page "/editor"
 @layout MainLayout
@@ -14,6 +14,7 @@
     var locked = Sim.IsRunning;
     var dirty = Sim.HasUnsavedChanges;
     if (selected >= plan.Scenarios.Count) selected = plan.Scenarios.Count - 1;
+    if (selected < -1) selected = -1;
     var cfg = selected >= 0 ? plan.Scenarios[selected] : null;
     var scenario = cfg is null ? null : Catalog.Find(cfg.ScenarioId);
     var planErr = PlanErrors(plan);
@@ -27,25 +28,27 @@
 <div class="page editor">
     <section class="preset-bar" aria-label="Presets">
         <div class="preset-title">
-            <h1>@Sim.PresetName</h1>
+            <h1>Scenarios</h1>
+            <span class="muted">Loaded from preset “@Sim.PresetName”</span>
             @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved changes</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
         </div>
         <div class="preset-actions">
-            <label class="visually-hidden" for="load-preset">Load preset</label>
+            <label class="visually-hidden" for="load-preset">Load a preset into the scenarios</label>
             <select id="load-preset" value="" @onchange="OnLoadPicked" disabled="@locked">
                 <option value="">Load preset…</option>
                 @foreach (var p in Sim.PresetNames) { <option value="@p">@p</option> }
             </select>
-            <button class="btn primary" @onclick="Save" disabled="@(locked || !dirty)">Save</button>
-            <button class="btn ghost" @onclick="OpenSaveAs" disabled="@locked">Save as…</button>
+            <button class="btn primary" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
+            <button class="btn ghost" @onclick="OpenSaveAs" disabled="@locked" title="Save the scenarios as a new preset">Save as…</button>
         </div>
     </section>
+    <p class="muted ed-hint">You are editing the loaded scenarios. A preset is loaded into them and saved from them.</p>
 
     @if (pendingLoad is not null)
     {
         <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
-            <span>Load “<b>@pendingLoad</b>”? Your unsaved changes to “@Sim.PresetName” will be lost.</span>
+            <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
             <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
             <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
         </div>
@@ -53,7 +56,7 @@
     @if (saveAsOpen)
     {
         <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
-            <label for="save-as">Preset name</label>
+            <label for="save-as">Save the scenarios as preset</label>
             <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
             <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
             <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
@@ -68,57 +71,50 @@
         @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
     </section>
 
-    <div class="split">
-        <aside class="list" aria-label="Scenarios in the plan">
-            <div class="list-head">
-                <h2>Scenarios</h2>
-                <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</span>
-                <span class="spacer"></span>
-                <button class="btn ghost small" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">+ Add scenario</button>
-            </div>
-            @if (addOpen)
-            {
-                <ul class="add-menu" aria-label="Scenario types">
-                    @foreach (var sc in Catalog.All)
-                    {
-                        var chosen = sc;
-                        <li><button @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
-                    }
-                </ul>
-            }
-            <ul class="rows">
+    <div class="ed-split @(cfg is null ? "" : "has-panel")">
+        <div class="ed-main">
+            <div class="grid ed-grid" aria-label="Loaded scenarios">
                 @for (var i = 0; i < plan.Scenarios.Count; i++)
                 {
                     var idx = i;
                     var c = plan.Scenarios[idx];
-                    var on = idx == selected;
-                    <li @key="c">
-                        <button class="row @(on ? "on" : "")" aria-current="@(on ? "true" : null)" @onclick="() => selected = idx">
-                            <span class="nm">@LabelOf(c)</span>
-                            @if (entryErr[idx].Count > 0) { <span class="row-err" title="Needs attention" aria-label="Needs attention">!</span> }
-                            <span class="rate">@Format.Rate(c.RatePerMinute) @Terms.PerMinuteShort</span>
-                        </button>
-                    </li>
+                    <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Actors="NoActors" Target="c.RatePerMinute"
+                                  Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="@(idx == selected)"
+                                  Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
                 }
-                @if (plan.Scenarios.Count == 0) { <li class="muted empty">No scenarios yet. Add one.</li> }
-            </ul>
-        </aside>
+                <button class="card card-add" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">
+                    <span class="plus">+</span><span>Add scenario</span><small class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</small>
+                </button>
+                @if (addOpen)
+                {
+                    <ul class="add-menu" aria-label="Scenario types">
+                        @foreach (var sc in Catalog.All)
+                        {
+                            var chosen = sc;
+                            <li><button @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
 
-        <section class="detail" aria-label="Selected scenario">
+        <section class="detail @(cfg is null ? "none" : "")" aria-label="Scenario settings">
             @if (cfg is null || scenario is null)
             {
-                <div class="muted empty">@(cfg is null ? "Select a scenario on the left to edit it." : "This scenario no longer exists in code.")</div>
+                <div class="muted empty">@(cfg is null ? "Select a scenario to edit its settings." : "This scenario no longer exists in code.")</div>
             }
             else
             {
                 <div class="detail-head">
-                    <label class="visually-hidden" for="entry-label">Label</label>
-                    <input id="entry-label" class="entry-label" @bind="cfg.Label" @bind:event="oninput" disabled="@locked" />
                     <span class="muted" title="@scenario.Description">@scenario.Name</span>
                     <span class="spacer"></span>
-                    <button class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove scenario</button>
+                    <button class="icon-btn" @onclick="() => selected = -1" aria-label="Close settings">✕</button>
                 </div>
                 <div class="form" @key="cfg">
+                    <div class="field wide">
+                        <label for="entry-label">Label</label>
+                        <input id="entry-label" class="entry-label" @bind="cfg.Label" @bind:event="oninput" disabled="@locked" />
+                    </div>
                     <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
                         <label for="entry-rate">Actors / minute</label>
                         <input id="entry-rate" type="number" min="0.1" step="any" @bind="cfg.RatePerMinute" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
@@ -135,6 +131,9 @@
                         </div>
                     </details>
                 }
+                <div class="detail-foot">
+                    <button class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove scenario</button>
+                </div>
             }
         </section>
     </div>
@@ -146,7 +145,11 @@
         public int Count => (Rate is null ? 0 : 1) + Fields.Count;
     }
 
-    private int selected;
+    private int selected = -1;
+    private static readonly ScenarioView Empty = new(0, 0, 0, 0, 0, 0);
+    private static readonly ActorRecord[] NoActors = [];
+
+    private void Select(int i) { selected = i; addOpen = false; }
     private bool addOpen, saveAsOpen, savedNote;
     private string saveAsName = "";
     private string? pendingLoad;
@@ -194,7 +197,7 @@
     private void Remove()
     {
         Sim.RemoveEntry(selected);
-        selected = Math.Min(selected, Sim.Plan.Scenarios.Count - 1);
+        selected = -1;
     }
 
     // ---------- presets ----------
@@ -217,7 +220,7 @@
     private void DoLoad(string name)
     {
         Sim.LoadPreset(name);
-        selected = 0;
+        selected = -1;
         saveAsOpen = false;
     }
 

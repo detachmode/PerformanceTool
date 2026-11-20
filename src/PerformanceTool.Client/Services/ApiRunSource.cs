@@ -19,6 +19,7 @@ public sealed class ApiRunSource : IRunSource
     public string PresetName => throw NotYet();
     public IReadOnlyList<string> PresetNames => throw NotYet();
     public bool HasUnsavedChanges => throw NotYet();
+    public bool IsEntryChanged(ScenarioRunConfig entry) => throw NotYet();
     public void AddEntry(IScenario scenario) => throw NotYet();
     public void RemoveEntry(int index) => throw NotYet();
     public void SavePreset(string name) => throw NotYet();
