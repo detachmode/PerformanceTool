@@ -9,7 +9,8 @@ It must **feel easy** to:
 - **find the logs**;
 - **filter logs by scenario** or **by a single actor**.
 
-This is the main path through the UI. Everything else (statistics, charts) supports it and stays calm (0016).
+This is the main path through the UI. The user stressed it again: **being able to browse the scenario logs and
+actors and find the relevant ones is very important**, and it has the highest priority after the core flow (0020). Everything else (statistics, charts) supports it and stays calm (0016).
 
 **Decided: logs get their own popup.** A separate **Logs popup** shows the logs of the whole run (all scenarios)
 and filters by scenario and by a single actor (plus level and search). It opens from anywhere (top bar, a scenario,
