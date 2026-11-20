@@ -19,7 +19,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 - **Running (D):** editor fixes: change detection while typing, missing scrollbars (0019 update).
 
-- **Running (E):** compact statistics on the overview cards (0030); popup part handled by agent B.
+- **Done (E):** compact statistics on the overview cards (0030); card figures open the popup unfiltered until the popup gets a pre-filter.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
