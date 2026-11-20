@@ -62,8 +62,9 @@ details behind it (brain 0029), e.g. an errors counter opens the failed actors.
 - Put each set of screenshots in a **new, uniquely named folder**, e.g. `docs/screenshots/2026-11-20-dock-magnify/`.
 - Each screenshot folder has a `README.md` gallery that embeds its images (relative paths). GitHub renders it with the
   images inline.
-- **The GitHub tool used by agents defuses image embeds in PR descriptions** (`![..](..)` and `<img>` get broken).
-  So PR descriptions **link to the folder's README gallery** with a normal markdown link, commit-pinned:
+- **The GitHub tool used by agents defuses image embeds *and* markdown links to github.com / raw.githubusercontent.com in
+  PR descriptions** (`![..](..)`, `[..](..)` and `<img>` get wrapped in code spans). So PR descriptions give the
+  folder's README gallery as a **bare URL on its own line** (GitHub auto-links it), commit-pinned:
   `https://github.com/<owner>/<repo>/blob/<commit-sha>/docs/screenshots/<folder>/README.md`.
 - If a raw image URL is needed elsewhere, use a **commit-pinned raw URL**:
   `https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/docs/screenshots/...png`, not a branch name.
