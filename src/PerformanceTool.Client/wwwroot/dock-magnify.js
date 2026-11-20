@@ -8,7 +8,32 @@ const SMOOTH_MS = 70;  // time constant of the easing
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Running actors (brain 0018): bars with data-start (ms into the run) grow with the clock. The chart carries data-elapsed (run ms at the
+// last render) and data-scale (ms for full height). One shared loop sets the heights, so Blazor does not re-render at frame rate.
+const tracked = new Set();
+let growRaf = 0;
+const growFrame = () => {
+    growRaf = 0;
+    let any = false;
+    const t = performance.now();
+    for (const el of tracked) {
+        const runs = el.querySelectorAll('[data-start]');
+        if (runs.length === 0) continue;
+        any = true;
+        const e = el.dataset.elapsed;
+        if (el.__e !== e) { el.__e = e; el.__seen = t; }
+        const now = parseFloat(e) + (t - el.__seen), scale = parseFloat(el.dataset.scale) || 1;
+        for (const r of runs) r.style.height = Math.min(100, Math.max(3, (now - parseFloat(r.dataset.start)) / scale * 100)).toFixed(1) + '%';
+    }
+    if (any) growRaf = requestAnimationFrame(growFrame);
+};
+const wakeGrow = () => { if (!growRaf) growRaf = requestAnimationFrame(growFrame); };
+
 export function attach(el, ref, options) {
+    tracked.add(el);
+    const watch = new MutationObserver(wakeGrow);
+    watch.observe(el, { childList: true, subtree: true });
+    wakeGrow();
     const select = !!(options && options.select);
     const selector = ':scope > .bar-hit, :scope > i';
     let items = [], rest = [], cur = [], width = -1;     // rest layout, current (eased) magnification 0..1 per item
@@ -106,6 +131,7 @@ export function attach(el, ref, options) {
         el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true);
         if (raf) cancelAnimationFrame(raf);
         clear();
+        tracked.delete(el); watch.disconnect();
     };
 }
 

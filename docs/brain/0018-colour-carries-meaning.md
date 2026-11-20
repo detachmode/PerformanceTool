@@ -29,3 +29,8 @@ matter.
 ## Open (to decide with the user)
 - What counts as "slow" (threshold per scenario/call, or relative to the usual duration).
 - The exact colours for "error" and "slow".
+
+## Implementation notes (in-flight actors, with 0018)
+- Running actors are `RunningActor` records in `RunSnapshot.ActorsInFlight` (per scenario); `ActorBars.WithRunning` adds them as blue bars at the right edge, or counts them into the newest time bucket (a blue segment stacked on the bucket bar).
+- Growth is driven by `dock-magnify.js` (one shared rAF loop sets `height` on `[data-start]` bars from the chart's `data-elapsed` / `data-scale`), not by Blazor renders. The pulse is a CSS opacity animation, off under `prefers-reduced-motion`. Colour is `--running` (blue; set a grey to try the grey variant).
+- A running actor can be selected; its calls so far show as done (green/red) or running (blue); slow is only known when it finishes. When it finishes, the selection turns into the finished actor in place.

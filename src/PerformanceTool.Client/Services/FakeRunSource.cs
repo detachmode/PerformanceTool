@@ -379,7 +379,10 @@ public sealed class FakeRunSource : IRunSource
         var views = Enumerable.Range(0, n)
             .Select(i => new ScenarioView(store.Actors(i).Count, failed[i], slowActors[i], slowCalls[i], inFlight[i], starts[i]))
             .ToArray();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store);
+        var running = new IReadOnlyList<RunningActor>[n];
+        for (var i = 0; i < n; i++)
+            running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningActor(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running);
     }
 
     // ---------- the fake plan ----------

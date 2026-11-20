@@ -10,7 +10,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 ## Agent queue
 - Done: core-flow simplification (brain 0020, 0021, 0022): editor, overview, scenario popup, Logs popup; scales to 3 h runs.
 - **Done:** Dock-like magnification on the actor bar charts (brain 0023).
-- **Running:** bar colours green = good, yellow = slow, red = failed (brain 0018).
+- **Done:** bar colours green = good, yellow = slow, red = failed (brain 0018).
 - Next (after the colours merge, same files): editor uses the overview's scenario cards (brain 0024).
 - Agreed, not started: full word-wrapped log rows (variable-height virtual list).
 

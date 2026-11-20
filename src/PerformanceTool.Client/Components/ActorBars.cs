@@ -5,8 +5,14 @@ namespace PerformanceTool.Client.Components;
 public enum ActorShow { All, Failed, Slow }
 
 /// <summary>One bar of the actor chart: a single actor, or a time bucket of actors (brain 0021). Red if any actor in it failed, amber if any was slow.</summary>
-public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart)
+/// <remarks>
+/// <see cref="Running"/> counts actors in flight (brain 0018): a single running actor is a bar with Count 0 and Running 1 whose
+/// <see cref="BucketStart"/> holds its start time and <see cref="MaxMs"/> its elapsed time; in a time bucket it is the number of running actors.
+/// </remarks>
+public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0)
 {
+    public int Total => Count + Running;
+    public bool IsRunningActor => Sequence >= 0 && Running > 0 && Count == 0;
     public bool IsBucket => Sequence < 0;
     public ActorOutcome Outcome => Failed > 0 ? ActorOutcome.Failed : Slow > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
 }
@@ -71,6 +77,31 @@ public static class ActorBars
         }
         for (var k = 0; k < slots; k++) bars.Add(new(n[k], f[k], sl[k], ms[k], -1, (first + k) * bucketWidth));
         return bars;
+    }
+
+    private const int MaxRunningBars = 24;
+
+    /// <summary>Adds the actors in flight to the bars: as blue bars at the right edge, or counted into their (newest) time bucket.</summary>
+    public static List<ActorBar> WithRunning(List<ActorBar> bars, IReadOnlyList<RunningActor> running, double bucketWidth, double elapsed)
+    {
+        if (running.Count == 0) return bars;
+        var result = new List<ActorBar>(bars);
+        if (bucketWidth <= 0)
+        {
+            foreach (var r in running.Skip(Math.Max(0, running.Count - MaxRunningBars)))
+                result.Add(new(0, 0, 0, Math.Max(0, (elapsed - r.StartedAt) * 1000), r.Sequence, r.StartedAt, 1));
+            return result;
+        }
+        var first = result[0].BucketStart;
+        foreach (var r in running)
+        {
+            var k = (int)Math.Max(0, Math.Round((BucketOf(r.StartedAt, bucketWidth) - first) / bucketWidth));
+            while (result.Count <= k && result.Count < bars.Count + 3) result.Add(new(0, 0, 0, 0, -1, first + result.Count * bucketWidth));
+            k = Math.Min(k, result.Count - 1);
+            var b = result[k];
+            result[k] = b with { Running = b.Running + 1, MaxMs = Math.Max(b.MaxMs, (elapsed - r.StartedAt) * 1000) };
+        }
+        return result;
     }
 
     /// <summary>The actors of one time bucket, in completion order.</summary>

@@ -13,7 +13,10 @@
     var target = s.Plan.Scenarios[Index].RatePerMinute;
     var bars = ActorBars.Build(actors, view.Finished, show, out var total, out var width);
     var bucketed = width > 0;
-    var scale = bars.Count == 0 ? 1 : Math.Max(1, bars.Max(b => b.MaxMs));
+    var runningNow = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+    var scale = bars.Count == 0 ? 1 : Math.Max(1, bars.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
+    if (show == ActorShow.All) bars = ActorBars.WithRunning(bars, runningNow, width, s.Elapsed);
+    if (bars.Count > 0 && scale <= 1) scale = Math.Max(1, bars.Max(b => b.MaxMs));
     var selBucketActors = bucketed && bucket is { } bs ? BucketList(actors, view.Finished, bs, width) : null;
     var selectedBucket = selected is { } sa0 && bucketed ? ActorBars.BucketOf(sa0.StartedAt, width) : bucket;
 }
@@ -46,32 +49,46 @@
 
         @if (bars.Count == 0)
         {
-            <div class="chart-empty muted">@(show == ActorShow.All ? "No actors have finished yet." : $"No {StepWord} actors.")</div>
+            <div class="chart-empty muted">@(show == ActorShow.All ? "No actors have started yet." : $"No {StepWord} actors.")</div>
         }
         else
         {
             <div class="chart-scroll">
-                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors">
+                <DockZoom Select="true" OnPick="i => PickAt(bars, i)" class="chart" style="@($"min-width:{bars.Count * 14}px")" role="group" aria-label="Actors" data-elapsed="@Ms(s.Elapsed * 1000)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     @foreach (var b in bars)
                     {
                         var bar = b;
-                        @if (bar.Count == 0)
+                        @if (bar.Total == 0)
                         {
                             <span class="bar-hit empty"></span>
                         }
                         else
                         {
-                            var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : (selected is { } sel && sel.Sequence == bar.Sequence);
+                            var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : bar.IsRunningActor ? selRunning == bar.Sequence : (selected is { } sel && sel.Sequence == bar.Sequence);
                             <button class="bar-hit @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
-                                <i class="bar @Cls(bar.Outcome)" style="height:@Pct(bar.MaxMs / scale)%"></i>
+                                @if (bar.IsRunningActor)
+                                {
+                                    <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
+                                }
+                                else if (bar.Running > 0)
+                                {
+                                    <span class="bar-stack" style="height:@Pct(bar.MaxMs / scale)%">
+                                        <i class="bar run" style="flex:@bar.Running"></i>
+                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar.Outcome)" style="flex:@bar.Count"></i> }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <i class="bar @BarCls(bar.Outcome)" style="height:@Pct(bar.MaxMs / scale)%"></i>
+                                }
                             </button>
                         }
                     }
                 </DockZoom>
             </div>
             <p class="chart-note muted">
-                @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or amber if any actor in it failed or was slow. Click a bar to list its actors.</text> }
+                @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
                 else { <text>One bar per actor, taller = slower. Click an actor to see its calls.</text> }
             </p>
         }
@@ -89,6 +106,36 @@
                         </button>
                     </ItemContent>
                 </VirtualList>
+            </section>
+        }
+
+        @if (selRunning is { } rseq && runningNow.FirstOrDefault(r => r.Sequence == rseq) is { } ra)
+        {
+            var elapsedMs = Math.Max(0, (s.Elapsed - ra.StartedAt) * 1000);
+            var denom = Math.Max(1, Math.Max(scale, elapsedMs));
+            <section class="actor-panel p-run" aria-label="@ra.Name">
+                <div class="actor-head">
+                    <b>@ra.Name</b>
+                    <span class="state run">Running</span>
+                    <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
+                    <span class="spacer"></span>
+                    <button class="btn ghost small" @onclick="() => Logs.Show(Index, ra.Sequence)">Open logs for this actor</button>
+                    <button class="icon-btn" @onclick="() => selRunning = null" aria-label="Deselect actor">✕</button>
+                </div>
+                <ol class="calls" aria-label="Calls of @ra.Name so far">
+                    @foreach (var call in ra.Calls.Where(c => !c.Skipped && c.OffsetMs <= elapsedMs))
+                    {
+                        var done = call.OffsetMs + call.DurationMs <= elapsedMs;
+                        var cls = !done ? "run" : call.Failed ? "bad" : "good";
+                        var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
+                        <li class="call @cls">
+                            <span class="call-name" title="@call.Name">@call.Name</span>
+                            <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
+                            <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
+                            <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? "timeout") : call.Status?.ToString() ?? "")</span>
+                        </li>
+                    }
+                </ol>
             </section>
         }
 
@@ -115,7 +162,7 @@
                         @foreach (var c in detail.Calls)
                         {
                             var call = c;
-                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : "";
+                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : "good";
                             <li class="call @cls @(call.Skipped ? "skipped" : "")">
                                 <span class="call-name" title="@call.Name">@call.Name</span>
                                 <span class="track"><i style="left:@Pct(call.OffsetMs / Math.Max(1, actor.DurationMs))%;width:@(Math.Max(0.8, call.DurationMs / Math.Max(1, actor.DurationMs) * 100).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
@@ -138,6 +185,7 @@
     private ElementReference root;
     private ActorShow show = ActorShow.All;
     private ActorRecord? selected;
+    private int? selRunning;
     private double? bucket;
     private bool refocus = true;
     private List<ActorRecord>? bucketCache;
@@ -148,6 +196,18 @@
     private int StepCount(ScenarioView v) => show == ActorShow.Slow ? v.SlowActors : v.Failed;
 
     protected override void OnInitialized() => Logs.Changed += OnLogsChanged;
+
+    // A selected running actor turns into its finished record in place once it completes.
+    protected override void OnParametersSet()
+    {
+        if (selRunning is not { } seq) return;
+        var running = Snapshot.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+        if (running.Any(r => r.Sequence == seq)) return;
+        var actors = Snapshot.Store.Actors(Index);
+        for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
+            if (actors[i].Sequence == seq) { selected = actors[i]; break; }
+        selRunning = null;
+    }
 
     // When the Logs popup (which sits on top of this one) closes, take the keyboard focus back so Esc keeps working.
     private void OnLogsChanged()
@@ -171,17 +231,18 @@
 
     private void PickAt(List<ActorBar> bars, int index)
     {
-        if (index >= 0 && index < bars.Count && bars[index].Count > 0) PickBar(bars[index]);
+        if (index >= 0 && index < bars.Count && bars[index].Total > 0) PickBar(bars[index]);
     }
 
     private void PickBar(ActorBar bar)
     {
-        if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; }
+        if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; }
+        else if (bar.IsRunningActor) { selected = null; selRunning = selRunning == bar.Sequence ? null : bar.Sequence; }
         else
         {
             var actors = Snapshot.Store.Actors(Index);
             for (var i = 0; i < Snapshot.Scenarios[Index].Finished; i++)
-                if (actors[i].Sequence == bar.Sequence) { selected = selected is { } s && s.Sequence == bar.Sequence ? null : actors[i]; break; }
+                if (actors[i].Sequence == bar.Sequence) { selRunning = null; selected = selected is { } s && s.Sequence == bar.Sequence ? null : actors[i]; break; }
         }
     }
 
@@ -190,6 +251,7 @@
         var found = ActorBars.Step(Snapshot.Store.Actors(Index), Snapshot.Scenarios[Index].Finished, StepOutcome, selected?.Sequence, direction);
         if (found is null) return;
         selected = found;
+        selRunning = null;
         bucket = null;
     }
 
@@ -201,15 +263,19 @@
         return bucketCache;
     }
 
+    private static string BarCls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "good" };
     private static string Cls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "" };
+    private static string Ms(double v) => v.ToString("0", CultureInfo.InvariantCulture);
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 
     private static string BarTitle(ActorBar b, double width)
     {
+        if (b.IsRunningActor) return $"Actor #{b.Sequence + 1}, running, {Format.Ms(b.MaxMs)} so far";
         if (!b.IsBucket) return $"Actor #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : "");
         var text = $"{Format.Time(b.BucketStart)} to {Format.Time(b.BucketStart + width)}: {Format.Plural(b.Count, "actor", "actors")}";
         if (b.Failed > 0) text += $", {b.Failed} failed";
         if (b.Slow > 0) text += $", {b.Slow} slow";
+        if (b.Running > 0) text += $", {b.Running} running";
         return text;
     }
 
