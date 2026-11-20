@@ -29,3 +29,5 @@ wrong, not on the many that went fine.
 - `Components/ActorOrder.cs` is the one place: `ActorState` (failed, slow, running, ok), the comparer (state, then start time, then sequence) and the CSS class of the outcome colour. Running actors sort between slow and ok (they have no outcome yet; my choice, not recorded as a user decision).
 - `Components/ActorChip.razor` renders `#192` in the outcome colour (red, yellow, green, blue) and is used in the Logs popup (row chips, the actor filter chip, the detail head), the popup side list, the actor panel heads and the hover card (`dz-id`, neighbour labels). The outcome is also in the accessible name.
 - The popup's side list and the group's actors use the comparer. The Logs popup lists lines chronologically, so ordering does not apply there; it has no actor suggestions yet.
+
+- **Proposed (agent choice, not user-decided):** running actors are ordered between slow and successful.

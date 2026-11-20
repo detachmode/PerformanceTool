@@ -11,7 +11,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - Done: …, player bar (0027), stable clicking (0026).
 - **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
   ordering and outcome-coloured actor numbers in the Logs popup.
-- **Running (B):** popup chart, 0023 update 3: side list instead of nested scroll, group counts in the hovered bar,
+- **Done (B):** popup chart, 0023 update 3: side list instead of nested scroll, group counts in the hovered bar,
   brush-to-zoom with live data, settings panel (zoom strength, max bars), live actors finishing while hovering;
   outcome-coloured actor numbers and ordering in the popup.
 
