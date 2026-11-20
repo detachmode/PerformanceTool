@@ -9,9 +9,8 @@ work). Drafts live under `/drafts/...` in the app, driven by a fake run simulato
 
 ## Agent queue (background work, next item starts as soon as one finishes)
 - Done: UI draft 1 (overview, editor, popup logs), draft 2 (0006 interactions on the overview).
-1. **Running:** draft 3: 0006 on the editor page (filterable scenario list, keyboard, inline per-field validation, reorder/duplicate entries), fake data.
+1. **Running:** draft 3: rename "execution" → **instance** in all draft UI (`Terms.cs`); show an instance's **chained calls** in the popup (fake data); then 0006 on the editor page.
 2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
-3. Rename "execution" once the user picks a word (one place: `Components/Drafts/Terms.cs`).
 
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)

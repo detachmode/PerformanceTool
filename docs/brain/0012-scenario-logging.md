@@ -5,8 +5,8 @@
 
 ## What
 - Scenarios write log statements through the standard **`ILogger`** interface (Microsoft.Extensions.Logging).
-- **Each execution gets a new logging scope injected: one scope per bar** (e.g. run id, scenario entry, execution
-  number), so every log statement can be traced back to exactly one execution. Terms: `docs/context.md`.
+- **Each instance gets a new logging scope injected: one scope per bar** (e.g. run id, scenario entry, execution
+  number), so every log statement can be traced back to exactly one instance. Terms: `docs/context.md`.
 - The tool **records** these logs and **persists them locally** with the run's data. In CI/CD they are published as
   artifacts later; they belong in the **full artifact** from 0010, not the small summary one.
 - The **UI shows the log statements when inspecting a scenario** (the scenario details popup).
