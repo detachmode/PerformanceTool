@@ -11,7 +11,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - Done: drafts 1–4, review/a11y passes, demo speed, CI (0014), WebAssembly + Pages (0015).
 1. **Running:** popup logs rework (user feedback): level dropdown, no level/call columns, full word-wrapped messages,
    tappable chart bars, logs as the focus with compact statistics (0012).
-2. **Next:** calm-UI simplification pass over overview, popup and editor (brain 0016): remove or hide what isn't needed at a glance.
+2. **Next:** calm-UI simplification pass over overview, popup and editor (brain 0016), shaped around the main path
+   runs → scenarios → actors → logs with log filters by scenario/actor (brain 0017).
 3. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
 
 ## Done
