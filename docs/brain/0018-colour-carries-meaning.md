@@ -9,6 +9,10 @@ The current use of colour is not good: colours look **randomly picked for things
 tints per call group). From now on, **colour is only used to transport meaning**. Every colour on screen must answer
 "what does this tell me?". If it doesn't mean anything, it's neutral.
 
+**Bar colours (user decision, refines the above):** bars are **green for good calls**, **yellow for slow calls** and
+**red for failed calls**. Green here means "good" (it carries meaning), so it replaces the neutral default for bars.
+Scenarios still have no identity colour.
+
 ## Why
 Colour is a strong signal. Spent on decoration or arbitrary identity, it adds noise (0016) and hides the signals that
 matter.

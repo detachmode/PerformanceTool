@@ -13,6 +13,9 @@ This tool has its **own** language and its own view of what matters. Don't defau
 standard load-testing tools (requests, iterations, virtual users, throughput, p95 everywhere…). Start from
 scenarios, actors and calls, and ask the user when unsure.
 
+## Colours
+Bars and status: **green = good**, **yellow = slow**, **red = failed** (brain 0018). No colour per scenario.
+
 ## Terms
 
 | Term | Meaning | Code | Status |
