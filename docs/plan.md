@@ -8,8 +8,8 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
 
 ## Agent queue (background work, next item starts as soon as one finishes)
-- Done: drafts 1–4, review pass, a11y follow-ups + demo speed.
-1. **Running:** small a11y pass: `aria-pressed`/`aria-expanded` rendered as "true"/"false" everywhere in the drafts.
+- Done: drafts 1–4, review pass, a11y follow-ups + demo speed, ARIA attribute pass.
+- **Idle: waiting for user input** (open questions below).
 2. Draft iteration from the user's feedback (jumps the queue once feedback arrives).
 - Decision-free UI work is running out; further items need user input (see open questions).
 
