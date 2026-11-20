@@ -17,7 +17,7 @@
 .dr-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; }
 
 .dr-main { flex: 1; }
-.dr-page { max-width: 1560px; margin: 0 auto; padding: 1.1rem 1.5rem 3rem; display: grid; gap: 1rem; align-content: start; }
+.dr-page { grid-template-columns: minmax(0, 1fr); max-width: 1560px; margin: 0 auto; padding: 1.1rem 1.5rem 3rem; display: grid; gap: 1rem; align-content: start; }
 
 /* run bar */
 .dr-runbar { display: flex; align-items: center; gap: 1.25rem; padding: .55rem .6rem .55rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
@@ -347,6 +347,7 @@
 .call-table tr.hl td { background: #ffffff10; }
 .seg:hover { filter: brightness(1.2); outline: 1px solid #ffffff99; }
 .seg.dim { opacity: .18; }
+.seg.pick { min-height: 2px; outline: 1px solid #fff; outline-offset: -1px; }
 .cv-xaxis { display: flex; justify-content: space-between; margin: .35rem 0 0 4.1rem; font-family: var(--mono); font-size: .66rem; color: var(--faint); }
 
 .badge { flex: none; font-family: var(--mono); font-size: .66rem; border-radius: var(--radius-sm); padding: .15rem .4rem; border: 1px solid var(--border); color: var(--muted); }
@@ -363,3 +364,18 @@
 .call-scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .th-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .th-btn:hover { color: var(--title); }
+
+/* details popup on a phone: the body grid must not grow past the dialog; tabs scroll instead of wrapping */
+.dlg-body { grid-template-columns: minmax(0, 1fr); }
+.dlg-body > * { min-width: 0; }
+.tabs { overflow-x: auto; scrollbar-width: thin; }
+.tab { flex: none; white-space: nowrap; }
+@media (max-width: 640px) {
+    .overlay { padding: 0; }
+    .dialog { border-radius: 0; min-height: 100vh; border-left: 0; border-right: 0; }
+    .dlg-head { border-radius: 0; padding: .75rem; }
+    .dlg-body { padding: .75rem; }
+    .cv-chart { grid-template-columns: 3rem minmax(0, 1fr); }
+    .cv-xaxis { margin-left: 3.5rem; }
+    .call-scroll { max-height: 320px; }
+}

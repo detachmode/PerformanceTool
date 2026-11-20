@@ -6,15 +6,15 @@ namespace PerformanceTool.Components.Drafts;
 /// </summary>
 public static class Terms
 {
-    public const string Instance = "instance";
-    public const string Instances = "instances";
-    public const string InstanceCap = "Instance";
-    public const string InstancesCap = "Instances";
+    public const string Instance = "actor";
+    public const string Instances = "actors";
+    public const string InstanceCap = "Actor";
+    public const string InstancesCap = "Actors";
     public const string Call = "call";
     public const string Calls = "calls";
     public const string CallsCap = "Calls";
-    /// <summary>Short unit for a rate, e.g. "12 inst/min".</summary>
-    public const string PerMinuteShort = "inst/min";
+    /// <summary>Short unit for a rate, e.g. "12 actors/min".</summary>
+    public const string PerMinuteShort = "actors/min";
 
     public static string Count(int n) => $"{n:N0} {(n == 1 ? Instance : Instances)}";
     public static string CallCount(int n) => $"{n:N0} {(n == 1 ? Call : Calls)}";

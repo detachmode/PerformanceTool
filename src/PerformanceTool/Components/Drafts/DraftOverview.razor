@@ -33,12 +33,12 @@
             <a class="dr-link" href="drafts/editor">Edit</a>
         </div>
         <div class="dr-state @(s.Running ? "live" : "done")"><i class="status-dot"></i>@state</div>
-        <div class="dr-live-total" aria-label="Instances running now and instances per minute">
-            <div class="dr-running @(totalRunning > 0 ? "on" : "")" title="Instances running right now, all scenarios">
+        <div class="dr-live-total" aria-label="Actors running now and actors per minute">
+            <div class="dr-running @(totalRunning > 0 ? "on" : "")" title="Actors running right now, all scenarios">
                 <b>@totalRunning</b><span class="unit">running</span>
                 <span class="dr-dots" aria-hidden="true">@for (var dt = 0; dt < Math.Min(totalRunning, 24); dt++) { <i></i> }</span>
             </div>
-            <div class="dr-ratebig" title="Instances started per minute, all scenarios: actual / target">
+            <div class="dr-ratebig" title="Actors started per minute, all scenarios: actual / target">
                 <b>@DraftFormat.Rate(totalActual)</b><span class="unit">/ @DraftFormat.Rate(totalTarget) @Terms.PerMinuteShort</span>
             </div>
         </div>
@@ -79,7 +79,7 @@
                            Items="GroupItems" OnSelect="k => filter.Group = Enum.Parse<GroupKey>(k)" />
             <span class="dotted"></span>
             <div class="dr-summary" aria-label="Summary of the shown scenarios">
-                <span class="sum big" title="Instances running right now in the shown scenarios"><b>@shownRunning</b> <span class="k">running</span></span>
+                <span class="sum big" title="Actors running right now in the shown scenarios"><b>@shownRunning</b> <span class="k">running</span></span>
                 <button class="sum big @(filter.Sort == SortKey.Rate ? "on" : "")" title="Sort scenarios by rate" @onclick="() => filter.SortBy(SortKey.Rate)"><b>@DraftFormat.Rate(s.Elapsed > 0 ? shownStarts / (s.Elapsed / 60) : 0)</b> <span class="k">/ @DraftFormat.Rate(shownTarget) @Terms.PerMinuteShort</span></button>
                 <button class="sum @(filter.Sort == SortKey.Instances ? "on" : "")" title="Sort by @(Terms.Instances)" @onclick="() => filter.SortBy(SortKey.Instances)"><span class="k">@Terms.InstancesCap</span> <b>@DraftFormat.Num(all.Count)</b></button>
                 <button class="sum @(filter.ErrorsOnly ? "on" : "")" aria-pressed="@filter.ErrorsOnly" title="@(filter.ErrorsOnly ? "Show all scenarios again" : "Show only scenarios with errors")" @onclick="() => filter.ErrorsOnly = !filter.ErrorsOnly">

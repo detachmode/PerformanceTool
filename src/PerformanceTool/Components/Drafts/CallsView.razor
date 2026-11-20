@@ -8,7 +8,7 @@
 
 <section class="panel calls-panel cv" style="--series:@Color" aria-label="Call durations">
     <div class="panel-head cv-head">
-        <h3>@Terms.CallsCap <span class="muted">durations across @Terms.Count(insts.Count) · click a call to filter, click a bar to open its @Terms.Instance</span></h3>
+        <h3>Call durations <span class="muted">across @Terms.Count(insts.Count) · click a call to filter, click a bar to open its @Terms.Instance</span></h3>
     </div>
 
     @if (insts.Count == 0 || stats.Count == 0)
@@ -48,7 +48,7 @@
                             @foreach (var c in i.Calls)
                             {
                                 if (c.Skipped) { continue; }
-                                <i class="seg @(c.Failed ? "failed" : "") @(c == slowest ? "top" : "") @(Dim(c) ? "dim" : "")" data-call="@c.Index"
+                                <i class="seg @(c.Failed ? "failed" : "") @(c == slowest ? "top" : "") @(Dim(c) ? "dim" : "") @(Call == c.Index ? "pick" : "")" data-call="@c.Index"
                                    style="height:@Pc(c.DurationMs, top);--seg:@GroupColor(GroupOf(c))" data-tip="@Tip(i.R, c)"></i>
                             }
                         </div>
@@ -209,16 +209,15 @@
     private string ChartSummary(List<Inst> cols) =>
         $"{cols.Count} {Terms.Instances}, stacked by {Terms.Call}. Slowest {Terms.Instance} {LiveChart.Fmt(cols.Max(RanSum))}, {stats.Count} {Terms.Calls} in {groups.Count} groups, {cols.Count(i => !i.R.Success)} failed.";
 
-    /// <summary>One tint of the scenario colour per group: lighter for the first groups, darker for the last.</summary>
+    /// <summary>One tint of the scenario colour per group: lightest for the first group, the pure colour for the last.</summary>
     private string GroupColor(string name)
     {
         var n = Math.Max(1, groups.Count);
         var gi = Math.Max(0, groups.FindIndex(g => g.Name == name));
         if (n == 1) return "var(--series)";
-        var t = (double)gi / (n - 1);
-        return t < 0.5
-            ? $"color-mix(in srgb, var(--series), white {((1 - 2 * t) * 58).ToString("0", CultureInfo.InvariantCulture)}%)"
-            : $"color-mix(in srgb, var(--series), black {((2 * t - 1) * 42).ToString("0", CultureInfo.InvariantCulture)}%)";
+        // Tints from light to the pure scenario colour: never darker than the series colour, so every tint keeps >= 3:1 against the panel.
+        var white = (1 - (double)gi / (n - 1)) * 55;
+        return $"color-mix(in srgb, var(--series), white {white.ToString("0", CultureInfo.InvariantCulture)}%)";
     }
 
     private static string Pc(double v, double span, double min = 0) =>

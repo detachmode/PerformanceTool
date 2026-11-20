@@ -367,7 +367,7 @@ public sealed class FakeRunSimulator : IDisposable
     {
         var cfg = runPlan.Scenarios[entry];
         var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
-        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Instance"] = $"#{seq + 1}" };
+        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Actor"] = $"#{seq + 1}" };
         var list = new List<FakeLogEntry>();
         void Log(double offsetMs, string level, string message, string? ex = null, FakeCall? call = null)
         {
@@ -376,7 +376,7 @@ public sealed class FakeRunSimulator : IDisposable
             list.Add(new(0, at + offsetMs / 1000, runStartedUtc.AddSeconds(at + offsetMs / 1000), level, message, ex, entry, seq, s, call?.Index));
         }
 
-        Log(0, "Debug", $"Instance #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
+        Log(0, "Debug", $"Actor #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
         if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=PerformanceTool/1.0", call: calls[0]);
 
         var journey = calls.Count > 1;
@@ -412,7 +412,7 @@ public sealed class FakeRunSimulator : IDisposable
                     $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n{where}", c);
             }
         }
-        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"Instance #{seq + 1} finished" : $"Instance #{seq + 1} finished with failure: {error}");
+        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"Actor #{seq + 1} finished" : $"Actor #{seq + 1} finished with failure: {error}");
         return list;
     }
 

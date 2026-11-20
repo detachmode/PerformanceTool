@@ -27,7 +27,7 @@
             {
                 <div class="avg-line" style="bottom:@Pct(Average)"><span>avg @Fmt(Average)</span></div>
             }
-            <div class="bars">
+            <div class="bars" role="group" aria-label="@Summary()">
                 @foreach (var r in visible)
                 {
                     <div class="bar @(r.Success ? "" : "failed") @(r.Sequence == SelectedSequence ? "selected" : "") @(OnBarClick.HasDelegate ? "clickable" : "")"
@@ -51,12 +51,17 @@
 @code {
     public const int MaxBars = 600;
 
-    [Parameter] public string EmptyText { get; set; } = "Pick scenarios and start a run — bars appear live, one per instance.";
+    /// <summary>Text alternative of the bar chart. The bars are mouse targets; the same actors are keyboard-reachable in the list under the chart.</summary>
+    private string Summary() => visible.Count == 0
+        ? $"{Title}: no {Terms.Instances} yet."
+        : $"{Title}: {Terms.Count(visible.Count)}, average {Fmt(Average)}, slowest {Fmt(visible.Max(r => r.ElapsedMs))}, {visible.Count(r => !r.Success)} failed.";
+
+    [Parameter] public string EmptyText { get; set; } = "Pick scenarios and start a run — bars appear live, one per actor.";
 
     [Parameter, EditorRequired] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
     [Parameter] public double Average { get; set; }
-    [Parameter] public string Title { get; set; } = "Response time per instance";
+    [Parameter] public string Title { get; set; } = "Duration per actor";
     [Parameter] public bool ShowLegend { get; set; } = true;
     /// <summary>Renders without the card frame, e.g. inside the scenario dialog.</summary>
     [Parameter] public bool Embedded { get; set; }

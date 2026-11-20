@@ -72,7 +72,7 @@
 
             @if (tab != "calls")
             {
-            <LiveChart Embedded="true" Title="@($"Response time per {Terms.Instance}")" ShowLegend="false" Results="filtered" Labels="Labels"
+            <LiveChart Embedded="true" Title="@($"Duration per {Terms.Instance}")" ShowLegend="false" Results="filtered" Labels="Labels"
                        Average="avgFiltered" OnBarClick="Select" SelectedSequence="selected?.Sequence"
                        EmptyText="@(Results.Count == 0 ? $"No {Terms.Instances} yet." : $"No {Terms.Instances} match the filters.")" />
             }
@@ -174,21 +174,21 @@
             {
             <div class="dlg-grid">
                 <section class="panel">
-                    <h3>Latency distribution</h3>
+                    <h3>Duration distribution</h3>
                     @if (Results.Count == 0)
                     {
-                        <div class="muted">No data yet.</div>
+                        <div class="muted">No @Terms.Instances yet.</div>
                     }
                     else
                     {
-                        <div class="hist" role="group" aria-label="Latency histogram, click a bar to filter">
+                        <div class="hist" role="group" aria-label="Duration histogram, click a bar to filter">
                             @for (var i = 0; i < histogram.Length; i++)
                             {
                                 var idx = i;
                                 var (lo, hi) = Range(idx);
                                 <button class="hist-bar @(bucket is { } sb && sb.Lo == lo ? "on" : "")"
-                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @histogram[idx] @Terms.Instances"
-                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @histogram[idx] @Terms.Instances"
+                                        title="@LiveChart.Fmt(lo) – @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
+                                        aria-label="@LiveChart.Fmt(lo) to @LiveChart.Fmt(hi): @Terms.Count(histogram[idx])"
                                         @onclick="() => ToggleBucket(idx)">
                                     <i style="height:@HistHeight(histogram[idx])"></i>
                                 </button>
@@ -200,7 +200,7 @@
 
                 <section class="panel">
                     <h3>Status codes</h3>
-                    @if (statusCounts.Count == 0) { <div class="muted">No data yet.</div> }
+                    @if (statusCounts.Count == 0) { <div class="muted">No @Terms.Instances yet.</div> }
                     <ul class="rows">
                         @foreach (var (code, n) in statusCounts)
                         {
@@ -217,7 +217,7 @@
 
                 <section class="panel">
                     <h3>Errors</h3>
-                    @if (errorGroups.Count == 0) { <div class="muted">@(Results.Count == 0 ? "No data yet." : "No errors.")</div> }
+                    @if (errorGroups.Count == 0) { <div class="muted">@(Results.Count == 0 ? $"No {Terms.Instances} yet." : "No errors.")</div> }
                     <ul class="rows">
                         @foreach (var (message, n) in errorGroups)
                         {
@@ -321,7 +321,7 @@
             @if (selected is { } ws && CallsOf(ws.Sequence) is { Count: > 0 } wcalls)
             {
                 var span = Math.Max(1, ws.ElapsedMs);
-                <section class="panel waterfall" aria-label="Calls of instance #@(ws.Sequence + 1)">
+                <section class="panel waterfall" aria-label="Calls of actor #@(ws.Sequence + 1)">
                     <div class="panel-head">
                         <h3>@Terms.CallsCap <span class="muted">@wcalls.Count(c => !c.Skipped) of @wcalls.Count · click a call to see only its logs</span></h3>
                     </div>

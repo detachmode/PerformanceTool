@@ -5,11 +5,11 @@
 
 <div class="tile @(Active ? "active" : "") @(Running && Active ? (Starts % 2 == 0 ? "ping-a" : "ping-b") : "")"
      style="--series:@Color" role="button" tabindex="0"
-     aria-label="@Label: @(stats.Count == 0 ? "no instances yet" : $"p95 {valueText}, {stats.Count} instances, {stats.Errors} errors"). Open details."
+     aria-label="@Label: @(stats.Count == 0 ? "no actors yet" : $"p95 {valueText}, {stats.Count} actors, {stats.Errors} errors"). Open details."
      data-tile="@Index" @onclick="Open" @onkeydown="OnKey">
     <div class="chips">
         <span class="chip"><i class="dot"></i>@(Scenario?.Name ?? Config.ScenarioId)</span>
-        <span class="chip" title="Target rate">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) inst/min</span>
+        <span class="chip" title="Target rate">@Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) actors/min</span>
     </div>
     <div class="tile-title" title="@Label">@Label</div>
     <div class="tile-desc" title="@Scenario?.Description">@(Scenario?.Description ?? "Scenario no longer exists in code.")</div>
@@ -17,7 +17,7 @@
     <div class="tile-value">
         @if (stats.Count == 0)
         {
-            <b class="none">—</b><span class="unit">no instances yet</span>
+            <b class="none">—</b><span class="unit">no actors yet</span>
         }
         else
         {
@@ -30,8 +30,8 @@
         {
             <span class="inflight @(InFlight > 0 ? "on" : "")"><i class="pulse-dot"></i>@InFlight in flight</span>
         }
-        <span class="rate" title="Instances started per minute: actual vs target">
-            @ActualPerMinute.ToString("0.#", CultureInfo.InvariantCulture) / @Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) inst/min
+        <span class="rate" title="Actors started per minute: actual vs target">
+            @ActualPerMinute.ToString("0.#", CultureInfo.InvariantCulture) / @Config.RatePerMinute.ToString("0.#", CultureInfo.InvariantCulture) actors/min
         </span>
         @if (stats.Errors > 0)
         {

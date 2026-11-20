@@ -41,7 +41,7 @@ h1:focus {
 :root {
     color-scheme: dark;
     --topbar: #0f0e15; --bg: #221d2d; --panel: #2a2534; --panel2: #332d3f; --input: #1d1926; --border: #3a3445; --selected: #303445;
-    --text: #f1eff7; --title: #fff; --muted: #a39db8; --faint: #7d7794;
+    --text: #f1eff7; --title: #fff; --muted: #a39db8; --faint: #9a93b0;
     --accent: #b7b0d9; --accent2: #7b68ee; --blue: #3779cd;
     --good: #4cc38a; --bad: #f2737d; --warn: #e3a84f; --err: #d03b3b;
     --radius: 6px; --radius-sm: 4px;
@@ -85,7 +85,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent2); box-sh
 input:disabled, select:disabled { opacity: .55; }
 textarea { resize: vertical; font-family: var(--mono); font-size: .85rem; }
 .btn { border: 1px solid transparent; border-radius: var(--radius-sm); padding: .5rem 1.1rem; font: inherit; font-weight: 600; color: #fff; cursor: pointer; transition: background .12s, border-color .12s; }
-.btn.start { background: var(--accent2); } .btn.start:hover { background: #8d7cf0; }
+.btn.start { background: #6a56e0; } .btn.start:hover { background: #7360e6; }
 .btn.stop { background: #b4343f; } .btn.stop:hover { background: #c9404c; }
 .btn.ghost { background: var(--panel2); color: var(--text); border-color: var(--border); font-weight: 500; padding: .4rem .85rem; }
 .btn.ghost:hover:not(:disabled) { border-color: var(--accent); }

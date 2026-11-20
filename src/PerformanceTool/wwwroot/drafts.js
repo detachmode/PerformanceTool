@@ -44,3 +44,37 @@ document.addEventListener("keydown", function (e) {
         root = dlg;
     });
 })();
+
+// DRAFT details popup: keep Tab inside the dialog (focus trap) and give focus back to the card that opened it.
+(function () {
+    var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    var opener = null;
+    document.addEventListener("keydown", function (e) {
+        if (e.key !== "Tab") return;
+        var dlg = document.querySelector(".overlay .dialog");
+        if (!dlg || !e.target || !e.target.closest || !e.target.closest(".overlay")) return;
+        var items = Array.prototype.filter.call(dlg.querySelectorAll(FOCUSABLE), function (el) { return el.offsetParent !== null; });
+        if (!items.length) return;
+        var first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && (e.target === first || !dlg.contains(e.target))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && e.target === last) { e.preventDefault(); first.focus(); }
+    });
+    new MutationObserver(function (records) {
+        records.forEach(function (r) {
+            r.addedNodes.forEach(function (n) {
+                if (n.nodeType === 1 && n.classList.contains("overlay")) {
+                    var a = document.activeElement;
+                    var card = a && a.closest ? a.closest("[data-card]") : null;
+                    opener = card ? card.getAttribute("data-card") : null;
+                }
+            });
+            r.removedNodes.forEach(function (n) {
+                if (n.nodeType === 1 && n.classList.contains("overlay") && opener !== null) {
+                    var card = document.querySelector('[data-card="' + opener + '"]');
+                    if (card) card.focus();
+                    opener = null;
+                }
+            });
+        });
+    }).observe(document.body, { childList: true, subtree: true });
+})();

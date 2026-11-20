@@ -13,7 +13,7 @@ public sealed class UserJourneyParameters
     [Range(typeof(TimeSpan), "00:00:00", "00:01:00")]
     public TimeSpan ThinkTime { get; set; } = TimeSpan.Zero;
 
-    [Display(Name = "Repeat", Description = "How many times the whole journey runs per instance.")]
+    [Display(Name = "Repeat", Description = "How many times the whole journey runs per actor.")]
     [Range(1, 10)]
     public int Iterations { get; set; } = 1;
 
@@ -26,7 +26,7 @@ public sealed class UserJourneyScenario : Scenario<UserJourneyParameters>
 {
     public override string Id => "user-journey";
     public override string Name => "User journey";
-    public override string Description => "GETs several URLs one after another; the bar is the total request time of the journey.";
+    public override string Description => "GETs several URLs one after another; the bar is the total time of the journey.";
 
     protected override async Task<ScenarioOutcome> ExecuteAsync(UserJourneyParameters p, ScenarioContext ctx, CancellationToken ct)
     {

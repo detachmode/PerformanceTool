@@ -5,7 +5,7 @@
      the popup pre-filtered to that second. The chart is one tab stop: Left/Right move between buckets, Enter opens. *@
 
 <div class="dr-card @(Active ? "active" : "") @(MenuOpen ? "menu-open" : "")" style="--series:@Color" role="button" tabindex="0"
-     aria-label="@Label: @(stats.Count == 0 ? "no instances yet" : $"p95 {valueText}, {Terms.Count(stats.Count)}, {stats.Errors} errors"). Open details. Alt+click shows only this, Shift+click hides."
+     aria-label="@Label: @(stats.Count == 0 ? "no actors yet" : $"p95 {valueText}, {Terms.Count(stats.Count)}, {stats.Errors} errors"). Open details. Alt+click shows only this, Shift+click hides."
      title="Click: details · Alt+click: only this · Shift+click: hide"
      data-card="@Index" @onclick="OnClick" @onkeydown="OnKey">
     <div class="chips">
@@ -32,19 +32,19 @@
     <div class="dr-desc" title="@Description">@Description</div>
 
     <div class="dr-live">
-        <div class="dr-running @(InFlight > 0 ? "on" : "")" title="Instances running right now (started, not finished)">
+        <div class="dr-running @(InFlight > 0 ? "on" : "")" title="Actors running right now (started, not finished)">
             <b>@InFlight</b><span class="unit">running</span>
             <span class="dr-dots" aria-hidden="true">
                 @for (var d = 0; d < Math.Min(InFlight, MaxDots); d++) { <i></i> }
                 @if (InFlight > MaxDots) { <em>+@(InFlight - MaxDots)</em> }
             </span>
         </div>
-        <div class="dr-ratebig" title="Instances started per minute: actual / target">
+        <div class="dr-ratebig" title="Actors started per minute: actual / target">
             <b>@DraftFormat.Rate(ActualPerMinute)</b><span class="unit">/ @DraftFormat.Rate(TargetPerMinute) @Terms.PerMinuteShort</span>
         </div>
     </div>
     <div class="dr-second">
-        @if (stats.Count == 0) { <span class="muted">no instances yet</span> }
+        @if (stats.Count == 0) { <span class="muted">no actors yet</span> }
         else { <span>p95 <b>@valueText</b></span><span>@Terms.Count(stats.Count)</span> }
         @if (stats.Errors > 0) { <span class="badge bad" title="@stats.Errors failed @Terms.Instances">@stats.Errors err</span> }
         @if (Dropped > 0) { <span class="badge warn" title="Due but not started: max in-flight reached">@Dropped dropped</span> }

@@ -48,7 +48,7 @@
     <section class="card">
         <div class="section-head">
             <h2>Scenario mix</h2>
-            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") inst/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") instances</span>
+            <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries scenarios · @($"{plan.Scenarios.Sum(s => s.RatePerMinute):0.#}") actors/min total · ≈ @($"{plan.Scenarios.Sum(s => s.RatePerMinute) * plan.DurationSeconds / 60:N0}") instances</span>
         </div>
         <div class="entries">
             @for (var i = 0; i < plan.Scenarios.Count; i++)
@@ -100,10 +100,10 @@
 
     @{ var all = LatencyStats.From(results); }
     <section class="stats">
-        <Stat Label="Instances" Value="@all.Count.ToString("N0")" />
+        <Stat Label="Actors" Value="@all.Count.ToString("N0")" />
         <Stat Label="Errors" Value="@all.Errors.ToString("N0")" Bad="@(all.Errors > 0)" />
         <Stat Label="Dropped" Value="@dropped.Sum().ToString("N0")" Bad="@(dropped.Sum() > 0)" />
-        <Stat Label="Instances/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
+        <Stat Label="Actors/min" Value="@((all.Count / Math.Max(Elapsed / 60, 1e-6)).ToString("N0"))" />
         <Stat Label="Avg" Value="@LiveChart.Fmt(all.Avg)" />
         <Stat Label="p50" Value="@LiveChart.Fmt(all.P50)" />
         <Stat Label="p95" Value="@LiveChart.Fmt(all.P95)" />
@@ -162,7 +162,7 @@
         <section class="card table-card">
             <table class="breakdown">
                 <thead>
-                    <tr><th>Scenario</th><th>Target inst/min</th><th>Actual inst/min</th><th>Instances</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
+                    <tr><th>Scenario</th><th>Target actors/min</th><th>Actual actors/min</th><th>Actors</th><th>Errors</th><th>Dropped</th><th>Avg</th><th>p50</th><th>p95</th><th>Max</th></tr>
                 </thead>
                 <tbody>
                     @for (var i = 0; i < activePlan.Scenarios.Count; i++)
