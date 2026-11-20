@@ -17,6 +17,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done:** build info (commit + deploy date) and no stale cache (brain 0025).
 - **Done:** popup chart polish: hover card, adaptive zoom, neighbour labels, x-axis (0023 update 2).
 - **Running:** stable clicking on live charts (brain 0026).
+- **Running:** run player bar at the bottom (brain 0027).
 
 Open questions for the user (ask one at a time): "find relevant runs" = past runs or actors in a run (asked);
 what counts as "slow"; duration summary.
