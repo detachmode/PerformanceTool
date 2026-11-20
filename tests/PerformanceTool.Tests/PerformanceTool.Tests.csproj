@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/PerformanceTool.Core/PerformanceTool.Core.csproj" />
     <ProjectReference Include="../../src/PerformanceTool/PerformanceTool.csproj" />
   </ItemGroup>
 

@@ -1,17 +1,12 @@
-using PerformanceTool.Components;
 using PerformanceTool.Services;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.BuiltIn;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<PresetStore>();
 builder.Services.AddScoped<LoadRunner>();
-builder.Services.AddScoped<PerformanceTool.Services.Drafts.FakeRunSimulator>(); // DRAFT: fake data for /drafts
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -24,18 +19,15 @@ var app = builder.Build();
 // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
 app.Services.GetRequiredService<ScenarioCatalog>();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
-app.UseAntiforgery();
-
+// The Blazor WebAssembly client (src/PerformanceTool.Client): its _framework files and wwwroot come from the project reference
+// as static web assets, which MapStaticAssets serves (fingerprinted, pre-compressed). Brain 0015.
 app.MapStaticAssets();
 
 // Machine-readable scenario catalog (id, name, description, JSON Schema of the parameters) for the CLI and coding harnesses.
@@ -46,7 +38,11 @@ app.MapGet("/api/scenarios", (ScenarioCatalog catalog) => catalog.All.Select(s =
     s.Description,
     Parameters = s.Spec.ToJsonSchema(),
 }));
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+
+// Unknown API routes are a real 404, not the client app.
+app.Map("/api/{**rest}", () => Results.NotFound());
+
+// Everything else is a client-side route of the WebAssembly app (/editor, ...).
+app.MapFallbackToFile("index.html");
 
 app.Run();

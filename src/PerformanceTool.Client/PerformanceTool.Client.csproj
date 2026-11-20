@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!-- The UI (brain 0015): standalone Blazor WebAssembly. Data comes through IRunSource. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PerformanceTool.Client</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.*-*" />
+    <ProjectReference Include="../PerformanceTool.Core/PerformanceTool.Core.csproj" />
+    <!-- The generated parameter editor reflects over the parameter classes (brain 0007). Keep everything in Core
+         (types, properties, attributes) when the Release publish trims the app. -->
+    <TrimmerRootAssembly Include="PerformanceTool.Core" />
+  </ItemGroup>
+
+</Project>

@@ -47,9 +47,9 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0007](0007-scenario-editor-derived-from-typed-spec.md) | Scenario editor UI generated from a typed parameter spec (enum → dropdown, bool → toggle, …) | Accepted, implemented |
 | [0008](0008-live-scenario-tiles-overview.md) | Live scenario tiles with mini charts, activity highlighting, detail popup; Aspire-inspired styling | Accepted, implemented |
 | [0009](0009-agent-access-to-ci-runs.md) | Agents inspect CI runs: run bundles, artifact + central server (API key), one CLI/API (+ MCP) | Proposed, partly decided in 0010 |
-| [0010](0010-azure-devops-pipeline-artifacts.md) | Azure DevOps: tool runs in the pipeline; results as a full artifact + a small summary artifact | Accepted (not implemented) |
-| [0011](0011-overview-and-editor-pages.md) | Separate lightweight overview page (tiles with Aspire-style box charts + details popup) and editor page | Accepted (not implemented) |
-| [0012](0012-scenario-logging.md) | Scenarios log via ILogger with one scope per actor (one bar); logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted (not implemented) |
-| [0013](0013-call-durations-are-first-class.md) | Call durations inside each actor are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked actor bars (up to ~50 calls) | Accepted (not implemented) |
+| [0010](0010-azure-devops-pipeline-artifacts.md) | Azure DevOps: tool runs in the pipeline; results as a full artifact + a small summary artifact | Accepted, implemented (UI, Pages) |
+| [0011](0011-overview-and-editor-pages.md) | Separate lightweight overview page (tiles with Aspire-style box charts + details popup) and editor page | Accepted, implemented (UI, Pages) |
+| [0012](0012-scenario-logging.md) | Scenarios log via ILogger with one scope per actor (one bar); logs persisted (CI: full artifact) and shown when inspecting a scenario | Accepted, implemented (UI, Pages) |
+| [0013](0013-call-durations-are-first-class.md) | Call durations inside each actor are a first-class result; recorded via an HttpClient DelegatingHandler; shown as stacked actor bars (up to ~50 calls) | Accepted, implemented (UI, Pages) |
 | [0014](0014-ci-on-github-actions.md) | GitHub Actions CI: restore, build, test (TRX artifact + summary) on every push/PR | Accepted |
-| [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted (not implemented) |
+| [0015](0015-webassembly-client-rest-api-github-pages.md) | Blazor WebAssembly client + REST API server; fake-data demo on GitHub Pages | Accepted, implemented (UI, Pages) |
