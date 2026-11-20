@@ -1,27 +1,41 @@
 namespace PerformanceTool.Client.Services;
 
 /// <summary>
-/// The bulk data of a run, shared by all snapshots (brain 0021). Actor records are tiny and kept for the whole run; calls and log
-/// lines are kept for the latest <see cref="DetailPerScenario"/> actors of each scenario only. Readers read up to the counts of
-/// their snapshot. The log index is a time-sorted list that is extended incrementally.
+/// The bulk data of a run, shared by all snapshots (brain 0021, 0028). Actor records are tiny and kept for the whole run; calls and log
+/// lines are kept for at most <see cref="RunStoreOptions.MaxDetailedActorsPerScenario"/> actors of each scenario. When that is exceeded the
+/// detail of successful actors goes first (oldest first), then slow ones, then failed ones (brain 0028). Only finished actors are in the
+/// store, so running actors are never evicted. Readers read up to the counts of their snapshot. The log index is a time-sorted list
+/// that is extended incrementally. <see cref="Errors"/> holds each distinct error text once.
 /// </summary>
 public sealed class RunStore
 {
-    public const int DetailPerScenario = 1500;
+    /// <summary>The default limit. Prefer <see cref="Options"/> (<see cref="RunStoreOptions.MaxDetailedActorsPerScenario"/>) for the value in use.</summary>
+    public const int DetailPerScenario = RunStoreOptions.DefaultMaxDetailedActorsPerScenario;
 
     private readonly List<ActorRecord>[] actors;
     private readonly Dictionary<int, ActorDetail> details = [];
-    private readonly Queue<ActorDetail>[] detailQueues;
+    // Per scenario one queue per outcome (indexed by ActorOutcome), each oldest first, plus the total kept.
+    private readonly Queue<ActorDetail>[][] detailQueues;
+    private readonly int[] detailCounts;
     private byte[] outcomes = new byte[1024];
     private readonly List<ActorDetail> unindexed = [];
+    private int unindexedCompactAt = 2000;
     private readonly List<FakeLogEntry> lines = [];
     private readonly HashSet<int> evictedIndexed = [];
 
-    public RunStore(int scenarios)
+    public RunStore(int scenarios, RunStoreOptions? options = null)
     {
+        Options = options ?? new RunStoreOptions();
         actors = Enumerable.Range(0, scenarios).Select(_ => new List<ActorRecord>()).ToArray();
-        detailQueues = Enumerable.Range(0, scenarios).Select(_ => new Queue<ActorDetail>()).ToArray();
+        detailQueues = Enumerable.Range(0, scenarios).Select(_ => new[] { new Queue<ActorDetail>(), new Queue<ActorDetail>(), new Queue<ActorDetail>() }).ToArray();
+        detailCounts = new int[scenarios];
     }
+
+    /// <summary>The limits in use. Settable at any time; applies from the next actor that finishes.</summary>
+    public RunStoreOptions Options { get; }
+
+    /// <summary>Each distinct error text of the run, stored once (brain 0028).</summary>
+    public ErrorDictionary Errors { get; } = new();
 
     /// <summary>True once older actors lost their calls and log lines.</summary>
     public bool DetailTrimmed { get; private set; }
@@ -32,6 +46,9 @@ public sealed class RunStore
     public ActorOutcome OutcomeOf(int sequence) => sequence >= 0 && sequence < outcomes.Length ? (ActorOutcome)outcomes[sequence] : ActorOutcome.Ok;
     public ActorDetail? Detail(int sequence) => details.GetValueOrDefault(sequence);
 
+    /// <summary>Cheap check whether the calls and log lines of an actor are still kept (false once evicted, or for an unknown actor).</summary>
+    public bool HasDetail(int sequence) => details.ContainsKey(sequence);
+
     public void Complete(ActorRecord record, ActorDetail detail)
     {
         actors[record.Entry].Add(record);
@@ -39,15 +56,27 @@ public sealed class RunStore
         outcomes[record.Sequence] = (byte)record.Outcome;
         details[record.Sequence] = detail;
         unindexed.Add(detail);
-        var q = detailQueues[record.Entry];
-        q.Enqueue(detail);
-        while (q.Count > DetailPerScenario)
+        var queues = detailQueues[record.Entry];
+        queues[(int)record.Outcome].Enqueue(detail);
+        detailCounts[record.Entry]++;
+        var max = Math.Max(0, Options.MaxDetailedActorsPerScenario);
+        while (detailCounts[record.Entry] > max)
         {
+            // Successful first, then slow, then failed; oldest first within each.
+            var q = queues[(int)ActorOutcome.Ok].Count > 0 ? queues[(int)ActorOutcome.Ok]
+                : queues[(int)ActorOutcome.Slow].Count > 0 ? queues[(int)ActorOutcome.Slow] : queues[(int)ActorOutcome.Failed];
             var old = q.Dequeue();
+            detailCounts[record.Entry]--;
             old.Evicted = true;
             details.Remove(old.Sequence);
             if (old.Indexed) evictedIndexed.Add(old.Sequence);
             DetailTrimmed = true;
+        }
+        // Evicted actors must not stay referenced by the not-yet-indexed list (it is only emptied when the logs are first read).
+        if (unindexed.Count >= unindexedCompactAt)
+        {
+            unindexed.RemoveAll(d => d.Evicted);
+            unindexedCompactAt = Math.Max(2000, unindexed.Count * 2);
         }
     }
 
