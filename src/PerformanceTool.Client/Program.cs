@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using PerformanceTool.Client;
@@ -10,6 +12,7 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddSingleton<ScenarioCatalog>();
+builder.Services.AddSingleton<LogsPopupState>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -22,7 +25,9 @@ builder.Services.AddScenario<UserJourneyScenario>();
 var dataSource = builder.Configuration["DataSource"] ?? "Fake";
 switch (dataSource)
 {
-    case "Fake": builder.Services.AddSingleton<IRunSource, FakeRunSource>(); break;
+    // Debug: "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
+    case "Fake": builder.Services.AddSingleton<IRunSource>(sp => new FakeRunSource(sp.GetRequiredService<ScenarioCatalog>(),
+        SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri))); break;
     case "Api": builder.Services.AddSingleton<IRunSource, ApiRunSource>(); break;
     default: throw new InvalidOperationException($"Unknown DataSource '{dataSource}'. Use \"Fake\" or \"Api\".");
 }
@@ -33,3 +38,10 @@ var host = builder.Build();
 host.Services.GetRequiredService<ScenarioCatalog>();
 
 await host.RunAsync();
+
+static double SimulateSeconds(string uri)
+{
+    var m = Regex.Match(uri, @"[?&]simulate=(\d+)([smh])");
+    if (!m.Success) return 0;
+    return double.Parse(m.Groups[1].Value) * m.Groups[2].Value switch { "h" => 3600, "m" => 60, _ => 1 };
+}

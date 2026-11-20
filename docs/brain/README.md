@@ -59,3 +59,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0019](0019-visible-state-and-feedback.md) | Visible selection everywhere; editor gives immediate feedback on changes | Accepted |
 | [0020](0020-simple-first-features-one-by-one.md) | Simple first: core flow (set up, run, presets, inspect), then features one by one | Accepted |
 | [0021](0021-ui-scales-to-long-runs.md) | UI must scale to runs of hours with many actors, calls and logs | Accepted |
+| [0022](0022-core-flow-ui-and-scaling-choices.md) | Core-flow UI choices: placeholder slow rule, bounded data, own VirtualList | Accepted (slow rule Proposed) |

@@ -15,14 +15,12 @@ public sealed class ApiRunSource : IRunSource
     public RunSnapshot Current => throw NotYet();
     public bool IsRunning => throw NotYet();
     public event Action? Changed { add { } remove { } }
-    public int DemoSpeed { get => throw NotYet(); set => throw NotYet(); }
     public LoadPlan Plan => throw NotYet();
-    public string PresetName { get => throw NotYet(); set => throw NotYet(); }
+    public string PresetName => throw NotYet();
     public IReadOnlyList<string> PresetNames => throw NotYet();
+    public bool HasUnsavedChanges => throw NotYet();
     public void AddEntry(IScenario scenario) => throw NotYet();
     public void RemoveEntry(int index) => throw NotYet();
-    public void DuplicateEntry(int index) => throw NotYet();
-    public int MoveEntry(int index, int delta) => throw NotYet();
     public void SavePreset(string name) => throw NotYet();
     public void LoadPreset(string name) => throw NotYet();
     public void Start() => throw NotYet();

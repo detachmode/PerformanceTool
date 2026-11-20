@@ -30,3 +30,10 @@ public sealed class HttpUrlAttribute : ValidationAttribute
         _ => new ValidationResult($"{context.DisplayName}: [HttpUrl] only works on strings and string lists.", [context.MemberName!]),
     };
 }
+
+/// <summary>
+/// Marks a parameter as an advanced option. The editor shows it only after "More options" (docs/brain/0016);
+/// unmarked parameters are the essential ones.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class AdvancedAttribute : Attribute;

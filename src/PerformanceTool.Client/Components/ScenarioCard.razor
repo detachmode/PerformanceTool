@@ -1,204 +1,43 @@
-@* DRAFT scenario card, modelled on the Aspire 17 Metrics instrument cards (docs/brain/0008, 0011), with the 0006 interactions:
-   - stretched-link pattern: the title is a real <button> whose ::after covers the whole card, so a click anywhere on the card (and
-     Enter / Space on the focused button) opens the details popup. The chips, the menu and the chart are siblings above it (z-index),
-     so no interactive element is nested inside another one.
-   - click / Enter opens the details popup; Alt+click isolates the scenario, Shift+click hides it; the "..." menu offers the same
-   - the type chip filters the overview to that type, the rate chip sorts by rate
-   - the little box chart is a fixed grid of Slots one-second slots (newest right). Hover shows a CSS-only tooltip, a click opens
-     the popup pre-filtered to that second. The chart is one tab stop: Left/Right move between buckets, Enter opens. *@
-
-<div class="dr-card @(Active ? "active" : "") @(MenuOpen ? "menu-open" : "")" style="--series:@Color" data-card="@Index" @onkeydown="OnKey">
-    <div class="chips">
-        <button class="chip chip-btn @(TypeActive ? "on" : "")" aria-pressed="@Aria.Bool(TypeActive)" title="@(TypeActive ? "Remove the type filter" : $"Show only {TypeName} scenarios")"
-                @onclick="() => OnFilterType.InvokeAsync(TypeName)" @onclick:stopPropagation><i class="dot"></i>@TypeName</button>
-        <button class="chip chip-btn" title="Target rate. Click to sort by rate" @onclick="() => OnSortRate.InvokeAsync()" @onclick:stopPropagation>@Format.Rate(TargetPerMinute) @Terms.PerMinuteShort</button>
-        <button class="dr-more" aria-haspopup="menu" aria-expanded="@Aria.Bool(MenuOpen)" aria-label="Actions for @Label" title="Actions"
-                @onclick="() => OnToggleMenu.InvokeAsync(Index)" @onclick:stopPropagation>⋯</button>
-    </div>
-    @if (MenuOpen)
-    {
-        <div class="dr-backdrop" @onclick="() => OnToggleMenu.InvokeAsync(Index)" @onclick:stopPropagation></div>
-        <ul class="dr-menu card-menu" role="menu" @onclick:stopPropagation @onkeydown="MenuKey" @onkeydown:stopPropagation>
-            <li role="none"><button role="menuitem" @onclick="() => Act(() => OnOpen.InvokeAsync(new OpenRequest(Index)))">Open details</button></li>
-            <li role="none"><button role="menuitem" @onclick="() => Act(() => OnIsolate.InvokeAsync(Index))">Only this</button></li>
-            <li role="none"><button role="menuitem" @onclick="() => Act(() => OnHide.InvokeAsync(Index))">Hide</button></li>
-            <li role="none"><button role="menuitem" @onclick="() => Act(() => OnFilterType.InvokeAsync(TypeName))">@(TypeActive ? "Remove type filter" : $"Only type {TypeName}")</button></li>
-        </ul>
-    }
-    <button type="button" class="dr-title dr-open" title="Click: details · Alt+click: only this · Shift+click: hide" @onclick="OnClick"
-            aria-label="@Label: @(stats.Count == 0 ? "no actors yet" : $"p95 {valueText}, {Terms.Count(stats.Count)}, {stats.Errors} errors"). Open details.">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 12.5l3.5-4 2.5 2.5L13.5 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 14h12" stroke="currentColor" stroke-width="1" opacity=".5"/></svg>
-        <span>@Label</span>
-    </button>
-    <div class="dr-desc" title="@Description">@Description</div>
-
-    <div class="dr-live">
-        <div class="dr-running @(InFlight > 0 ? "on" : "")" title="Actors running right now (started, not finished)">
-            <b>@InFlight</b><span class="unit">running</span>
-            <span class="dr-dots" aria-hidden="true">
-                @for (var d = 0; d < Math.Min(InFlight, MaxDots); d++) { <i></i> }
-                @if (InFlight > MaxDots) { <em>+@(InFlight - MaxDots)</em> }
-            </span>
-        </div>
-        <div class="dr-ratebig" title="Actors started per minute: actual / target">
-            <b>@Format.Rate(ActualPerMinute)</b><span class="unit">/ @Format.Rate(TargetPerMinute) @Terms.PerMinuteShort</span>
-        </div>
-    </div>
-    <div class="dr-second">
-        @if (stats.Count == 0) { <span class="muted">no actors yet</span> }
-        else { <span>p95 <b>@valueText</b></span><span>@Terms.Count(stats.Count)</span> }
-        @if (stats.Errors > 0) { <span class="badge bad" title="@stats.Errors failed @Terms.Instances">@stats.Errors err</span> }
-        @if (Dropped > 0) { <span class="badge warn" title="Due but not started: max in-flight reached">@Dropped dropped</span> }
-    </div>
-
-    <div class="dr-chart" role="group" tabindex="0" data-kbnav aria-label="@Label, last @Slots seconds. Left and right arrows move between time buckets, Enter opens the details for that second."
-         @onkeydown="OnChartKey" @onkeydown:stopPropagation @onclick:stopPropagation>
-        @for (var i = 0; i < Slots; i++)
+@* One calm card per scenario (brain 0020): name, actors running, actors/min (actual / target) and a little bar chart of the latest actors.
+   Neutral by default; red when errors occurred, amber when only slow calls occurred (brain 0018). The chart is bounded to the latest actors (brain 0021). *@
+@{
+    var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : "";
+    var actual = Elapsed > 0 ? View.Starts / (Elapsed / 60) : 0;
+    var take = Math.Min(View.Finished, MaxBars);
+    var recent = new ActorRecord[take];
+    for (var i = 0; i < take; i++) recent[i] = Actors[View.Finished - take + i];
+    var max = recent.Length == 0 ? 1 : Math.Max(1, recent.Max(a => a.DurationMs));
+    var reason = View.Failed > 0
+        ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow call", "slow calls") : "")
+        : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
+}
+<button class="card @cls" @onclick="() => OnOpen.InvokeAsync(Index)"
+        aria-label="@Label: @View.InFlight actors running, @Format.Rate(actual) of @Format.Rate(Target) actors per minute@(reason.Length > 0 ? ", " + reason : ""). Open details">
+    <span class="card-title">@Label</span>
+    <span class="card-figures">
+        <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
+        <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
+    </span>
+    <span class="spark" aria-hidden="true">
+        @foreach (var a in recent)
         {
-            var b = buckets[i];
-            var slot = i;
-            if (b.Count == 0)
-            {
-                <span class="slot"></span>
-            }
-            else
-            {
-                <span class="slot @(firstBucket + slot == kbSecond ? "kb" : "") @(slot < 10 ? "tip-left" : slot > Slots - 11 ? "tip-right" : "")" @onclick="() => OpenBucket(slot)" @onclick:stopPropagation>
-                    <i class="@(b.Failed > 0 ? "failed" : "")" style="height:@Height(b.MaxMs)"></i>
-                    <span class="tip" aria-hidden="true">
-                        <b>@Format.Time(firstBucket + slot)</b>
-                        <span>@Terms.Count(b.Count)</span>
-                        <span>max @LiveChart.Fmt(b.MaxMs)</span>
-                        @if (b.Failed > 0) { <span class="bad">@b.Failed @(b.Failed == 1 ? "error" : "errors")</span> }
-                        <em>click to inspect</em>
-                    </span>
-                </span>
-            }
+            <i class="@(a.Failed ? "bad" : a.SlowCalls > 0 ? "warn" : "")" style="height:@(Pct(a.DurationMs / max))%"></i>
         }
-    </div>
-
-    <div class="dr-foot"><span class="dr-last">last @(Slots) s</span></div>
-</div>
+        @if (recent.Length == 0) { <em>No actors finished yet</em> }
+    </span>
+    <span class="card-reason">@(reason.Length > 0 ? reason : " ")</span>
+</button>
 
 @code {
-    public const int Slots = 60;
-    private const int MaxDots = 12;
+    private const int MaxBars = 32;
 
     [Parameter, EditorRequired] public int Index { get; set; }
-    [Parameter] public string Label { get; set; } = "";
-    [Parameter] public string TypeName { get; set; } = "";
-    [Parameter] public string? Description { get; set; }
-    [Parameter] public double TargetPerMinute { get; set; }
-    [Parameter] public IReadOnlyList<ExecutionResult> Results { get; set; } = [];
-    [Parameter] public int Dropped { get; set; }
-    [Parameter] public int InFlight { get; set; }
-    [Parameter] public int Starts { get; set; }
-    [Parameter] public double? SinceLastStart { get; set; }
-    [Parameter] public double ElapsedSeconds { get; set; }
-    [Parameter] public double DurationSeconds { get; set; }
-    [Parameter] public bool Running { get; set; }
-    [Parameter] public bool TypeActive { get; set; }
-    [Parameter] public bool MenuOpen { get; set; }
-    [Parameter] public EventCallback<OpenRequest> OnOpen { get; set; }
-    [Parameter] public EventCallback<int> OnIsolate { get; set; }
-    [Parameter] public EventCallback<int> OnHide { get; set; }
-    [Parameter] public EventCallback<string> OnFilterType { get; set; }
-    [Parameter] public EventCallback OnSortRate { get; set; }
-    [Parameter] public EventCallback<int> OnToggleMenu { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public ScenarioView View { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<ActorRecord> Actors { get; set; } = default!;
+    [Parameter] public double Target { get; set; }
+    [Parameter] public double Elapsed { get; set; }
+    [Parameter] public EventCallback<int> OnOpen { get; set; }
 
-    private readonly record struct Bucket(int Count, int Failed, double MaxMs);
-
-    private LatencyStats stats = LatencyStats.Empty;
-    private int statsCount = -1;
-    private Bucket[] buckets = new Bucket[Slots];
-    private int firstBucket;
-    private double scale = 1;
-    private (string Value, string Unit) valueParts = ("", "");
-    private string valueText = "";
-    /// <summary>Absolute second of the keyboard-selected bucket (absolute, so it stays put while the window scrolls).</summary>
-    private int kbSecond = int.MinValue;
-
-    private string Color => SeriesPalette.For(Index);
-
-    /// <summary>Lit while an instance is in flight, and briefly after a start (fast requests finish between renders).</summary>
-    private bool Active => Running && (InFlight > 0 || SinceLastStart is < 0.3);
-
-    private double ActualPerMinute => Starts / Math.Max(ElapsedSeconds / 60, 1e-6);
-
-    protected override void OnParametersSet()
-    {
-        if (Results.Count != statsCount)
-        {
-            statsCount = Results.Count;
-            stats = LatencyStats.From(Results is IReadOnlyCollection<ExecutionResult> c ? c : Results.ToList());
-            valueParts = LiveChart.FmtParts(stats.P95);
-            valueText = LiveChart.Fmt(stats.P95);
-        }
-
-        // Newest slot = the second we are in (or the last second of a finished run).
-        var last = Math.Max(0, (int)Math.Floor(Math.Min(ElapsedSeconds, Math.Max(DurationSeconds, 1) - 1e-6)));
-        firstBucket = last - Slots + 1;
-        var counts = new int[Slots]; var failed = new int[Slots]; var max = new double[Slots];
-        foreach (var r in Results)
-        {
-            var slot = (int)Math.Floor(r.StartedAtSeconds) - firstBucket;
-            if (slot < 0 || slot >= Slots) continue;
-            counts[slot]++;
-            if (!r.Success) failed[slot]++;
-            if (r.ElapsedMs > max[slot]) max[slot] = r.ElapsedMs;
-        }
-        scale = 1;
-        for (var i = 0; i < Slots; i++)
-        {
-            buckets[i] = new(counts[i], failed[i], max[i]);
-            if (max[i] > scale) scale = max[i];
-        }
-    }
-
-    private string Height(double ms) => (Math.Clamp(ms / scale, 0.06, 1) * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
-
-    private Task OpenBucket(int slot) => OnOpen.InvokeAsync(new OpenRequest(Index, firstBucket + slot));
-
-    private Task Act(Func<Task> action) { return Task.WhenAll(OnToggleMenu.InvokeAsync(Index), action()); }
-
-    private async Task OnClick(MouseEventArgs e)
-    {
-        if (e.AltKey) await OnIsolate.InvokeAsync(Index);
-        else if (e.ShiftKey) await OnHide.InvokeAsync(Index);
-        else await OnOpen.InvokeAsync(new OpenRequest(Index));
-    }
-
-    private async Task MenuKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape") await OnToggleMenu.InvokeAsync(Index);
-    }
-
-    private async Task OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape" && MenuOpen) await OnToggleMenu.InvokeAsync(Index);
-    }
-
-    private async Task OnChartKey(KeyboardEventArgs e)
-    {
-        var cur = kbSecond - firstBucket;
-        if (e.Key is "ArrowLeft" or "ArrowRight" or "Home" or "End")
-        {
-            var step = e.Key == "ArrowLeft" ? -1 : 1;
-            int next = -1;
-            if (e.Key == "Home") next = Array.FindIndex(buckets, b => b.Count > 0);
-            else if (e.Key == "End") next = Array.FindLastIndex(buckets, b => b.Count > 0);
-            else if (cur < 0 || cur >= Slots) next = Array.FindLastIndex(buckets, b => b.Count > 0);
-            else for (var i = cur + step; i >= 0 && i < Slots; i += step) if (buckets[i].Count > 0) { next = i; break; }
-            if (next >= 0) kbSecond = firstBucket + next;
-        }
-        else if (e.Key == "Enter")
-        {
-            if (cur >= 0 && cur < Slots && buckets[cur].Count > 0) await OpenBucket(cur);
-            else
-            {
-                var last = Array.FindLastIndex(buckets, b => b.Count > 0);
-                if (last >= 0) await OpenBucket(last);
-            }
-        }
-    }
+    private static string Pct(double f) => Math.Clamp(f * 100, 4, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 }

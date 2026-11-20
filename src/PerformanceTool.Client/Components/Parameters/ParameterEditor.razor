@@ -8,6 +8,7 @@
 @foreach (var f in Spec.Fields)
 {
     var field = f;
+    if (Show == FieldFilter.Essential && field.Advanced || Show == FieldFilter.Advanced && !field.Advanced) continue;
     var id = $"{IdPrefix}-{field.JsonName}";
     var fieldErrors = Errors is not null && Errors.TryGetValue(ErrorPrefix + field.JsonName, out var fe) ? fe : null;
     <div class="field @(field.Wide ? "wide" : "") @(fieldErrors is null ? "" : "is-invalid") kind-@field.Kind.ToString().ToLowerInvariant()" data-field="@field.JsonName" data-fid="@id">
@@ -107,6 +108,8 @@
     /// <summary>Optional inline validation messages by field (see <c>ParameterSpec.ValidateByField</c>).</summary>
     [Parameter] public IReadOnlyDictionary<string, List<string>>? Errors { get; set; }
     [Parameter] public string ErrorPrefix { get; set; } = "";
+    /// <summary>Essential parameters are shown by default, advanced ones under "More options" (brain 0016).</summary>
+    [Parameter] public FieldFilter Show { get; set; } = FieldFilter.All;
 
     private readonly HashSet<string> revealed = [];
 

@@ -9,7 +9,7 @@ public sealed class HttpGetParameters
     public string Url { get; set; } = "https://example.com";
 
     [Display(Name = "Expected status", Description = "Fail unless the response has exactly this status. Empty = any 2xx/3xx.", Prompt = "any 2xx/3xx")]
-    [Range(100, 599)]
+    [Range(100, 599), Advanced]
     public int? ExpectedStatus { get; set; }
 }
 

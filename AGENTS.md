@@ -21,11 +21,12 @@ Three projects plus tests (brain 0015), all `net11.0`:
   - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios. A new scenario is a parameter class
     plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
     parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Components/Parameters/`), never hand-written per scenario (brain 0007).
-  - `Services/LoadPlan.cs` (the plan, also the preset format), `LatencyStats`, `SeriesPalette`, `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
-- `src/PerformanceTool.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview) and `/editor` (the old `/drafts/*` routes are kept as aliases).
+  - `Services/LoadPlan.cs` (the plan, also the preset format), `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
+- `src/PerformanceTool.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview) and `/editor`.
   - `Services/IRunSource.cs` is the seam to the data: `FakeRunSource` (in-browser simulation, the default) and `ApiRunSource` (stub, throws until the REST API exists).
     Choose with `"DataSource": "Fake" | "Api"` in `wwwroot/appsettings.json`.
-  - `Pages/`, `Layout/`, `Components/` (card, popup `ScenarioDetailDialog`, `CallsView`, `LiveChart`, `Parameters/`), `wwwroot/app.css` (dark Aspire-like tokens, brain 0008; flat, dark only), `drafts.css`, `drafts.js`.
+  - `Pages/`, `Layout/`, `Components/` (`ScenarioCard`, popups `ScenarioDetailDialog` and `LogsDialog`, `VirtualList`, `ActorBars`, `Parameters/`), `wwwroot/app.css` (dark tokens; flat, dark only; colour only means failed = red or slow = amber, brain 0018).
+  - **Slow rule (placeholder):** `Services/SlowCallRule.cs` is the one place that defines "slow". **Scale (brain 0021/0022):** `RunStore` keeps tiny actor records for the whole run and calls/logs only for the latest 1500 actors per scenario; long lists use `VirtualList`, charts are bounded (`ActorBars`). Debug: open the app with `?simulate=3h` to pre-generate a 3 hour run.
   - **Trimming:** Release publish trims. `PerformanceTool.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
 - `src/PerformanceTool` — ASP.NET Core host. `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
   `GET /api/scenarios`. It serves the client (project reference, static web assets via `MapStaticAssets`, `MapFallbackToFile("index.html")`). No Razor UI of its own.

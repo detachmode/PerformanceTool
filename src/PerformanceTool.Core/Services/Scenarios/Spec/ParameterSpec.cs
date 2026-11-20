@@ -32,6 +32,8 @@ public sealed class FieldSpec
     public IReadOnlyList<ChoiceOption> Options { get; init; } = [];
     public ParameterSpec? Children { get; init; }
     public bool ItemsAreUrls { get; init; }
+    /// <summary>Shown only under "More options" in the editor.</summary>
+    public bool Advanced { get; init; }
 
     public bool Optional => !Required && (Nullable || Kind is FieldKind.Text or FieldKind.Multiline or FieldKind.Url
         or FieldKind.Secret or FieldKind.List or FieldKind.KeyValue);
@@ -151,6 +153,7 @@ public sealed partial class ParameterSpec
             Options = options,
             Children = children,
             ItemsAreUrls = kind == FieldKind.List && isUrl,
+            Advanced = p.IsDefined(typeof(AdvancedAttribute)),
         };
     }
 

@@ -9,7 +9,7 @@ namespace PerformanceTool.Services;
 /// </summary>
 public sealed class LoadPlan
 {
-    public const int MaxEntries = 7; // one per categorical colour slot, see docs/brain/0002
+    public const int MaxEntries = 7;
     public const double MaxRatePerMinute = 60_000;
 
     public List<ScenarioRunConfig> Scenarios { get; set; } = [];
