@@ -1,12 +1,12 @@
-# UI draft screenshots
+# UI screenshots
 
-The latest UI drafts (fake data), as shown in the pull request. Regenerate them when the drafts change.
+The current UI (fake data), as shown in pull requests. Regenerate them when the UI changes.
 
 | File | Shows |
 |---|---|
-| `01-overview-running.png` | `/drafts/overview` mid-run (demo speed 10×): story scenarios, actors running, actors/min |
-| `02-popup-calls-stacked-actor-bars.png` | Scenario popup, Calls tab: one stacked bar per actor, segments = calls (brain 0013) |
-| `03-popup-actor-waterfall.png` | Waterfall of one 48-call actor |
-| `04-popup-logs.png` | Popup Logs tab: one logging scope per actor (brain 0012) |
-| `05-editor.png` | `/drafts/editor`: scenario list + generated parameter editor |
+| `01-overview-running.png` | Overview mid-run: neutral cards, red = errors, amber = slow calls (brain 0018) |
+| `02-scenario-popup-actor.png` | Scenario popup: Failed filter, a selected actor and its calls |
+| `03-logs-popup-actor.png` | Logs popup filtered to one actor (brain 0017) |
+| `04-editor-unsaved.png` | Editor with unsaved changes (brain 0019) |
+| `05-logs-3h-run.png` | Logs after a simulated 3-hour run (brain 0021) |
 | `06-overview-phone.png` | Overview at phone width |
