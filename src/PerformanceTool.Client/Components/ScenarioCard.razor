@@ -35,7 +35,7 @@
             <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
         </span>
     }
-    <DockZoom Tag="span" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
+    <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
         @foreach (var a in recent)
         {
             <i class="@(a.Failed ? "bad" : a.SlowCalls > 0 ? "warn" : "good")" style="height:@(Pct(a.DurationMs / max))%"></i>
