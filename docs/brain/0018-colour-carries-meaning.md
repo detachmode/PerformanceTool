@@ -39,3 +39,8 @@ matter.
 A scenario card's outline is **red** when it has failed actors, **yellow** when it has slow ones (and no failed), and
 **green** when it has finished actors and **none** of them failed or were slow. Cards with no finished actors yet
 (idle, editor) stay neutral.
+
+## Update (user, 2026-11-20): positive is green
+**Generally, positive things are shown in green across the UI** (successful actors, healthy scenarios, OK states, a
+finished run). This includes **Information-level log lines**, which get a green level marker. Errors stay red, warnings/
+slow yellow, running blue; debug/trace stay neutral.
