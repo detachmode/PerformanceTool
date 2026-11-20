@@ -3,6 +3,10 @@
 Things we want to build next. When an item is implemented, record the decisions in `docs/brain/` and remove
 or tick the item here.
 
+## Current phase: UI drafts (user decision)
+Until the user is happy with the UI/UX, we build **UI drafts only, with fake data** (no real runner or storage
+work). Drafts live under `/drafts/...` in the app, driven by a fake run simulator. Iterate draft → screenshot → user feedback.
+
 ## Done
 - [x] Blazor Server app with a live bar chart, one bar per execution (brain 0001, 0002)
 - [x] Scenarios defined in code, mixed with parameters and runs per minute (brain 0003, 0004)
