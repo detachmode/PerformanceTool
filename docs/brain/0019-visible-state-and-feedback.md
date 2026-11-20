@@ -17,3 +17,9 @@ navigation goal (0017).
 ## Consequences
 - Draft reviews check that selection and change state are visible at a glance, without adding clutter (0016) and
   using colour only with meaning (0018).
+
+## Update (user feedback, 2026-11-20)
+- The editor must **detect a change while typing**: the Save button (and "Unsaved changes") must enable as soon as the
+  value changes, not only when the input loses focus.
+- Some **scrollbars are missing** in the editor (content can't be reached); fix overflow so every area that can grow
+  scrolls.

@@ -17,6 +17,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 - **Running (C):** player bar polish: nicer UI, more prominent play/stop (0027 update).
 
+- **Running (D):** editor fixes: change detection while typing, missing scrollbars (0019 update).
+
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done
