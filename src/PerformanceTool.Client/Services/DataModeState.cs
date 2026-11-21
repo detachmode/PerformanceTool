@@ -117,6 +117,25 @@ public sealed record RemoteScenarioDto(
     string? ScriptId,
     JsonObject Parameters);
 
+public sealed record ClientPreflightSummary(
+    string ScriptId,
+    string FileName,
+    string Name,
+    string Code,
+    DateTimeOffset UpdatedUtc);
+
+public sealed record ClientPreflightCompileResult(
+    bool Success,
+    ClientPreflightSummary? Script,
+    IReadOnlyList<ClientScriptDiagnostic> Diagnostics,
+    string? Error = null);
+
+public sealed record ClientPreflightRunResult(
+    bool Success,
+    double DurationMs,
+    string? Error,
+    IReadOnlyList<string> Logs);
+
 /// <summary>HTTP client for <c>/api/scenarios</c> and <c>/api/scripts</c>, keeping the client <see cref="ScenarioCatalog"/> synced.</summary>
 public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
 {
@@ -179,5 +198,32 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         }
         return await resp.Content.ReadFromJsonAsync<ClientTestRunResult>(JsonOpts, ct)
             ?? throw new InvalidOperationException("Empty response from test-run endpoint.");
+    }
+
+    public async Task<List<ClientPreflightSummary>> ListPreflightsAsync(CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<ClientPreflightSummary>>("api/preflights", JsonOpts, ct) ?? []; }
+        catch { return []; }
+    }
+
+    public async Task<ClientPreflightCompileResult> SavePreflightAsync(string? id, string fileName, string code, CancellationToken ct = default)
+    {
+        var resp = await http.PostAsJsonAsync("api/preflights", new { id, fileName, code }, JsonOpts, ct);
+        return await resp.Content.ReadFromJsonAsync<ClientPreflightCompileResult>(JsonOpts, ct)
+            ?? new ClientPreflightCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
+    }
+
+    public async Task DeletePreflightAsync(string scriptId, CancellationToken ct = default)
+    {
+        var resp = await http.DeleteAsync($"api/preflights/{Uri.EscapeDataString(scriptId)}", ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task<ClientPreflightRunResult> TestRunPreflightAsync(string scriptId, string? environmentName, int timeoutSeconds = 60, CancellationToken ct = default)
+    {
+        var resp = await http.PostAsJsonAsync($"api/preflights/{Uri.EscapeDataString(scriptId)}/test-run",
+            new { environmentName, timeoutSeconds }, JsonOpts, ct);
+        return await resp.Content.ReadFromJsonAsync<ClientPreflightRunResult>(JsonOpts, ct)
+            ?? throw new InvalidOperationException("Empty response from preflight test-run endpoint.");
     }
 }

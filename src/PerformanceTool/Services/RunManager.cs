@@ -35,14 +35,18 @@ public sealed record LiveRunStatusDto(
     int LastSequence,
     long TotalLogs,
     string StorageProvider,
-    string? Error);
+    string? Error,
+    string? PreflightState = null,
+    string? PreflightScriptName = null,
+    IReadOnlyList<string>? PreflightLogs = null,
+    string? PreflightError = null);
 
 /// <summary>
 /// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run, persisting all actors,
-/// calls and logs into <see cref="IRunStorage"/> (SQLite WAL by default) without blocking actors, and serving
+/// calls and logs into <see cref="IRunStorage"/> (DuckDB by default) without blocking actors, and serving
 /// lightweight incremental polls to the Blazor WebAssembly client (brain 0045).
 /// </summary>
-public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage)
+public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null)
 {
     private const double SlowThresholdMs = 1500;
     private readonly Lock sync = new();
@@ -66,6 +70,10 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private int lastSequence = -1;
     private long totalLogs;
     private string? runError;
+    private string? preflightState;
+    private string? preflightScriptName;
+    private readonly List<string> preflightLogs = [];
+    private string? preflightError;
 
     /// <summary>Restores the most recent persisted run from <see cref="IRunStorage"/> on server startup.</summary>
     public async Task RestoreLatestAsync(CancellationToken ct = default)
@@ -111,6 +119,10 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             lastSequence = -1;
             totalLogs = data.TotalLogs;
             runError = data.Error;
+            preflightState = null;
+            preflightScriptName = null;
+            preflightLogs.Clear();
+            preflightError = null;
 
             foreach (var a in data.Actors)
             {
@@ -175,7 +187,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 lastSequence,
                 totalLogs,
                 storage.ProviderName,
-                runError);
+                runError,
+                preflightState,
+                preflightScriptName,
+                preflightLogs.Count > 0 ? preflightLogs.ToArray() : null,
+                preflightError);
         }
     }
 
@@ -185,13 +201,21 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         if (!string.IsNullOrWhiteSpace(environmentName))
             env = await environments.GetAsync(environmentName, ct);
 
+        var preflightId = string.IsNullOrWhiteSpace(plan.PreflightScriptId) ? null : plan.PreflightScriptId.Trim();
+        PreflightScriptSummary? preflightMeta = null;
+        if (preflightId is not null)
+        {
+            preflightMeta = preflights?.Get(preflightId)
+                ?? throw new ArgumentException($"Preflight script '{preflightId}' was not found.");
+        }
+
         CancellationTokenSource runCts;
         LoadPlan cloned;
         string currentRunId;
         DateTimeOffset currentStartedUtc;
         lock (sync)
         {
-            if (state == "Running")
+            if (state is "Running" or "Preflight")
                 throw new InvalidOperationException("A run is already in progress. Stop it before starting a new one.");
             if (plan.Scenarios.Count == 0)
                 throw new ArgumentException("The load plan has no scenarios.");
@@ -200,9 +224,9 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             currentRunId = $"run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Random.Shared.Next(100, 999)}";
             currentStartedUtc = DateTimeOffset.UtcNow;
             runId = currentRunId;
-            state = "Running";
+            state = preflightMeta is not null ? "Preflight" : "Running";
             startedUtc = currentStartedUtc;
-            clock = Stopwatch.StartNew();
+            clock = preflightMeta is not null ? new Stopwatch() : Stopwatch.StartNew();
             finalElapsed = 0;
             activePlan = cloned;
             starts = new int[cloned.Scenarios.Count];
@@ -216,17 +240,50 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             lastSequence = -1;
             totalLogs = 0;
             runError = null;
+            preflightState = preflightMeta is not null ? "Running" : null;
+            preflightScriptName = preflightMeta?.FileName;
+            preflightLogs.Clear();
+            preflightError = null;
             runCts = new CancellationTokenSource();
             cts = runCts;
         }
 
-        storage.EnqueueRunStarted(currentRunId, currentStartedUtc, cloned);
-
         runningTask = Task.Run(async () =>
         {
             string? err = null;
+            var runPersisted = false;
             try
             {
+                if (preflightMeta is not null && preflights is not null)
+                {
+                    var preRes = await preflights.ExecuteAsync(
+                        preflightMeta.ScriptId,
+                        environmentName,
+                        onLog: line => { lock (sync) preflightLogs.Add(line); },
+                        ct: runCts.Token);
+
+                    if (!preRes.Success)
+                    {
+                        err = preRes.Error ?? "Preflight failed.";
+                        lock (sync)
+                        {
+                            preflightState = "Failed";
+                            preflightError = err;
+                        }
+                        return;
+                    }
+
+                    lock (sync)
+                    {
+                        preflightState = "Succeeded";
+                        state = "Running";
+                        clock.Restart();
+                    }
+                }
+
+                storage.EnqueueRunStarted(currentRunId, DateTimeOffset.UtcNow, cloned);
+                runPersisted = true;
+
                 await runner.RunAsync(
                     cloned,
                     onResult: res =>
@@ -304,7 +361,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     runError = err;
                     state = "Finished";
                 }
-                storage.EnqueueRunFinished(currentRunId, DateTimeOffset.UtcNow, "Finished", elapsed, err);
+                if (runPersisted)
+                    storage.EnqueueRunFinished(currentRunId, DateTimeOffset.UtcNow, "Finished", elapsed, err);
                 runCts.Dispose();
             }
         }, CancellationToken.None);

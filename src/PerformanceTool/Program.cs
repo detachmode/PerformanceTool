@@ -12,6 +12,7 @@ builder.Services.AddSingleton<PresetStore>();
 builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddSingleton<LoadRunner>();
 builder.Services.AddSingleton<ScriptScenarioStore>();
+builder.Services.AddSingleton<PreflightStore>();
 var storageProvider = builder.Configuration["Storage:Provider"] ?? "DuckDb";
 if (string.Equals(storageProvider, "Memory", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IRunStorage, InMemoryRunStorage>();
@@ -32,6 +33,7 @@ var app = builder.Build();
 // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
 app.Services.GetRequiredService<ScenarioCatalog>();
 await app.Services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync();
+await app.Services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync();
 await app.Services.GetRequiredService<RunManager>().RestoreLatestAsync();
 
 if (!app.Environment.IsDevelopment())
@@ -104,6 +106,27 @@ app.MapPost("/api/scripts/{id}/test-run", async (string id, TestRunScriptRequest
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+});
+
+// Preflight scripts: run before scenarios start; scenarios only begin if preflight succeeds.
+app.MapGet("/api/preflights", (PreflightStore store) => store.List());
+app.MapGet("/api/preflights/{id}", (string id, PreflightStore store) =>
+    store.Get(id) is { } p ? Results.Ok(p) : Results.NotFound());
+app.MapPost("/api/preflights", async (UploadScriptRequest body, PreflightStore store, CancellationToken ct) =>
+{
+    var result = await store.CompileAndSaveAsync(body.Id, body.FileName, body.Code ?? "", persist: true, ct);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+app.MapDelete("/api/preflights/{id}", (string id, PreflightStore store) =>
+    store.Delete(id) ? Results.NoContent() : Results.NotFound());
+app.MapPost("/api/preflights/{id}/test-run", async (string id, TestRunPreflightRequest? body, PreflightStore store, CancellationToken ct) =>
+{
+    try
+    {
+        var result = await store.ExecuteAsync(id, body?.EnvironmentName, timeoutSeconds: body?.TimeoutSeconds ?? 60, ct: ct);
+        return Results.Ok(result);
+    }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
 });
 
 // Live runs & persisted SQLite storage queries (brain 0045).
@@ -188,4 +211,5 @@ app.Run();
 
 public sealed record UploadScriptRequest(string? Id, string? FileName, string? Code);
 public sealed record TestRunScriptRequest(JsonObject? Parameters = null, string? EnvironmentName = null, int TimeoutSeconds = 30);
+public sealed record TestRunPreflightRequest(string? EnvironmentName = null, int TimeoutSeconds = 60);
 public sealed record StartRunRequest(LoadPlan Plan, string? EnvironmentName = null);

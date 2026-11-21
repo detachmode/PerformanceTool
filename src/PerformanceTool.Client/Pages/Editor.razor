@@ -1,6 +1,5 @@
 @* Minimalist full-screen C# Script Editor (/editor):
-   Full-viewport syntax-highlighted code editor with a single compact menu bar (file picker, Save, Try, Wrap, actions).
-   Parameters & Test Run open in a clean overlay only when clicking "Try". *@
+   Full-viewport syntax-highlighted code editor with a single compact menu bar (file picker for scenario & preflight .cs files, Wrap, Save, Try, actions). *@
 @page "/editor"
 @page "/scripts"
 @layout MainLayout
@@ -23,6 +22,10 @@
         <div class="dd">
             <button type="button" class="btn ghost small script-file-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(filesOpen)"
                     @onclick="() => { filesOpen = !filesOpen; moreOpen = false; }" title="Switch, create, or upload .cs scripts">
+                @if (isPreflight)
+                {
+                    <span class="pf-tag">PRE</span>
+                }
                 <span class="mono">@fileName</span>
                 <span class="caret">▾</span>
             </button>
@@ -30,22 +33,37 @@
             {
                 <div class="dd-backdrop" @onclick="() => filesOpen = false"></div>
                 <div class="dd-menu script-files-menu" role="menu" aria-label="C# script files">
-                    <div class="dd-lbl">Scripts (@scripts.Count)</div>
+                    <div class="dd-lbl">Scenarios (@scripts.Count)</div>
                     @if (scripts.Count == 0)
                     {
-                        <div class="muted" style="padding:.35rem .55rem">No .cs files yet.</div>
+                        <div class="muted" style="padding:.3rem .55rem">No scenario .cs files yet.</div>
                     }
                     @foreach (var s in scripts)
                     {
                         var item = s;
-                        var isCur = selectedId == item.ScriptId;
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickFile(item)" style="flex-direction:column;align-items:flex-start;gap:.05rem">
+                        var isCur = !isPreflight && selectedId == item.ScriptId;
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickScenarioFile(item)" style="flex-direction:column;align-items:flex-start;gap:.05rem">
                             <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
                             <span class="muted" style="font-size:.72rem">@item.ScenarioName</span>
                         </button>
                     }
                     <div class="dd-sep" role="separator"></div>
-                    <button type="button" class="dd-item" role="menuitem" @onclick="NewScript">+ New .cs file</button>
+                    <div class="dd-lbl">Preflight scripts (@preflights.Count)</div>
+                    @if (preflights.Count == 0)
+                    {
+                        <div class="muted" style="padding:.3rem .55rem">No preflight scripts yet.</div>
+                    }
+                    @foreach (var pf in preflights)
+                    {
+                        var item = pf;
+                        var isCur = isPreflight && selectedId == item.ScriptId;
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreflightFile(item)">
+                            <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                        </button>
+                    }
+                    <div class="dd-sep" role="separator"></div>
+                    <button type="button" class="dd-item" role="menuitem" @onclick="NewScenarioScript">+ New scenario .cs</button>
+                    <button type="button" class="dd-item" role="menuitem" @onclick="NewPreflightScript">+ New preflight .cs</button>
                     <label class="dd-item" role="menuitem" style="cursor:pointer">
                         Upload .cs…
                         <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
@@ -76,8 +94,8 @@
             @(compiling ? "Saving…" : "Save")
         </button>
 
-        <button type="button" class="btn ghost small" @onclick="OpenTryDialog" disabled="@(busy || selectedSummary is null)"
-                title="@(selectedSummary is null ? "Save the script first to try it out" : "Configure parameters and run a single test execution")">
+        <button type="button" class="btn ghost small" @onclick="OpenTryDialog" disabled="@(busy || !canTry)"
+                title="@(!canTry ? "Save the script first to try it out" : isPreflight ? "Run this preflight script once and view its log output" : "Configure parameters and run a single test execution")">
             ▶ Try
         </button>
 
@@ -91,9 +109,16 @@
                 <div class="dd-backdrop" @onclick="() => moreOpen = false"></div>
                 <div class="dd-menu right" role="menu" aria-label="More script actions">
                     <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; renameOpen = true; }">Rename file…</button>
-                    <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedSummary is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; AddToPlan(); }">+ Add to plan</button>
+                    @if (!isPreflight)
+                    {
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedSummary is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; AddToPlan(); }">+ Add to plan</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedPreflight is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; UseAsPreflight(); }">Use as plan preflight</button>
+                    }
                     <div class="dd-sep" role="separator"></div>
-                    <button type="button" class="dd-item bad" role="menuitem" disabled="@(busy || selectedSummary is null)" @onclick="() => { moreOpen = false; _ = DeleteCurrent(); }">Delete script</button>
+                    <button type="button" class="dd-item bad" role="menuitem" disabled="@(busy || !canTry)" @onclick="() => { moreOpen = false; _ = DeleteCurrent(); }">Delete script</button>
                 </div>
             }
         </div>
@@ -103,14 +128,14 @@
     {
         <form class="script-rename-bar" @onsubmit="() => renameOpen = false" @onsubmit:preventDefault="true">
             <label for="script-filename" class="muted">File name:</label>
-            <input id="script-filename" class="env-name-input" value="@fileName" placeholder="order-stress.cs" autocomplete="off"
+            <input id="script-filename" class="env-name-input" value="@fileName" placeholder="@(isPreflight ? "check-readiness.cs" : "order-stress.cs")" autocomplete="off"
                    @oninput="e => fileName = e.Value?.ToString() ?? string.Empty" />
             <button type="submit" class="btn primary small">OK</button>
         </form>
     }
 
     <div class="script-editor-fill">
-        <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# scenario script" />
+        <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# script" />
     </div>
 
     @if (diagnostics.Count > 0)
@@ -127,12 +152,12 @@
     }
 </div>
 
-@if (tryOpen && selectedSummary is not null && compiledSpec is not null)
+@if (tryOpen && canTry)
 {
     <div class="overlay" tabindex="-1" @onclick="() => tryOpen = false" role="presentation">
         <div class="dialog" style="width:min(720px,100%)" role="dialog" aria-modal="true" aria-labelledby="try-title" @onclick:stopPropagation="true">
             <div class="dlg-head">
-                <h2 id="try-title">Try · @selectedSummary.ScenarioName</h2>
+                <h2 id="try-title">Try · @(isPreflight ? selectedPreflight!.FileName : selectedSummary!.ScenarioName)</h2>
                 <span class="muted">@(Envs.ActiveName is null ? "No environment" : $"Env: {Envs.ActiveName}")</span>
                 <span class="spacer"></span>
                 <button type="button" class="btn primary small" @onclick="RunTest" disabled="@busy">
@@ -142,54 +167,86 @@
             </div>
 
             <div class="script-try-body">
-                @if (compiledSpec.Fields.Count > 0)
+                @if (!isPreflight && compiledSpec is not null)
                 {
-                    <div class="form param-grid">
-                        <ParameterEditor Spec="compiledSpec" Values="testParams" Disabled="@busy" IdPrefix="script-test" />
-                    </div>
-                }
-                else
-                {
-                    <p class="muted" style="margin:0">This scenario takes no parameters.</p>
-                }
-
-                @if (testResult is not null)
-                {
-                    <div class="test-result @(testResult.Success ? "ok" : "bad")">
-                        <div class="test-result-head">
-                            <b>@(testResult.Success ? "Succeeded" : "Failed")</b>
-                            @if (testResult.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
-                            <span class="muted">@testResult.DurationMs.ToString("0.#") ms</span>
-                            <span class="muted">@testResult.Bytes B</span>
-                            <span class="muted">startup @testResult.StartupDurationMs.ToString("0.#") ms · teardown @testResult.TeardownDurationMs.ToString("0.#") ms</span>
+                    @if (compiledSpec.Fields.Count > 0)
+                    {
+                        <div class="form param-grid">
+                            <ParameterEditor Spec="compiledSpec" Values="testParams" Disabled="@busy" IdPrefix="script-test" />
                         </div>
-                        @if (!string.IsNullOrEmpty(testResult.Error))
-                        {
-                            <div class="field-error">@testResult.Error</div>
-                        }
-                        @if (testResult.Calls.Count > 0)
-                        {
-                            <div class="test-calls">
-                                @foreach (var c in testResult.Calls)
-                                {
-                                    <div class="test-call-row">
-                                        <code>@c.Method</code>
-                                        <span class="url">@c.Url</span>
-                                        <span class="muted">@(c.StatusCode?.ToString() ?? "err") · @c.DurationMs.ToString("0.#") ms</span>
-                                    </div>
-                                }
+                    }
+                    else
+                    {
+                        <p class="muted" style="margin:0">This scenario takes no parameters.</p>
+                    }
+
+                    @if (testResult is not null)
+                    {
+                        <div class="test-result @(testResult.Success ? "ok" : "bad")">
+                            <div class="test-result-head">
+                                <b>@(testResult.Success ? "Succeeded" : "Failed")</b>
+                                @if (testResult.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
+                                <span class="muted">@testResult.DurationMs.ToString("0.#") ms</span>
+                                <span class="muted">@testResult.Bytes B</span>
+                                <span class="muted">startup @testResult.StartupDurationMs.ToString("0.#") ms · teardown @testResult.TeardownDurationMs.ToString("0.#") ms</span>
                             </div>
-                        }
-                        @if (testResult.Logs.Count > 0)
-                        {
-                            <div class="test-logs">
-                                @foreach (var line in testResult.Logs)
-                                {
-                                    <div><code>@line</code></div>
-                                }
+                            @if (!string.IsNullOrEmpty(testResult.Error))
+                            {
+                                <div class="field-error">@testResult.Error</div>
+                            }
+                            @if (testResult.Calls.Count > 0)
+                            {
+                                <div class="test-calls">
+                                    @foreach (var c in testResult.Calls)
+                                    {
+                                        <div class="test-call-row">
+                                            <code>@c.Method</code>
+                                            <span class="url">@c.Url</span>
+                                            <span class="muted">@(c.StatusCode?.ToString() ?? "err") · @c.DurationMs.ToString("0.#") ms</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @if (testResult.Logs.Count > 0)
+                            {
+                                <div class="test-logs">
+                                    @foreach (var line in testResult.Logs)
+                                    {
+                                        <div><code>@line</code></div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else if (isPreflight)
+                {
+                    @if (preflightResult is null)
+                    {
+                        <p class="muted" style="margin:0">Click <b>▶ Run once</b> to execute this preflight script and inspect its log output.</p>
+                    }
+                    else
+                    {
+                        <div class="test-result @(preflightResult.Success ? "ok" : "bad")">
+                            <div class="test-result-head">
+                                <b>@(preflightResult.Success ? "Preflight succeeded" : "Preflight failed")</b>
+                                <span class="muted">@preflightResult.DurationMs.ToString("0.#") ms</span>
                             </div>
-                        }
-                    </div>
+                            @if (!string.IsNullOrEmpty(preflightResult.Error))
+                            {
+                                <div class="field-error">@preflightResult.Error</div>
+                            }
+                            @if (preflightResult.Logs.Count > 0)
+                            {
+                                <div class="test-logs">
+                                    @foreach (var line in preflightResult.Logs)
+                                    {
+                                        <div><code>@line</code></div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 }
             </div>
         </div>
@@ -200,13 +257,19 @@
     [SupplyParameterFromQuery(Name = "script")]
     public string? RequestedScript { get; set; }
 
+    [SupplyParameterFromQuery(Name = "preflight")]
+    public string? RequestedPreflight { get; set; }
+
     private List<ClientScriptSummary> scripts = [];
+    private List<ClientPreflightSummary> preflights = [];
+    private bool isPreflight;
     private string? selectedId;
     private ClientScriptSummary? selectedSummary;
+    private ClientPreflightSummary? selectedPreflight;
     private ParameterSpec? compiledSpec;
     private JsonObject testParams = new();
     private string fileName = "order-api-stress.cs";
-    private string scriptCode = StarterTemplate;
+    private string scriptCode = ScenarioTemplate;
     private bool wordWrap = true;
     private bool filesOpen;
     private bool moreOpen;
@@ -214,19 +277,19 @@
     private bool tryOpen;
     private List<ClientScriptDiagnostic> diagnostics = [];
     private ClientTestRunResult? testResult;
+    private ClientPreflightRunResult? preflightResult;
     private string? statusMessage;
     private bool statusIsError;
     private bool compiling;
     private bool testing;
     private bool busy => compiling || testing;
+    private bool canTry => isPreflight ? selectedPreflight is not null : selectedSummary is not null;
 
-    private const string StarterTemplate = """
+    private const string ScenarioTemplate = """
         // 1. Define parameters (reflected by the backend to build the Blazor form)
         public record ApiLoadParams(
             [property: Description("Target endpoint URL")]
             string Endpoint = "https://httpbin.org/post",
-            [property: Description("Auth bearer token")]
-            string? BearerToken = null,
             [property: Range(1, 5000)]
             int PayloadSizeBytes = 256,
             bool IncludeRandomJitter = true
@@ -236,33 +299,32 @@
         Scenario.Define<ApiLoadParams>("Order API Stress Test", async (p, ctx) =>
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, p.Endpoint);
-            if (!string.IsNullOrEmpty(p.BearerToken))
-                request.Headers.Authorization = new("Bearer", p.BearerToken);
             request.Content = new StringContent(new string('x', p.PayloadSizeBytes));
-
             using var response = await ctx.HttpClient.SendAsync(request, ctx.CancellationToken);
             response.EnsureSuccessStatusCode();
-
-            if (p.IncludeRandomJitter)
-                await Task.Delay(Random.Shared.Next(5, 25), ctx.CancellationToken);
-        })
-        .OnStartup(async (p, ctx) =>
-        {
-            ctx.Log("Startup hook ran");
-            await Task.CompletedTask;
-        })
-        .OnTeardown(async (p, ctx) =>
-        {
-            ctx.Log("Teardown hook ran");
-            await Task.CompletedTask;
         });
+        """;
+
+    private const string PreflightTemplate = """
+        // Preflight script: runs once before scenarios start.
+        // Use Log("...") or Logger.LogInformation("...") to stream output.
+        // Call Fail("reason") or throw an exception to prevent scenarios from starting.
+
+        Log("Checking system readiness...");
+        await Task.Delay(300, CancellationToken);
+
+        // Example: run an external CLI command
+        // var exit = await RunProcessAsync("echo", "hello from preflight");
+        // if (exit != 0) Fail($"Command failed with exit code {exit}");
+
+        Log("Preflight checks passed!");
         """;
 
     protected override async Task OnInitializedAsync()
     {
         DataMode.Changed += OnStateChanged;
         Sim.Changed += OnStateChanged;
-        await ReloadScriptsAsync();
+        await ReloadAllAsync();
     }
 
     private void OnStateChanged()
@@ -271,22 +333,45 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async Task ReloadScriptsAsync()
+    private async Task ReloadAllAsync()
     {
         try
         {
             scripts = await Api.ListScriptsAsync();
+            preflights = await Api.ListPreflightsAsync();
+
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedPreflight))
+            {
+                if (RequestedPreflight.Equals("new", StringComparison.OrdinalIgnoreCase))
+                {
+                    NewPreflightScript();
+                    return;
+                }
+                if (preflights.FirstOrDefault(p => string.Equals(p.ScriptId, RequestedPreflight, StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals(p.FileName, RequestedPreflight, StringComparison.OrdinalIgnoreCase)) is { } reqPf)
+                {
+                    SelectPreflight(reqPf);
+                    return;
+                }
+            }
+
             if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedScript)
                 && scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, RequestedScript, StringComparison.OrdinalIgnoreCase)
                                             || string.Equals(s.ScriptId, RequestedScript, StringComparison.OrdinalIgnoreCase)
-                                            || string.Equals(s.FileName, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } requested)
+                                            || string.Equals(s.FileName, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } reqSc)
             {
-                Select(requested);
+                SelectScenario(reqSc);
+                return;
             }
-            else if (selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } found)
-                Select(found);
-            else if (scripts.Count > 0 && selectedSummary is null)
-                Select(scripts[0]);
+
+            if (isPreflight && selectedId is not null && preflights.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundPf)
+                SelectPreflight(foundPf);
+            else if (!isPreflight && selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } foundSc)
+                SelectScenario(foundSc);
+            else if (scripts.Count > 0 && selectedSummary is null && selectedPreflight is null)
+                SelectScenario(scripts[0]);
+            else if (preflights.Count > 0 && selectedSummary is null && selectedPreflight is null)
+                SelectPreflight(preflights[0]);
         }
         catch (Exception ex)
         {
@@ -295,38 +380,74 @@
         }
     }
 
-    private void PickFile(ClientScriptSummary s)
-    {
-        filesOpen = false;
-        renameOpen = false;
-        Select(s);
-    }
+    private void PickScenarioFile(ClientScriptSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
+    private void PickPreflightFile(ClientPreflightSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
 
-    private void Select(ClientScriptSummary s)
+    private void SelectScenario(ClientScriptSummary s)
     {
+        isPreflight = false;
         selectedId = s.ScriptId;
         selectedSummary = s;
+        selectedPreflight = null;
         fileName = s.FileName;
         scriptCode = s.Code;
         diagnostics = [];
         testResult = null;
+        preflightResult = null;
         compiledSpec = ParameterSpec.FromJsonSchema(s.Parameters);
         testParams = compiledSpec.DefaultJson();
         statusMessage = null;
         statusIsError = false;
     }
 
-    private void NewScript()
+    private void SelectPreflight(ClientPreflightSummary p)
+    {
+        isPreflight = true;
+        selectedId = p.ScriptId;
+        selectedSummary = null;
+        selectedPreflight = p;
+        fileName = p.FileName;
+        scriptCode = p.Code;
+        diagnostics = [];
+        testResult = null;
+        preflightResult = null;
+        compiledSpec = null;
+        statusMessage = null;
+        statusIsError = false;
+    }
+
+    private void NewScenarioScript()
     {
         filesOpen = false;
+        isPreflight = false;
         selectedId = null;
         selectedSummary = null;
+        selectedPreflight = null;
         compiledSpec = null;
         testParams = new JsonObject();
         fileName = "custom-scenario.cs";
-        scriptCode = StarterTemplate;
+        scriptCode = ScenarioTemplate;
         diagnostics = [];
         testResult = null;
+        preflightResult = null;
+        statusMessage = null;
+        statusIsError = false;
+        renameOpen = true;
+    }
+
+    private void NewPreflightScript()
+    {
+        filesOpen = false;
+        isPreflight = true;
+        selectedId = null;
+        selectedSummary = null;
+        selectedPreflight = null;
+        compiledSpec = null;
+        fileName = "preflight-check.cs";
+        scriptCode = PreflightTemplate;
+        diagnostics = [];
+        testResult = null;
+        preflightResult = null;
         statusMessage = null;
         statusIsError = false;
         renameOpen = true;
@@ -343,8 +464,10 @@
         fileName = file.Name;
         selectedId = null;
         selectedSummary = null;
+        selectedPreflight = null;
         compiledSpec = null;
         testResult = null;
+        preflightResult = null;
         diagnostics = [];
         await CompileAndSave();
     }
@@ -357,21 +480,42 @@
         statusIsError = false;
         diagnostics = [];
         testResult = null;
+        preflightResult = null;
         try
         {
-            var res = await Api.CompileAndSaveAsync(selectedId, fileName, scriptCode);
-            diagnostics = res.Diagnostics.ToList();
-            if (res.Success && res.Script is { } saved)
+            if (isPreflight)
             {
-                await ReloadScriptsAsync();
-                Select(saved);
-                statusMessage = "Saved ✓";
-                statusIsError = false;
+                var res = await Api.SavePreflightAsync(selectedId, fileName, scriptCode);
+                diagnostics = res.Diagnostics.ToList();
+                if (res.Success && res.Script is { } saved)
+                {
+                    await ReloadAllAsync();
+                    SelectPreflight(saved);
+                    statusMessage = "Saved ✓";
+                    statusIsError = false;
+                }
+                else
+                {
+                    statusMessage = res.Error ?? "Compilation failed.";
+                    statusIsError = true;
+                }
             }
             else
             {
-                statusMessage = res.Error ?? "Compilation failed.";
-                statusIsError = true;
+                var res = await Api.CompileAndSaveAsync(selectedId, fileName, scriptCode);
+                diagnostics = res.Diagnostics.ToList();
+                if (res.Success && res.Script is { } saved)
+                {
+                    await ReloadAllAsync();
+                    SelectScenario(saved);
+                    statusMessage = "Saved ✓";
+                    statusIsError = false;
+                }
+                else
+                {
+                    statusMessage = res.Error ?? "Compilation failed.";
+                    statusIsError = true;
+                }
             }
         }
         catch (Exception ex)
@@ -384,20 +528,24 @@
 
     private void OpenTryDialog()
     {
-        if (selectedSummary is null) return;
+        if (!canTry) return;
         tryOpen = true;
     }
 
     private async Task RunTest()
     {
-        if (selectedSummary is null) return;
+        if (!canTry) return;
         testing = true;
         statusMessage = null;
         statusIsError = false;
         testResult = null;
+        preflightResult = null;
         try
         {
-            testResult = await Api.TestRunAsync(selectedSummary.ScriptId, testParams, Envs.ActiveName);
+            if (isPreflight)
+                preflightResult = await Api.TestRunPreflightAsync(selectedPreflight!.ScriptId, Envs.ActiveName);
+            else
+                testResult = await Api.TestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
         }
         catch (Exception ex)
         {
@@ -417,15 +565,32 @@
         statusIsError = false;
     }
 
+    private void UseAsPreflight()
+    {
+        if (selectedPreflight is null) return;
+        Sim.Plan.PreflightScriptId = selectedPreflight.ScriptId;
+        statusMessage = $"Set as preflight ✓";
+        statusIsError = false;
+    }
+
     private async Task DeleteCurrent()
     {
-        if (selectedSummary is null) return;
         try
         {
-            await Api.DeleteScriptAsync(selectedSummary.ScriptId, selectedSummary.ScenarioId);
-            NewScript();
+            if (isPreflight && selectedPreflight is not null)
+            {
+                if (string.Equals(Sim.Plan.PreflightScriptId, selectedPreflight.ScriptId, StringComparison.OrdinalIgnoreCase))
+                    Sim.Plan.PreflightScriptId = null;
+                await Api.DeletePreflightAsync(selectedPreflight.ScriptId);
+                NewPreflightScript();
+            }
+            else if (!isPreflight && selectedSummary is not null)
+            {
+                await Api.DeleteScriptAsync(selectedSummary.ScriptId, selectedSummary.ScenarioId);
+                NewScenarioScript();
+            }
             renameOpen = false;
-            await ReloadScriptsAsync();
+            await ReloadAllAsync();
             statusMessage = "Deleted";
             statusIsError = false;
         }
@@ -439,7 +604,7 @@
     private void SwitchToLive()
     {
         DataMode.SetFakeMode(false);
-        _ = ReloadScriptsAsync();
+        _ = ReloadAllAsync();
     }
 
     public void Dispose()

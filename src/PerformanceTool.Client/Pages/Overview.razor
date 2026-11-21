@@ -39,6 +39,10 @@
         <div class="preset-title">
             <h1>Scenarios</h1>
             <span class="preset-pill" title="Active preset">@Sim.PresetName</span>
+            @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
+            {
+                <span class="preset-pill preflight-pill" title="Preflight script runs before scenarios start">Preflight: @plan.PreflightScriptId</span>
+            }
             @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
             @if (!editMode)
@@ -142,9 +146,9 @@
             </div>
             <button type="button" class="btn ghost small plan-more-btn @(planMoreOpen ? "on" : "")"
                     aria-expanded="@Aria.Bool(planMoreOpen)"
-                    aria-label="@(planMoreOpen ? "Hide max in-flight and timeout" : "Show max in-flight and timeout")"
-                    title="@(planMoreOpen ? "Hide max in-flight & timeout" : "Max in-flight & timeout")"
-                    @onclick="() => planMoreOpen = !planMoreOpen">
+                    aria-label="@(planMoreOpen ? "Hide max in-flight, timeout and preflight" : "Show max in-flight, timeout and preflight")"
+                    title="@(planMoreOpen ? "Hide max in-flight, timeout & preflight" : "Max in-flight, timeout & preflight")"
+                    @onclick="TogglePlanMoreAsync">
                 ⋯
             </button>
         </div>
@@ -171,6 +175,26 @@
                         <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
                                @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
                                disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
+                    </div>
+                </div>
+                <div class="plan-ctrl plan-preflight-ctrl">
+                    <label for="p-preflight">Preflight script</label>
+                    <div class="plan-preflight-row">
+                        <select id="p-preflight" value="@(plan.PreflightScriptId ?? "")" disabled="@locked" @onchange="SetPreflight">
+                            <option value="">None (start scenarios immediately)</option>
+                            @foreach (var pf in preflights)
+                            {
+                                <option value="@pf.ScriptId">@pf.FileName</option>
+                            }
+                        </select>
+                        @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
+                        {
+                            <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?preflight={Uri.EscapeDataString(plan.PreflightScriptId)}")' title="Edit this preflight script">Edit</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo("editor?preflight=new")' title="Create a new preflight script">+ New</button>
+                        }
                     </div>
                 </div>
             </div>
@@ -350,6 +374,53 @@
             }
         </div>
     }
+    else if (!DataMode.IsFakeMode && !ApiRun.PreflightDismissed && ApiRun.PreflightState is "Running" or "Failed")
+    {
+        var pfFailed = ApiRun.PreflightState == "Failed";
+        <section class="preflight-view @(pfFailed ? "failed" : "running")" aria-label="Preflight output">
+            <div class="preflight-head">
+                <span class="pf-badge @(pfFailed ? "bad" : "run")">@(pfFailed ? "Preflight failed" : "Running preflight…")</span>
+                <b class="mono">@(ApiRun.PreflightScriptName ?? plan.PreflightScriptId ?? "preflight.cs")</b>
+                <span class="spacer"></span>
+                @if (pfFailed)
+                {
+                    @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
+                    {
+                        <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?preflight={Uri.EscapeDataString(plan.PreflightScriptId)}")'>Edit script</button>
+                    }
+                    <button type="button" class="btn primary small" @onclick="ApiRun.DismissPreflight">Clear &amp; back to overview</button>
+                }
+                else
+                {
+                    <button type="button" class="btn ghost danger small" @onclick="Sim.Stop">Cancel</button>
+                }
+            </div>
+            @if (pfFailed)
+            {
+                <div class="preflight-err-banner" role="alert">
+                    <b>Scenarios were not started.</b>
+                    @if (!string.IsNullOrWhiteSpace(ApiRun.PreflightError))
+                    {
+                        <span>@ApiRun.PreflightError</span>
+                    }
+                </div>
+            }
+            <div class="preflight-console" role="log" aria-live="polite">
+                @if (ApiRun.PreflightLogs.Count == 0)
+                {
+                    <div class="muted">Waiting for preflight output…</div>
+                }
+                else
+                {
+                    @foreach (var line in ApiRun.PreflightLogs)
+                    {
+                        var cls = line.Contains("[ERR]") ? "err" : line.Contains("[WRN]") ? "warn" : "";
+                        <div class="pf-line @cls">@line</div>
+                    }
+                }
+            </div>
+        </section>
+    }
     else
     {
         <div class="grid" aria-label="Scenarios">
@@ -385,6 +456,7 @@
     private bool runsOpen;
     private bool runsLoading;
     private List<ServerRunSummaryDto> storedRuns = [];
+    private List<ClientPreflightSummary> preflights = [];
 
     // Edit mode state
     private bool editMode;
@@ -413,6 +485,27 @@
         DataMode.Changed += OnChanged;
         Catalog.Changed += OnChanged;
         _ = ScriptApi.SyncCatalogAsync();
+        _ = LoadPreflightsAsync();
+    }
+
+    private async Task LoadPreflightsAsync()
+    {
+        preflights = await ScriptApi.ListPreflightsAsync();
+        if (!disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task TogglePlanMoreAsync()
+    {
+        planMoreOpen = !planMoreOpen;
+        if (planMoreOpen) await LoadPreflightsAsync();
+    }
+
+    private void SetPreflight(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString()?.Trim();
+        Sim.Plan.PreflightScriptId = string.IsNullOrEmpty(val) ? null : val;
+        Committed();
+        Edited();
     }
 
     private void EnterEditMode()

@@ -822,3 +822,23 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .cs-gutter { width: 2.35rem; padding: .65rem .35rem .65rem .15rem; font-size: .8rem; }
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }
+
+/* ----- preflight script selector & overview output view ----- */
+.preflight-pill { border-color: color-mix(in srgb, var(--accent2) 55%, var(--border)); color: var(--accent); }
+.pf-tag { font-size: .64rem; font-weight: 700; letter-spacing: .06em; padding: .08rem .32rem; border-radius: 3px; background: color-mix(in srgb, var(--accent2) 30%, var(--panel2)); color: var(--title); }
+.plan-preflight-ctrl { grid-column: 1 / -1; }
+.plan-preflight-row { display: flex; align-items: center; gap: .45rem; }
+.plan-preflight-row select { flex: 1 1 auto; min-width: 0; padding: .28rem .48rem; font-size: .84rem; }
+
+.preflight-view { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--running); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+.preflight-view.failed { border-color: #f2737d80; border-left-color: var(--bad); }
+.preflight-head { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; padding: .7rem .95rem; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 45%, var(--panel)); }
+.preflight-head .mono { font-family: var(--mono); font-size: .86rem; }
+.pf-badge { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: .15rem .5rem; border-radius: 999px; }
+.pf-badge.run { background: #5b9bf026; color: var(--running); border: 1px solid #5b9bf066; }
+.pf-badge.bad { background: #f2737d26; color: var(--bad); border: 1px solid #f2737d66; }
+.preflight-err-banner { display: flex; flex-wrap: wrap; gap: .4rem; padding: .6rem .95rem; background: #f2737d18; border-bottom: 1px solid #f2737d44; color: #ffc2c7; font-size: .84rem; }
+.preflight-console { padding: .8rem .95rem; background: var(--input); font-family: var(--mono); font-size: .8rem; line-height: 1.5; min-height: 220px; max-height: 55vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.pf-line { color: var(--text); }
+.pf-line.err { color: #ffc2c7; }
+.pf-line.warn { color: #f1d6a3; }

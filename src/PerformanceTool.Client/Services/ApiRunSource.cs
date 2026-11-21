@@ -68,7 +68,18 @@ public sealed class ApiRunSource : IRunSource
     public string CurrentRunId => activeRunId;
     public DateTimeOffset CurrentStartedUtc => activeStartedUtc;
     public long TotalServerLogs { get; private set; }
-    public string StorageProvider { get; private set; } = "Sqlite";
+    public string StorageProvider { get; private set; } = "DuckDb";
+    public string? PreflightState { get; private set; }
+    public string? PreflightScriptName { get; private set; }
+    public IReadOnlyList<string> PreflightLogs { get; private set; } = [];
+    public string? PreflightError { get; private set; }
+    public bool PreflightDismissed { get; private set; }
+
+    public void DismissPreflight()
+    {
+        PreflightDismissed = true;
+        Changed?.Invoke();
+    }
 
     public RunSnapshot Current { get; private set; }
     public bool IsRunning => Current.Running;
@@ -104,7 +115,11 @@ public sealed class ApiRunSource : IRunSource
         int LastSequence,
         long TotalLogs,
         string StorageProvider,
-        string? Error);
+        string? Error,
+        string? PreflightState = null,
+        string? PreflightScriptName = null,
+        List<string>? PreflightLogs = null,
+        string? PreflightError = null);
 
     private sealed record ServerActorDetailDto(
         string RunId,
@@ -181,7 +196,7 @@ public sealed class ApiRunSource : IRunSource
             if (dto is not null && dto.Plan.Scenarios.Count > 0)
             {
                 ApplyStatus(dto);
-                if (dto.State == "Running") StartPolling();
+                if (dto.State is "Running" or "Preflight") StartPolling();
             }
         }
         catch { }
@@ -335,12 +350,12 @@ public sealed class ApiRunSource : IRunSource
             {
                 try
                 {
-                    await Task.Delay(500, ct);
+                    await Task.Delay(PreflightState == "Running" ? 250 : 500, ct);
                     var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts, ct);
                     if (dto is not null)
                     {
                         ApplyStatus(dto);
-                        if (dto.State != "Running") break;
+                        if (dto.State is not ("Running" or "Preflight")) break;
                     }
                 }
                 catch (OperationCanceledException) { break; }
@@ -373,10 +388,16 @@ public sealed class ApiRunSource : IRunSource
             lastSequence = -1;
             loadedDetails.Clear();
             loadingDetails.Clear();
+            PreflightDismissed = false;
         }
 
         TotalServerLogs = dto.TotalLogs;
         StorageProvider = dto.StorageProvider;
+        if (dto.PreflightState == "Running") PreflightDismissed = false;
+        PreflightState = dto.PreflightState;
+        PreflightScriptName = dto.PreflightScriptName;
+        PreflightLogs = dto.PreflightLogs ?? [];
+        PreflightError = dto.PreflightError;
 
         foreach (var a in dto.NewActors)
         {
@@ -401,7 +422,7 @@ public sealed class ApiRunSource : IRunSource
 
         var state = dto.State switch
         {
-            "Running" => FakeRunState.Running,
+            "Running" or "Preflight" => FakeRunState.Running,
             "Finished" => FakeRunState.Finished,
             _ => FakeRunState.Idle,
         };

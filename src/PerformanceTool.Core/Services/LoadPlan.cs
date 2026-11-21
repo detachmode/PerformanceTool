@@ -18,6 +18,8 @@ public sealed class LoadPlan
     public int DurationSeconds { get; set; } = 30;
     public int MaxConcurrency { get; set; } = 50;
     public int TimeoutSeconds { get; set; } = 30;
+    /// <summary>Optional preflight script ID that must complete successfully before scenarios start.</summary>
+    public string? PreflightScriptId { get; set; }
 
     public LoadPlan Clone() => new()
     {
@@ -25,6 +27,7 @@ public sealed class LoadPlan
         DurationSeconds = DurationSeconds,
         MaxConcurrency = MaxConcurrency,
         TimeoutSeconds = TimeoutSeconds,
+        PreflightScriptId = PreflightScriptId,
     };
 
     public List<string> Validate(ScenarioCatalog catalog)
