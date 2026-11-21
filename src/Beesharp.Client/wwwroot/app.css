@@ -305,7 +305,7 @@ label { font-size: .72rem; color: var(--muted); }
 .plan-ctrl .slider.with-input input.slider-num { flex: 0 0 4.5rem; width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; padding: .22rem .4rem; font-size: .84rem; }
 .settings .num { display: flex; flex-direction: column; gap: .2rem; }
 .settings .num input { width: 6.5rem; padding: .3rem .5rem; font-size: .85rem; }
-.plan-ctrl .slider input[type=range] { flex: 1; min-width: 0; width: auto; padding: 0; border: 0; background: none; }
+.plan-ctrl .slider input[type=range] { flex: 1; min-width: 0; width: auto; padding: 0; border: 0; }
 .settings .field-error { grid-column: 1 / -1; flex-basis: 100%; }
 .ed-hint { margin: 0 0 .75rem; }
 .ed-split { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 1rem; align-items: start; }
