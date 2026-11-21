@@ -237,13 +237,36 @@
                     }
                     <span class="muted">@Format.Ms(bee.DurationMs) · started @Format.Time(bee.StartedAt)</span>
                     <span class="spacer"></span>
-                    <button class="btn ghost small" @onclick="() => Logs.Show(Index, bee.Sequence)">Open logs for this bee</button>
+                    @if (detail is not null)
+                    {
+                        <div class="seg" role="group" aria-label="Bee inspection view">
+                            <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@detail.Logs.Count)</button>
+                            <button type="button" class="@(showWaterfall ? "on" : "")" @onclick="() => showWaterfall = true">Waterfall (@detail.Calls.Count)</button>
+                        </div>
+                    }
+                    <button class="btn ghost small" @onclick="() => Logs.Show(Index, bee.Sequence)" title="Open in full log viewer">Full logs</button>
                     <button class="icon-btn" @onclick="() => selected = null" aria-label="Deselect bee">✕</button>
                 </div>
                 @if (bee.Error is not null) { <p class="bee-error bad">@bee.Error</p> }
                 @if (detail is null)
                 {
                     <p class="muted">The calls and logs of this bee are no longer kept (details of older successful bees are dropped first).</p>
+                }
+                else if (!showWaterfall)
+                {
+                    <div class="sl-console compact wrap" role="log" aria-label="Logs of @bee.Name">
+                        @if (detail.Logs.Count == 0)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">No logs emitted by this bee.</div>
+                        }
+                        else
+                        {
+                            @foreach (var log in detail.Logs)
+                            {
+                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                            }
+                        }
+                    </div>
                 }
                 else
                 {
@@ -313,6 +336,7 @@
     private BeeRecord? selected;
     private bool showTypicals;   // the bee panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
+    private bool showWaterfall;
     private double? bucketValue;
     /// <summary>The selected time bucket; any change clears the selected burst group (brain 0043), which the pick that sets it assigns afterwards.</summary>
     private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
