@@ -108,12 +108,18 @@ public sealed class DuckDbStorageTests
                 await File.WriteAllBytesAsync(exportedDuckPath, duckExp!.Content);
             }
 
-            // Reopen the exported standalone .duckdb file and verify it contains the run!
+            // Reopen the exported standalone .duckdb file and verify it contains the run and restores cleanly!
             await using var exportedDb = new DuckDbRunStorage(exportedDuckPath);
             var exportedRuns = await exportedDb.ListRunsAsync();
             Assert.Single(exportedRuns);
             Assert.Equal("run-duck-1", exportedRuns[0].RunId);
             Assert.Equal(3, exportedRuns[0].TotalLogs);
+
+            var restored = await exportedDb.GetRunAsync("run-duck-1");
+            Assert.NotNull(restored);
+            Assert.Single(restored!.Plan.Scenarios);
+            Assert.Equal(2, restored.Actors.Count);
+            Assert.Equal(3, restored.TotalLogs);
         }
         finally
         {

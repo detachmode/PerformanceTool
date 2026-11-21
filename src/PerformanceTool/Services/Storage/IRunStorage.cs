@@ -57,6 +57,26 @@ public sealed record LogPageResult(
     int Limit,
     IReadOnlyList<StoredLogRow> Items);
 
+public sealed record StoredActorSummary(
+    int Sequence,
+    int Entry,
+    double StartedAt,
+    double DurationMs,
+    int? StatusCode,
+    long Bytes,
+    string? Error,
+    int SlowCalls);
+
+public sealed record StoredRunData(
+    string RunId,
+    DateTimeOffset StartedUtc,
+    string State,
+    double ElapsedSeconds,
+    LoadPlan Plan,
+    IReadOnlyList<StoredActorSummary> Actors,
+    long TotalLogs,
+    string? Error);
+
 public sealed record RunExportResult(
     string FileName,
     string ContentType,
@@ -78,6 +98,7 @@ public interface IRunStorage : IAsyncDisposable
     Task FlushAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default);
+    Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default);
     Task<StoredActorDetail?> GetActorDetailAsync(string runId, int sequence, CancellationToken ct = default);
     Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default);
 

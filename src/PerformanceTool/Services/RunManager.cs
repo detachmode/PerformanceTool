@@ -67,6 +67,72 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private long totalLogs;
     private string? runError;
 
+    /// <summary>Restores the most recent persisted run from <see cref="IRunStorage"/> on server startup.</summary>
+    public async Task RestoreLatestAsync(CancellationToken ct = default)
+    {
+        var runs = await storage.ListRunsAsync(20, ct);
+        var best = runs.FirstOrDefault(r => r.TotalActors > 0) ?? runs.FirstOrDefault();
+        if (best is not null)
+            await LoadStoredRunAsync(best.RunId, ct);
+    }
+
+    /// <summary>Loads a persisted historical run from <see cref="IRunStorage"/> into the active view.</summary>
+    public async Task<LiveRunStatusDto?> LoadStoredRunAsync(string targetRunId, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            if (state == "Running")
+                throw new InvalidOperationException("Cannot switch runs while a live run is in progress. Stop it first.");
+        }
+
+        var data = await storage.GetRunAsync(targetRunId, ct);
+        if (data is null) return null;
+
+        lock (sync)
+        {
+            if (state == "Running")
+                throw new InvalidOperationException("Cannot switch runs while a live run is in progress. Stop it first.");
+
+            var count = data.Plan.Scenarios.Count;
+            runId = data.RunId;
+            state = data.State == "Running" ? "Finished" : data.State;
+            startedUtc = data.StartedUtc;
+            clock = new Stopwatch();
+            finalElapsed = data.ElapsedSeconds;
+            activePlan = data.Plan.Clone();
+            starts = new int[count];
+            finished = new int[count];
+            inFlight = new int[count];
+            failed = new int[count];
+            slowActors = new int[count];
+            slowCalls = new int[count];
+            dropped = new int[count];
+            actors.Clear();
+            lastSequence = -1;
+            totalLogs = data.TotalLogs;
+            runError = data.Error;
+
+            foreach (var a in data.Actors)
+            {
+                actors.Add(new LiveActorDto(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, a.SlowCalls));
+                if (a.Sequence > lastSequence) lastSequence = a.Sequence;
+                if (a.Entry >= 0 && a.Entry < count)
+                {
+                    starts[a.Entry]++;
+                    finished[a.Entry]++;
+                    if (a.Error is not null) failed[a.Entry]++;
+                    if (a.SlowCalls > 0)
+                    {
+                        slowActors[a.Entry]++;
+                        slowCalls[a.Entry] += a.SlowCalls;
+                    }
+                }
+            }
+        }
+
+        return GetCurrent();
+    }
+
     /// <summary>
     /// Returns current run status plus only compact actors with <c>Sequence &gt; afterSeq</c> (up to <paramref name="maxActors"/>).
     /// Full calls and logs live in <see cref="IRunStorage"/> and are fetched lazily on demand.

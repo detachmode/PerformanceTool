@@ -90,6 +90,18 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    public Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            var b = runs.FirstOrDefault(x => x.RunId == runId);
+            if (b is null) return Task.FromResult<StoredRunData?>(null);
+            var actors = b.Actors.Values.OrderBy(a => a.Sequence).Select(a => new StoredActorSummary(
+                a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, 0)).ToList();
+            return Task.FromResult<StoredRunData?>(new StoredRunData(b.RunId, b.StartedUtc, b.State, b.ElapsedSeconds, new LoadPlan(), actors, b.Logs.Count, b.Error));
+        }
+    }
+
     public Task<StoredActorDetail?> GetActorDetailAsync(string runId, int sequence, CancellationToken ct = default)
     {
         lock (sync)

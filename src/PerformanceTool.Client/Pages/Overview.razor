@@ -1,9 +1,11 @@
-@* Overview (brain 0020): run status. One calm card per scenario; a card opens the scenario popup. *@
+@* Overview (brain 0020, 0046): run status + Run History picker for persisted DuckDB runs in Live mode. One calm card per scenario; a card opens the scenario popup. *@
 @page "/"
 @page "/overview"
 @layout MainLayout
 @implements IDisposable
 @inject IRunSource Sim
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
 @inject ScenarioCatalog Catalog
 
 <PageTitle>Overview · PerformanceTool</PageTitle>
@@ -17,6 +19,43 @@
     <div class="page-head">
         <h1>Scenarios</h1>
         <span class="muted">@state · @s.Count scenarios · @Format.Num(s.Scenarios.Sum(x => x.Finished)) actors finished</span>
+        @if (!DataMode.IsFakeMode)
+        {
+            <span class="spacer"></span>
+            <div class="dd">
+                <button type="button" class="btn ghost small" aria-haspopup="menu" aria-expanded="@Aria.Bool(runsOpen)"
+                        disabled="@Sim.IsRunning" @onclick="ToggleRunsAsync" title="Open a past run stored in @ApiRun.StorageProvider">
+                    Runs ▾
+                </button>
+                @if (runsOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => runsOpen = false"></div>
+                    <div class="dd-menu right" style="min-width:270px;max-height:60vh;overflow-y:auto" role="menu" aria-label="Stored runs">
+                        <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
+                        @if (runsLoading)
+                        {
+                            <div class="muted" style="padding:.4rem .55rem">Loading…</div>
+                        }
+                        else if (storedRuns.Count == 0)
+                        {
+                            <div class="muted" style="padding:.4rem .55rem">No stored runs yet.</div>
+                        }
+                        else
+                        {
+                            @foreach (var r in storedRuns)
+                            {
+                                var item = r;
+                                var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
+                                <button type="button" class="dd-item" role="menuitem" @onclick="() => PickRunAsync(item.RunId)" style="flex-direction:column;align-items:flex-start;gap:.1rem">
+                                    <span>@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
+                                    <span class="muted" style="font-size:.74rem">@Format.Num(item.TotalActors) actors · @(item.FailedActors > 0 ? $"{item.FailedActors} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
+                                </button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
     </div>
 
     <div class="grid" aria-label="Scenarios">
@@ -37,8 +76,31 @@
 @code {
     private int? open;
     private DetailFilter openFilter;
+    private bool runsOpen;
+    private bool runsLoading;
+    private List<ServerRunSummaryDto> storedRuns = [];
 
-    protected override void OnInitialized() => Sim.Changed += OnChanged;
+    protected override void OnInitialized()
+    {
+        Sim.Changed += OnChanged;
+        DataMode.Changed += OnChanged;
+    }
+
+    private async Task ToggleRunsAsync()
+    {
+        runsOpen = !runsOpen;
+        if (!runsOpen) return;
+        runsLoading = true;
+        try { storedRuns = await ApiRun.ListRunsAsync(30); }
+        finally { runsLoading = false; }
+    }
+
+    private async Task PickRunAsync(string runId)
+    {
+        runsOpen = false;
+        open = null;
+        await ApiRun.LoadStoredRunAsync(runId);
+    }
 
     private void OnChanged()
     {
@@ -46,5 +108,9 @@
         catch (ObjectDisposedException) { }
     }
 
-    public void Dispose() => Sim.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Sim.Changed -= OnChanged;
+        DataMode.Changed -= OnChanged;
+    }
 }

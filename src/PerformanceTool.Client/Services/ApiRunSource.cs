@@ -25,6 +25,17 @@ public sealed record ServerLogPageDto(
     int Limit,
     List<ServerLogRowDto> Items);
 
+public sealed record ServerRunSummaryDto(
+    string RunId,
+    DateTimeOffset StartedUtc,
+    DateTimeOffset? FinishedUtc,
+    string State,
+    double ElapsedSeconds,
+    int TotalActors,
+    int FailedActors,
+    long TotalLogs,
+    string? Error);
+
 /// <summary>
 /// Scalable live data source talking to the ASP.NET Core server's REST API (<c>/api/runs/*</c>) backed by SQLite
 /// (brain 0015, 0040, 0045). Uses lightweight incremental polling (<c>afterSeq</c>) for compact actor records,
@@ -171,6 +182,27 @@ public sealed class ApiRunSource : IRunSource
             {
                 ApplyStatus(dto);
                 if (dto.State == "Running") StartPolling();
+            }
+        }
+        catch { }
+    }
+
+    public async Task<List<ServerRunSummaryDto>> ListRunsAsync(int limit = 30, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<ServerRunSummaryDto>>($"api/runs?limit={limit}", JsonOpts, ct) ?? []; }
+        catch { return []; }
+    }
+
+    public async Task LoadStoredRunAsync(string targetRunId, CancellationToken ct = default)
+    {
+        try
+        {
+            StopPolling();
+            var resp = await http.PostAsync($"api/runs/{Uri.EscapeDataString(targetRunId)}/load", null, ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts, ct);
+                if (dto is not null) ApplyStatus(dto);
             }
         }
         catch { }
@@ -327,6 +359,12 @@ public sealed class ApiRunSource : IRunSource
     private void ApplyStatus(LiveRunStatusDto dto)
     {
         var count = dto.Plan.Scenarios.Count;
+        if (Plan.Scenarios.Count == 0 && count > 0)
+        {
+            Plan = dto.Plan.Clone();
+            savedFingerprint = Fingerprint(Plan);
+            savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
+        }
         if (!string.Equals(activeRunId, dto.RunId, StringComparison.Ordinal))
         {
             activeRunId = dto.RunId;

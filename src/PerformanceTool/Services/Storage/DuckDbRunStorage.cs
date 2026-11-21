@@ -397,6 +397,62 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    public Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default)
+    {
+        lock (dbLock)
+        {
+            DateTimeOffset startedUtc;
+            string state;
+            double elapsedSeconds;
+            LoadPlan plan;
+            string? error;
+            long totalLogs;
+
+            using (var rCmd = conn.CreateCommand())
+            {
+                rCmd.CommandText = """
+                    SELECT started_utc, state, elapsed_seconds, plan_json, error,
+                           COALESCE((SELECT COUNT(*) FROM logs l WHERE l.run_id = runs.run_id), 0)
+                    FROM runs WHERE run_id = $1;
+                    """;
+                rCmd.Parameters.Add(new DuckDBParameter(runId));
+                using var rr = rCmd.ExecuteReader();
+                if (!rr.Read()) return Task.FromResult<StoredRunData?>(null);
+                startedUtc = DateTimeOffset.Parse(rr.GetString(0));
+                state = rr.GetString(1);
+                elapsedSeconds = rr.GetDouble(2);
+                plan = JsonSerializer.Deserialize<LoadPlan>(rr.GetString(3), JsonOpts) ?? new LoadPlan();
+                error = rr.IsDBNull(4) ? null : rr.GetString(4);
+                totalLogs = Convert.ToInt64(rr.GetValue(5));
+            }
+
+            var actors = new List<StoredActorSummary>();
+            using (var aCmd = conn.CreateCommand())
+            {
+                aCmd.CommandText = """
+                    SELECT sequence, entry, started_at, duration_ms, status_code, bytes, error, slow_calls
+                    FROM actors WHERE run_id = $1 ORDER BY sequence;
+                    """;
+                aCmd.Parameters.Add(new DuckDBParameter(runId));
+                using var ar = aCmd.ExecuteReader();
+                while (ar.Read())
+                {
+                    actors.Add(new StoredActorSummary(
+                        ar.GetInt32(0),
+                        ar.GetInt32(1),
+                        ar.GetDouble(2),
+                        ar.GetDouble(3),
+                        ar.IsDBNull(4) ? null : ar.GetInt32(4),
+                        ar.GetInt64(5),
+                        ar.IsDBNull(6) ? null : ar.GetString(6),
+                        ar.GetInt32(7)));
+                }
+            }
+
+            return Task.FromResult<StoredRunData?>(new StoredRunData(runId, startedUtc, state, elapsedSeconds, plan, actors, totalLogs, error));
+        }
+    }
+
     public Task<StoredActorDetail?> GetActorDetailAsync(string runId, int sequence, CancellationToken ct = default)
     {
         lock (dbLock)

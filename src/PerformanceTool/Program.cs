@@ -32,6 +32,7 @@ var app = builder.Build();
 // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
 app.Services.GetRequiredService<ScenarioCatalog>();
 await app.Services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync();
+await app.Services.GetRequiredService<RunManager>().RestoreLatestAsync();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -119,6 +120,17 @@ app.MapPost("/api/runs/start", async (StartRunRequest body, RunManager runs, Can
     }
 });
 app.MapPost("/api/runs/stop", (RunManager runs) => runs.StopAsync());
+app.MapPost("/api/runs/{runId}/load", async (string runId, RunManager runs, CancellationToken ct) =>
+{
+    try
+    {
+        return await runs.LoadStoredRunAsync(runId, ct) is { } loaded ? Results.Ok(loaded) : Results.NotFound();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 app.MapGet("/api/runs/{runId}/actors/{sequence:int}", async (string runId, int sequence, IRunStorage storage, CancellationToken ct) =>
     await storage.GetActorDetailAsync(runId, sequence, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
 app.MapGet("/api/runs/{runId}/logs", (
