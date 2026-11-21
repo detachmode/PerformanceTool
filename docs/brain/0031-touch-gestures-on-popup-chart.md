@@ -53,3 +53,5 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
   from the view's edges while panning. Build groups on a fixed time grid that does not move with the view, and
   render them a bit beyond the visible edges, so bars slide in smoothly.
 - Tap still selects, pinch still zooms, a vertical swipe still scrolls.
+- **Release selects (user, same day):** lifting the finger after a sideways swipe with the magnifier selects
+  the last highlighted bar (instead of leaving the selection unchanged).
