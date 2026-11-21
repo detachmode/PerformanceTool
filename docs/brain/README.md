@@ -80,3 +80,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0040](0040-popup-chart-robust-navigation.md) | Popup chart navigation bullet proof: a swipe never zooms, bursts unfold as soon as their actors fit (x stays linear in time), redesigned overview strip, persistent grabbable selection pill | Accepted (goal, selection pill), design Proposed, implemented |
 | [0041](0041-graded-slow-colour.md) | Slowness as a colour gradient from green (typical time) to amber; the slow line stays for counting and filters | Accepted, implemented (details Proposed) |
 | [0042](0042-bursts-split-into-even-groups.md) | A burst that does not fit splits into even groups (refining while zooming); failed/slow stay in their group | Accepted, implemented |
+| [0043](0043-selection-marker-one-piece.md) | The lilac selection marker (caret, stem, pill) is one robust piece that always points at the selected bar | Accepted (goal), design Proposed, not implemented |
