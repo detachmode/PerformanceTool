@@ -372,13 +372,12 @@ label { font-size: .72rem; color: var(--muted); }
 .card-add .plus { font-size: 1.6rem; line-height: 1; color: var(--accent); }
 .card-add:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .card-add:disabled { opacity: .45; cursor: default; }
-.detail-foot { flex: none; border-top: 1px solid var(--border); padding: .6rem 1.1rem; background: var(--panel); }
-.ed-split .detail .field.rate { width: 160px; }
-@media (max-width: 1000px) { .ed-split { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 1000px) {
-    .ed-split .detail.none { display: none; }
-    .ed-split .detail { position: fixed; inset: 0; z-index: 90; max-height: none; border-radius: 0; border: 0; padding-bottom: env(safe-area-inset-bottom); }
-}
+.card-expanded, .card-add-open { grid-column: 1 / -1; padding: 0; gap: 0; cursor: default; overflow: hidden; }
+.card-expanded:hover, .card-add-open:hover { background: var(--panel); }
+.card-expanded.selected { background: var(--panel); }
+.card-add-open { border-style: dashed; border-color: var(--accent2); }
+.add-menu.inline { border: 0; background: transparent; padding: .45rem; }
+.detail-foot { flex: none; display: flex; align-items: center; gap: .5rem; border-top: 1px solid var(--border); padding: .6rem 1.1rem; background: var(--panel); }
 
 /* ----- build info (brain 0025) ----- */
 .build-stamp { margin-left: .25rem; display: inline-flex; gap: .75rem; align-items: baseline; font-size: .72rem; color: var(--faint); white-space: nowrap; }
