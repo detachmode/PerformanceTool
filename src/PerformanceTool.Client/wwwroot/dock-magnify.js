@@ -114,27 +114,21 @@ export function attach(el, ref, options) {
     let grid = null, off = 0, Wc = el.clientWidth;
     let view = null, owns = false, ownTimer = 0;          // the view while the script drives it (edge pan, overview strip), until Blazor has caught up
     let edge = 0, edgeRaf = 0, edgeLast = 0, zoomNext = null, zoomTimer = 0, zoomAt = 0, strip2 = null;
-    // Unfolded bursts (brain 0038): consecutive bars with the same data-ub are one grid slot (a cell). cellOf[i] is the cell of bar i, cellStart/cellEnd
-    // its first and last bar; without unfolded bursts a cell is one bar. Empty (identity) while there is no burst, so a normal chart is unchanged.
-    let cellOf = [], cellStart = [], cellEnd = [], bursts = new Map(), strBase = 0;
-    const buildCells = () => {
-        cellOf = []; cellStart = []; cellEnd = []; bursts = new Map();
-        let prev = null, c = -1, any = false;
+    // Unfolded bursts (brain 0038, 0040): the bars of a burst share the empty grid slots the burst borrowed (data-k = slots per bar), so x stays linear
+    // in time over the whole chart. slotAt[i] is the slot offset of bar i's left edge from the buffer start, slotW[i] its width in slots (1 for slot bars);
+    // bursts maps data-ub to the first and last bar of the burst (for its label).
+    let slotAt = [], slotW = [], bursts = new Map(), strBase = 0;
+    const buildSlots = () => {
+        slotAt = new Array(items.length); slotW = new Array(items.length); bursts = new Map();
+        let s = 0;
         for (let i = 0; i < items.length; i++) {
-            const ub = items[i].dataset.ub;
-            if (ub !== undefined) { any = true; if (!bursts.has(ub)) bursts.set(ub, [i, i]); else bursts.get(ub)[1] = i; }
-            if (ub === undefined || ub !== prev) { c++; cellStart[c] = i; }
-            prev = ub === undefined ? null : ub; cellOf[i] = c; cellEnd[c] = i;
+            const d = items[i].dataset, k = d.k !== undefined ? (parseFloat(d.k) || 1) : 1, ub = d.ub;
+            slotAt[i] = s; slotW[i] = k; s += k;
+            if (ub !== undefined) { if (!bursts.has(ub)) bursts.set(ub, [i, i]); else bursts.get(ub)[1] = i; }
         }
-        if (!any) { cellOf = []; cellStart = []; cellEnd = []; }
     };
-    // x (strip coordinates, resting layout) of a time: the slot's cell, by the time inside the slot
-    const xOfTime = (t, span) => {
-        const sl = (t - grid.buf) / grid.bw;
-        if (cellOf.length === 0 || cellOf.length !== rest.length) return sl * (Wc * grid.bw / span);
-        const nc = cellStart.length, c = Math.max(0, Math.min(nc - 1, Math.floor(sl))), a = rest[cellStart[c]], z = rest[cellEnd[c]];
-        return a.left - strBase + (sl - c) * (z.left + z.width - a.left);
-    };
+    // x (strip coordinates, resting layout) of a time: linear, also across unfolded bursts
+    const xOfTime = (t, span) => (t - grid.buf) / grid.bw * (Wc * grid.bw / span);
     const runEnd = () => (parseFloat(el.dataset.elapsed) || 0) / 1000;
     const readGrid = () => {
         const bw = parseFloat(el.dataset.grid), buf = parseFloat(el.dataset.buf), wv = (el.dataset.win || '').split(' ').map(parseFloat);
@@ -151,11 +145,15 @@ export function attach(el, ref, options) {
     let ovWin = null;
     // The strip shows where failed (red) and slow (amber) actors were over the whole run (brain 0035 update 1): data-ov has one character per
     // bin of the run ('f' failed, 's' slow, '.' neither), drawn on a canvas under the lit window. Bounded: the number of bins, not of actors.
-    let ovCanvas = null, ovKey = '';
-    if (over) { ovWin = mk('ov-win'); ovCanvas = mk('ov-marks', 'canvas'); over.append(mk('ov-track'), ovCanvas, ovWin); }
+    let ovCanvas = null, ovKey = '', ovDimL = null, ovDimR = null, ovPin = null, ovGeom = null;
+    if (over) {
+        ovWin = mk('ov-win'); ovWin.append(mk('ov-grip'), mk('ov-grip r'));
+        ovCanvas = mk('ov-marks', 'canvas'); ovDimL = mk('ov-dim'); ovDimR = mk('ov-dim'); ovPin = mk('ov-pin');
+        over.append(mk('ov-track'), ovCanvas, ovDimL, ovDimR, ovWin, ovPin);
+    }
     const drawOv = () => {
         if (!ovCanvas) return;
-        const d = dpr(), w = Math.round(over.clientWidth * d), h = Math.round(10 * d), data = el.dataset.ov || '';
+        const d = dpr(), w = Math.round(over.clientWidth * d), h = Math.round((ovCanvas.clientHeight || 12) * d), data = el.dataset.ov || '';
         const key = data + '|' + w + '|' + h;
         if (key === ovKey || w <= 0) return;
         ovKey = key;
@@ -169,14 +167,27 @@ export function attach(el, ref, options) {
             for (let i = 0; i < n; i++) if (data[i] === kind) { const x0 = Math.floor(i / n * w), x1 = Math.max(x0 + Math.round(1.5 * d), Math.floor((i + 1) / n * w)); c.fillRect(x0, 0, x1 - x0, h); }
         }
     };
+    // the view's window on the strip, in strip pixels: at least 16 px (touch 24 px) wide, centred on the view and kept inside the strip; a pin marks the
+    // exact spot when the window had to be widened (brain 0040)
     const updateOver = () => {
         if (!over) return;
         drawOv();
-        const v = curView(), E = runEnd();
-        if (!v || E <= 0) { ovWin.style.display = 'none'; return; }
-        ovWin.style.display = '';
-        const a = Math.max(0, Math.min(1, v[0] / E)), b = Math.max(a, Math.min(1, v[1] / E));
-        ovWin.style.left = (a * 100).toFixed(3) + '%'; ovWin.style.width = ((b - a) * 100).toFixed(3) + '%';
+        const v = curView(), E = runEnd(), W = over.clientWidth;
+        if (!v || E <= 0 || W <= 0) {
+            ovGeom = null; over.classList.remove('on');
+            return;
+        }
+        const a = Math.max(0, Math.min(1, v[0] / E)) * W, b = Math.max(0, Math.min(1, v[1] / E)) * W, minW = coarse() ? 24 : 16;
+        let l = a, w = Math.max(0, b - a);
+        const tiny = w < minW;
+        if (tiny) { w = minW; l = Math.max(0, Math.min(W - w, (a + b) / 2 - w / 2)); }
+        ovGeom = { l, w, a, b, W };
+        over.classList.add('on'); over.classList.toggle('tiny', tiny);
+        ovWin.style.transform = `translateX(${l.toFixed(2)}px)`; ovWin.style.width = w.toFixed(2) + 'px';
+        ovWin.classList.toggle('grips', w >= 30);
+        ovDimL.style.width = Math.max(0, l).toFixed(2) + 'px';
+        ovDimR.style.transform = `translateX(${(l + w).toFixed(2)}px)`; ovDimR.style.width = Math.max(0, W - l - w).toFixed(2) + 'px';
+        if (tiny) ovPin.style.transform = `translateX(${((a + b) / 2).toFixed(2)}px)`;
     };
     // Even gaps (brain 0037): the strip starts on a whole device pixel (the offset is snapped, which also aligns an unzoomed chart), every bar edge
     // is snapped to a device pixel (cumulative rounding, so the total width stays the same) and each bar keeps the same gap (--gap, whole device
@@ -190,7 +201,7 @@ export function attach(el, ref, options) {
         if (Math.abs(o - off) > 1e-4) {
             off = o; box.style.transform = Math.abs(o) > 1e-4 ? `translateX(${o.toFixed(4)}px)` : '';
             if (active || raf) kick();
-            else { if (rest.length === items.length && items.length) { placeSel(restEl()); placeTags(restEl()); } idle(); }      // the caret moves with the bars in the same frame
+            else { if (rest.length === items.length && items.length) { const L = restEl(); placeSel(L); placeTags(L); drawAxis(L, -1); } idle(); }      // the caret and the selection pill move with the bars in the same frame
         }
         updateOver();
     };
@@ -217,9 +228,9 @@ export function attach(el, ref, options) {
         let lo = 0, hi = L.length - 1;
         if (hi >= 0 && x >= L[0].left && x < L[hi].left + L[hi].width) {
             while (lo < hi) { const m = (lo + hi + 1) >> 1; if (L[m].left <= x) lo = m; else hi = m - 1; }
-            // inside an unfolded burst (brain 0038) the whole stretch is one instant: the time of its grid slot, by position in the stretch
-            if (cellOf.length === L.length) { const c = cellOf[lo], a = L[cellStart[c]], z = L[cellEnd[c]], cw = z.left + z.width - a.left; return grid.buf + (c + (x - a.left) / cw) * grid.bw; }
-            return grid.buf + (lo + (x - L[lo].left) / L[lo].width) * grid.bw;
+            // by slots, so a bar of an unfolded burst counts as the part of the borrowed room it covers (brain 0040)
+            const s0 = slotAt.length === L.length ? slotAt[lo] : lo, sw = slotW.length === L.length ? slotW[lo] : 1;
+            return grid.buf + (s0 + (x - L[lo].left) / L[lo].width * sw) * grid.bw;
         }
         const v = curView(); return v[0] + x / Wc * (v[1] - v[0]);
     };
@@ -240,6 +251,9 @@ export function attach(el, ref, options) {
     if (strip) for (let j = 0; j < NEAR * 2; j++) { const n = mk('dz-n'); n.append(mk('', 'a'), mk('', 'b')); strip.append(n); near.push(n); }
     let ticks = [], mark = null, readout = null;
     if (axis) { mark = mk('dz-mark'); readout = mk('dz-readout'); axis.append(mark, readout); }
+    // the selection's mark and pill (brain 0040), next to the hover ones; the pill takes pointer events (grab, click)
+    const selMk = select && axis ? mk('dz-mark sel') : null, selRd = select && axis ? mk('dz-readout sel', 'button') : null;
+    if (selRd) { selRd.type = 'button'; selRd.tabIndex = -1; axis.append(selMk, selRd); }
     // ---- selection marker (brain 0037): an accent caret under the selected bar, in the strip below the bars, pointing up at it. It follows the
     // bar's current layout (magnifier, pan) every frame.
     const selEl = select && axis ? mk('dz-sel') : null;
@@ -341,7 +355,7 @@ export function attach(el, ref, options) {
         strBase = box === el ? 0 : (parseFloat(getComputedStyle(el).paddingLeft) || 0) + el.clientLeft;
         const n = rest.length;
         if (n && box !== el) {
-            const pitch = grid ? rest[0].width : (rest[n - 1].left + rest[n - 1].width - rest[0].left) / n;
+            const pitch = grid ? Wc * grid.bw / Math.max(1e-9, grid.b - grid.a) : (rest[n - 1].left + rest[n - 1].width - rest[0].left) / n;
             gapPx = gapFor(pitch);
             box.style.setProperty('--gap', gapPx.toFixed(6) + 'px');
             const sw = snapW(rest.map(r => r.width));
@@ -349,7 +363,7 @@ export function attach(el, ref, options) {
             rest = sw.map(w => { const r = { left: x, width: w }; x += w; return r; });
             for (let i = 0; i < n; i++) setW(items[i], rest[i].width);
         }
-        buildCells();
+        buildSlots();
         // a bar cannot be narrower than its own gap (padding, border-box) plus a device pixel: the layout below must not promise less, or the hit
         // test drifts from what is drawn
         minW = box !== el ? gapPx + 1 / dpr() : (() => { const cs = items.length ? getComputedStyle(items[0]) : null; return cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0; })();
@@ -391,16 +405,42 @@ export function attach(el, ref, options) {
             if (axisDirty) t.lastChild.textContent = fmt(end ? t1(i) : t0(i), false);
         });
         axisDirty = false;
-        if (h < 0) { mark.style.opacity = 0; readout.style.opacity = 0; for (const t of ticks) t.style.opacity = ''; return; }
-        const it = items[h].dataset, a = t0(h), b = t1(h), bk = !!it.bucket;
-        const dc = bk ? gridDec() : 1;
-        const text = it.run ? fmt(a, dc) + ' → now' : fmt(a, dc) + (bk ? ' – ' : ' → ') + fmt(b, dc);
-        if (readout.__t !== text) { readout.__t = text; readout.textContent = text; readout.__w = text.length * CW + 18; }
-        const gap = L[h].left + 2, w = Math.max(5, L[h].width - 4), cx = gap + w / 2, rw = readout.__w;
-        const rx = Math.max(2, Math.min(W - rw - 2, cx - rw / 2));
-        mark.style.opacity = 1; mark.style.transform = `translateX(${gap}px)`; mark.style.width = w + 'px';
-        readout.style.opacity = 1; readout.style.transform = `translateX(${rx}px)`; readout.style.setProperty('--tx', (cx - rx) + 'px');
-        ticks.forEach(t => { const x = parseFloat(t.style.left); t.style.opacity = x > rx - 34 && x < rx + rw + 34 ? 0 : ''; });
+        const hidden = [];      // pill extents the ticks keep clear of
+        // the selected bar's pill (brain 0040): always there while something is selected; its stem stays on the lilac mark under the bar
+        const s = selRd ? selIndex() : -1;
+        if (s >= 0 && s < L.length) {
+            const q = L[s], text0 = rangeText(s), gap = q.left + 2, w = Math.max(5, q.width - 4 - gapPx), cx = gap + w / 2;
+            const side = cx < 0 ? -1 : cx > W ? 1 : 0, text = side < 0 ? '‹ ' + text0 : side > 0 ? text0 + ' ›' : text0;
+            if (selRd.__t !== text) { selRd.__t = text; selRd.textContent = text; selRd.__w = text.length * CW + 20; }
+            const rw = selRd.__w, rx = Math.max(2, Math.min(W - rw - 2, cx - rw / 2));
+            if (selRd.__x !== rx) { selRd.__x = rx; selRd.style.transform = `translateX(${rx.toFixed(2)}px)`; }
+            selRd.style.setProperty('--tx', Math.max(8, Math.min(rw - 8, cx - rx)).toFixed(2) + 'px');
+            selRd.classList.toggle('off', side !== 0); selRd.classList.toggle('dim', h >= 0 && h !== s);
+            selRd.title = side ? 'The selection is outside the view: click to bring it back' : (items[s].dataset.bucket !== undefined ? 'Zoom into this group (drag to move the selection along the bars)' : "Show this actor's calls (drag to move the selection along the bars)");
+            selRd.setAttribute('aria-label', (side ? 'Selection outside the view, ' : 'Selected: ') + text0);
+            if (!selRd.__on) { selRd.__on = true; selRd.classList.add('show'); selRd.tabIndex = 0; }
+            if (side === 0) { selMk.style.opacity = 1; selMk.style.transform = `translateX(${gap.toFixed(2)}px)`; selMk.style.width = w.toFixed(2) + 'px'; }
+            else selMk.style.opacity = 0;
+            hidden.push([rx, rx + rw]);
+        } else if (selRd && selRd.__on) { selRd.__on = false; selRd.classList.remove('show'); selRd.tabIndex = -1; selMk.style.opacity = 0; }
+        if (h < 0 || h === s) { mark.style.opacity = 0; readout.style.opacity = 0; }
+        else {
+            const text = rangeText(h);
+            if (readout.__t !== text) { readout.__t = text; readout.textContent = text; readout.__w = text.length * CW + 18; }
+            const gap = L[h].left + 2, w = Math.max(5, L[h].width - 4), cx = gap + w / 2, rw = readout.__w;
+            const rx = Math.max(2, Math.min(W - rw - 2, cx - rw / 2));
+            mark.style.opacity = 1; mark.style.transform = `translateX(${gap}px)`; mark.style.width = w + 'px';
+            readout.style.opacity = 1; readout.style.transform = `translateX(${rx}px)`; readout.style.setProperty('--tx', (cx - rx) + 'px');
+            // while the hover pill of another bar would cover it, the selection pill steps back (its mark and caret stay)
+            if (s >= 0 && hidden.length) { const [p, q] = hidden[0]; selRd.classList.toggle('under', rx < q + 4 && rx + rw > p - 4); }
+            hidden.push([rx, rx + rw]);
+        }
+        if (selRd && (h < 0 || h === s)) selRd.classList.remove('under');
+        ticks.forEach(t => { const x = parseFloat(t.style.left); t.style.opacity = hidden.some(([p, q]) => x > p - 34 && x < q + 34) ? 0 : ''; });
+    };
+    const rangeText = i => {
+        const it = items[i].dataset, a = t0(i), b = t1(i), bk = it.bucket !== undefined, dc = bk ? gridDec() : 1;
+        return it.run ? fmt(a, dc) + ' → now' : fmt(a, dc) + (bk ? ' – ' : ' → ') + fmt(b, dc);
     };
 
     // ---- hover card + neighbour labels. Reads (bar rect, card size) happen before the frame's writes.
@@ -539,12 +579,16 @@ export function attach(el, ref, options) {
     const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); applyOff(); const L = restEl(); drawAxis(L, -1); placeSel(L); placeTags(L); glide(); }); };
     const attrWatch = new MutationObserver(idle);
     attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1', 'data-key', 'aria-pressed'], subtree: true });
-    const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; ovKey = ''; Wc = el.clientWidth; applyOff(); idle(); }) : null;
+    // the chart's width goes to Blazor (brain 0040: bursts unfold when their actors fit), once at the start and when it changes by a pixel or more
+    let sentW = 0;
+    const sendSize = () => { const w = el.clientWidth; if (select && w > 0 && Math.abs(w - sentW) >= 1) { sentW = w; ref.invokeMethodAsync('Size', w); } };
+    const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; ovKey = ''; Wc = el.clientWidth; sendSize(); applyOff(); idle(); }) : null;
     const gridWatch = new MutationObserver(syncGrid);     // runs before the next paint: a rebuilt buffer never shows at the wrong offset
     gridWatch.observe(el, { attributes: true, attributeFilter: ['data-grid', 'data-buf', 'data-win', 'data-elapsed', 'data-zoomed', 'data-ov', 'style'] });
     if (box !== el) gridWatch.observe(box, { childList: true });
     syncGrid();
     if (sizeWatch) sizeWatch.observe(el);
+    sendSize();
     const scroller = el.parentElement, onScroll = () => applyOff();      // a scrolled chart moves on the page: keep the bars on whole device pixels
     if (scroller) scroller.addEventListener('scroll', onScroll, { passive: true });
     idle();
@@ -563,17 +607,20 @@ export function attach(el, ref, options) {
 
     // ---- brush (brain 0023, update 3): a mouse drag of more than 6 px is a brush, less is a click (the bar under the pointer at press time is
     // picked on release). The brush covers the bars it overlaps in the resting layout; Blazor gets the time frame (data-t0 .. data-t1 of those bars).
-    // ---- touch (brain 0031 update 2, brain 0037): a tap picks the bar (no magnification), a second tap close by zooms in 2x. A sideways swipe in
-    // the strip under the bars (axis) turns the magnifier on under the finger and moves with it, lifting selects the bar under the finger; while
-    // zoomed, a finger held at the left or right edge pans the view that way (faster the nearer the edge). A sideways swipe on the bars of a
-    // zoomed chart scrolls the timeline (content follows the finger, no magnifier). Two fingers pinch the time range; a vertical swipe is left to
-    // the browser (scroll). The chart only stops the page from scrolling while a magnify, pan or pinch is going on (touch-action: pan-y does the rest).
-    const THRESH = 6, SLOP = 9, MINSPAN = 0.05, DT = 350, DD = 24;      // MINSPAN: the narrowest view a pinch or double tap gives, in s (a burst is one instant, brain 0038)
+    // ---- touch (brain 0031 update 2, 0037, made robust by 0040): a tap picks the bar, a second tap close by zooms in 2x. A sideways swipe that starts
+    // in the axis strip (from 14 px under the bars) is the magnifier (lifting selects, edge pan while zoomed); a sideways swipe on the bars of a zoomed
+    // chart scrolls the timeline. Two fingers pinch the time range or, moved together, scroll it. A sideways swipe never zooms (brain 0040):
+    // - the gesture is decided once: a finger that lands after a one-finger gesture has started is ignored (no pinch from a resting thumb);
+    // - two fingers zoom only after their distance changed by 15 %; moved together first, they scroll and stay a scroll;
+    // - a tap is only a tap if the finger lifted near where it landed, quickly; a swipe whose moves were not delivered still scrolls;
+    // - pointers are forgotten wherever they end (also outside the chart), and a new first finger drops any stale one.
+    const THRESH = 6, SLOP = 9, DSLOP = 5, MINSPAN = 0.05, DT = 350, DD = 24, TAP_MS = 600, AXIS_GRACE = 14, PINCH_ON = 1.15, PAN2_ON = 24;
     const brushEl = select ? el.querySelector(':scope > .dz-brush') : null;
     let drag = null;
-    const pts = new Map();            // touch pointers on the chart: id -> {x, y}
-    let tmode = '';                    // '' | 'wait' (finger down, may become a tap) | 'scroll' | 'mag' (swipe-magnifier) | 'pinch' | 'done' (gesture over, fingers still down)
-    let tkey = null, tdown = null, pinch = null, lastTap = null, tpan = null;
+    const pts = new Map();            // touch pointers on the chart: id -> {x, y, ign}; ign: landed after the gesture was decided, not part of it
+    let tmode = '';                    // '' | 'wait' | 'scroll' | 'mag' | 'pan' | 'two' (two fingers, undecided) | 'pinch' | 'pan2' | 'done'
+    let tkey = null, tdown = null, pinch = null, lastTap = null, tpan = null, two = null;
+    const live = () => Array.from(pts.values()).filter(p => !p.ign);
     const spanOf = (a, b) => {
         refresh(); const lo = Math.min(a, b), hi = Math.max(a, b), idx = [];
         rest.forEach((q, i) => { if (q.left + off + q.width > lo && q.left + off < hi) idx.push(i); });
@@ -620,22 +667,44 @@ export function attach(el, ref, options) {
         for (let i = 0; i < items.length; i++) { a = Math.min(a, t0(i)); b = Math.max(b, t1(i)); }
         return [a, b];
     };
+    // moves the view to start at `from` (same span), clamped to the run; the script owns the view until Blazor caught up
+    const panTo = (from, span, gap) => {
+        const E = runEnd();
+        from = Math.max(0, Math.min(from, Math.max(0, E - span)));
+        view = [from, from + span]; own(); applyOff();
+        queueZoom(from, from + span, false, gap || 120);
+    };
     // pinch: spreading the fingers zooms the time range in, pinching zooms out; the time under the fingers' midpoint stays under it.
     // Blazor gets the range live (at most every 90 ms) and once more at the end; it clamps it to the run and follows the live edge.
+    const midDist = () => { const [p, q] = live(); return { mx: (p.x + q.x) / 2, d: Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)) }; };
     const pinchStart = () => {
         if (items.length === 0) return false;
-        const [a, b] = curRange();
-        const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
-        pinch = { a, b, d0: Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac0: ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth) };
-        if (grid && cellOf.length) { refresh(); pinch.tc0 = timeAt(restEl(), (p.x + q.x) / 2 - r.left - el.clientLeft); }      // the time under the fingers, bursts counted as instants
+        const [a, b] = curRange(), r = el.getBoundingClientRect(), m = midDist();
+        pinch = { a, b, d0: m.d, frac0: (m.mx - r.left) / Math.max(1, el.clientWidth) };
         return b > a;
     };
     const pinchMove = () => {
-        const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
-        const d = Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac = ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth);
-        const span0 = pinch.b - pinch.a, span = Math.max(MINSPAN, span0 * pinch.d0 / d);
-        const tc = pinch.tc0 !== undefined ? pinch.tc0 : pinch.a + pinch.frac0 * span0, from = tc - frac * span;
+        const r = el.getBoundingClientRect(), m = midDist(), frac = (m.mx - r.left) / Math.max(1, el.clientWidth);
+        const span0 = pinch.b - pinch.a, span = Math.max(MINSPAN, span0 * pinch.d0 / m.d);
+        const tc = pinch.a + pinch.frac0 * span0, from = tc - frac * span;
+        window.__dock.pinchZooms = (window.__dock.pinchZooms || 0) + 1;
         queueZoom(from, from + span);
+    };
+    // two fingers, undecided: a clear change of their distance is a pinch, moving them together sideways scrolls (and stays a scroll)
+    const twoMove = id => {
+        if (tmode === 'two') {      // decide only once both fingers reported their move (events come one finger at a time)
+            two.seen.add(id);
+            if (two.seen.size < 2) return;
+            two.seen.clear();
+        }
+        const m = midDist(), ratio = m.d / two.d0;
+        if (tmode === 'two') {
+            if (ratio > PINCH_ON || ratio < 1 / PINCH_ON) { tmode = pinchStart() ? 'pinch' : 'done'; return; }      // starts from here: no jump
+            if (Math.abs(m.mx - two.mx0) >= PAN2_ON) { tmode = grid && two.v ? 'pan2' : 'done'; window.__dock.pans2 = (window.__dock.pans2 || 0) + 1; }
+            else return;
+        }
+        if (tmode === 'pinch') pinchMove();
+        else if (tmode === 'pan2') { const span = two.v[1] - two.v[0]; panTo(two.v[0] - (m.mx - two.mx0) / Math.max(1, Wc) * span, span); }
     };
     // double tap: zoom in 2x around the tapped time
     const doubleTap = x => {
@@ -649,18 +718,16 @@ export function attach(el, ref, options) {
     // edge pan: with a finger held in the outer ~10 % (at least 32 px) of the chart, the view moves that way, faster the nearer the edge
     const edgeStep = ts => {
         edgeRaf = 0;
-        if (!edge || tmode !== 'mag') { edge = 0; return; }
+        if (!edge || (tmode !== 'mag' && !scrub)) { edge = 0; return; }
         const v = curView(); if (!v) { edge = 0; return; }
         const dt = edgeLast ? Math.min(0.05, (ts - edgeLast) / 1000) : 0.016; edgeLast = ts;
         const span = v[1] - v[0], speed = Math.sign(edge) * Math.pow(Math.abs(edge), 1.6) * 0.7 * span;      // view widths per second
-        const from = Math.max(0, Math.min(v[0] + speed * dt, Math.max(0, runEnd() - span)));
-        view = [from, from + span]; own(); applyOff();
-        queueZoom(from, from + span, false, 200);
+        panTo(v[0] + speed * dt, span, 200);
         edgeRaf = requestAnimationFrame(edgeStep);
     };
     const edgeCheck = () => {
         let t = 0;
-        if (grid && tmode === 'mag') {
+        if (grid && (tmode === 'mag' || scrub)) {
             const Z = Math.max(32, Math.min(80, Wc * 0.1));
             if (px < Z) t = -(Z - px) / Z; else if (px > Wc - Z) t = (px - (Wc - Z)) / Z;
         }
@@ -668,38 +735,49 @@ export function attach(el, ref, options) {
         if (edge && !edgeRaf) { edgeLast = 0; edgeRaf = requestAnimationFrame(edgeStep); window.__dock.edgePans = (window.__dock.edgePans || 0) + 1; }
     };
     const endTouch = () => {      // all fingers up (or the gesture was taken away)
-        edge = 0; if (pinch) pinch = null;
+        edge = 0; pinch = null; two = null;
         flushZoom();
         pts.clear(); tmode = ''; tkey = null; tdown = null; tpan = null; down = false; active = false; kick(); syncAim();
     };
     // Two swipe areas (brain 0037): the strip under the bars (time axis and neighbour labels, the chart's bottom padding) is the magnifier's
-    // track; a sideways swipe on the bars scrolls the zoomed timeline (content follows the finger).
+    // track; a sideways swipe on the bars scrolls the zoomed timeline. The first 14 px under the bars count as bars (brain 0040): a finger
+    // aimed at the short bars often lands just under them.
     const inAxis = y => {
         const r = el.getBoundingClientRect(), pb = parseFloat(getComputedStyle(el).paddingBottom) || 0;
-        return pb > 0 && y - r.top - el.clientTop >= el.clientHeight - pb;
+        return pb > 0 && y - r.top - el.clientTop >= el.clientHeight - pb + AXIS_GRACE;
     };
     const panMove = x => {
-        const v0 = tpan.v, span = v0[1] - v0[0], E = runEnd();
-        const from = Math.max(0, Math.min(v0[0] - (x - tdown.x) / Math.max(1, Wc) * span, Math.max(0, E - span)));
-        view = [from, from + span]; own(); applyOff();
-        queueZoom(from, from + span, false, 120);
+        const v0 = tpan.v, span = v0[1] - v0[0];
+        panTo(v0[0] - (x - tdown.x) / Math.max(1, Wc) * span, span);
     };
     const onTouchDown = e => {
-        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        // a new first finger: any pointer still listed is stale (its end never reached us), forget it (brain 0040)
+        if (e.isPrimary && pts.size) { window.__dock.stale = (window.__dock.stale || 0) + 1; endTouch(); }
+        const n = live().length, late = !tdown || e.timeStamp - tdown.t > 150;
+        if (n >= 1 && !(n === 1 && (tmode === 'wait' || (tmode === 'pan' && !late)))) {
+            pts.set(e.pointerId, { x: e.clientX, y: e.clientY, ign: true });      // the gesture is decided: this finger is not part of it
+            window.__dock.ignored = (window.__dock.ignored || 0) + 1;
+            return;
+        }
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY, ign: false });
         down = true;
         if (pts.size === 1) {
-            tmode = 'wait'; tkey = null; tdown = { x: e.clientX, y: e.clientY, axis: inAxis(e.clientY) };
+            tmode = 'wait'; tkey = null; tdown = { x: e.clientX, y: e.clientY, t: e.timeStamp, axis: inAxis(e.clientY) };
             const i = hit(rel(e)); tkey = i >= 0 ? items[i].dataset.key : null;
             px = rel(e);
-        } else if (pts.size === 2) {
+        } else {
+            // two fingers before a gesture was decided (or within 150 ms of a pan): a pinch or a two-finger scroll, decided by how they move
             edge = 0; active = false; kick(); lastTap = null;
-            tmode = pinchStart() ? 'pinch' : 'done';
-        } else tmode = 'done';
+            const m = midDist();
+            two = { d0: m.d, mx0: m.mx, v: curView() ? curView().slice() : null, seen: new Set() };
+            tmode = 'two';
+        }
         syncAim();
     };
     const onTouchMove = e => {
         const p = pts.get(e.pointerId); if (!p) return;
         p.x = e.clientX; p.y = e.clientY;
+        if (p.ign) return;
         if (tmode === 'wait') {
             const dx = e.clientX - tdown.x, dy = e.clientY - tdown.y;
             if (Math.hypot(dx, dy) >= SLOP) {
@@ -716,51 +794,205 @@ export function attach(el, ref, options) {
             }
         } else if (tmode === 'mag') { px = rel(e); active = true; kick(); edgeCheck(); }
         else if (tmode === 'pan') panMove(e.clientX);
-        else if (tmode === 'pinch') pinchMove();
+        else if (tmode === 'two' || tmode === 'pinch' || tmode === 'pan2') twoMove(e.pointerId);
     };
     const onTouchUp = e => {
-        const was = pts.has(e.pointerId); pts.delete(e.pointerId);
-        if (!was) return;
-        const up = e.type === 'pointerup';
+        const p = pts.get(e.pointerId);
+        if (!p) return;
+        pts.delete(e.pointerId);
+        if (p.ign) { if (pts.size === 0) endTouch(); return; }
+        const up = e.type === 'pointerup' && !e.__dzLost;
         if (tmode === 'wait' && up) {
-            const k = tkey, now = e.timeStamp, x = rel(e);
-            const dbl = lastTap && now - lastTap.t < DT && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DD;
+            const k = tkey, now = e.timeStamp, x = rel(e), dx = e.clientX - tdown.x, dy = e.clientY - tdown.y;
+            const isTap = Math.hypot(dx, dy) < SLOP && now - tdown.t < TAP_MS;
+            if (!isTap) {
+                // lifted far from where it landed without the moves reaching us (a fast flick): it was a swipe, never a tap (brain 0040)
+                lastTap = null;
+                if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) >= SLOP && grid && curView() && !tdown.axis) {
+                    tpan = { v: curView().slice() }; panMove(e.clientX);
+                    window.__dock.flicks = (window.__dock.flicks || 0) + 1;
+                }
+                endTouch(); return;
+            }
+            // a double tap needs two still taps (under 5 px each): two short nudges of a swipe are not one (brain 0040)
+            const still = Math.hypot(dx, dy) < DSLOP;
+            const dbl = still && lastTap && now - lastTap.t < DT && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DD;
             endTouch();
-            if (dbl) { lastTap = null; doubleTap(x); } else { lastTap = { t: now, x: e.clientX, y: e.clientY }; pickKey(k); }
+            if (dbl) { lastTap = null; doubleTap(x); } else { lastTap = still ? { t: now, x: e.clientX, y: e.clientY } : null; pickKey(k); }
             return;
         }
+        lastTap = null;
         if (tmode === 'mag' && up) {      // lifting selects the bar under the finger, like a tap
             const i = hit(px), k = i >= 0 ? items[i].dataset.key : null;
             endTouch(); pickKey(k); return;
         }
-        if (tmode === 'pinch' && pts.size === 1) { flushZoom(); pinch = null; tmode = 'done'; active = false; kick(); }
+        if ((tmode === 'two' || tmode === 'pinch' || tmode === 'pan2') && live().length < 2) { flushZoom(); pinch = null; two = null; tmode = 'done'; active = false; kick(); }
         if (pts.size === 0) endTouch();
     };
-    // Stop the page from scrolling or zooming while a swipe-magnify or pinch is going on (needs a non-passive listener); a vertical swipe still scrolls.
-    const onTouchMoveEv = e => { if (tmode === 'mag' || tmode === 'pan' || tmode === 'pinch' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
+    // Stop the page from scrolling or zooming while a swipe-magnify, pan or pinch is going on (needs a non-passive listener); a vertical swipe still scrolls.
+    const onTouchMoveEv = e => { if (tmode === 'mag' || tmode === 'pan' || tmode === 'pinch' || tmode === 'pan2' || tmode === 'two' || tmode === 'done' || scrub || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
     const onContext = e => { if (tmode) e.preventDefault(); };
+    // a touch that ends where the chart does not hear it (outside it, after its target was re-rendered away): forget it all the same (brain 0040)
+    const onLostEnd = e => {
+        if (e.pointerType !== 'touch' || e.__dzSeen || !pts.has(e.pointerId)) return;
+        e.__dzLost = true; window.__dock.lostEnds = (window.__dock.lostEnds || 0) + 1;
+        onTouchUp(e);
+    };
 
-    // ---- overview strip (brain 0035): the whole run as a thin line, the lit part is the view. Tap or drag (mouse or touch) moves the view.
+    // ---- wheel (brain 0040): a sideways wheel or trackpad swipe (or Shift + wheel) scrolls a zoomed chart's timeline and never zooms; a trackpad
+    // pinch (the browser sends it as Ctrl + wheel) or Ctrl + wheel zooms the chart around the pointer instead of the page. A plain vertical wheel
+    // scrolls the page as always.
+    let wz = null;
+    const onWheel = e => {
+        if (!select) return;
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? Wc : 1;
+        if (e.ctrlKey) {
+            e.preventDefault();
+            const now = performance.now(), base = wz && now - wz.t < 300 ? wz.r : curRange(), E = runEnd();
+            if (!(base[1] > base[0]) || E <= 0) return;
+            const x = rel(e), f = Math.max(0.5, Math.min(2, Math.exp(e.deltaY * unit * 0.01)));
+            const tc = base[0] + x / Math.max(1, Wc) * (base[1] - base[0]);
+            const span = Math.max(MINSPAN, Math.min(E, (base[1] - base[0]) * f)), from = Math.max(0, Math.min(tc - x / Math.max(1, Wc) * span, Math.max(0, E - span)));
+            wz = { t: now, r: [from, from + span] };
+            window.__dock.wheelZooms = (window.__dock.wheelZooms || 0) + 1;
+            queueZoom(from, from + span);
+            return;
+        }
+        const v = curView();
+        const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit, dy = e.shiftKey ? 0 : e.deltaY * unit;
+        if (!v || Math.abs(dx) <= Math.abs(dy)) return;      // unzoomed, or mostly vertical: the page scrolls
+        e.preventDefault();
+        const span = v[1] - v[0];
+        window.__dock.wheelPans = (window.__dock.wheelPans || 0) + 1;
+        panTo(v[0] + dx / Math.max(1, Wc) * span, span);
+    };
+
+    // ---- overview strip (brain 0035, redesigned in 0040): the whole run, muted failed/slow marks, and the view as an outlined window with the run
+    // outside it dimmed. The window is at least 16 px (touch 24 px) wide, so a tiny view on a long run stays visible and grabbable; a pin then marks the
+    // exact spot. Drag the window (or anywhere on the strip) to move the view, tap the strip to centre the view there, arrow keys move it too. Unzoomed,
+    // a tap zooms into an eighth of the run around that spot (drill-down, 0029). The strip never changes the zoom by dragging.
+    let sd = null;
+    const coarse = () => matchMedia('(pointer: coarse)').matches;
     if (over) {
-        const moveStrip = e => {
-            const E = runEnd(), from = Math.max(0, Math.min((e.clientX - strip2.r.left) / strip2.r.width * E - strip2.grab, Math.max(0, E - strip2.span)));
-            view = [from, from + strip2.span]; own(); applyOff(); queueZoom(from, from + strip2.span, false, 120);
+        const atX = (x, W) => x / Math.max(1, W) * runEnd();
+        const moveTo = (cx, W) => {      // centre the view at strip x cx
+            const v = curView(); if (!v) return;
+            const span = v[1] - v[0];
+            panTo(atX(cx, W) - span / 2, span);
+        };
+        const zoomAt = (x, W) => {
+            const E = runEnd(); if (E <= 0) return;
+            const span = E / 8, from = Math.max(0, Math.min(atX(x, W) - span / 2, E - span));
+            window.__dock.stripZooms = (window.__dock.stripZooms || 0) + 1;
+            queueZoom(from, from + span, true);
         };
         over.addEventListener('pointerdown', e => {
-            const v = curView(), E = runEnd();
-            if (!v || E <= 0) return;
-            e.stopPropagation(); e.preventDefault();
-            const r = over.getBoundingClientRect(), t = (e.clientX - r.left) / r.width * E, span = v[1] - v[0];
-            strip2 = { id: e.pointerId, r, span, grab: t >= v[0] && t <= v[1] ? t - v[0] : span / 2 };
-            try { over.setPointerCapture(e.pointerId); } catch (_) { }
-            active = false; kick(); down = true; syncAim(); moveStrip(e);
-            window.__dock.stripDrags = (window.__dock.stripDrags || 0) + 1;
+            e.stopPropagation();
+            if (runEnd() <= 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+            const r = over.getBoundingClientRect(), x = e.clientX - r.left, g = ovGeom, v = curView();
+            const touch = e.pointerType === 'touch', slop = touch ? 14 : 6;
+            const onWin = !!(v && g && x >= g.l - slop && x <= g.l + g.w + slop);
+            sd = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, r, touch, onWin, drag: false, dx: onWin ? x - (g.l + g.w / 2) : 0 };
+            active = false; kick();
+            if (!touch) {
+                e.preventDefault();
+                if (v) { sd.drag = true; try { over.setPointerCapture(e.pointerId); } catch (_) { } down = true; syncAim(); over.classList.add('drag'); if (!onWin) moveTo(x, r.width); }
+            }
+            window.__dock.stripDowns = (window.__dock.stripDowns || 0) + 1;
         });
-        over.addEventListener('pointermove', e => { e.stopPropagation(); if (strip2 && strip2.id === e.pointerId) moveStrip(e); });
-        const endStrip = e => { e.stopPropagation(); if (!strip2 || strip2.id !== e.pointerId) return; strip2 = null; flushZoom(); down = false; syncAim(); };
+        over.addEventListener('pointermove', e => {
+            e.stopPropagation();
+            if (!sd || sd.id !== e.pointerId) return;
+            const dx = e.clientX - sd.x0, dy = e.clientY - sd.y0;
+            if (!sd.drag) {
+                if (!sd.touch || Math.hypot(dx, dy) < SLOP) return;
+                if (Math.abs(dy) > Math.abs(dx) || !curView()) { sd = null; return; }      // vertical: the page scrolls; unzoomed: nothing to drag
+                sd.drag = true; down = true; syncAim(); over.classList.add('drag');
+                try { over.setPointerCapture(e.pointerId); } catch (_) { }
+                window.__dock.stripDrags = (window.__dock.stripDrags || 0) + 1;
+            }
+            moveTo(e.clientX - sd.r.left - sd.dx, sd.r.width);
+        });
+        const endStrip = e => {
+            e.stopPropagation();
+            const d = sd; if (!d || d.id !== e.pointerId) return;
+            sd = null; over.classList.remove('drag');
+            if (d.drag) { flushZoom(); down = false; syncAim(); return; }
+            if (e.type !== 'pointerup' || Math.hypot(e.clientX - d.x0, e.clientY - d.y0) >= SLOP || e.timeStamp - d.t0 > TAP_MS) return;
+            const x = e.clientX - d.r.left;
+            if (!curView()) zoomAt(x, d.r.width);      // unzoomed: drill into that spot
+            else if (!d.onWin) { moveTo(x, d.r.width); flushZoom(); }
+        };
         over.addEventListener('pointerup', endStrip); over.addEventListener('pointercancel', endStrip);
         over.addEventListener('pointerenter', e => { e.stopPropagation(); active = false; hover = false; kick(); syncAim(); });
         over.addEventListener('click', e => e.stopPropagation());
+        over.addEventListener('keydown', e => {
+            const v = curView(); if (!v) return;
+            const span = v[1] - v[0], E = runEnd();
+            let from;
+            switch (e.key) {
+                case 'ArrowLeft': case 'ArrowDown': from = v[0] - span / 4; break;
+                case 'ArrowRight': case 'ArrowUp': from = v[0] + span / 4; break;
+                case 'PageUp': from = v[0] - span; break;
+                case 'PageDown': from = v[0] + span; break;
+                case 'Home': from = 0; break;
+                case 'End': from = E - span; break;
+                default: return;
+            }
+            e.preventDefault(); e.stopPropagation();
+            window.__dock.stripKeys = (window.__dock.stripKeys || 0) + 1;
+            panTo(from, span);
+        });
+    }
+
+    // ---- the selection pill (brain 0040): the selected bar's time frame stays under the axis, its stem on the lilac mark under the bar, until the
+    // selection is cleared. It is grabbable: drag it sideways to move the selection along the bars (the magnifier follows, lifting selects the bar
+    // under it, edge pan while zoomed); a click or tap drills down (a group: zoom into its time frame; an actor: its calls). When the selected bar is
+    // outside the view the pill waits at that edge with an arrow; a click or tap brings the selection back into view.
+    let scrub = null;
+    if (select && selRd) {
+        const onPill = e => e.target.closest && e.target.closest('.dz-readout.sel');
+        el.addEventListener('pointerdown', e => {
+            if (!onPill(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+            e.stopPropagation(); e.preventDefault();
+            scrub = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: e.timeStamp, moving: false };
+            try { el.setPointerCapture(e.pointerId); } catch (_) { }
+            down = true; syncAim();
+        }, true);
+        el.addEventListener('pointermove', e => {
+            if (!scrub || scrub.id !== e.pointerId) return;
+            e.stopPropagation();
+            if (!scrub.moving && Math.abs(e.clientX - scrub.x0) < SLOP) return;
+            if (!scrub.moving) { scrub.moving = true; window.__dock.pillDrags = (window.__dock.pillDrags || 0) + 1; }
+            px = rel(e); active = true; kick(); edgeCheck();
+        }, true);
+        const endScrub = e => {
+            if (!scrub || scrub.id !== e.pointerId) return;
+            e.stopPropagation();
+            const s = scrub; scrub = null; edge = 0; down = false; active = false; kick(); syncAim();
+            try { el.releasePointerCapture(e.pointerId); } catch (_) { }
+            if (e.type !== 'pointerup') return;
+            if (s.moving) { const i = hit(px); pickKey(i >= 0 ? items[i].dataset.key : null); flushZoom(); return; }
+            if (Math.hypot(e.clientX - s.x0, e.clientY - s.y0) < SLOP && e.timeStamp - s.t0 < TAP_MS) pillClick();
+        };
+        el.addEventListener('pointerup', endScrub, true); el.addEventListener('pointercancel', endScrub, true);
+        selRd.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); pillClick(); } });
+    }
+    function pillClick() {
+        const i = selIndex(); if (i < 0) return;
+        window.__dock.pillClicks = (window.__dock.pillClicks || 0) + 1;
+        const v = curView(), q = (layout.length === items.length ? layout : restEl())[i];
+        if (v && q && (q.left + q.width / 2 < 0 || q.left + q.width / 2 > Wc)) {      // out of view (as the pill shows it): bring it back, centred
+            const d = items[i].dataset, a = d.ts !== undefined ? parseFloat(d.ts) : t0(i), span = v[1] - v[0];
+            panTo(a - span / 2, span); flushZoom(); return;
+        }
+        if (items[i].dataset.bucket !== undefined) {      // a group: zoom into its time frame
+            const [a, b] = rangeOf([i]);
+            if (b > a) { window.__dock.brushes = (window.__dock.brushes || 0) + 1; ref.invokeMethodAsync('Brush', a, b, false); }
+            return;
+        }
+        const panel = document.querySelector('.actor-panel');      // an actor: its calls
+        if (panel) { panel.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); panel.classList.add('flash'); setTimeout(() => panel.classList.remove('flash'), 700); }
     }
 
     const onMove = e => { px = rel(e); active = true; kick(); };
@@ -780,6 +1012,8 @@ export function attach(el, ref, options) {
             if (drag.brushing) { updateBrush(rel(e)); return; }
         }
         if (!hover) { hover = true; syncAim(); }
+        // over the selection pill the magnifier rests, so the pill stays where it is and can be grabbed or clicked
+        if (e.target.closest && e.target.closest('.dz-readout.sel')) { if (active) { active = false; kick(); } return; }
         onMove(e);
     };
     const onEnter = e => { if (e.pointerType !== 'touch' && !hover) { hover = true; syncAim(); } };
@@ -790,6 +1024,7 @@ export function attach(el, ref, options) {
     };
     const onUp = e => {
         if (!select) return;
+        e.__dzSeen = true;
         if (e.pointerType === 'touch') { onTouchUp(e); return; }
         const apply = e.type === 'pointerup', d = drag;
         if (d && d.brushing) { finishBrush(apply); active = false; kick(); }
@@ -802,7 +1037,7 @@ export function attach(el, ref, options) {
     const onFocusIn = e => { if (e.target.matches && e.target.matches(':focus-visible')) { focused = true; syncAim(); } };
     const onFocusOut = () => { focused = false; syncAim(); };
     // Blazor resumes (badge click): forget the aiming state without telling Blazor again.
-    el.__release = () => { if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; } if (notified) { notified = false; snapshot(); } hover = down = focused = false; pts.clear(); tmode = ''; };
+    el.__release = () => { if (aimTimer) { clearTimeout(aimTimer); aimTimer = 0; } if (notified) { notified = false; snapshot(); } hover = down = focused = false; pts.clear(); tmode = ''; two = null; pinch = null; scrub = null; };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointerenter', onEnter);
     el.addEventListener('pointermove', onPointerMove);
@@ -811,13 +1046,15 @@ export function attach(el, ref, options) {
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('click', onClick, true);
     el.addEventListener('touchmove', onTouchMoveEv, { passive: false });
+    el.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('pointerup', onLostEnd); window.addEventListener('pointercancel', onLostEnd);
     el.addEventListener('contextmenu', onContext);
     el.addEventListener('focusin', onFocusIn);
     el.addEventListener('focusout', onFocusOut);
     el.__dock = () => {
         el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onPointerMove);
         el.removeEventListener('pointerleave', onLeave); el.removeEventListener('pointerup', onUp);
-        el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true); el.removeEventListener('touchmove', onTouchMoveEv); el.removeEventListener('contextmenu', onContext); if (zoomTimer) clearTimeout(zoomTimer);
+        el.removeEventListener('pointercancel', onUp); el.removeEventListener('click', onClick, true); el.removeEventListener('touchmove', onTouchMoveEv); el.removeEventListener('wheel', onWheel); window.removeEventListener('pointerup', onLostEnd); window.removeEventListener('pointercancel', onLostEnd); el.removeEventListener('contextmenu', onContext); if (zoomTimer) clearTimeout(zoomTimer);
         el.removeEventListener('pointerenter', onEnter); el.removeEventListener('focusin', onFocusIn); el.removeEventListener('focusout', onFocusOut);
         if (aimTimer) clearTimeout(aimTimer);
         if (raf) cancelAnimationFrame(raf);

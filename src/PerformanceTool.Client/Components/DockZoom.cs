@@ -29,6 +29,8 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     [Parameter] public EventCallback<BrushRange> OnBrush { get; set; }
     /// <summary>The user pinched the time range with two fingers (brain 0031). The range is not clamped to the run; the owner does that.</summary>
     [Parameter] public EventCallback<BrushRange> OnZoom { get; set; }
+    /// <summary>The chart's width in CSS pixels, on attach and whenever it changes (brain 0040: bursts unfold when their actors fit).</summary>
+    [Parameter] public EventCallback<double> OnSize { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
 
@@ -63,6 +65,7 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     [JSInvokable] public Task Pick(string key) => OnPick.InvokeAsync(key);
     [JSInvokable] public Task Aim(bool aiming) => OnAim.InvokeAsync(aiming);
     [JSInvokable] public Task Zoom(double from, double to) => OnZoom.InvokeAsync(new BrushRange(from, to, false));
+    [JSInvokable] public Task Size(double width) => OnSize.InvokeAsync(width);
     [JSInvokable] public Task Brush(double from, double to, bool toEnd) => OnBrush.InvokeAsync(new BrushRange(from, to, toEnd));
 
     /// <summary>The owner resumes by itself (badge click): the script forgets its aiming state.</summary>

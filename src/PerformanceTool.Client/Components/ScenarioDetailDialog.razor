@@ -50,11 +50,16 @@
         if (aiming) fz = cd;
     }
     var bars = cd.Bars; var scale = cd.Scale; var width = cd.Width; var total = cd.Total;
-    // Zoomed in far enough, the bursts unfold into single-actor bars (brain 0038); the grid below stays the one the script knows (cd.Bars), only this list changes.
+    // As soon as there is room, bursts unfold into single-actor bars (brain 0038, rule of brain 0040: pixels per actor, with hysteresis); the grid stays
+    // the one the script knows (cd.Bars), only this list changes, and the unfolded bars share the empty slots they borrow, so x stays linear in time.
     List<BurstSpan> burstSpans = [];
-    if (win is not null && cd.GridFrom is { } gridStart && width > 0 && (vt - vf) / width <= ActorBars.UnfoldMaxSlots(Settings.MaxBars))
+    if (win is null) unfoldPlay.Reset();
+    else if (cd.GridFrom is { } gridStart && width > 0)
+    {
+        var room = UnfoldRoom.For(chartPx, vt - vf, unfoldPlay.Update(vt - vf), width, Settings.MaxBars);
         bars = ActorBars.Unfold(bars, actors, cd.Finished, show, cd.Running, width, ActorBars.SlotIndex(gridStart, width), cd.ElapsedMs / 1000, (vf + vt) / 2,
-            ActorBars.UnfoldPerBurst(Settings.MaxBars), ActorBars.UnfoldBudget(Settings.MaxBars), out burstSpans);
+            ActorBars.UnfoldPerBurst(Settings.MaxBars), ActorBars.UnfoldBudget(Settings.MaxBars), room, out burstSpans);
+    }
     var ovMarks = OverviewMarks(actors, view.Finished, s.Elapsed);
     unfoldedSlots = burstSpans.Count == 0 ? [] : new HashSet<double>(burstSpans.Select(b => b.Slot));
     var bucketed = width > 0;
@@ -125,13 +130,13 @@
                 }
             </div>
             <div class="chart-scroll">
-                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-ov="@ovMarks" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" OnSize="SetChartSize" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-ov="@ovMarks" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
                     <span class="dz-axis" aria-hidden="true"></span>
                     <span class="dz-brush" aria-hidden="true"><span></span></span>
-                    <span class="dz-over" title="The whole run: the lit part is in view. Tap or drag to move the view." aria-hidden="true"></span>
+                    <span class="dz-over" tabindex="@(win is not null ? "0" : null)" role="@(win is not null ? "slider" : null)" aria-label="@(win is not null ? "Part of the run in view" : null)" aria-valuemin="@(win is not null ? "0" : null)" aria-valuemax="@(win is not null ? Ms(s.Elapsed) : null)" aria-valuenow="@(win is not null ? Ms((vf + vt) / 2) : null)" aria-valuetext="@(win is not null ? $"{Format.Time(vf)} to {Format.Time(vt)} of {Format.Time(s.Elapsed)}" : null)" aria-hidden="@(win is null ? "true" : null)" title="@(win is not null ? "The whole run; the outlined window is in view. Drag it or tap the strip to move the view (arrow keys too)." : "The whole run: red and amber marks show where actors failed or were slow. Tap a spot to zoom in there.")"></span>
                     <div class="dz-bars">
                     @foreach (var b in bars)
                     {
@@ -144,7 +149,7 @@
                         {
                             var on = bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-k="@(bar.InBurst ? K(bar.Cover) : null)" style="@(bar.InBurst ? "--k:" + K(bar.Cover) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -339,6 +344,11 @@
         ovKey = key; ovAt = Environment.TickCount64;
         return ovCache;
     }
+    /// <summary>The chart's width in CSS pixels, reported by the script (0 until known): bursts unfold when their actors fit (brain 0040).</summary>
+    private double chartPx;
+    /// <summary>Hysteresis of unfolding (brain 0040): a burst folds again only when its bars are clearly narrower than where it unfolded.</summary>
+    private readonly UnfoldHysteresis unfoldPlay = new();
+    private void SetChartSize(double px) { if (Math.Abs(px - chartPx) >= 1) { chartPx = px; fz = null; } }
     /// <summary>Grid slots (their start, run seconds) whose burst is unfolded in the chart at the last render (brain 0038), for stepping through failed actors.</summary>
     private HashSet<double> unfoldedSlots = [];
 
@@ -568,6 +578,7 @@
     }
 
     private static string T(double seconds) => seconds.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string K(double cover) => cover.ToString("0.######", CultureInfo.InvariantCulture);
 
     /// <summary>Right-hand figure of the hover label: duration (with the outcome in words, brain 0018), or the actor count of a bucket.</summary>
     private static string LabelMeta(ActorBar b)
