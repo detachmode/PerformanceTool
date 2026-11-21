@@ -1,6 +1,6 @@
 # 0033. Environments: run the same scenarios against different servers
 
-- **Status:** Accepted (UI open)
+- **Status:** Accepted (not implemented)
 - **Date:** 2026-11-21
 - **Related:** 0003 (scenarios in code), 0005 (presets), 0007 (generated editor)
 
@@ -22,5 +22,5 @@ Support **environment definitions**, so scenarios can run against different serv
 - *Proposed (Claude, not decided):* like Bruno, let a value be marked **secret** so it is masked in the UI and kept
   out of shared files (stored locally only).
 
-## Open (to decide with the user, one at a time)
-- Where the active environment is chosen and edited in the UI (editor, player bar).
+- **UI like Bruno:** an environment dropdown in the top bar picks the active environment; an "Configure"
+  entry in it opens a popup to edit environments (list of environments, key-value table per environment).

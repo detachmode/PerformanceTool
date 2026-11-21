@@ -27,7 +27,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (G, user feedback):** group bars look different from single-actor bars (0032): lighter fill, outline, count badge.
 - **Done (H, user feedback):** sideways swipe pans the zoomed time range on touch (0031 update 1).
 
-- **Waiting on details (user):** environments (0033), bursts per scenario (0034).
+- **Next (I):** environments (0033): top-bar dropdown, edit popup, `{{Key}}` placeholders, fake data.
+- **Waiting on details (user):** bursts per scenario (0034).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
