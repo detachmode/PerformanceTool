@@ -1,6 +1,6 @@
 # 0035. Overview strip: where am I and how far am I zoomed in
 
-- **Status:** Accepted, implemented (update 1 implemented 2026-11-21)
+- **Status:** Accepted, implemented (update 1 implemented 2026-11-21). **Look and handling redesigned in [0040](0040-popup-chart-robust-navigation.md)** (outlined window, run outside dimmed, minimum window width, tap unzoomed zooms in, keyboard).
 - **Date:** 2026-11-21
 - **Related:** 0023 (popup chart), 0031 (touch zoom and panning), 0016 (calm UI), 0029 (drill-down)
 

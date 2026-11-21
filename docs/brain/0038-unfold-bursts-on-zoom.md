@@ -1,10 +1,6 @@
 # 0038. Zooming into a burst unfolds it into single actors
 
-<<<<<<< HEAD
-- **Status:** Accepted (details Proposed), not implemented
-=======
-- **Status:** Accepted, implemented (details were Proposed; deviations listed in the implementation notes)
->>>>>>> worktree-agent-a0d17b4a582d3828d
+- **Status:** Accepted, implemented (details were Proposed; deviations listed in the implementation notes). **Trigger, width and x mapping superseded by [0040](0040-popup-chart-robust-navigation.md)** (unfold as soon as the actors fit, the burst borrows empty time around it, x stays linear in time).
 - **Date:** 2026-11-21
 - **Related:** 0034 (bursts), 0031 update 2 (stable time grid), 0032/0037 (group bars), 0016 (calm UI), 0029 (drill-down)
 
@@ -34,10 +30,10 @@ hard to tap), jittering start times in the fake data (hides the problem, does no
 ## Consequences
 - The x position is no longer purely time inside an unfolded burst; code that maps x to time (brush, magnifier
   labels, overview strip) must treat the burst as one instant.
-<<<<<<< HEAD
-=======
 
 ## Implementation notes
+> **Superseded in part by 0040:** the trigger ("at most 40 % of max bars in view as slots"), the width `min(slot width, 3rem)` and "x is not time inside a burst" (the burst widened the chart). Now a burst unfolds when its actors get enough pixels in the empty time it may borrow, and x is linear in time everywhere.
+
 Screenshots: `docs/screenshots/2026-11-21-burst-unfold/` (desktop at scale 2 and Pixel 7, published trimmed build, 30 minute seeded run).
 
 - **Where it happens.** `ActorBars.Unfold` is a post-pass over the grid's slot bars (the buffer `ChartGrid`/`BuildGrid` build is unchanged, so running actors, aiming freeze and the script's idea of "slot i" stay valid). The dialog applies it at render time to `cd.Bars`.
@@ -49,4 +45,3 @@ Screenshots: `docs/screenshots/2026-11-21-burst-unfold/` (desktop at scale 2 and
 - **Bounded (decided here).** A burst shows at most `max(12, maxBars/4)` bars (60); if it has more actors, the most interesting (failed, slow, running) are shown singly and the rest are one trailing group bar (count badge, selects the whole burst); the label always says the full count. All unfolded bursts together add at most `max(24, maxBars)` extra bars; the bursts nearest to the view's centre unfold first. 500 actors: 59 bars + 1 group bar. Tests: `BurstUnfoldTests`.
 - **Previous/next failed (0036).** While a burst is unfolded it steps actor by actor inside it (key = slot, actor number); otherwise it steps by group as before.
 - **Not changed:** the overview strip and Show filters work on the actors as before; with Failed/Slow filters a burst unfolds only if two or more matching actors share the slot.
->>>>>>> worktree-agent-a0d17b4a582d3828d

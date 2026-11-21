@@ -1,6 +1,6 @@
 # 0031. Touch gestures on the popup bar chart
 
-- **Status:** Accepted, implemented (update 2 implemented 2026-11-21)
+- **Status:** Accepted, implemented (update 2 implemented 2026-11-21). Gesture recognition made robust in [0040](0040-popup-chart-robust-navigation.md) (a sideways swipe never zooms: gesture decided once, pinch dead zone, still double taps, lost pointers forgotten).
 - **Date:** 2026-11-20
 - **Related:** 0023 (Dock magnification), 0026 (stable clicking)
 
