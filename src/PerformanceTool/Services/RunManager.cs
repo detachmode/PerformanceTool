@@ -1,9 +1,10 @@
 using System.Diagnostics;
 using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
+using PerformanceTool.Services.Storage;
 
 namespace PerformanceTool.Services;
 
+/// <summary>Compact actor summary returned by incremental <c>/api/runs/current</c> polling (no calls/logs embedded).</summary>
 public sealed record LiveActorDto(
     int Sequence,
     int Entry,
@@ -12,13 +13,15 @@ public sealed record LiveActorDto(
     int? StatusCode,
     long Bytes,
     string? Error,
-    IReadOnlyList<RecordedCall>? Calls = null,
-    IReadOnlyList<RecordedLog>? Logs = null);
+    int SlowCalls);
 
 public sealed record LiveScenarioViewDto(
     int Starts,
+    int Finished,
     int InFlight,
     int Failed,
+    int SlowActors,
+    int SlowCalls,
     int Dropped);
 
 public sealed record LiveRunStatusDto(
@@ -28,16 +31,20 @@ public sealed record LiveRunStatusDto(
     DateTimeOffset StartedUtc,
     LoadPlan Plan,
     IReadOnlyList<LiveScenarioViewDto> Scenarios,
-    IReadOnlyList<LiveActorDto> RecentActors,
+    IReadOnlyList<LiveActorDto> NewActors,
+    int LastSequence,
+    long TotalLogs,
+    string StorageProvider,
     string? Error);
 
 /// <summary>
-/// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run so the Blazor WebAssembly
-/// client in Live mode can start, stop and poll real runs (including custom C# script scenarios).
+/// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run, persisting all actors,
+/// calls and logs into <see cref="IRunStorage"/> (SQLite WAL by default) without blocking actors, and serving
+/// lightweight incremental polls to the Blazor WebAssembly client (brain 0045).
 /// </summary>
-public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
+public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage)
 {
-    private const int MaxStoredActors = 4000;
+    private const double SlowThresholdMs = 1500;
     private readonly Lock sync = new();
     private CancellationTokenSource? cts;
     private Task? runningTask;
@@ -49,14 +56,24 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
     private double finalElapsed;
     private LoadPlan activePlan = new();
     private int[] starts = [];
+    private int[] finished = [];
     private int[] inFlight = [];
     private int[] failed = [];
+    private int[] slowActors = [];
+    private int[] slowCalls = [];
     private int[] dropped = [];
     private readonly List<LiveActorDto> actors = [];
+    private int lastSequence = -1;
+    private long totalLogs;
     private string? runError;
 
-    public LiveRunStatusDto GetCurrent()
+    /// <summary>
+    /// Returns current run status plus only compact actors with <c>Sequence &gt; afterSeq</c> (up to <paramref name="maxActors"/>).
+    /// Full calls and logs live in <see cref="IRunStorage"/> and are fetched lazily on demand.
+    /// </summary>
+    public LiveRunStatusDto GetCurrent(int afterSeq = -1, int maxActors = 2000)
     {
+        maxActors = Math.Clamp(maxActors, 1, 10_000);
         lock (sync)
         {
             var elapsed = state == "Running" ? clock.Elapsed.TotalSeconds : finalElapsed;
@@ -64,9 +81,22 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
             for (var i = 0; i < views.Length; i++)
                 views[i] = new LiveScenarioViewDto(
                     i < starts.Length ? starts[i] : 0,
+                    i < finished.Length ? finished[i] : 0,
                     i < inFlight.Length ? inFlight[i] : 0,
                     i < failed.Length ? failed[i] : 0,
+                    i < slowActors.Length ? slowActors[i] : 0,
+                    i < slowCalls.Length ? slowCalls[i] : 0,
                     i < dropped.Length ? dropped[i] : 0);
+
+            var delta = new List<LiveActorDto>();
+            if (actors.Count > 0)
+            {
+                // Actors arrive mostly in sequence order; scan from the end or filter cleanly.
+                for (var i = 0; i < actors.Count && delta.Count < maxActors; i++)
+                {
+                    if (actors[i].Sequence > afterSeq) delta.Add(actors[i]);
+                }
+            }
 
             return new LiveRunStatusDto(
                 runId,
@@ -75,7 +105,10 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
                 startedUtc,
                 activePlan.Clone(),
                 views,
-                [.. actors],
+                delta,
+                lastSequence,
+                totalLogs,
+                storage.ProviderName,
                 runError);
         }
     }
@@ -88,6 +121,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
 
         CancellationTokenSource runCts;
         LoadPlan cloned;
+        string currentRunId;
+        DateTimeOffset currentStartedUtc;
         lock (sync)
         {
             if (state == "Running")
@@ -96,47 +131,70 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
                 throw new ArgumentException("The load plan has no scenarios.");
 
             cloned = plan.Clone();
-            runId = $"run-{DateTimeOffset.UtcNow:HHmmss}-{Random.Shared.Next(100, 999)}";
+            currentRunId = $"run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Random.Shared.Next(100, 999)}";
+            currentStartedUtc = DateTimeOffset.UtcNow;
+            runId = currentRunId;
             state = "Running";
-            startedUtc = DateTimeOffset.UtcNow;
+            startedUtc = currentStartedUtc;
             clock = Stopwatch.StartNew();
             finalElapsed = 0;
             activePlan = cloned;
             starts = new int[cloned.Scenarios.Count];
+            finished = new int[cloned.Scenarios.Count];
             inFlight = new int[cloned.Scenarios.Count];
             failed = new int[cloned.Scenarios.Count];
+            slowActors = new int[cloned.Scenarios.Count];
+            slowCalls = new int[cloned.Scenarios.Count];
             dropped = new int[cloned.Scenarios.Count];
             actors.Clear();
+            lastSequence = -1;
+            totalLogs = 0;
             runError = null;
             runCts = new CancellationTokenSource();
             cts = runCts;
         }
 
+        storage.EnqueueRunStarted(currentRunId, currentStartedUtc, cloned);
+
         runningTask = Task.Run(async () =>
         {
+            string? err = null;
             try
             {
                 await runner.RunAsync(
                     cloned,
                     onResult: res =>
                     {
+                        var actorSlowCalls = CountSlowCalls(res);
+                        var outcome = res.Error is not null ? 2 : actorSlowCalls > 0 ? 1 : 0;
+                        var compact = new LiveActorDto(
+                            res.Sequence,
+                            res.Entry,
+                            res.StartedAtSeconds,
+                            res.ElapsedMs,
+                            res.StatusCode,
+                            res.Bytes,
+                            res.Error,
+                            actorSlowCalls);
+
                         lock (sync)
                         {
-                            if (res.Error is not null && res.Entry >= 0 && res.Entry < failed.Length)
-                                failed[res.Entry]++;
-                            if (actors.Count >= MaxStoredActors)
-                                actors.RemoveAt(0);
-                            actors.Add(new LiveActorDto(
-                                res.Sequence,
-                                res.Entry,
-                                res.StartedAtSeconds,
-                                res.ElapsedMs,
-                                res.StatusCode,
-                                res.Bytes,
-                                res.Error,
-                                res.Calls,
-                                res.Logs));
+                            if (res.Entry >= 0 && res.Entry < finished.Length)
+                            {
+                                finished[res.Entry]++;
+                                if (res.Error is not null) failed[res.Entry]++;
+                                if (actorSlowCalls > 0)
+                                {
+                                    slowActors[res.Entry]++;
+                                    slowCalls[res.Entry] += actorSlowCalls;
+                                }
+                            }
+                            if (res.Sequence > lastSequence) lastSequence = res.Sequence;
+                            totalLogs += res.Logs?.Count ?? 0;
+                            actors.Add(compact);
                         }
+
+                        storage.EnqueueActorCompleted(currentRunId, res, outcome, actorSlowCalls);
                         return ValueTask.CompletedTask;
                     },
                     onDropped: entry =>
@@ -159,38 +217,28 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
                         return ValueTask.CompletedTask;
                     },
                     environment: env);
-
-                lock (sync)
-                {
-                    finalElapsed = clock.Elapsed.TotalSeconds;
-                    clock.Stop();
-                    for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
-                    state = "Finished";
-                }
             }
             catch (OperationCanceledException)
             {
-                lock (sync)
-                {
-                    finalElapsed = clock.Elapsed.TotalSeconds;
-                    clock.Stop();
-                    for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
-                    state = "Finished";
-                }
+                // User stopped the run.
             }
             catch (Exception ex)
             {
-                lock (sync)
-                {
-                    finalElapsed = clock.Elapsed.TotalSeconds;
-                    clock.Stop();
-                    for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
-                    runError = ex.InnerException?.Message ?? ex.Message;
-                    state = "Finished";
-                }
+                err = ex.InnerException?.Message ?? ex.Message;
             }
             finally
             {
+                double elapsed;
+                lock (sync)
+                {
+                    elapsed = clock.Elapsed.TotalSeconds;
+                    finalElapsed = elapsed;
+                    clock.Stop();
+                    for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
+                    runError = err;
+                    state = "Finished";
+                }
+                storage.EnqueueRunFinished(currentRunId, DateTimeOffset.UtcNow, "Finished", elapsed, err);
                 runCts.Dispose();
             }
         }, CancellationToken.None);
@@ -215,6 +263,14 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
         {
             try { await toAwait.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         }
+        await storage.FlushAsync();
         return GetCurrent();
+    }
+
+    private static int CountSlowCalls(ExecutionResult res)
+    {
+        if (res.Calls is { Count: > 0 })
+            return res.Calls.Count(c => c.Error is null && c.DurationMs >= SlowThresholdMs);
+        return res.Error is null && res.ElapsedMs >= SlowThresholdMs ? 1 : 0;
     }
 }

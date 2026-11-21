@@ -82,3 +82,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0042](0042-custom-script-scenarios-and-lifecycle.md) | Custom C# script scenarios (Roslyn upload/compile/test-run), Startup/Execute/Teardown lifecycle hooks, and Fake/Live UI toggle | Accepted, implemented |
 | [0043](0043-bursts-split-into-even-groups.md) | A burst that does not fit splits into even groups (refining while zooming); failed/slow stay in their group | Accepted, implemented |
 | [0044](0044-selection-marker-one-piece.md) | The lilac selection marker (caret, stem, pill) is one robust piece that always points at the selected bar | Accepted (goal), design Proposed, not implemented |
+| [0045](0045-sqlite-storage-and-scalable-logs.md) | SQLite WAL storage (batched channel writer + indexed filters) and scalable lazy-loaded/virtualized logs & actor details | Accepted, implemented |

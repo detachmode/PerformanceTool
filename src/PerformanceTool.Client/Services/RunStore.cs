@@ -52,6 +52,9 @@ public sealed class RunStore
     public double RatioOf(int sequence) => sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Decode(ratios[sequence]) : 1;
     public ActorDetail? Detail(int sequence) => details.GetValueOrDefault(sequence);
 
+    /// <summary>Replaces an actor's detail once lazily fetched from server SQLite storage (brain 0045).</summary>
+    public void ReplaceDetail(ActorDetail detail) => details[detail.Sequence] = detail;
+
     /// <summary>Cheap check whether the calls and log lines of an actor are still kept (false once evicted, or for an unknown actor).</summary>
     public bool HasDetail(int sequence) => details.ContainsKey(sequence);
 

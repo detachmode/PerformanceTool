@@ -3,6 +3,7 @@ using PerformanceTool.Services;
 using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.BuiltIn;
+using PerformanceTool.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,10 @@ builder.Services.AddSingleton<PresetStore>();
 builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddSingleton<LoadRunner>();
 builder.Services.AddSingleton<ScriptScenarioStore>();
+if (string.Equals(builder.Configuration["Storage:Provider"], "Memory", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddSingleton<IRunStorage, InMemoryRunStorage>();
+else
+    builder.Services.AddSingleton<IRunStorage, SqliteRunStorage>();
 builder.Services.AddSingleton<RunManager>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
@@ -97,8 +102,11 @@ app.MapPost("/api/scripts/{id}/test-run", async (string id, TestRunScriptRequest
     }
 });
 
-// Live runs (for Live mode in the UI and REST clients).
-app.MapGet("/api/runs/current", (RunManager runs) => runs.GetCurrent());
+// Live runs & persisted SQLite storage queries (brain 0045).
+app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) =>
+    storage.ListRunsAsync(limit ?? 50, ct));
+app.MapGet("/api/runs/current", (int? afterSeq, int? maxActors, RunManager runs) =>
+    runs.GetCurrent(afterSeq ?? -1, maxActors ?? 2000));
 app.MapPost("/api/runs/start", async (StartRunRequest body, RunManager runs, CancellationToken ct) =>
 {
     try { return Results.Ok(await runs.StartAsync(body.Plan, body.EnvironmentName, ct)); }
@@ -108,6 +116,31 @@ app.MapPost("/api/runs/start", async (StartRunRequest body, RunManager runs, Can
     }
 });
 app.MapPost("/api/runs/stop", (RunManager runs) => runs.StopAsync());
+app.MapGet("/api/runs/{runId}/actors/{sequence:int}", async (string runId, int sequence, IRunStorage storage, CancellationToken ct) =>
+    await storage.GetActorDetailAsync(runId, sequence, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
+app.MapGet("/api/runs/{runId}/logs", (
+    string runId,
+    int? entry,
+    int? actor,
+    string? actorName,
+    int? outcome,
+    bool? failed,
+    bool? slow,
+    string? levels,
+    string? search,
+    int? offset,
+    int? limit,
+    IRunStorage storage,
+    CancellationToken ct) =>
+{
+    var levelList = string.IsNullOrWhiteSpace(levels)
+        ? null
+        : levels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return storage.QueryLogsAsync(
+        runId,
+        new LogQuery(entry, actor, actorName, outcome, failed, slow, levelList, search, offset ?? 0, limit ?? 200),
+        ct);
+});
 
 // Environments (brain 0033): one JSON file each. Minimal REST: list, get, save (create or replace), delete.
 app.MapGet("/api/environments", (EnvironmentStore store, CancellationToken ct) => store.ListAsync(ct));

@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.13.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <ProjectReference Include="../PerformanceTool.Core/PerformanceTool.Core.csproj" />
     <ProjectReference Include="../PerformanceTool.Client/PerformanceTool.Client.csproj" />
   </ItemGroup>

@@ -6,6 +6,8 @@
 @inject ViewSettings Settings
 @inject ScenarioCatalog Catalog
 @inject CustomScriptsPopupState ScriptsPopup
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
 
 @{
     var s = Snapshot;
@@ -73,6 +75,7 @@
     // The selected actor stays selected when it is folded into a time bucket: that bucket shows as selected.
     double? selStart = selected?.StartedAt ?? (selRunning is { } rs0 ? runningNow.FirstOrDefault(r => r.Sequence == rs0)?.StartedAt : null);
     var selectedBucket = selStart is { } sa0 && bucketed ? ActorBars.BucketOf(sa0, width) : bucket;
+    if (!DataMode.IsFakeMode && selected is { } lazyActor) _ = ApiRun.EnsureActorDetailLoadedAsync(lazyActor.Sequence);
 }
 
 <div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">

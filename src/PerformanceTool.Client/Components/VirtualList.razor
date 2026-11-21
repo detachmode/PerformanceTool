@@ -37,6 +37,8 @@
     [Parameter] public RenderFragment? Empty { get; set; }
     /// <summary>When this value changes (e.g. the filters), the list scrolls back to the top.</summary>
     [Parameter] public object? ResetKey { get; set; }
+    /// <summary>Raised when the visible window approaches the end of <see cref="Items"/>, for lazy-loading pages.</summary>
+    [Parameter] public EventCallback OnNearEnd { get; set; }
 
     private sealed class Box { public double H; }
 
@@ -103,7 +105,14 @@
         var overscan = Variable ? OverscanPx : 6.0 * RowHeight;
         first = IndexAt(Math.Max(0, top - overscan));
         last = Math.Min(count, IndexAt(top + height + overscan) + 1);
+        if (OnNearEnd.HasDelegate && last >= count - 25 && last != nearEndNotifiedAt)
+        {
+            nearEndNotifiedAt = count;
+            _ = OnNearEnd.InvokeAsync();
+        }
     }
+
+    private int nearEndNotifiedAt = -1;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

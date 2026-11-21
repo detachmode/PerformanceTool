@@ -1,12 +1,17 @@
-@* Logs popup (brain 0017, 0020, 0021): all logs of the run. Filters, each removable: scenario, a single actor, outcome of the actor (all / failed / slow),
-   levels and search. Rows show the full message, word-wrapped (variable row height). The list is virtualised and filtered in one pass, so it stays fast with 100k+ lines. *@
+@* Logs popup (brain 0017, 0020, 0021, 0045): all logs of the run. Filters, each removable: scenario, a single actor, outcome of the actor (all / failed / slow),
+   levels and search. Rows show the full message, word-wrapped (variable row height). Virtualised in both modes; in Live mode queries indexed SQLite storage
+   on the server with lazy-loaded pages on scroll so hundreds of thousands of log lines never bloat browser memory. *@
 @implements IDisposable
 @inject IRunSource Sim
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
 @inject LogsPopupState Popup
 
 @{
     var s = Sim.Current;
-    Rebuild(s);
+    var useServer = !DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId);
+    if (useServer) EnsureServerQuery();
+    else RebuildLocal(s);
     var allLevels = level.All(x => x);
     var nFailed = 0; var nSlow = 0;
     for (var i = 0; i < s.Count; i++) if (scenario is null || scenario == i) { nFailed += s.Scenarios[i].Failed; nSlow += s.Scenarios[i].SlowActors; }
@@ -16,8 +21,12 @@
     <div class="dialog logs-dialog" role="dialog" aria-modal="true" aria-labelledby="logs-title" @onclick:stopPropagation="true">
         <div class="dlg-head">
             <h2 id="logs-title">Logs</h2>
-            <span class="muted">all logs of the run</span>
+            <span class="muted">@(useServer ? $"server-side filtered ({ApiRun.StorageProvider})" : "all logs of the run")</span>
             <span class="spacer"></span>
+            @if (useServer)
+            {
+                <button class="btn ghost small" @onclick="RefreshServer" disabled="@serverLoading" title="Reload matching logs from server">Refresh</button>
+            }
             <button class="icon-btn" @onclick="Popup.Close" aria-label="Close">✕</button>
         </div>
 
@@ -54,17 +63,17 @@
                 }
             </div>
 
-            <input class="search" type="search" placeholder="Search messages…" aria-label="Search messages" autocomplete="off" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
+            <input class="search" type="search" placeholder="Search messages or actor…" aria-label="Search messages" autocomplete="off" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
         </div>
 
-        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig">
+        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig" OnNearEnd="OnNearEndAsync">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
                     <ActorChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" Tint="TintOf(l.Sequence)" OnClick="() => FilterActor(l)" Title="@($"Show only the logs of actor #{l.Sequence + 1}")" />
                     <button class="msg" aria-pressed="@Aria.Bool(ReferenceEquals(expanded, l))" title="Show details" @onclick="() => expanded = ReferenceEquals(expanded, l) ? null : l"><span class="visually-hidden">@l.Level: </span>@l.Message</button>
                 </div>
             </ItemContent>
-            <Empty><p class="muted empty">No log lines match the filters.</p></Empty>
+            <Empty><p class="muted empty">@(serverLoading ? "Loading logs…" : "No log lines match the filters.")</p></Empty>
         </VirtualList>
 
         @if (expanded is { } x)
@@ -77,13 +86,26 @@
         }
 
         <div class="log-foot muted">
-            @Format.Plural(filtered.Count, "line", "lines")
-            @if (s.Store.DetailTrimmed) { <text> · logs of older successful actors are no longer kept</text> }
+            @if (useServer)
+            {
+                <span>Showing @Format.Num(filtered.Count) of @Format.Plural((int)Math.Min(int.MaxValue, serverTotal), "line", "lines") (@ApiRun.StorageProvider)</span>
+                @if (filtered.Count < serverTotal)
+                {
+                    <button class="btn ghost small" style="margin-left:.5rem" disabled="@serverLoading" @onclick="OnNearEndAsync">@(serverLoading ? "Loading…" : "Load more")</button>
+                }
+            }
+            else
+            {
+                @Format.Plural(filtered.Count, "line", "lines")
+                @if (s.Store.DetailTrimmed) { <text> · logs of older successful actors are no longer kept</text> }
+            }
         </div>
     </div>
 </div>
 
 @code {
+    private const int ServerPageSize = 250;
+
     private ElementReference root;
     private int? scenario, actor;
     private ActorShow outcome = ActorShow.All;
@@ -96,6 +118,13 @@
     private string builtSig = "";
     private int builtSource = -1;
     private long builtAt;
+
+    // Server-side lazy paging state (Live mode + SQLite).
+    private long serverTotal;
+    private bool serverLoading;
+    private string serverQuerySig = "";
+    private long serverQueryAt;
+    private CancellationTokenSource? queryCts;
 
     protected override void OnInitialized()
     {
@@ -120,7 +149,6 @@
         if (levelsOpen) levelsOpen = false; else Popup.Close();
     }
 
-    /// <summary>Outcome colour of an actor (brain 0028): running while it is in flight, else its outcome.</summary>
     private ActorState StateOf(int sequence, int? entry)
     {
         var s = Sim.Current;
@@ -129,34 +157,114 @@
         return ActorOrder.StateOf(s.Store.OutcomeOf(sequence));
     }
 
-    /// <summary>The colour step of an ok actor (brain 0041): how far over its typical time it was.</summary>
     private int TintOf(int sequence) => Sim.Current.Store.TintOf(sequence);
 
     private void SetScenario(ChangeEventArgs e) => scenario = int.TryParse(e.Value?.ToString(), out var i) ? i : null;
 
     private void FilterActor(FakeLogEntry l) { actor = l.Sequence; scenario = l.Entry; }
 
-    /// <summary>
-    /// One pass over the kept lines, only when a filter changed or (at most every 0.7 s) when lines were added or dropped.
-    /// The list is not copied again by the virtualiser; only the visible rows become DOM.
-    /// </summary>
-    private void Rebuild(RunSnapshot s)
+    private string CurrentSig() => $"{ApiRun.CurrentRunId}|{scenario}|{actor}|{string.Concat(level.Select(x => x ? '1' : '0'))}|{outcome}|{search}";
+
+    private void EnsureServerQuery()
+    {
+        var sig = CurrentSig();
+        var changed = sig != serverQuerySig;
+        var liveRefreshDue = Sim.IsRunning && !serverLoading && Environment.TickCount64 - serverQueryAt >= 1500 && filtered.Count <= ServerPageSize;
+        if (!changed && !liveRefreshDue) return;
+
+        serverQuerySig = sig;
+        if (changed) builtSig = sig;
+        _ = FetchServerPageAsync(reset: true, sig, debounceMs: changed && !string.IsNullOrEmpty(search) ? 200 : 0);
+    }
+
+    private void RefreshServer() => _ = FetchServerPageAsync(reset: true, CurrentSig(), debounceMs: 0);
+
+    private Task OnNearEndAsync()
+    {
+        if (DataMode.IsFakeMode || string.IsNullOrEmpty(ApiRun.CurrentRunId)) return Task.CompletedTask;
+        if (serverLoading || filtered.Count >= serverTotal) return Task.CompletedTask;
+        return FetchServerPageAsync(reset: false, serverQuerySig, debounceMs: 0);
+    }
+
+    private async Task FetchServerPageAsync(bool reset, string sig, int debounceMs)
+    {
+        if (reset)
+        {
+            queryCts?.Cancel();
+            queryCts?.Dispose();
+            queryCts = new CancellationTokenSource();
+        }
+        var ct = queryCts?.Token ?? CancellationToken.None;
+        if (debounceMs > 0)
+        {
+            try { await Task.Delay(debounceMs, ct); } catch (OperationCanceledException) { return; }
+        }
+
+        serverLoading = true;
+        serverQueryAt = Environment.TickCount64;
+        try
+        {
+            var selectedLevels = FakeLogEntry.Levels.Where((_, i) => level[i]).ToArray();
+            bool? failedFilter = outcome == ActorShow.Failed ? true : null;
+            bool? slowFilter = outcome == ActorShow.Slow ? true : null;
+            var offset = reset ? 0 : filtered.Count;
+            var page = await ApiRun.QueryLogsAsync(scenario, actor, failedFilter, slowFilter, selectedLevels, search, offset, ServerPageSize, ct);
+            if (ct.IsCancellationRequested || sig != serverQuerySig || page is null) return;
+
+            serverTotal = page.TotalCount;
+            var startedUtc = ApiRun.CurrentStartedUtc;
+            var mapped = page.Items.Select(r => new FakeLogEntry(
+                r.AtSeconds,
+                startedUtc.AddSeconds(r.AtSeconds),
+                r.Level,
+                r.Message,
+                r.Exception,
+                r.Entry,
+                r.Sequence,
+                new Dictionary<string, string> { ["Actor"] = r.ActorName },
+                r.CallIndex)).ToList();
+
+            if (reset) filtered = mapped;
+            else
+            {
+                var next = new List<FakeLogEntry>(filtered.Count + mapped.Count);
+                next.AddRange(filtered);
+                next.AddRange(mapped);
+                filtered = next;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch { }
+        finally
+        {
+            serverLoading = false;
+            try { await InvokeAsync(StateHasChanged); } catch (ObjectDisposedException) { }
+        }
+    }
+
+    private void RebuildLocal(RunSnapshot s)
     {
         var source = s.Store.Logs();
-        var sig = $"{scenario}|{actor}|{string.Concat(level.Select(x => x ? '1' : '0'))}|{outcome}|{search}";
+        var sig = $"fake|{scenario}|{actor}|{string.Concat(level.Select(x => x ? '1' : '0'))}|{outcome}|{search}";
         var changed = sig != builtSig;
         if (!changed && (source.Count == builtSource || Environment.TickCount64 - builtAt < 700)) return;
 
         var needle = search.Trim();
-        var list = new List<FakeLogEntry>();
+        var list = new List<FakeLogEntry>(Math.Min(source.Count, 1024));
         for (var i = 0; i < source.Count; i++)
         {
             var l = source[i];
             if (scenario is { } sc && l.Entry != sc) continue;
             if (actor is { } ac && l.Sequence != ac) continue;
             if (!level[l.LevelRank]) continue;
-            if (outcome != ActorShow.All && s.Store.OutcomeOf(l.Sequence) != (outcome == ActorShow.Failed ? ActorOutcome.Failed : ActorOutcome.Slow)) continue;
-            if (needle.Length > 0 && !l.Message.Contains(needle, StringComparison.OrdinalIgnoreCase)) continue;
+            if (outcome != ActorShow.All)
+            {
+                var st = StateOf(l.Sequence, l.Entry);
+                if (outcome == ActorShow.Failed && st != ActorState.Failed) continue;
+                if (outcome == ActorShow.Slow && st != ActorState.Slow) continue;
+            }
+            if (needle.Length > 0 && !l.Message.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                && (l.Exception is null || !l.Exception.Contains(needle, StringComparison.OrdinalIgnoreCase))) continue;
             list.Add(l);
         }
         filtered = list;
@@ -165,5 +273,10 @@
         builtAt = Environment.TickCount64;
     }
 
-    public void Dispose() => Sim.Changed -= OnChanged;
+    public void Dispose()
+    {
+        queryCts?.Cancel();
+        queryCts?.Dispose();
+        Sim.Changed -= OnChanged;
+    }
 }
