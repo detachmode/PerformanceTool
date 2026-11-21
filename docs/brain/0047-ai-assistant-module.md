@@ -1,6 +1,6 @@
 # 0047. AI assistant: server-side agent in its own module, chat side panel
 
-- Status: Accepted (user decisions below); module layout and API shape Proposed; not implemented
+- Status: Accepted (user decisions below; point 5 superseded by 0048); module layout and API shape Proposed; not implemented
 - Date: 2026-11-21
 
 ## What
@@ -18,7 +18,7 @@ User decisions (Accepted):
    `AI__Model` (and `AI__Provider`, today only `OpenAI`). Without a model the assistant is "not configured".
 4. **Provider: OpenAI-compatible only** for now (`Microsoft.Extensions.AI.OpenAI`). `AI__Endpoint` points it at
    OpenAI, Azure's OpenAI-compatible `/openai/v1`, Ollama `/v1`, LM Studio, vLLM, OpenRouter, ...
-5. **Confirm destructive actions**: reading and harmless edits run immediately. Starting, stopping or pausing a run
+5. *(Superseded by 0048: no approval.)* **Confirm destructive actions**: reading and harmless edits run immediately. Starting, stopping or pausing a run
    and deleting anything (presets, environments, scripts, preflights, scenario entries) show an Approve / Reject
    card in the chat first.
 6. **Right side panel**: a chat icon in the top bar opens a panel on the right that pushes the page aside

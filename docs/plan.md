@@ -43,7 +43,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Now (R, user request, front of the queue):** AI assistant (0047), in three steps, one commit each:
   - R1: the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
   - R2: `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
-    tools, approval for destructive actions, sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
+    tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
   - R3: chat side panel in the client (Live mode only, only when configured), screenshots against a local
     OpenAI-compatible stub.
 
