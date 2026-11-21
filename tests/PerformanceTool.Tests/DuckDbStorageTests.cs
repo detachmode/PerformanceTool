@@ -70,6 +70,7 @@ public sealed class DuckDbStorageTests
                 Assert.NotNull(jsonExp);
                 using (var doc = JsonDocument.Parse(jsonExp!.Content))
                 {
+                    Assert.Equal(DuckDbRunStorage.CurrentSchemaVersion, doc.RootElement.GetProperty("schemaVersion").GetInt32());
                     Assert.Equal("run-duck-1", doc.RootElement.GetProperty("runId").GetString());
                     Assert.Equal(2, doc.RootElement.GetProperty("actors").GetArrayLength());
                     Assert.Equal(3, doc.RootElement.GetProperty("logs").GetArrayLength());
@@ -82,14 +83,19 @@ public sealed class DuckDbStorageTests
                 Assert.Contains("Order succeeded", csvText);
                 Assert.Contains("Payment failed for cart", csvText);
 
-                // Export: Parquet bundle (.zip containing runs, actors, calls, logs as ZSTD Parquet)
+                // Export: Parquet bundle (.zip containing manifest.json + runs, actors, calls, logs as ZSTD Parquet)
                 var parquetExp = await storage.ExportRunAsync("run-duck-1", "parquet");
                 Assert.NotNull(parquetExp);
                 Assert.EndsWith("-parquet.zip", parquetExp!.FileName);
                 using (var zip = new ZipArchive(new MemoryStream(parquetExp.Content), ZipArchiveMode.Read))
                 {
                     var names = zip.Entries.Select(e => e.Name).OrderBy(n => n).ToArray();
-                    Assert.Equal(["actors.parquet", "calls.parquet", "logs.parquet", "runs.parquet"], names);
+                    Assert.Equal(["actors.parquet", "calls.parquet", "logs.parquet", "manifest.json", "runs.parquet"], names);
+                    using (var manifestDoc = JsonDocument.Parse(zip.GetEntry("manifest.json")!.Open()))
+                    {
+                        Assert.Equal(DuckDbRunStorage.CurrentSchemaVersion, manifestDoc.RootElement.GetProperty("schemaVersion").GetInt32());
+                        Assert.Equal("run-duck-1", manifestDoc.RootElement.GetProperty("runId").GetString());
+                    }
                     using var logsStream = zip.GetEntry("logs.parquet")!.Open();
                     var header = new byte[4];
                     Assert.Equal(4, logsStream.Read(header, 0, 4));

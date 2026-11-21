@@ -146,7 +146,7 @@ app.MapGet("/api/runs/{runId}/logs", (
 });
 app.MapGet("/api/runs/{runId}/export", async (string runId, string? format, IRunStorage storage, CancellationToken ct) =>
 {
-    var export = await storage.ExportRunAsync(runId, format ?? "duckdb", ct);
+    var export = await storage.ExportRunAsync(runId, format ?? "parquet", ct);
     return export is null ? Results.NotFound() : Results.File(export.Content, export.ContentType, export.FileName);
 });
 

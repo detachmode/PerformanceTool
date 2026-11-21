@@ -66,7 +66,7 @@
     <div class="pl-end">
         @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
         {
-            <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=duckdb")" download title="Export this run as a standalone DuckDB file">Export</a>
+            <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download title="Export this run as a ZIP of Parquet files (runs, actors, calls, logs)">Export</a>
         }
         <button class="btn ghost small logs-btn" @onclick="() => Logs.Show()" aria-haspopup="dialog">Logs</button>
         <button class="btn ghost small more-btn" @onclick="() => open = !open" aria-expanded="@Aria.Bool(open)" aria-label="Run details">@(open ? "✕" : "⋯")</button>

@@ -15,6 +15,8 @@ namespace PerformanceTool.Services.Storage;
 /// </summary>
 public sealed class DuckDbRunStorage : IRunStorage
 {
+    public const int CurrentSchemaVersion = 1;
+
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -73,7 +75,16 @@ public sealed class DuckDbRunStorage : IRunStorage
         lock (dbLock)
         {
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = """
+            cmd.CommandText = $"""
+                CREATE TABLE IF NOT EXISTS schema_meta (
+                    key VARCHAR PRIMARY KEY,
+                    value VARCHAR NOT NULL
+                );
+                DELETE FROM schema_meta WHERE key IN ('format', 'schema_version');
+                INSERT INTO schema_meta(key, value) VALUES
+                    ('format', 'performancetool-run-db'),
+                    ('schema_version', '{CurrentSchemaVersion}');
+
                 CREATE TABLE IF NOT EXISTS runs (
                     run_id VARCHAR PRIMARY KEY,
                     started_utc VARCHAR NOT NULL,
@@ -552,7 +563,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         await FlushAsync(ct);
-        var fmt = string.IsNullOrWhiteSpace(format) ? "duckdb" : format.Trim().ToLowerInvariant();
+        var fmt = string.IsNullOrWhiteSpace(format) ? "parquet" : format.Trim().ToLowerInvariant();
         var safeRunId = new string(runId.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
         lock (dbLock)
@@ -593,6 +604,29 @@ public sealed class DuckDbRunStorage : IRunStorage
                     using var ms = new MemoryStream();
                     using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
                     {
+                        var manifest = new
+                        {
+                            format = "performancetool-run-bundle",
+                            schemaVersion = CurrentSchemaVersion,
+                            exportedUtc = DateTimeOffset.UtcNow,
+                            runId,
+                            startedUtc,
+                            finishedUtc,
+                            state,
+                            elapsedSeconds,
+                            compression = "zstd",
+                            tables = new[]
+                            {
+                                new { file = "runs.parquet", key = "run_id", description = "Run metadata, duration, state and JSON load plan." },
+                                new { file = "actors.parquet", key = "(run_id, sequence)", description = "One row per actor execution (bar in the chart), with outcome, is_failed, is_slow and duration_ms." },
+                                new { file = "calls.parquet", key = "(run_id, sequence, call_index)", description = "Individual HTTP requests or measured steps inside each actor; join to actors on (run_id, sequence)." },
+                                new { file = "logs.parquet", key = "(run_id, id)", description = "Per-actor ILogger statements; join to actors on (run_id, sequence) and optionally calls on call_index." },
+                            },
+                        };
+                        var manifestEntry = zip.CreateEntry("manifest.json", CompressionLevel.Optimal);
+                        using (var mw = manifestEntry.Open())
+                            JsonSerializer.Serialize(mw, manifest, JsonOpts);
+
                         foreach (var (file, sql) in tables)
                         {
                             var filePath = Path.Combine(tmpDir, file);
@@ -643,6 +677,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                     {
                         cmd.CommandText = $"""
                             ATTACH '{escapedPath}' AS {alias};
+                            CREATE TABLE {alias}.schema_meta AS SELECT * FROM schema_meta;
                             CREATE TABLE {alias}.runs AS SELECT * FROM runs WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.actors AS SELECT * FROM actors WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.calls AS SELECT * FROM calls WHERE run_id = '{escapedId}';
@@ -737,6 +772,7 @@ public sealed class DuckDbRunStorage : IRunStorage
 
             var payload = new
             {
+                schemaVersion = CurrentSchemaVersion,
                 runId,
                 startedUtc,
                 finishedUtc,
