@@ -75,8 +75,10 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted, implemented (update 1: whole width, muted red/amber marks of failed and slow actors, always visible) |
 | [0036](0036-step-through-failed-and-slow.md) | Previous/next failed (or slow) moves the zoomed view and steps through groups | Accepted, implemented |
 | [0037](0037-popup-chart-selection-swipe-areas-group-stripes.md) | Popup chart: selection arrow below the bar, magnifier only on the axis strip, bars area scrolls, striped groups, even gaps | Accepted, implemented |
-| [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted, implemented |
+| [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted, implemented (cap and failed-first superseded by 0043) |
 | [0039](0039-fake-seed-run-30-minutes.md) | The fake data starts with a 30 minute finished run (bursts to zoom into) | Accepted, implemented |
 | [0040](0040-popup-chart-robust-navigation.md) | Popup chart navigation bullet proof: a swipe never zooms, bursts unfold as soon as their actors fit (x stays linear in time), redesigned overview strip, persistent grabbable selection pill | Accepted (goal, selection pill), design Proposed, implemented |
 | [0041](0041-graded-slow-colour.md) | Slowness as a colour gradient from green (typical time) to amber; the slow line stays for counting and filters | Accepted, implemented (details Proposed) |
 | [0042](0042-custom-script-scenarios-and-lifecycle.md) | Custom C# script scenarios (Roslyn upload/compile/test-run), Startup/Execute/Teardown lifecycle hooks, and Fake/Live UI toggle | Accepted, implemented |
+| [0043](0043-bursts-split-into-even-groups.md) | A burst that does not fit splits into even groups (refining while zooming); failed/slow stay in their group | Accepted, implemented |
+| [0044](0044-selection-marker-one-piece.md) | The lilac selection marker (caret, stem, pill) is one robust piece that always points at the selected bar | Accepted (goal), design Proposed, not implemented |
