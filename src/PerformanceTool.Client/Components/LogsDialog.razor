@@ -25,14 +25,15 @@
             <span class="spacer"></span>
             @if (useServer)
             {
-                <div class="dd">
-                    <button class="btn ghost small" aria-haspopup="true" aria-expanded="@Aria.Bool(exportOpen)" @onclick="() => exportOpen = !exportOpen" title="Export this run from @ApiRun.StorageProvider">Export ▾</button>
+                <div class="dd" style="display:inline-flex;align-items:center;gap:2px">
+                    <a class="btn ghost small" href="@ExportUrl("duckdb")" download title="Export this run as a standalone DuckDB file">Export</a>
+                    <button class="btn ghost small" style="padding:.25rem .45rem" aria-haspopup="true" aria-expanded="@Aria.Bool(exportOpen)" aria-label="Other export formats" @onclick="() => exportOpen = !exportOpen" title="Other export formats (debug/comparison)">▾</button>
                     @if (exportOpen)
                     {
                         <div class="dd-backdrop" @onclick="() => exportOpen = false"></div>
-                        <div class="dd-menu" role="menu" aria-label="Export format">
+                        <div class="dd-menu right" role="menu" aria-label="Export format">
+                            <a class="dd-item" href="@ExportUrl("duckdb")" download @onclick="() => exportOpen = false">DuckDB (.duckdb) — default</a>
                             <a class="dd-item" href="@ExportUrl("parquet")" download @onclick="() => exportOpen = false">Parquet (.parquet)</a>
-                            <a class="dd-item" href="@ExportUrl("duckdb")" download @onclick="() => exportOpen = false">DuckDB (.duckdb)</a>
                             <a class="dd-item" href="@ExportUrl("json")" download @onclick="() => exportOpen = false">JSON (.json)</a>
                             <a class="dd-item" href="@ExportUrl("csv")" download @onclick="() => exportOpen = false">CSV (.csv)</a>
                         </div>

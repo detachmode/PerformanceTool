@@ -551,7 +551,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         await FlushAsync(ct);
-        var fmt = (format ?? "json").Trim().ToLowerInvariant();
+        var fmt = string.IsNullOrWhiteSpace(format) ? "duckdb" : format.Trim().ToLowerInvariant();
         var safeRunId = new string(runId.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
         lock (dbLock)
