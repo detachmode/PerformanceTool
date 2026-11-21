@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using PerformanceTool.Api;
 using PerformanceTool.Services;
 using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios;
@@ -9,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<PresetStore>();
+builder.Services.AddSingleton<PlanWorkspace>();
 builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddSingleton<LoadRunner>();
 builder.Services.AddSingleton<ScriptScenarioStore>();
@@ -35,6 +37,8 @@ app.Services.GetRequiredService<ScenarioCatalog>();
 await app.Services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync();
 await app.Services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync();
 await app.Services.GetRequiredService<RunManager>().RestoreLatestAsync();
+// The restored run's plan is where the Live plan starts (the editor used to adopt it in the browser).
+app.Services.GetRequiredService<PlanWorkspace>().SeedIfEmpty(app.Services.GetRequiredService<RunManager>().GetCurrent().Plan);
 
 if (!app.Environment.IsDevelopment())
 {
@@ -136,9 +140,15 @@ app.MapGet("/api/runs/current", (int? afterSeq, int? maxBees, RunManager runs) =
     runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000));
 app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, RunManager runs) =>
     runs.GetLiveLogs(afterId ?? 0, limit ?? 500));
-app.MapPost("/api/runs/start", async (StartRunRequest body, RunManager runs, CancellationToken ct) =>
+app.MapPlanEndpoints();
+app.MapPost("/api/runs/start", async (StartRunRequest? body, RunManager runs, PlanWorkspace workspace, CancellationToken ct) =>
 {
-    try { return Results.Ok(await runs.StartAsync(body.Plan, body.EnvironmentName, ct)); }
+    try
+    {
+        // No plan in the body = start the server's Live plan. A plan in the body becomes the Live plan.
+        if (body?.Plan is { } given) workspace.SetPlan(given);
+        return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), body?.EnvironmentName, ct));
+    }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
         return Results.BadRequest(new { error = ex.Message });
@@ -214,4 +224,4 @@ app.Run();
 public sealed record UploadScriptRequest(string? Id, string? FileName, string? Code);
 public sealed record TestRunScriptRequest(JsonObject? Parameters = null, string? EnvironmentName = null, int TimeoutSeconds = 30);
 public sealed record TestRunPreflightRequest(string? EnvironmentName = null, int TimeoutSeconds = 60);
-public sealed record StartRunRequest(LoadPlan Plan, string? EnvironmentName = null);
+public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);

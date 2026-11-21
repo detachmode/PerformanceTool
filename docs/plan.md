@@ -41,7 +41,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0043). Debug URL `?burst=100`.
 - **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
 - **Now (R, user request, front of the queue):** AI assistant (0047), in three steps, one commit each:
-  - R1: the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
+  - R1 (done): the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
   - R2: `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
     tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
   - R3: chat side panel in the client (Live mode only, only when configured), screenshots against a local

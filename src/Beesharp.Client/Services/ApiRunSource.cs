@@ -64,6 +64,12 @@ public sealed class ApiRunSource : IRunSource
     private HashSet<string> savedEntries = [];
     private readonly Dictionary<string, LoadPlan> presets = new(StringComparer.OrdinalIgnoreCase);
 
+    // The server owns the Live plan and the presets (brain 0047/0050). We keep a working copy that the editor mutates in place,
+    // push it when it stopped changing, and pick up the server's version when it changed and we have no unpushed edits.
+    private CancellationTokenSource? syncCts;
+    private long serverVersion;
+    private string syncedFingerprint = "";
+
     private string activeRunId = "";
     private DateTimeOffset activeStartedUtc = DateTimeOffset.UtcNow;
     private RunStore activeStore = new(0);
@@ -73,6 +79,8 @@ public sealed class ApiRunSource : IRunSource
 
     public LoadPlan Plan { get; private set; } = new() { DurationSeconds = 30, MaxConcurrency = 50, TimeoutSeconds = 15 };
     public string PresetName { get; private set; } = "Live plan";
+    /// <summary>True while the working copy differs from what the server has (an edit is waiting to be pushed).</summary>
+    public bool HasUnpushedEdits => syncedFingerprint.Length > 0 && Fingerprint(Plan) != syncedFingerprint;
     public IReadOnlyList<string> PresetNames => presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
     public bool HasUnsavedChanges => Fingerprint(Plan) != savedFingerprint;
 
@@ -152,7 +160,6 @@ public sealed class ApiRunSource : IRunSource
         this.http = http;
         this.catalog = catalog;
         this.environments = environments;
-        presets[PresetName] = Plan.Clone();
         savedFingerprint = Fingerprint(Plan);
         savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         Current = EmptySnapshot(Plan);
@@ -189,16 +196,171 @@ public sealed class ApiRunSource : IRunSource
         savedFingerprint = Fingerprint(Plan);
         savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         Changed?.Invoke();
+        _ = SavePresetRemoteAsync(name, Plan.Clone());
     }
 
     public void LoadPreset(string name)
     {
-        if (!presets.TryGetValue(name, out var stored)) return;
-        PresetName = name;
-        Plan = stored.Clone();
-        savedFingerprint = Fingerprint(Plan);
-        savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
-        if (!IsRunning) Current = EmptySnapshot(Plan);
+        if (presets.TryGetValue(name, out var cached))
+        {
+            // Instant: show the cached copy; the server's answer (normalised to today's scenario shape) replaces it.
+            PresetName = presets.Keys.First(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+            Plan = cached.Clone();
+            savedFingerprint = Fingerprint(Plan);
+            savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
+            if (!IsRunning && string.IsNullOrEmpty(activeRunId)) Current = EmptySnapshot(Plan);
+            Changed?.Invoke();
+        }
+        _ = LoadPresetRemoteAsync(name);
+    }
+
+    private async Task SavePresetRemoteAsync(string name, LoadPlan plan)
+    {
+        try
+        {
+            var resp = await http.PutAsJsonAsync($"api/presets/{Uri.EscapeDataString(name)}", plan, JsonOpts);
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts) is { } state)
+                AdoptState(state, replacePlan: false, syncedWith: plan);
+            await LoadPresetsAsync();
+        }
+        catch { }
+    }
+
+    private async Task LoadPresetRemoteAsync(string name)
+    {
+        try
+        {
+            var resp = await http.PostAsync($"api/presets/{Uri.EscapeDataString(name)}/load", null);
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts) is { } state)
+                AdoptState(state, replacePlan: true);
+        }
+        catch { }
+    }
+
+    private async Task LoadPresetsAsync()
+    {
+        try
+        {
+            var list = await http.GetFromJsonAsync<List<PresetDto>>("api/presets", JsonOpts) ?? [];
+            presets.Clear();
+            foreach (var p in list) presets[p.Name] = p.Plan;
+            Changed?.Invoke();
+        }
+        catch { }
+    }
+
+    // ---------- plan sync with the server ----------
+
+    private sealed record PresetDto(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
+    private sealed record PlanStateDto(LoadPlan Plan, string PresetName, LoadPlan SavedPlan, bool HasUnsavedChanges, long Version);
+
+    /// <summary>Starts loading and syncing the plan and presets with the server (Live mode). Safe to call again.</summary>
+    public void StartSync()
+    {
+        if (syncCts is not null) return;
+        syncCts = new CancellationTokenSource();
+        var ct = syncCts.Token;
+        _ = Task.Run(() => SyncLoopAsync(ct), CancellationToken.None);
+    }
+
+    public void StopSync()
+    {
+        syncCts?.Cancel();
+        syncCts?.Dispose();
+        syncCts = null;
+    }
+
+    private async Task SyncLoopAsync(CancellationToken ct)
+    {
+        string? pending = null;
+        var tick = 0;
+        try
+        {
+            // First load: the server's plan replaces the empty working copy, unless the user already started editing.
+            while (!ct.IsCancellationRequested && serverVersion == 0)
+            {
+                try
+                {
+                    var state = await http.GetFromJsonAsync<PlanStateDto>("api/plan", JsonOpts, ct);
+                    if (state is not null)
+                    {
+                        if (Plan.Scenarios.Count == 0 || Fingerprint(Plan) == savedFingerprint) AdoptState(state, replacePlan: true);
+                        else { serverVersion = state.Version; syncedFingerprint = Fingerprint(state.Plan); ApplyMeta(state); }
+                        await LoadPresetsAsync();
+                    }
+                }
+                catch (OperationCanceledException) { return; }
+                catch { await Task.Delay(1500, ct); }
+            }
+
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(400, ct);
+                try
+                {
+                    var fingerprint = Fingerprint(Plan);
+                    if (fingerprint != syncedFingerprint)
+                    {
+                        // An edit: push it once it stopped changing (the editor changes it key by key).
+                        if (fingerprint == pending) { await PushPlanAsync(ct); pending = null; }
+                        else pending = fingerprint;
+                    }
+                    else if (++tick % 3 == 0)
+                    {
+                        pending = null;
+                        await PullPlanAsync(ct);
+                    }
+                }
+                catch (OperationCanceledException) { return; }
+                catch { /* offline or restarting: try again on the next tick */ }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task PushPlanAsync(CancellationToken ct)
+    {
+        var sent = Plan.Clone();
+        var resp = await http.PutAsJsonAsync("api/plan", sent, JsonOpts, ct);
+        if (!resp.IsSuccessStatusCode) return;
+        var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
+        if (state is null) return;
+        serverVersion = state.Version;
+        syncedFingerprint = Fingerprint(sent);
+        ApplyMeta(state);
+    }
+
+    private async Task PullPlanAsync(CancellationToken ct)
+    {
+        var resp = await http.GetAsync($"api/plan?knownVersion={serverVersion}", ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NoContent || !resp.IsSuccessStatusCode) return;
+        var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
+        if (state is null || state.Version == serverVersion) return;
+        // The user may have started editing while we waited: unpushed edits win (last writer wins, brain 0050).
+        if (Fingerprint(Plan) != syncedFingerprint) return;
+        AdoptState(state, replacePlan: true);
+        await LoadPresetsAsync();
+    }
+
+    /// <summary>Takes the server's state as the truth. With <paramref name="replacePlan"/> false only the bookkeeping (version, preset, saved plan) is taken.</summary>
+    private void AdoptState(PlanStateDto state, bool replacePlan, LoadPlan? syncedWith = null)
+    {
+        serverVersion = state.Version;
+        if (replacePlan)
+        {
+            Plan = state.Plan.Clone();
+            syncedFingerprint = Fingerprint(Plan);
+            if (!IsRunning && string.IsNullOrEmpty(activeRunId)) Current = EmptySnapshot(Plan);
+        }
+        else if (syncedWith is not null) syncedFingerprint = Fingerprint(syncedWith);
+        ApplyMeta(state);
+    }
+
+    private void ApplyMeta(PlanStateDto state)
+    {
+        PresetName = state.PresetName;
+        savedFingerprint = Fingerprint(state.SavedPlan);
+        savedEntries = state.SavedPlan.Scenarios.Select(EntryFingerprint).ToHashSet();
         Changed?.Invoke();
     }
 
@@ -394,12 +556,6 @@ public sealed class ApiRunSource : IRunSource
     private void ApplyStatus(LiveRunStatusDto dto)
     {
         var count = dto.Plan.Scenarios.Count;
-        if (Plan.Scenarios.Count == 0 && count > 0)
-        {
-            Plan = dto.Plan.Clone();
-            savedFingerprint = Fingerprint(Plan);
-            savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
-        }
         if (!string.Equals(activeRunId, dto.RunId, StringComparison.Ordinal))
         {
             activeRunId = dto.RunId;
@@ -482,5 +638,5 @@ public sealed class ApiRunSource : IRunSource
     private static string Fingerprint(LoadPlan plan) => JsonSerializer.Serialize(plan, JsonOpts);
     private static string EntryFingerprint(ScenarioRunConfig e) => JsonSerializer.Serialize(e, JsonOpts);
 
-    public void Dispose() => StopPolling();
+    public void Dispose() { StopPolling(); StopSync(); }
 }
