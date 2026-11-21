@@ -14,7 +14,7 @@
 
 <div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
     <header class="top">
-        <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseMenu">
+        <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseNavAsync">
             <svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
                 <defs>
                     <clipPath id="bsharp-hex">
@@ -36,9 +36,9 @@
             <span class="brand-name">Bee<b>sharp</b></span>
         </a>
         <nav class="nav" aria-label="Main">
-            <NavLink class="nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseMenu">Overview</NavLink>
-            <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseMenu">Editor</NavLink>
-            <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseMenu">Logs</NavLink>
+            <NavLink class="nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Overview</NavLink>
+            <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
+            <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
         </nav>
 
         <div class="top-desktop">
@@ -173,8 +173,9 @@
     }
 
     private void CloseMenu() => menuOpen = false;
+    private async Task CloseNavAsync() { menuOpen = false; await Asst.CloseIfMobileAsync(); }
     private void OpenEnvsFromMenu() { menuOpen = false; EnvPopup.Show(); }
-    private void OpenScriptsFromMenu() { menuOpen = false; Nav.NavigateTo("editor"); }
+    private async Task OpenScriptsFromMenu() { menuOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("editor"); }
     private void OpenSettingsFromMenu() { menuOpen = false; Settings.Open(); }
 
     private void OnChanged()

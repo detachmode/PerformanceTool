@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using PerformanceTool.Client.Components;
 using PerformanceTool.Ai.Contracts;
 using PerformanceTool.Client.Services;
@@ -36,11 +37,12 @@ public sealed class AssistantState : IDisposable
     private readonly LogsPopupState logs;
     private readonly EnvironmentsPopupState environmentsPopup;
     private readonly NavigationManager nav;
+    private readonly IJSRuntime? js;
     private AssistantStatusDto? status;
     private CancellationTokenSource? sending;
 
     public AssistantState(AssistantClient client, DataModeState mode, ApiRunSource api, ApiEnvironmentSource environments, ScriptApiClient scripts,
-        LogsPopupState logs, EnvironmentsPopupState environmentsPopup, NavigationManager nav)
+        LogsPopupState logs, EnvironmentsPopupState environmentsPopup, NavigationManager nav, IJSRuntime? js = null)
     {
         this.client = client;
         this.mode = mode;
@@ -50,6 +52,7 @@ public sealed class AssistantState : IDisposable
         this.logs = logs;
         this.environmentsPopup = environmentsPopup;
         this.nav = nav;
+        this.js = js;
         mode.Changed += OnModeChanged;
         if (!mode.IsFakeMode) _ = CheckStatusAsync();
     }
@@ -98,6 +101,20 @@ public sealed class AssistantState : IDisposable
         if (!IsOpen) return;
         IsOpen = false;
         Changed?.Invoke();
+    }
+
+    /// <summary>On narrow viewports the assistant is a full-screen sheet; close it when navigating to another page so the target is visible.</summary>
+    public async Task CloseIfMobileAsync()
+    {
+        if (!IsOpen || js is null) return;
+        try
+        {
+            await using var mod = await js.InvokeAsync<IJSObjectReference>("import", "./assistant.js");
+            if (await mod.InvokeAsync<bool>("isMobile")) Close();
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
     }
 
     /// <summary>Starts a fresh conversation (the old one is dropped on the server).</summary>
@@ -165,9 +182,11 @@ public sealed class AssistantState : IDisposable
         switch (link.Target)
         {
             case "editor":
+                await CloseIfMobileAsync();
                 nav.NavigateTo($"?edit={Environment.TickCount64}"); // the plan editor is the overview in edit mode
                 break;
             case "scripts":
+                await CloseIfMobileAsync();
                 nav.NavigateTo("editor");
                 break;
             case "environments":
@@ -181,6 +200,7 @@ public sealed class AssistantState : IDisposable
                 else
                 {
                     await EnsureRunLoadedAsync(link.Query?.RunId);
+                    await CloseIfMobileAsync();
                     nav.NavigateTo("");
                 }
                 break;

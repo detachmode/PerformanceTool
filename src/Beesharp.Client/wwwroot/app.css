@@ -13,6 +13,12 @@
     --g1: color-mix(in oklch, var(--slow) 25%, var(--good)); --g2: color-mix(in oklch, var(--slow) 50%, var(--good)); --g3: color-mix(in oklch, var(--slow) 75%, var(--good));
     --radius: 12px; --radius-sm: 8px;
     --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", monospace;
+    /* 04 · Warm Beeswax Bento */
+    --bee-shell-bg: #161310;
+    --bee-bento-bg: #201C16;
+    --bee-shell-radius: 28px;
+    --bee-cell-radius: 18px;
+    --bee-accent: #F5B700;
 }
 * { box-sizing: border-box; }
 body {
@@ -107,35 +113,63 @@ label { font-size: .72rem; color: var(--muted); }
 .shell:has(.player) .main { padding-bottom: 7.5rem; } /* clear bottom player bar only when visible */
 .page-head { display: flex; align-items: baseline; gap: .9rem; margin-bottom: 1rem; flex-wrap: wrap; }
 
-/* ----- overview cards ----- */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .85rem; }
-.card { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .6rem; text-align: left; background: var(--panel); border: 1px solid var(--border); border-left: 3.5px solid var(--border); border-radius: var(--radius); padding: .95rem 1.05rem .8rem; cursor: pointer; min-width: 0; box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.55); transition: background-color .15s, border-color .15s; }
-.card-hex-accent { pointer-events: none; position: absolute; top: 0; right: 0; width: 92px; height: 92px; color: rgba(245, 183, 0, 0.055); }
-.card:hover { background: var(--panel2); }
-.card.bad { border-color: rgba(240, 82, 82, 0.35); border-left-color: var(--bad); }
-.card.warn { border-color: rgba(251, 191, 36, 0.35); border-left-color: var(--warn); }
-.card.calm-ok { border-color: rgba(52, 211, 153, 0.32); border-left-color: var(--good); }
-.card-title { position: relative; z-index: 1; font-weight: 600; color: var(--title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ----- overview cards (04 · Warm Beeswax Bento) ----- */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 1rem; }
+.card { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: .65rem; text-align: left; background: var(--bee-shell-bg); border: 1px solid rgba(255, 232, 198, 0.09); border-radius: var(--bee-shell-radius); padding: 1.05rem; cursor: pointer; min-width: 0; box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.65); transition: background-color .15s, border-color .15s, transform .12s; }
+.card:hover { background: #1a1612; border-color: rgba(245, 183, 0, 0.24); }
+.card.bad { border-color: rgba(240, 82, 82, 0.24); }
+.card.warn { border-color: rgba(251, 191, 36, 0.24); }
+.card.calm-ok { border-color: rgba(52, 211, 153, 0.2); }
+.card-title { position: relative; z-index: 1; font-weight: 700; font-size: .96rem; color: var(--title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: .1rem .2rem 0; }
+.bento-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; width: 100%; }
+.bento-title { display: flex; align-items: baseline; gap: .35rem .45rem; flex-wrap: wrap; white-space: normal; min-width: 0; }
+.bento-title-main { color: var(--title); font-weight: 700; }
+.bento-title-sub { color: var(--muted); font-family: var(--mono); font-size: .84rem; font-weight: 500; }
+.bento-live-pill { flex: none; display: inline-flex; align-items: center; gap: .42rem; padding: .24rem .7rem; border-radius: 999px; background: rgba(245, 183, 0, 0.14); border: 1px solid rgba(245, 183, 0, 0.45); color: var(--bee-accent); font-family: var(--mono); font-size: .72rem; font-weight: 700; letter-spacing: .09em; line-height: 1.1; }
+.bento-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bee-accent); box-shadow: 0 0 0 0 rgba(245, 183, 0, 0.7); animation: bento-live-pulse 1.6s ease-out infinite; }
+@keyframes bento-live-pulse {
+    0% { transform: scale(.95); box-shadow: 0 0 0 0 rgba(245, 183, 0, 0.7); opacity: 1; }
+    65% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(245, 183, 0, 0); opacity: .9; }
+    100% { transform: scale(.95); box-shadow: 0 0 0 0 rgba(245, 183, 0, 0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .bento-live-dot { animation: none; } }
+.bento-cell { display: flex; flex-direction: column; background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.055); border-radius: var(--bee-cell-radius); padding: .8rem .9rem; min-width: 0; }
+.bento-kpi-row { display: grid; grid-template-columns: minmax(86px, .82fr) minmax(0, 1.55fr); gap: .6rem; }
+.bento-kpi-left, .bento-kpi-right { gap: .3rem; justify-content: space-between; }
+.bento-num { font-family: var(--mono); font-size: 1.65rem; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--title); }
+.bento-lbl { color: var(--muted); font-size: .76rem; line-height: 1.3; }
+.bento-lbl.mono-sub { font-family: var(--mono); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bento-idle-cell { gap: .25rem; }
+.bento-sub { color: var(--muted); font-size: .76rem; }
 .card-figures { position: relative; z-index: 1; display: flex; gap: 1.6rem; flex-wrap: wrap; }
 .fig { display: flex; flex-direction: column; }
 .fig b { font-family: var(--mono); font-size: 1.6rem; font-weight: 700; line-height: 1.08; font-variant-numeric: tabular-nums; color: var(--title); }
 .fig small { color: var(--muted); font-size: .75rem; }
-/* card statistics (brain 0030): one quiet inline line, no boxes; colour only means slow = amber, failed = red */
-.card-stats { display: flex; flex-wrap: wrap; gap: .1rem .9rem; font-size: .75rem; color: var(--muted); line-height: 1.5; margin-top: -.25rem; }
-.card-stats .st { white-space: nowrap; }
-.card-stats .st small { font-size: inherit; color: var(--faint); }
-.card-stats .st b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
-.card-stats .st.warn b { color: var(--warn); }
-.card-stats .st.bad b { color: var(--bad); }
-.card:hover .card-stats .st:hover b { text-decoration: underline; text-underline-offset: 2px; }
-@media (max-width: 760px) { .card-stats .st:nth-child(3) { display: none; } }
-.spark { display: flex; align-items: flex-end; gap: 2px; height: 48px; border-bottom: 1px solid var(--border); position: relative; }
-.spark i { flex: 1 1 0; min-width: 2px; background: var(--bar); border-radius: 1px 1px 0 0; opacity: .8; }
+/* bento stats cell */
+.bento-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .42rem .75rem; padding: .72rem .9rem; font-size: .76rem; color: var(--muted); }
+.bento-stats .st { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bento-stats .st.right { text-align: right; }
+.bento-stats .st small { font-size: inherit; color: var(--muted); margin-right: .25rem; }
+.bento-stats .st b { font-family: var(--mono); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--title); }
+.bento-stats .st.warn b { color: var(--warn); }
+.bento-stats .st.bad b { color: var(--bad); }
+.card:hover .bento-stats .st:hover b { text-decoration: underline; text-underline-offset: 2px; }
+/* bento sparkline cell */
+.bento-spark-cell { padding: .82rem .85rem .72rem; gap: .68rem; }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 60px; position: relative; }
+.spark i { flex: 1 1 0; min-width: 3px; max-width: 8px; background: var(--bar); border-radius: 999px; opacity: .85; }
 .spark i.run, .bar.run, .call.run i { background: var(--running); opacity: 1; animation: running-pulse 1.8s ease-in-out infinite; }
 .spark i.good, .bar.good, .call.good i { background: var(--good); opacity: 1; }
 .spark i.bad, .bar.bad, .call.bad i { background: var(--failed); opacity: 1; }
 .spark i.warn, .bar.warn, .call.warn i { background: var(--slow); opacity: 1; }
 .spark em { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: .75rem; font-style: normal; }
+.bento-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.5rem; }
+.bento-pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: .16rem .68rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--muted); }
+.bento-pill.bad { color: #f87171; border-color: rgba(240, 82, 82, 0.42); background: rgba(240, 82, 82, 0.08); }
+.bento-pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.42); background: rgba(251, 191, 36, 0.08); }
+.bento-pill.ok { color: var(--good); border-color: rgba(52, 211, 153, 0.32); background: rgba(52, 211, 153, 0.07); }
+.bento-pill.edited { color: var(--bee-accent); border-color: rgba(245, 183, 0, 0.45); background: rgba(245, 183, 0, 0.1); }
+.bento-meta { font-family: var(--mono); font-size: .74rem; color: var(--faint); white-space: nowrap; }
 .card-reason { font-size: .8rem; min-height: 1.1rem; font-weight: 600; }
 .card.bad .card-reason { color: var(--bad); }
 .card.warn .card-reason { color: var(--warn); }
@@ -943,6 +977,10 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .asst { width: 100%; z-index: 125; border-left: 0; box-shadow: none; }   /* a full-screen sheet below the top bar, above the player bar */
     .shell.asst-open { margin-right: 0; }
     .shell.asst-open .top, .shell.asst-open .player { right: 0; }
+    .shell.asst-open .drawer-backdrop { z-index: 134; }
+    .shell.asst-open .top-drawer { z-index: 135; }
+    .shell.asst-open .overlay, .shell.asst-open ~ .overlay { z-index: 130; padding-bottom: 0; }
+    .shell.asst-open .overlay.logs, .shell.asst-open ~ .overlay.logs { z-index: 140; padding-bottom: 0; }
 }
 .asst-head { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem .55rem .95rem; background: var(--panel); border-bottom: 1px solid var(--border); flex: none; }
 .asst-head b { color: var(--title); font-size: .92rem; }

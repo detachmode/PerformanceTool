@@ -1,5 +1,5 @@
-@* One calm card per scenario (brain 0020): name, bees running, bees/min (actual / target) and a little bar chart of the latest bees.
-   Neutral by default; red when errors occurred, amber when only slow calls occurred (brain 0018). The chart is bounded to the latest bees (brain 0021). *@
+@* Warm Beeswax Bento scenario card: outer shell (#161310, 28px radius) with nested bento cells (#201C16, 18px radius).
+   Colour carries meaning: emerald = good, amber = slow, coral red = failed, calm blue = flying. *@
 @using System.Globalization
 @{
     var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
@@ -10,65 +10,114 @@
     for (var i = 0; i < take; i++) recent[i] = Bees[View.Finished - take + i];
     var max = recent.Length == 0 ? 5000 : Math.Max(1, recent.Max(a => a.DurationMs));
     var reason = View.Failed > 0
-        ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow call", "slow calls") : "")
+        ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow", "slow") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
+    var (titleMain, titleSub) = SplitLabel(Label);
     var aria = Label + ": "
         + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees flying, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
 }
-<button class="card @cls @(Selected ? "selected" : "") @(Edited ? "edited" : "")" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)" @onclick="() => OnOpen.InvokeAsync(Index)"
+<button class="card bento-card @cls @(Selected ? "selected" : "") @(Edited ? "edited" : "")" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)" @onclick="() => OnOpen.InvokeAsync(Index)"
         aria-label="@aria">
-    <svg class="card-hex-accent" viewBox="0 0 100 100" fill="none" aria-hidden="true">
-        <path d="M75 0L100 14.4V43.3L75 57.7L50 43.3V14.4L75 0Z" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M50 43.3L75 57.7V86.6L50 101L25 86.6V57.7L50 43.3Z" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M100 43.3L125 57.7V86.6L100 101L75 86.6V57.7L100 43.3Z" stroke="currentColor" stroke-width="1.5"/>
-    </svg>
-    <span class="card-title">@Label@if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }</span>
+    <span class="bento-head">
+        <span class="card-title bento-title">
+            <span class="bento-title-main">@titleMain</span>
+            @if (!string.IsNullOrEmpty(titleSub))
+            {
+                <span class="bento-title-sub">@titleSub</span>
+            }
+            @if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }
+        </span>
+        @if (!Idle && (IsLive || View.InFlight > 0))
+        {
+            <span class="bento-live-pill" aria-label="Live"><i class="bento-live-dot" aria-hidden="true"></i>LIVE</span>
+        }
+    </span>
+
     @if (Idle)
     {
-        <span class="card-figures">
-            <span class="fig"><b>@Format.Rate(Target)</b><small>@Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small></span>
+        <span class="bento-cell bento-idle-cell">
+            <span class="fig">
+                <b>@Format.Rate(Target)</b>
+                <small>@Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
+            </span>
+            @if (!string.IsNullOrWhiteSpace(Subtitle) && !string.Equals(Subtitle, Label, StringComparison.OrdinalIgnoreCase))
+            {
+                <span class="bento-sub">@Subtitle</span>
+            }
         </span>
-        <span class="card-kind">@Subtitle</span>
     }
     else
     {
-        <span class="card-figures">
-            <span class="fig"><b>@View.InFlight</b><small>bees flying</small></span>
-            <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small></span>
+        <span class="bento-kpi-row">
+            <span class="bento-cell bento-kpi-left">
+                <b class="bento-num">@View.InFlight</b>
+                <small class="bento-lbl">bees<br />flying</small>
+            </span>
+            <span class="bento-cell bento-kpi-right">
+                <b class="bento-num">@Format.Rate(actual)</b>
+                <small class="bento-lbl mono-sub">/ @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
+            </span>
         </span>
+
         @if (stats.HasData)
         {
             var fin = Math.Max(1, View.Finished);
             var errPct = 100.0 * View.Failed / fin;
             var slowPct = 100.0 * View.SlowBees / fin;
-            <span class="card-stats" title="Typical duration, slowest 5 %, longest, errors and slow bees of finished bees. Click to open details.">
+            <span class="bento-cell bento-stats" title="Typical duration, slowest 5 %, errors and slow bees of finished bees. Click to open details.">
                 <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
-                <span class="st @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
-                <span class="st @(stats.LongestSlow ? "warn" : "")"><small>longest</small> <b>@Format.Ms(stats.Longest)</b></span>
+                <span class="st right @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
                 <span class="st @(View.Failed > 0 ? "bad" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true"><small>errors</small> <b>@Pc(errPct)</b></span>
-                <span class="st @(View.SlowBees > 0 ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"><small>slow</small> <b>@Pc(slowPct)</b></span>
+                <span class="st right @(View.SlowBees > 0 ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"><small>slow</small> <b>@Pc(slowPct)</b></span>
             </span>
         }
     }
-    <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
-        @foreach (var a in recent)
+
+    <span class="bento-cell bento-spark-cell">
+        <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
+            @foreach (var a in recent)
+            {
+                <i class="@(a.Failed ? "bad" : BeeOrder.Good(a.Tint))" style="height:@(Pct(a.DurationMs / max))%"></i>
+            }
+            @foreach (var r in runNow)
+            {
+                <i class="run" data-start="@((r.StartedAt * 1000).ToString("0", CultureInfo.InvariantCulture))"></i>
+            }
+            @if (recent.Length == 0 && runNow.Count == 0) { <em>@(Idle ? "Not run yet" : "No bees started yet")</em> }
+        </DockZoom>
+        @if (!Idle || Edited)
         {
-            <i class="@(a.Failed ? "bad" : BeeOrder.Good(a.Tint))" style="height:@(Pct(a.DurationMs / max))%"></i>
+            <span class="bento-foot">
+                @if (reason.Length > 0)
+                {
+                    <span class="bento-pill @(View.Failed > 0 ? "bad" : "warn")">@reason</span>
+                }
+                else if (Edited)
+                {
+                    <span class="bento-pill edited">Changed</span>
+                }
+                else if (View.Finished > 0)
+                {
+                    <span class="bento-pill ok">0 errors</span>
+                }
+                else
+                {
+                    <span></span>
+                }
+                @if (!Idle && View.Finished > 0)
+                {
+                    <span class="bento-meta">@Format.Num(View.Finished) finished</span>
+                }
+            </span>
         }
-        @foreach (var r in runNow)
-        {
-            <i class="run" data-start="@((r.StartedAt * 1000).ToString("0", CultureInfo.InvariantCulture))"></i>
-        }
-        @if (recent.Length == 0 && runNow.Count == 0) { <em>@(Idle ? "Not run yet" : "No bees started yet")</em> }
-    </DockZoom>
-    <span class="card-reason">@(reason.Length > 0 ? reason : " ")</span>
+    </span>
 </button>
 
 @code {
-    private const int MaxBars = 32;
+    private const int MaxBars = 28;
 
     [Parameter, EditorRequired] public int Index { get; set; }
     [Parameter, EditorRequired] public string Label { get; set; } = "";
@@ -79,6 +128,7 @@
     [Parameter] public string Shape { get; set; } = "";
     [Parameter] public IReadOnlyList<RunningBee>? Running { get; set; }
     [Parameter] public double Elapsed { get; set; }
+    [Parameter] public bool IsLive { get; set; }
     /// <summary>Editor mode (brain 0024): the card shows the configured scenario, not run data.</summary>
     [Parameter] public bool Idle { get; set; }
     [Parameter] public string Subtitle { get; set; } = "";
@@ -97,7 +147,15 @@
         if (!Idle) stats.Update(Bees, View.Finished);
     }
 
+    private static (string Main, string Sub) SplitLabel(string label)
+    {
+        var open = label.LastIndexOf(" (", StringComparison.Ordinal);
+        if (open > 0 && label.EndsWith(')'))
+            return (label[..open], label[(open + 1)..]);
+        return (label, "");
+    }
+
     private static string Pc(double p) => p <= 0 ? "0%" : p < 10 ? p.ToString("0.0", CultureInfo.InvariantCulture) + "%" : p.ToString("0", CultureInfo.InvariantCulture) + "%";
 
-    private static string Pct(double f) => Math.Clamp(f * 100, 4, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Pct(double f) => Math.Clamp(f * 100, 12, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 }

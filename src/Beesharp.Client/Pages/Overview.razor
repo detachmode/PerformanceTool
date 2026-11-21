@@ -485,7 +485,7 @@
             {
                 var idx = i;
                 <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
-                              Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed"
+                              Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" IsLive="s.Running && !s.Paused"
                               OnOpen="i => { open = i; openFilter = DetailFilter.All; }"
                               OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />
             }

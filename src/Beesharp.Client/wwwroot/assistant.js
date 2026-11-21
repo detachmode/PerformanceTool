@@ -27,3 +27,7 @@ export function attach(textarea, dotnet) {
 export function scrollToEnd(el) {
     if (el) el.scrollTop = el.scrollHeight;
 }
+
+export function isMobile() {
+    return window.matchMedia("(max-width: 860px)").matches;
+}
