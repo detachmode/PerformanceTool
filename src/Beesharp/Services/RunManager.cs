@@ -24,6 +24,8 @@ public sealed record LiveScenarioViewDto(
     int SlowCalls,
     int Dropped);
 
+public sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
+
 public sealed record LiveRunStatusDto(
     string RunId,
     string State,
@@ -39,7 +41,8 @@ public sealed record LiveRunStatusDto(
     string? PreflightState = null,
     string? PreflightScriptName = null,
     IReadOnlyList<string>? PreflightLogs = null,
-    string? PreflightError = null);
+    string? PreflightError = null,
+    IReadOnlyList<LiveRunningBeeDto>? RunningBees = null);
 
 /// <summary>
 /// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run, persisting all bees,
@@ -67,6 +70,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private int[] slowCalls = [];
     private int[] dropped = [];
     private readonly List<LiveBeeDto> bees = [];
+    private readonly Dictionary<int, LiveRunningBeeDto> activeBees = [];
     private int lastSequence = -1;
     private long totalLogs;
     private string? runError;
@@ -116,6 +120,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             slowCalls = new int[count];
             dropped = new int[count];
             bees.Clear();
+            activeBees.Clear();
             lastSequence = -1;
             totalLogs = data.TotalLogs;
             runError = data.Error;
@@ -191,7 +196,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 preflightState,
                 preflightScriptName,
                 preflightLogs.Count > 0 ? preflightLogs.ToArray() : null,
-                preflightError);
+                preflightError,
+                activeBees.Count > 0 ? activeBees.Values.OrderBy(b => b.Sequence).ToArray() : null);
         }
     }
 
@@ -237,6 +243,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             slowCalls = new int[cloned.Scenarios.Count];
             dropped = new int[cloned.Scenarios.Count];
             bees.Clear();
+            activeBees.Clear();
             lastSequence = -1;
             totalLogs = 0;
             runError = null;
@@ -334,7 +341,15 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                             if (act.Entry >= 0 && act.Entry < inFlight.Length)
                             {
                                 inFlight[act.Entry] = act.InFlight;
-                                if (act.Started) starts[act.Entry]++;
+                                if (act.Started)
+                                {
+                                    starts[act.Entry]++;
+                                    activeBees[act.Sequence] = new LiveRunningBeeDto(act.Sequence, act.Entry, act.AtSeconds);
+                                }
+                                else
+                                {
+                                    activeBees.Remove(act.Sequence);
+                                }
                             }
                         }
                         return ValueTask.CompletedTask;
@@ -358,6 +373,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     finalElapsed = elapsed;
                     clock.Stop();
                     for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
+                    activeBees.Clear();
                     runError = err;
                     state = "Finished";
                 }

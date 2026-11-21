@@ -6,7 +6,7 @@
     --text: #f5f2eb; --title: #ffffff; --muted: #a8a29e; --faint: #78716c;
     --accent: #fbbf24; --accent2: #f5b700;
     --bar: #8c8578; /* neutral bars */
-    --running: #f5b700; /* bees in flight, honey gold */
+    --running: #5b9bf0; /* bees in flight, calm blue */
     --good: #34d399; --slow: #fbbf24; --failed: #f05252; /* nectar emerald, honey amber, coral red */
     --bad: var(--failed); --warn: var(--slow);
     /* graded slowness (brain 0041): nectar green at typical time moving towards amber */
@@ -877,3 +877,11 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .pf-line { color: var(--text); }
 .pf-line.err { color: #ffc2c7; }
 .pf-line.warn { color: #f1d6a3; }
+
+/* ----- boot splash screen ----- */
+.boot { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .65rem; color: var(--muted); }
+.boot-icon { animation: boot-pulse 1.8s ease-in-out infinite; filter: drop-shadow(0 4px 16px rgba(245, 183, 0, 0.35)); }
+.boot-title { font-size: 1.25rem; font-weight: 700; color: var(--title); letter-spacing: -.01em; }
+.boot-title span { color: var(--accent2); }
+.boot-sub { font-size: .82rem; color: var(--muted); }
+@keyframes boot-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .88; } }

@@ -104,6 +104,8 @@ public sealed class ApiRunSource : IRunSource
         int SlowCalls,
         int Dropped);
 
+    private sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
+
     private sealed record LiveRunStatusDto(
         string RunId,
         string State,
@@ -119,7 +121,8 @@ public sealed class ApiRunSource : IRunSource
         string? PreflightState = null,
         string? PreflightScriptName = null,
         List<string>? PreflightLogs = null,
-        string? PreflightError = null);
+        string? PreflightError = null,
+        List<LiveRunningBeeDto>? RunningBees = null);
 
     private sealed record ServerBeeDetailDto(
         string RunId,
@@ -350,7 +353,7 @@ public sealed class ApiRunSource : IRunSource
             {
                 try
                 {
-                    await Task.Delay(PreflightState == "Running" ? 250 : 500, ct);
+                    await Task.Delay(PreflightState == "Running" ? 250 : 300, ct);
                     var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts, ct);
                     if (dto is not null)
                     {
@@ -427,13 +430,27 @@ public sealed class ApiRunSource : IRunSource
             _ => FakeRunState.Idle,
         };
 
+        IReadOnlyList<RunningBee>[]? beesInFlight = null;
+        if (dto.RunningBees is { Count: > 0 } && count > 0)
+        {
+            var buckets = new List<RunningBee>[count];
+            for (var i = 0; i < count; i++) buckets[i] = [];
+            foreach (var rb in dto.RunningBees)
+            {
+                if (rb.Entry >= 0 && rb.Entry < count)
+                    buckets[rb.Entry].Add(new RunningBee(rb.Sequence, rb.Entry, rb.StartedAt, []));
+            }
+            beesInFlight = buckets;
+        }
+
         Current = new RunSnapshot(
             state,
             dto.ElapsedSeconds,
             dto.Plan,
             labels,
             views,
-            activeStore);
+            activeStore,
+            beesInFlight);
         Changed?.Invoke();
     }
 

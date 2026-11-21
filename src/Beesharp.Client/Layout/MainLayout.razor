@@ -13,12 +13,23 @@
 <div class="shell">
     <header class="top">
         <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseMenu">
-            <svg viewBox="0 0 36 36" fill="none" width="30" height="30" class="brand-hex" aria-hidden="true">
-                <path d="M18 2L32 10V26L18 34L4 26V10L18 2Z" fill="#1B1813" stroke="#F5B700" stroke-width="2" />
-                <path d="M18 7.5L26.5 12.4V22.2L18 27.1L9.5 22.2V12.4L18 7.5Z" fill="#F5B700" fill-opacity="0.14"/>
-                <path d="M13 13.5H23M12 18H24M14 22.5H22" stroke="#F5B700" stroke-width="2.2" stroke-linecap="round"/>
-                <path d="M18 25.5L20 28.5H16L18 25.5Z" fill="#FFB800"/>
-                <path d="M15 9.5L13.5 7M21 9.5L22.5 7" stroke="#FFB800" stroke-width="1.5" stroke-linecap="round"/>
+            <svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
+                <defs>
+                    <clipPath id="bsharp-hex">
+                        <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z"/>
+                    </clipPath>
+                </defs>
+                <g clip-path="url(#bsharp-hex)">
+                    <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z" fill="#F5B700"/>
+                    <path d="M32 32L57 17.5V46.5L32 61L7 46.5Z" fill="#D99B00"/>
+                    <path d="M32 32L57 46.5L32 61L7 46.5Z" fill="#B87D00"/>
+                </g>
+                <path d="M32 3.8L56.2 17.9V46.1L32 60.2L7.8 46.1V17.9L32 3.8Z" stroke="#FDE68A" stroke-opacity="0.45" stroke-width="1.5"/>
+                <path fill-rule="evenodd" clip-rule="evenodd"
+                      d="M15 19H27.5C32.2 19 35.2 21.4 35.2 25.4C35.2 28.2 33.6 30.2 31.1 31.1C34.2 32 36.2 34.4 36.2 37.8C36.2 42.3 32.8 45 27.6 45H15V19ZM20.8 29.4H26.4C28.4 29.4 29.6 28.3 29.6 26.5C29.6 24.7 28.4 23.7 26.4 23.7H20.8V29.4ZM20.8 40.3H26.9C29.2 40.3 30.5 39.2 30.5 37.2C30.5 35.2 29.2 34.1 26.9 34.1H20.8V40.3Z"
+                      fill="#110F0C"/>
+                <path d="M43.4 22L41.8 41M49.6 22L48 41M39.2 28.2H52.2M38.5 34.8H51.5"
+                      stroke="#110F0C" stroke-width="3.2" stroke-linecap="round"/>
             </svg>
             <span class="brand-name">Bee<b>sharp</b></span>
         </a>
