@@ -753,3 +753,41 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .test-calls, .test-logs { display: flex; flex-direction: column; gap: .2rem; font-family: var(--mono); font-size: .75rem; border-top: 1px solid var(--border); padding-top: .35rem; }
 .test-call-row { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
 .test-call-row .url { color: var(--text); overflow-wrap: anywhere; flex: 1; }
+
+/* ----- dedicated C# script editor page & syntax highlighter ----- */
+.script-workspace { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: .85rem; align-items: start; }
+.script-sidebar { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.script-side-head { padding: .55rem .75rem; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
+.script-list { display: flex; flex-direction: column; padding: .35rem; gap: .25rem; max-height: 68vh; overflow-y: auto; }
+.script-main { display: flex; flex-direction: column; gap: .7rem; min-width: 0; }
+.script-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.script-toolbar .env-name-input { min-width: 170px; max-width: 260px; flex: 1 1 170px; font-family: var(--mono); font-size: .85rem; }
+.btn.wrap-on { border-color: var(--accent2); color: var(--title); background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); }
+
+.cs-ed { position: relative; height: 420px; min-height: 260px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }
+.cs-ed:focus-within { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
+.cs-hl, .cs-ta {
+    position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: .7rem .85rem;
+    font-family: var(--mono); font-size: .83rem; line-height: 1.5; tab-size: 4;
+    border: 0; border-radius: 0; box-sizing: border-box; letter-spacing: normal; word-spacing: normal;
+}
+.cs-ed.wrap .cs-hl, .cs-ed.wrap .cs-ta { white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; overflow-x: hidden; overflow-y: auto; }
+.cs-ed.nowrap .cs-hl, .cs-ed.nowrap .cs-ta { white-space: pre; overflow-wrap: normal; overflow: auto; }
+.cs-hl { pointer-events: none; color: var(--text); background: transparent; user-select: none; }
+.cs-hl code { font-family: inherit; font-size: inherit; line-height: inherit; }
+.cs-ta { background: transparent; color: transparent; caret-color: var(--title); resize: none; outline: none; box-shadow: none !important; }
+.cs-ta::selection { background: #7b68ee55; color: transparent; }
+
+/* C# syntax token colours tuned for dark purple theme */
+.hl-kw   { color: #c792ea; font-weight: 500; }
+.hl-type { color: #82aaff; }
+.hl-str  { color: #c3e88d; }
+.hl-num  { color: #f78c6c; }
+.hl-cmt  { color: #7f7899; font-style: italic; }
+
+@media (max-width: 860px) {
+    .script-workspace { grid-template-columns: 1fr; }
+    .script-list { flex-direction: row; overflow-x: auto; max-height: none; }
+    .script-list .env-item { flex: 0 0 auto; min-width: 165px; }
+    .cs-ed { height: 360px; }
+}

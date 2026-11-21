@@ -1,0 +1,128 @@
+@* Lightweight C# syntax-highlighted code editor with toggleable line wrap and synced scrolling. *@
+@using System.Net
+@using System.Text
+@using System.Text.RegularExpressions
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="cs-ed @(WordWrap ? "wrap" : "nowrap")">
+    <pre class="cs-hl" @ref="preEl" aria-hidden="true"><code>@Highlight(Value)</code></pre>
+    <textarea class="cs-ta" @ref="taEl" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+              wrap="@(WordWrap ? "soft" : "off")"
+              aria-label="@AriaLabel"
+              value="@Value"
+              @oninput="OnInput"></textarea>
+</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool WordWrap { get; set; } = true;
+    [Parameter] public string AriaLabel { get; set; } = "C# scenario script";
+
+    private ElementReference taEl;
+    private ElementReference preEl;
+    private IJSObjectReference? module;
+    private IJSObjectReference? handle;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                module = await JS.InvokeAsync<IJSObjectReference>("import", "./code-editor.js");
+                handle = await module.InvokeAsync<IJSObjectReference>("attach", taEl, preEl);
+            }
+            catch { }
+        }
+        else if (handle is not null)
+        {
+            try { await handle.InvokeVoidAsync("sync"); } catch { }
+        }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        var next = e.Value?.ToString() ?? "";
+        Value = next;
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
+    {
+        "abstract", "as", "async", "await", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
+        "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event",
+        "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit",
+        "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null", "object", "operator",
+        "out", "override", "params", "private", "protected", "public", "readonly", "record", "ref", "required",
+        "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct", "switch",
+        "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using",
+        "var", "virtual", "void", "volatile", "where", "while", "with", "yield", "init", "not", "and", "or",
+        "property"
+    };
+
+    private static readonly Regex TokenRx = new(
+        @"(?<cmt>//[^\n]*|/\*[\s\S]*?\*/)" +
+        @"|(?<str>\$@""(?:""""|[^""])*""|@\$""(?:""""|[^""])*""|@""(?:""""|[^""])*""|\$""(?:\\.|[^""\\])*""|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
+        @"|(?<num>\b\d+(?:\.\d+)?[mMfFdDlLuU]*\b)" +
+        @"|(?<id>\b[A-Za-z_][A-Za-z0-9_]*\b)",
+        RegexOptions.Compiled);
+
+    private static MarkupString Highlight(string? code)
+    {
+        if (string.IsNullOrEmpty(code)) return new MarkupString("\n");
+        var sb = new StringBuilder(code.Length + 256);
+        var pos = 0;
+
+        foreach (Match m in TokenRx.Matches(code))
+        {
+            if (m.Index > pos)
+                sb.Append(WebUtility.HtmlEncode(code[pos..m.Index]));
+
+            var tok = m.Value;
+            var enc = WebUtility.HtmlEncode(tok);
+
+            if (m.Groups["cmt"].Success)
+                sb.Append("<span class=\"hl-cmt\">").Append(enc).Append("</span>");
+            else if (m.Groups["str"].Success)
+                sb.Append("<span class=\"hl-str\">").Append(enc).Append("</span>");
+            else if (m.Groups["num"].Success)
+                sb.Append("<span class=\"hl-num\">").Append(enc).Append("</span>");
+            else if (m.Groups["id"].Success)
+            {
+                if (Keywords.Contains(tok))
+                    sb.Append("<span class=\"hl-kw\">").Append(enc).Append("</span>");
+                else if (char.IsUpper(tok[0]))
+                    sb.Append("<span class=\"hl-type\">").Append(enc).Append("</span>");
+                else
+                    sb.Append(enc);
+            }
+            else
+            {
+                sb.Append(enc);
+            }
+
+            pos = m.Index + m.Length;
+        }
+
+        if (pos < code.Length)
+            sb.Append(WebUtility.HtmlEncode(code[pos..]));
+
+        // Keep a trailing newline so scrolling to the last empty line matches the textarea height.
+        if (code.EndsWith('\n')) sb.Append('\n');
+        return new MarkupString(sb.ToString());
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (handle is not null)
+        {
+            try { await handle.InvokeVoidAsync("dispose"); await handle.DisposeAsync(); } catch { }
+        }
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); } catch { }
+        }
+    }
+}

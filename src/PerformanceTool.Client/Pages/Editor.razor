@@ -1,460 +1,401 @@
-@* Editor (brain 0024, 0020, 0019, 0016): edits the loaded scenarios, shown as the same ScenarioCards as the overview (idle state) plus an "Add scenario" tile.
-   A card opens that scenario's settings in a side panel (a full-screen sheet on phones): label, actors/min and the generated parameters (essential first, the rest under "More options").
-   Feedback: "Unsaved changes", Save only when something changed, "Saved ✓", and a confirm before loading over unsaved changes. *@
+@* Dedicated C# Script Editor page (/editor): view, write, syntax-highlight, compile, and test-run .cs scenario files on the server. *@
 @page "/editor"
+@page "/scripts"
 @layout MainLayout
+@using System.Text.Json.Nodes
+@using Microsoft.AspNetCore.Components.Forms
+@using PerformanceTool.Client.Components.Parameters
+@using PerformanceTool.Services.Scenarios
+@using PerformanceTool.Services.Scenarios.Spec
 @implements IDisposable
-@inject IRunSource Sim
+@inject ScriptApiClient Api
 @inject ScenarioCatalog Catalog
-@inject CustomScriptsPopupState ScriptsPopup
-@inject ScriptApiClient ScriptApi
+@inject IRunSource Sim
+@inject IEnvironmentSource Envs
+@inject DataModeState DataMode
+@inject NavigationManager Nav
 
-<PageTitle>Editor · PerformanceTool</PageTitle>
+<PageTitle>Script Editor · PerformanceTool</PageTitle>
 
-@{
-    var plan = Sim.Plan;
-    var locked = Sim.IsRunning;
-    var dirty = Sim.HasUnsavedChanges;
-    if (selected >= plan.Scenarios.Count) selected = plan.Scenarios.Count - 1;
-    if (selected < -1) selected = -1;
-    var cfg = selected >= 0 ? plan.Scenarios[selected] : null;
-    var scenario = cfg is null ? null : Catalog.Find(cfg.ScenarioId);
-    var planErr = planSnap ??= PlanErrors(plan);
-    var cfgErr = cfg is null ? null : ShownErrors(cfg);
-    var hasAdvanced = scenario?.Spec.Fields.Any(f => f.Advanced) ?? false;
-    var advancedInvalid = cfgErr is not null && scenario is not null
-        && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
-}
-
-<div class="page editor">
-    <section class="preset-bar" aria-label="Presets">
+<div class="page script-page">
+    <section class="preset-bar" aria-label="Script editor header">
         <div class="preset-title">
-            <h1>Scenarios</h1>
-            <span class="preset-pill" title="Active preset">@Sim.PresetName</span>
-            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
-            else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
+            <h1>Script Editor</h1>
+            <span class="preset-pill">.cs scenarios</span>
+            @if (statusMessage is not null)
+            {
+                <span class="@(statusIsError ? "field-error" : "saved")" role="status">@statusMessage</span>
+            }
         </div>
         <div class="preset-actions">
-            @if (dirty)
-            {
-                <button class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
-            }
-            <button class="btn ghost small" @onclick="() => ScriptsPopup.Show()" title="View, edit, upload and test-run custom .cs scenario files">Scripts (.cs)</button>
-            <div class="dd">
-                <button type="button" class="btn ghost small" aria-haspopup="menu" aria-expanded="@Aria.Bool(actionsOpen)" disabled="@locked"
-                        @onclick="() => actionsOpen = !actionsOpen" title="Preset &amp; plan actions">
-                    Presets ▾
-                </button>
-                @if (actionsOpen)
+            <button type="button" class="btn ghost small" @onclick="NewScript" disabled="@busy">+ New .cs</button>
+            <label class="btn ghost small upload-lbl" title="Upload a .cs or .csx scenario script">
+                Upload .cs…
+                <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
+            </label>
+        </div>
+    </section>
+
+    @if (DataMode.IsFakeMode)
+    {
+        <div class="notice">
+            <span>You are in <b>Fake mode</b>. Custom C# scripts compile and run on the server — switch to Live mode to test them for real.</span>
+            <button class="btn primary small" @onclick="SwitchToLive">Switch to Live mode</button>
+        </div>
+    }
+
+    <div class="script-workspace">
+        <nav class="script-sidebar" aria-label="C# script files">
+            <div class="script-side-head">
+                <span class="ed-sec-title">Files (@scripts.Count)</span>
+            </div>
+            <div class="script-list">
+                @if (scripts.Count == 0)
                 {
-                    <div class="dd-backdrop" @onclick="() => actionsOpen = false"></div>
-                    <div class="dd-menu right" role="menu" aria-label="Preset actions">
-                        <button type="button" class="dd-item" role="menuitem" disabled="@(!dirty)" @onclick="() => { actionsOpen = false; Save(); }">Save “@Sim.PresetName”</button>
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => { actionsOpen = false; OpenSaveAs(); }">Save as new preset…</button>
-                        @if (Sim.PresetNames.Count > 0)
-                        {
-                            <div class="dd-sep" role="separator"></div>
-                            <div class="dd-lbl">Load preset</div>
-                            @foreach (var p in Sim.PresetNames)
-                            {
-                                var preset = p;
-                                <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreset(preset)">@preset</button>
-                            }
-                        }
-                    </div>
+                    <div class="muted" style="padding:.5rem">No .cs files yet.</div>
+                }
+                @foreach (var s in scripts)
+                {
+                    var item = s;
+                    <button type="button" class="env-item @(selectedId == item.ScriptId ? "on" : "")" @onclick="() => Select(item)">
+                        <span class="nm">@item.ScenarioName</span>
+                        <small class="muted">@item.FileName</small>
+                    </button>
                 }
             </div>
-        </div>
-    </section>
+        </nav>
 
-    @if (pendingLoad is not null)
-    {
-        <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
-            <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
-            <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
-            <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
-        </div>
-    }
-    @if (saveAsOpen)
-    {
-        <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
-            <label for="save-as">Save the scenarios as preset</label>
-            <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
-            <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
-            <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
-        </form>
-    }
-    @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
+        <section class="script-main" aria-label="C# code editor and test runner">
+            <div class="script-toolbar">
+                <label class="visually-hidden" for="script-filename">Script file name</label>
+                <input id="script-filename" class="env-name-input" value="@fileName" placeholder="order-stress.cs" autocomplete="off"
+                       @oninput="e => fileName = e.Value?.ToString() ?? string.Empty" />
+                <span class="spacer"></span>
+                <button type="button" class="btn ghost small @(wordWrap ? "wrap-on" : "")"
+                        aria-pressed="@Aria.Bool(wordWrap)"
+                        @onclick="() => wordWrap = !wordWrap"
+                        title="Toggle line wrapping in the code editor">
+                    Wrap: @(wordWrap ? "On" : "Off")
+                </button>
+                <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || string.IsNullOrWhiteSpace(scriptCode))">
+                    @(compiling ? "Compiling…" : "Compile & Save")
+                </button>
+                @if (selectedSummary is not null)
+                {
+                    <button type="button" class="btn ghost small" @onclick="AddToPlan" disabled="@(busy || Sim.IsRunning)" title="Add this scenario to the current load plan">+ Add to plan</button>
+                    <button type="button" class="btn ghost danger small" @onclick="DeleteCurrent" disabled="@busy">Delete</button>
+                }
+            </div>
 
-    <section class="settings" aria-label="Plan settings">
-        <div class="num @(planErr.ContainsKey("dur") ? "is-invalid" : "")"><label for="p-dur">Duration (s)</label><input id="p-dur" type="number" min="1" value="@plan.DurationSeconds" @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" /></div>
-        <div class="num @(planErr.ContainsKey("conc") ? "is-invalid" : "")"><label for="p-conc">Max in-flight</label><input id="p-conc" type="number" min="1" max="1000" value="@plan.MaxConcurrency" @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" /></div>
-        <div class="num @(planErr.ContainsKey("to") ? "is-invalid" : "")"><label for="p-to">Timeout (s)</label><input id="p-to" type="number" min="1" max="300" value="@plan.TimeoutSeconds" @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" /></div>
-        @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
-    </section>
+            <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# scenario script" />
 
-    <div class="grid ed-grid" aria-label="Loaded scenarios">
-        @for (var i = 0; i < plan.Scenarios.Count; i++)
-        {
-            var idx = i;
-            var c = plan.Scenarios[idx];
-            @if (idx == selected)
+            @if (diagnostics.Count > 0)
             {
-                <section class="card card-expanded selected" @key="c" aria-label="Edit @LabelOf(c)">
-                    <div class="detail-head">
-                        <span class="card-title">
-                            @if (Sim.IsEntryChanged(c)) { <i class="edit-dot" title="Unsaved changes"></i> }
-                            <b>@LabelOf(c)</b>
-                        </span>
-                        <span class="muted" title="@scenario?.Description">@(scenario?.Name ?? c.ScenarioId)</span>
-                        <span class="spacer"></span>
-                        @if (scenario is not null && Catalog.IsCustom(c.ScenarioId))
-                        {
-                            <button type="button" class="btn ghost small" @onclick="() => ScriptsPopup.Show(c.ScenarioId)" title="View and edit this scenario's .cs file on the server">Edit .cs</button>
-                        }
-                        @if (dirty)
-                        {
-                            <button type="button" class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
-                        }
-                        <button type="button" class="icon-btn" @onclick="() => selected = -1" aria-label="Collapse settings" title="Done">✕</button>
-                    </div>
-                    @if (scenario is null)
+                <div class="diag-list" role="alert">
+                    @foreach (var d in diagnostics)
                     {
-                        <div class="muted empty">This scenario no longer exists in code.</div>
+                        <div class="diag-row @(d.Severity == "Error" ? "err" : "warn")">
+                            <code>(@d.Line,@d.Column) @d.Id</code>
+                            <span>@d.Message</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (selectedSummary is not null && compiledSpec is not null)
+            {
+                <div class="script-test-box">
+                    <div class="script-test-head">
+                        <h3>Parameters &amp; Test Run</h3>
+                        <span class="muted">Reflected from script · @(Envs.ActiveName is null ? "No environment" : $"Env: {Envs.ActiveName}")</span>
+                        <span class="spacer"></span>
+                        <button type="button" class="btn primary small" @onclick="RunTest" disabled="@busy">
+                            @(testing ? "Running…" : "▶ Test run")
+                        </button>
+                    </div>
+
+                    @if (compiledSpec.Fields.Count > 0)
+                    {
+                        <div class="form param-grid">
+                            <ParameterEditor Spec="compiledSpec" Values="testParams" Disabled="@busy" IdPrefix="script-test" />
+                        </div>
                     }
                     else
                     {
-                        <div class="detail-body">
-                            <div class="ed-section ed-schedule" @key="c">
-                                <div class="ed-sec-head">
-                                    <span class="ed-sec-title">Scenario &amp; Spawning</span>
-                                    <span class="ed-rate-badge" title="Effective spawn rate">@Format.Rate(c.EffectiveRatePerMinute()) @Terms.PerMinuteShort</span>
-                                </div>
-                                <div class="ed-sched-grid">
-                                    <div class="field wide">
-                                        <label for="entry-label">Label</label>
-                                        <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
-                                    </div>
-                                    <div class="ed-spawn-row">
-                                        <div class="field pattern">
-                                            <label id="pattern-label">Spawning</label>
-                                            <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: actors start evenly. Bursts: several actors start at once, now and then.">
-                                                <button type="button" class="@(c.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
-                                                <button type="button" class="@(c.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
-                                            </div>
-                                        </div>
-                                        @if (c.Pattern == SpawningPattern.Bursts)
-                                        {
-                                            <div class="ed-burst-pair">
-                                                <div class="field rate @(cfgErr!.Burst is null ? "" : "is-invalid")">
-                                                    <label for="entry-burst-size">Actors / burst</label>
-                                                    <input id="entry-burst-size" type="number" min="1" step="1" value="@c.ActorsPerBurst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
-                                                </div>
-                                                <div class="field rate @(cfgErr.BurstRate is null ? "" : "is-invalid")">
-                                                    <label for="entry-burst-rate">Bursts / min</label>
-                                                    <input id="entry-burst-rate" type="number" min="0.1" step="any" value="@c.BurstsPerMinute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
-                                                </div>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
-                                                <label for="entry-rate">Actors / min</label>
-                                                <input id="entry-rate" type="number" min="0.1" step="any" value="@c.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
-                                            </div>
-                                        }
-                                    </div>
-                                    @if (c.Pattern == SpawningPattern.Bursts && (cfgErr!.Burst is not null || cfgErr.BurstRate is not null))
-                                    {
-                                        <div class="ed-sched-errors">
-                                            @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
-                                            @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
-                                        </div>
-                                    }
-                                    else if (c.Pattern != SpawningPattern.Bursts && cfgErr!.Rate is not null)
-                                    {
-                                        <div class="ed-sched-errors">
-                                            <small class="field-error" role="alert">@cfgErr.Rate</small>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
+                        <p class="muted" style="margin:0">This scenario takes no parameters.</p>
+                    }
 
-                            @if (scenario.Spec.Fields.Any(f => !f.Advanced))
+                    @if (testResult is not null)
+                    {
+                        <div class="test-result @(testResult.Success ? "ok" : "bad")">
+                            <div class="test-result-head">
+                                <b>@(testResult.Success ? "Succeeded" : "Failed")</b>
+                                @if (testResult.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
+                                <span class="muted">@testResult.DurationMs.ToString("0.#") ms</span>
+                                <span class="muted">@testResult.Bytes B</span>
+                                <span class="muted">startup @testResult.StartupDurationMs.ToString("0.#") ms · teardown @testResult.TeardownDurationMs.ToString("0.#") ms</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(testResult.Error))
                             {
-                                <div class="ed-section ed-params" @key="@((c, "params"))">
-                                    <div class="ed-sec-head">
-                                        <span class="ed-sec-title">Scenario Parameters</span>
-                                        <span class="ed-sec-meta">@scenario.Name</span>
-                                    </div>
-                                    <div class="form param-grid">
-                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
-                                    </div>
+                                <div class="field-error">@testResult.Error</div>
+                            }
+                            @if (testResult.Calls.Count > 0)
+                            {
+                                <div class="test-calls">
+                                    @foreach (var c in testResult.Calls)
+                                    {
+                                        <div class="test-call-row">
+                                            <code>@c.Method</code>
+                                            <span class="url">@c.Url</span>
+                                            <span class="muted">@(c.StatusCode?.ToString() ?? "err") · @c.DurationMs.ToString("0.#") ms</span>
+                                        </div>
+                                    }
                                 </div>
                             }
-                            @if (hasAdvanced)
+                            @if (testResult.Logs.Count > 0)
                             {
-                                <details class="more" open="@advancedInvalid" @key="@((c, "more"))">
-                                    <summary>More options</summary>
-                                    <div class="form param-grid">
-                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Advanced" Edited="Edited" Committed="Committed" />
-                                    </div>
-                                </details>
+                                <div class="test-logs">
+                                    @foreach (var line in testResult.Logs)
+                                    {
+                                        <div><code>@line</code></div>
+                                    }
+                                </div>
                             }
                         </div>
                     }
-                    <div class="detail-foot">
-                        <button type="button" class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove scenario</button>
-                        <span class="spacer"></span>
-                        <button type="button" class="btn ghost small" @onclick="() => selected = -1">Done</button>
-                    </div>
-                </section>
-            }
-            else
-            {
-                <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Actors="NoActors" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
-                              Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="false"
-                              Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
-            }
-        }
-
-        @if (addOpen)
-        {
-            <section class="card card-add-open" aria-label="Add scenario">
-                <div class="detail-head">
-                    <b>Add scenario</b>
-                    <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</span>
-                    <span class="spacer"></span>
-                    <button type="button" class="icon-btn" @onclick="() => addOpen = false" aria-label="Close">✕</button>
                 </div>
-                <ul class="add-menu inline" aria-label="Scenario types">
-                    @foreach (var sc in Catalog.All)
-                    {
-                        var chosen = sc;
-                        <li><button type="button" @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
-                    }
-                </ul>
-            </section>
-        }
-        else
-        {
-            <button class="card card-add" @onclick="ToggleAdd" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="false">
-                <span class="plus">+</span><span>Add scenario</span><small class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</small>
-            </button>
-        }
+            }
+        </section>
     </div>
 </div>
 
 @code {
-    private sealed record EntryProblems(string? Rate, string? Burst, string? BurstRate, Dictionary<string, List<string>> Fields)
+    [SupplyParameterFromQuery(Name = "script")]
+    public string? RequestedScript { get; set; }
+
+    private List<ClientScriptSummary> scripts = [];
+    private string? selectedId;
+    private ClientScriptSummary? selectedSummary;
+    private ParameterSpec? compiledSpec;
+    private JsonObject testParams = new();
+    private string fileName = "order-api-stress.cs";
+    private string scriptCode = StarterTemplate;
+    private bool wordWrap = true;
+    private List<ClientScriptDiagnostic> diagnostics = [];
+    private ClientTestRunResult? testResult;
+    private string? statusMessage;
+    private bool statusIsError;
+    private bool compiling;
+    private bool testing;
+    private bool busy => compiling || testing;
+
+    private const string StarterTemplate = """
+        // 1. Define parameters (reflected by the backend to build the Blazor form)
+        public record ApiLoadParams(
+            [property: Description("Target endpoint URL")]
+            string Endpoint = "https://httpbin.org/post",
+            [property: Description("Auth bearer token")]
+            string? BearerToken = null,
+            [property: Range(1, 5000)]
+            int PayloadSizeBytes = 256,
+            bool IncludeRandomJitter = true
+        );
+
+        // 2. Register the scenario using the injected 'Scenario' global
+        Scenario.Define<ApiLoadParams>("Order API Stress Test", async (p, ctx) =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, p.Endpoint);
+            if (!string.IsNullOrEmpty(p.BearerToken))
+                request.Headers.Authorization = new("Bearer", p.BearerToken);
+            request.Content = new StringContent(new string('x', p.PayloadSizeBytes));
+
+            using var response = await ctx.HttpClient.SendAsync(request, ctx.CancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            if (p.IncludeRandomJitter)
+                await Task.Delay(Random.Shared.Next(5, 25), ctx.CancellationToken);
+        })
+        .OnStartup(async (p, ctx) =>
+        {
+            ctx.Log("Startup hook ran");
+            await Task.CompletedTask;
+        })
+        .OnTeardown(async (p, ctx) =>
+        {
+            ctx.Log("Teardown hook ran");
+            await Task.CompletedTask;
+        });
+        """;
+
+    protected override async Task OnInitializedAsync()
     {
-        public int Count => (Rate is null ? 0 : 1) + (Burst is null ? 0 : 1) + (BurstRate is null ? 0 : 1) + Fields.Count;
+        DataMode.Changed += OnStateChanged;
+        Sim.Changed += OnStateChanged;
+        await ReloadScriptsAsync();
     }
 
-    private int selected = -1;
-    private static readonly ScenarioView Empty = new(0, 0, 0, 0, 0, 0);
-    private static readonly ActorRecord[] NoActors = [];
-
-    private void Select(int i) { selected = i; addOpen = false; ResetErrors(); }
-
-    // ---------- change detection while typing ----------
-    // Dirty state is derived from the live plan on every render, so each input event only has to re-render this page (cheap: the
-    // fingerprint of one plan plus the selected entry's validation). Errors are calmer: they are shown from a snapshot that is taken
-    // when the user leaves a field (change event) or stops typing for 300 ms, never on each keystroke.
-    private ScenarioRunConfig? snapFor;
-    private EntryProblems? snap;
-    private Dictionary<string, string>? planSnap;
-    private CancellationTokenSource? debounce;
-
-    private void ResetErrors() { snapFor = null; snap = null; planSnap = null; debounce?.Cancel(); }
-
-    private EntryProblems ShownErrors(ScenarioRunConfig c)
-    {
-        if (!ReferenceEquals(snapFor, c) || snap is null) { snapFor = c; snap = EntryErrors(c); }
-        return snap;
-    }
-
-    private void Edited()
-    {
-        debounce?.Cancel();
-        debounce = new CancellationTokenSource();
-        _ = SnapshotLater(debounce.Token);
-    }
-
-    private async Task SnapshotLater(CancellationToken ct)
-    {
-        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
-        if (disposed || ct.IsCancellationRequested) return;
-        snap = null; planSnap = null;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private void Committed() { debounce?.Cancel(); snap = null; planSnap = null; }
-
-    private void SetRate(ChangeEventArgs e)
-    {
-        if (selected < 0) return;
-        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d))
-            Sim.Plan.Scenarios[selected].RatePerMinute = d;
-        Edited();
-    }
-
-    private void SetPattern(SpawningPattern pattern)
-    {
-        if (selected < 0) return;
-        Sim.Plan.Scenarios[selected].Pattern = pattern;
-        Committed();
-        Edited();
-    }
-
-    private void SetBurstSize(ChangeEventArgs e)
-    {
-        if (selected < 0) return;
-        if (int.TryParse(e.Value?.ToString(), out var v)) Sim.Plan.Scenarios[selected].ActorsPerBurst = v;
-        Edited();
-    }
-
-    private void SetBurstRate(ChangeEventArgs e)
-    {
-        if (selected < 0) return;
-        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d))
-            Sim.Plan.Scenarios[selected].BurstsPerMinute = d;
-        Edited();
-    }
-
-    private void SetPlanInt(ChangeEventArgs e, Action<int> set)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var v)) set(v);
-        Edited();
-    }
-    private bool addOpen, saveAsOpen, savedNote, actionsOpen;
-    private string saveAsName = "";
-    private string? pendingLoad;
-    private bool disposed;
-
-    private void PickPreset(string name)
-    {
-        actionsOpen = false;
-        if (Sim.HasUnsavedChanges) pendingLoad = name;
-        else DoLoad(name);
-    }
-
-    protected override void OnInitialized()
-    {
-        Sim.Changed += OnChanged;
-        Catalog.Changed += OnChanged;
-        _ = ScriptApi.SyncCatalogAsync();
-    }
-
-    private void ToggleAdd()
-    {
-        addOpen = !addOpen;
-        if (addOpen) _ = ScriptApi.SyncCatalogAsync();
-    }
-
-    private void OnChanged()
+    private void OnStateChanged()
     {
         try { _ = InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
 
-    // ---------- validation (inline, per field) ----------
-
-    private static string LabelOf(ScenarioRunConfig c) => string.IsNullOrWhiteSpace(c.Label) ? c.ScenarioId : c.Label;
-
-    private static Dictionary<string, string> PlanErrors(LoadPlan plan)
+    private async Task ReloadScriptsAsync()
     {
-        var m = new Dictionary<string, string>();
-        if (plan.DurationSeconds is < 1 or > 24 * 3600) m["dur"] = "Duration: between 1 second and 24 hours.";
-        if (plan.MaxConcurrency is < 1 or > 1000) m["conc"] = "Max in-flight: between 1 and 1000.";
-        if (plan.TimeoutSeconds is < 1 or > 300) m["to"] = "Timeout: between 1 and 300 seconds.";
-        return m;
-    }
-
-    private EntryProblems EntryErrors(ScenarioRunConfig c)
-    {
-        string? rate = null, burst = null, burstRate = null;
-        if (c.Pattern == SpawningPattern.Bursts)
+        try
         {
-            if (c.ActorsPerBurst is < 1 or > LoadPlan.MaxActorsPerBurst) burst = $"Actors per burst: between 1 and {LoadPlan.MaxActorsPerBurst:N0}.";
-            if (c.BurstsPerMinute <= 0 || double.IsNaN(c.BurstsPerMinute)) burstRate = "Bursts per minute: more than 0.";
-            else if (c.EffectiveRatePerMinute() > LoadPlan.MaxRatePerMinute) burstRate = $"Together at most {LoadPlan.MaxRatePerMinute:N0} actors per minute.";
+            scripts = await Api.ListScriptsAsync();
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedScript)
+                && scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, RequestedScript, StringComparison.OrdinalIgnoreCase)
+                                            || string.Equals(s.ScriptId, RequestedScript, StringComparison.OrdinalIgnoreCase)
+                                            || string.Equals(s.FileName, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } requested)
+            {
+                Select(requested);
+            }
+            else if (selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } found)
+                Select(found);
+            else if (scripts.Count > 0 && selectedSummary is null)
+                Select(scripts[0]);
         }
-        else if (c.RatePerMinute is <= 0 or > LoadPlan.MaxRatePerMinute || double.IsNaN(c.RatePerMinute))
-            rate = $"Between 0 and {LoadPlan.MaxRatePerMinute:N0} per minute.";
-        var fields = Catalog.Find(c.ScenarioId) is { } sc ? sc.Spec.ValidateByField(c.Parameters) : new Dictionary<string, List<string>>();
-        return new(rate, burst, burstRate, fields);
+        catch (Exception ex)
+        {
+            statusMessage = $"Could not load scripts from server: {ex.Message}";
+            statusIsError = true;
+        }
     }
 
-    // ---------- list ----------
-
-    private void Add(IScenario scenario)
+    private void Select(ClientScriptSummary s)
     {
+        selectedId = s.ScriptId;
+        selectedSummary = s;
+        fileName = s.FileName;
+        scriptCode = s.Code;
+        diagnostics = [];
+        testResult = null;
+        compiledSpec = ParameterSpec.FromJsonSchema(s.Parameters);
+        testParams = compiledSpec.DefaultJson();
+        statusMessage = null;
+        statusIsError = false;
+    }
+
+    private void NewScript()
+    {
+        selectedId = null;
+        selectedSummary = null;
+        compiledSpec = null;
+        testParams = new JsonObject();
+        fileName = "custom-scenario.cs";
+        scriptCode = StarterTemplate;
+        diagnostics = [];
+        testResult = null;
+        statusMessage = null;
+        statusIsError = false;
+    }
+
+    private async Task OnFileUpload(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        using var stream = file.OpenReadStream(maxAllowedSize: 512 * 1024);
+        using var reader = new StreamReader(stream);
+        scriptCode = await reader.ReadToEndAsync();
+        fileName = file.Name;
+        selectedId = null;
+        selectedSummary = null;
+        compiledSpec = null;
+        testResult = null;
+        diagnostics = [];
+        await CompileAndSave();
+    }
+
+    private async Task CompileAndSave()
+    {
+        compiling = true;
+        statusMessage = null;
+        statusIsError = false;
+        diagnostics = [];
+        testResult = null;
+        try
+        {
+            var res = await Api.CompileAndSaveAsync(selectedId, fileName, scriptCode);
+            diagnostics = res.Diagnostics.ToList();
+            if (res.Success && res.Script is { } saved)
+            {
+                await ReloadScriptsAsync();
+                Select(saved);
+                statusMessage = "Compiled ✓";
+                statusIsError = false;
+            }
+            else
+            {
+                statusMessage = res.Error ?? "Compilation failed.";
+                statusIsError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
+        finally { compiling = false; }
+    }
+
+    private async Task RunTest()
+    {
+        if (selectedSummary is null) return;
+        testing = true;
+        statusMessage = null;
+        statusIsError = false;
+        testResult = null;
+        try
+        {
+            testResult = await Api.TestRunAsync(selectedSummary.ScriptId, testParams, Envs.ActiveName);
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
+        finally { testing = false; }
+    }
+
+    private void AddToPlan()
+    {
+        if (selectedSummary is null) return;
+        var scenario = Catalog.Find(selectedSummary.ScenarioId);
+        if (scenario is null) return;
         Sim.AddEntry(scenario);
-        ResetErrors();
-        selected = Sim.Plan.Scenarios.Count - 1;
-        addOpen = false;
+        statusMessage = $"Added “{scenario.Name}” to plan ✓";
+        statusIsError = false;
     }
 
-    private void Remove()
+    private async Task DeleteCurrent()
     {
-        Sim.RemoveEntry(selected);
-        selected = -1;
-        ResetErrors();
+        if (selectedSummary is null) return;
+        try
+        {
+            await Api.DeleteScriptAsync(selectedSummary.ScriptId, selectedSummary.ScenarioId);
+            NewScript();
+            await ReloadScriptsAsync();
+            statusMessage = "Deleted";
+            statusIsError = false;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = ex.Message;
+            statusIsError = true;
+        }
     }
 
-    // ---------- presets ----------
-
-    private void OnLoadPicked(ChangeEventArgs e)
+    private void SwitchToLive()
     {
-        var name = e.Value?.ToString() ?? "";
-        if (name.Length == 0) return;
-        if (Sim.HasUnsavedChanges) pendingLoad = name;
-        else DoLoad(name);
-    }
-
-    private void ConfirmLoad()
-    {
-        var name = pendingLoad;
-        pendingLoad = null;
-        if (name is not null) DoLoad(name);
-    }
-
-    private void DoLoad(string name)
-    {
-        Sim.LoadPreset(name);
-        selected = -1;
-        ResetErrors();
-        saveAsOpen = false;
-    }
-
-    private void Save() { Sim.SavePreset(Sim.PresetName); FlashSaved(); }
-
-    private void OpenSaveAs() { saveAsName = Sim.PresetName; saveAsOpen = true; pendingLoad = null; }
-
-    private void SaveAs()
-    {
-        if (saveAsName.Trim().Length == 0) return;
-        Sim.SavePreset(saveAsName);
-        saveAsOpen = false;
-        FlashSaved();
-    }
-
-    private async void FlashSaved()
-    {
-        savedNote = true;
-        StateHasChanged();
-        await Task.Delay(2500);
-        if (disposed) return;
-        savedNote = false;
-        StateHasChanged();
+        DataMode.SetFakeMode(false);
+        _ = ReloadScriptsAsync();
     }
 
     public void Dispose()
     {
-        disposed = true;
-        debounce?.Cancel();
-        Sim.Changed -= OnChanged;
-        Catalog.Changed -= OnChanged;
+        DataMode.Changed -= OnStateChanged;
+        Sim.Changed -= OnStateChanged;
     }
 }
