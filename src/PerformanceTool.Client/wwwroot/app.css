@@ -500,3 +500,19 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .figures .fig.bad b { color: var(--bad); } .figures .fig.warn b { color: var(--warn); } .figures .fig.good b { color: var(--good); }
 .figures .fig { display: inline-block; }
 .figures .fig b { font-size: inherit; line-height: inherit; font-weight: 600; }
+
+/* Group bars (brain 0032): a bar for several actors has a lighter fill, a solid outline and a count badge in the outcome colour. */
+.bar.grp, .bar-stack.grp { position: relative; }
+.bar.grp { box-sizing: border-box; border: 1px solid var(--oc); background: color-mix(in srgb, var(--oc) 32%, transparent); }
+.bar.grp.good, .bar-stack.grp.good { --oc: var(--good); }
+.bar.grp.bad, .bar-stack.grp.bad { --oc: var(--failed); }
+.bar.grp.warn, .bar-stack.grp.warn { --oc: var(--slow); }
+.bar-stack.grp .bar.grp { border-radius: 0; border-top-width: 1px; }
+.bar-stack.grp { --oc: var(--good); }
+.bar-stack.grp.bad { --oc: var(--failed); } .bar-stack.grp.warn { --oc: var(--slow); }
+.grp-n { display: none; position: absolute; left: 50%; bottom: 100%; margin-bottom: 2px; transform: translateX(-50%) scaleY(calc(1 / var(--dz, 1))); transform-origin: 50% 100%;
+  padding: 0 4px; font-weight: 600; font-size: .62rem; line-height: 1.25; font-variant-numeric: tabular-nums; border: 1px solid var(--oc); border-radius: 8px; background: var(--panel); color: var(--oc); pointer-events: none; white-space: nowrap; z-index: 1; }
+.bar-stack.grp .grp-n { margin-bottom: 2px; }
+.bar-hit { container-type: inline-size; }
+@container (min-width: 26px) { .grp-n { display: block; } }
+.bar-hit:hover .grp-n, .bar-hit.on .grp-n, .bar-hit.mag .grp-n { display: block; }

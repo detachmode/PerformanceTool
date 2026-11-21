@@ -122,7 +122,7 @@ export function attach(el, ref, options) {
     if (axis) { mark = mk('dz-mark'); readout = mk('dz-readout'); axis.append(mark, readout); }
 
     const clear = () => {
-        for (const it of items) { it.style.flex = ''; it.style.minWidth = ''; it.style.maxWidth = ''; it.style.removeProperty('--dz'); }
+        for (const it of items) { it.style.flex = ''; it.style.minWidth = ''; it.style.maxWidth = ''; it.style.removeProperty('--dz'); it.classList.remove('mag'); }
     };
     const measure = () => {
         clear();
@@ -281,6 +281,7 @@ export function attach(el, ref, options) {
             const it = items[i];
             it.style.flex = `0 0 ${wi}px`; it.style.minWidth = '0'; it.style.maxWidth = 'none';
             it.style.setProperty('--dz', (1 + TALL * cur[i]).toFixed(3));
+            it.classList.toggle('mag', cur[i] > 0.5);   // group badges show on magnified bars (brain 0032)
             x += wi + gap;
         }
         const h = info ? hov : -1;
