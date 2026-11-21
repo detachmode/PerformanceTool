@@ -61,7 +61,7 @@
             ActorBars.UnfoldPerBurst(Settings.MaxBars), ActorBars.UnfoldBudget(Settings.MaxBars), room, out burstSpans);
     }
     var ovMarks = OverviewMarks(actors, view.Finished, s.Elapsed);
-    unfoldedSlots = burstSpans.Count == 0 ? [] : new HashSet<double>(burstSpans.Select(b => b.Slot));
+    unfoldedSlots = burstSpans.Count == 0 ? [] : burstSpans.ToDictionary(b => b.Slot, b => b.GroupSize);
     var bucketed = width > 0;
     var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
@@ -147,8 +147,8 @@
                         }
                         else
                         {
-                            var on = bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
-                            var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
+                            var on = bar.IsBurstGroup ? groupSel is { } gsel && gsel.Slot == bar.Slot && gsel.Lo == bar.GroupLo && gsel.Hi == bar.GroupHi : bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
+                            var key = bar.IsBurstGroup ? $"g{T(bar.Slot)}:{bar.GroupLo}:{bar.GroupHi}" : bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
                             <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-k="@(bar.InBurst ? K(bar.Cover) : null)" style="@(bar.InBurst ? "--k:" + K(bar.Cover) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
@@ -172,7 +172,7 @@
                     @foreach (var bs in burstSpans)
                     {
                         var burst = bs;
-                        <button class="burst-tag @(bucket == burst.Slot ? "on" : "")" data-ub="@T(burst.Slot)" title="Burst at @FT(burst.Slot, width): @Format.Plural(burst.Actors, "actor", "actors") started together. Click to list them." aria-label="Burst at @FT(burst.Slot, width), @Format.Plural(burst.Actors, "actor", "actors"): select them as a group" @onclick="() => PickBar(new ActorBar(0, 0, 0, 0, -1, burst.Slot))">burst · @Format.Plural(burst.Actors, "actor", "actors")</button>
+                        <button class="burst-tag @(bucket == burst.Slot ? "on" : "")" data-ub="@T(burst.Slot)" title="Burst at @FT(burst.Slot, width): @Format.Plural(burst.Actors, "actor", "actors") started together@(burst.GroupSize > 1 ? ", shown in groups of " + burst.GroupSize : ""). Click to list them." aria-label="Burst at @FT(burst.Slot, width), @Format.Plural(burst.Actors, "actor", "actors"): select them as a group" @onclick="() => PickBar(new ActorBar(0, 0, 0, 0, -1, burst.Slot))">burst · @Format.Plural(burst.Actors, "actor", "actors")</button>
                     }
                     </div>
                 </DockZoom>
@@ -269,6 +269,10 @@
                     {
                         <button class="chip" @onclick="() => tailMs = null" title="Show all actors of the time frame again">slowest 5% (≥ @Format.Ms(tm)) ✕</button>
                     }
+                    @if (groupSel is { } gc)
+                    {
+                        <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">actors #@(gc.Lo + 1)–#@(gc.Hi + 1) ✕</button>
+                    }
                     @if (activeBucket is { } ab)
                     {
                         <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">bucket @Format.Time(ab)–@Format.Time(ab + width) ✕</button>
@@ -300,14 +304,18 @@
     private ActorRecord? selected;
     private bool showTypicals;   // the actor panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
-    private double? bucket;
+    private double? bucketValue;
+    /// <summary>The selected time bucket; any change clears the selected burst group (brain 0042), which the pick that sets it assigns afterwards.</summary>
+    private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
+    /// <summary>The selected even group of an unfolded burst (brain 0042): the burst's slot and the lowest and highest actor sequence in the group.</summary>
+    private (double Slot, int Lo, int Hi)? groupSel;
     private sealed record Win(double From, double To, bool Follow);
     private Win? win;
     private readonly ChartGrid grid = new();
     private bool listHover;
     private List<ActorRow> sideCache = [];
     private int[] sideCounts = new int[4];
-    private (double, double, ActorShow, double?) sideKey;
+    private (double, double, ActorShow, double?, (double, int, int)?) sideKey;
     private (int, int) sideCountKey;
     private long sideAt;
     private string sideReset = "";
@@ -360,7 +368,7 @@
     private readonly UnfoldHysteresis unfoldPlay = new();
     private void SetChartSize(double px) { if (Math.Abs(px - chartPx) >= 1) { chartPx = px; fz = null; } }
     /// <summary>Grid slots (their start, run seconds) whose burst is unfolded in the chart at the last render (brain 0038), for stepping through failed actors.</summary>
-    private HashSet<double> unfoldedSlots = [];
+    private Dictionary<double, int> unfoldedSlots = [];     // slot -> size of the burst's even groups (brain 0042)
 
     private string StepWord => show == ActorShow.Slow ? "slow" : "failed";
     private ActorOutcome StepOutcome => show == ActorShow.Slow ? ActorOutcome.Slow : ActorOutcome.Failed;
@@ -457,13 +465,14 @@
     {
         var lo = bucketStart is { } b ? Math.Max(from, b) : from;
         var hi = bucketStart is { } b2 ? Math.Min(to, b2 + width) : to;
-        var key = (lo, hi, sh, tailMs);
+        var key = (lo, hi, sh, tailMs, groupSel is { } gs0 ? ((double, int, int)?)(gs0.Slot, gs0.Lo, gs0.Hi) : null);
         var countKey = (count, running.Count);
         var stale = key != sideKey || (countKey != sideCountKey && !listHover && Environment.TickCount64 - sideAt > 700);
         if (!stale) return sideCache;
         sideCache = ActorOrder.Rows(actors, count, running, sh, lo, hi, tailMs ?? 0);
+        if (groupSel is { } gf) sideCache = sideCache.Where(r => r.Sequence >= gf.Lo && r.Sequence <= gf.Hi).ToList();
         sideKey = key; sideCountKey = countKey; sideAt = Environment.TickCount64;
-        sideReset = $"{lo}|{hi}|{sh}|{tailMs}";
+        sideReset = $"{lo}|{hi}|{sh}|{tailMs}|{groupSel}";
         sideCounts = new int[4];
         foreach (var r in sideCache) sideCounts[(int)r.State]++;
         return sideCache;
@@ -489,6 +498,12 @@
         {
             if (double.TryParse(key.AsSpan(1), NumberStyles.Float, CultureInfo.InvariantCulture, out var start)) PickBar(new ActorBar(0, 0, 0, 0, -1, start));
         }
+        else if (key[0] == 'g')
+        {
+            var p = key.Substring(1).Split(':');
+            if (p.Length == 3 && double.TryParse(p[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var slot) && int.TryParse(p[1], out var glo) && int.TryParse(p[2], out var ghi))
+                PickBar(new ActorBar(0, 0, 0, 0, -1, slot, Slot: slot, GroupLo: glo, GroupHi: ghi));
+        }
         else if (int.TryParse(key.AsSpan(1), out var seq))
         {
             var inFlight = Snapshot.ActorsInFlight is { } rn && Index < rn.Length && rn[Index].Any(r => r.Sequence == seq);
@@ -498,11 +513,18 @@
 
     private void PickBar(ActorBar bar)
     {
-        if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; }
-        else if (bar.IsRunningActor) { selected = null; selRunning = selRunning == bar.Sequence ? null : bar.Sequence; }
+        if (bar.IsBurstGroup)
+        {
+            var same = groupSel is { } g0 && g0.Slot == bar.Slot && g0.Lo == bar.GroupLo && g0.Hi == bar.GroupHi;
+            bucket = null; selected = null; selRunning = null;
+            if (!same) groupSel = (bar.Slot, bar.GroupLo, bar.GroupHi);
+        }
+        else if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; }
+        else if (bar.IsRunningActor) { groupSel = null; selected = null; selRunning = selRunning == bar.Sequence ? null : bar.Sequence; }
         else
         {
             var actors = Snapshot.Store.Actors(Index);
+            groupSel = null;
             for (var i = 0; i < Snapshot.Scenarios[Index].Finished; i++)
                 if (actors[i].Sequence == bar.Sequence) { selRunning = null; selected = selected is { } s && s.Sequence == bar.Sequence ? null : actors[i]; break; }
         }
@@ -532,10 +554,26 @@
         // the key of the current position: a group start (grouped bars) or an actor (start time, sequence)
         // Unfolded bursts (brain 0038) step actor by actor: inside one the key is (slot, sequence + 1), a group bar or the whole burst is (slot, 0).
         ActorRecord? tg = null;
-        (double, long) GKey(ActorRecord a) { var sl = ActorBars.BucketOf(a.StartedAt, w); return (sl, unfoldedSlots.Contains(sl) ? a.Sequence + 1L : 0L); }
+        // brain 0042: a burst in even groups steps group by group (the key is the group number), a burst of single bars actor by actor
+        var order = new Dictionary<double, List<int>>();
+        if (w > 0 && unfoldedSlots.Count > 0)
+        {
+            var tmp = new Dictionary<double, List<(double, int)>>();
+            void Note(double start, int seq) { var sl = ActorBars.BucketOf(start, w); if (!unfoldedSlots.ContainsKey(sl)) return; if (!tmp.TryGetValue(sl, out var l)) tmp[sl] = l = []; l.Add((start, seq)); }
+            for (var i = 0; i < count; i++) Note(actors[i].StartedAt, actors[i].Sequence);
+            if (Snapshot.ActorsInFlight is { } rn && Index < rn.Length) foreach (var r in rn[Index]) Note(r.StartedAt, r.Sequence);
+            foreach (var (sl, l) in tmp) { l.Sort(); order[sl] = l.Select(x => x.Item2).ToList(); }
+        }
+        long Pos(double sl, int seq)
+        {
+            if (!order.TryGetValue(sl, out var l)) return 0;
+            var r = Math.Max(0, l.IndexOf(seq));
+            return unfoldedSlots[sl] > 1 ? r / unfoldedSlots[sl] + 1L : r + 1L;
+        }
+        (double, long) GKey(ActorRecord a) { var sl = ActorBars.BucketOf(a.StartedAt, w); return (sl, unfoldedSlots.ContainsKey(sl) ? Pos(sl, a.Sequence) : 0L); }
         if (w > 0)
         {
-            (double, long)? cur = bucket is { } bk ? (bk, 0L) : selected is { } sa ? GKey(sa) : null;
+            (double, long)? cur = bucket is { } bk ? (bk, 0L) : groupSel is { } gk ? (gk.Slot, Pos(gk.Slot, gk.Lo)) : selected is { } sa ? GKey(sa) : null;
             if (cur is { } c)
                 tg = direction > 0 ? list.Cast<ActorRecord?>().FirstOrDefault(a => GKey(a!.Value).CompareTo(c) > 0) : list.Cast<ActorRecord?>().LastOrDefault(a => GKey(a!.Value).CompareTo(c) < 0);
             else
@@ -559,7 +597,14 @@
             win = to >= elapsed - 0.02 * span ? new Win(Math.Max(0, elapsed - span), elapsed, true) : new Win(from, to, false);
         }
         tailMs = null; fz = null; selRunning = null;
-        if (w > 0 && !unfoldedSlots.Contains(t0) && !(win is not null && ActorBars.BucketActors(actors, count, show, t0, w).Count <= 1))
+        if (w > 0 && unfoldedSlots.TryGetValue(t0, out var gsz) && gsz > 1 && order.TryGetValue(t0, out var ord))
+        {
+            var at = ord.IndexOf(target.Sequence) / gsz * gsz;
+            var part = ord.Skip(at).Take(gsz).ToList();
+            bucket = null; selected = null;
+            groupSel = (t0, part.Min(), part.Max());
+        }
+        else if (w > 0 && !unfoldedSlots.ContainsKey(t0) && !(win is not null && ActorBars.BucketActors(actors, count, show, t0, w).Count <= 1))
         {
             bucket = t0; selected = null;
         }
@@ -575,7 +620,7 @@
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>Label inside the hovered bar (brain 0023): actor number or time range, then start time and duration or actor count. Times are run time (m:ss).</summary>
-    private static string LabelTop(ActorBar b, double width) => b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"#{b.Sequence + 1}";
+    private static string LabelTop(ActorBar b, double width) => b.IsBurstGroup ? $"#{b.GroupLo + 1}–#{b.GroupHi + 1}" : b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"#{b.Sequence + 1}";
 
     /// <summary>Run time m:ss, with decimals when the bucket width is below a second (zoomed in far).</summary>
     private static string FT(double seconds, double width)
@@ -607,14 +652,15 @@
     private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : ActorOrder.Good(b.Step);
 
     /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
-    private static string Near1(ActorBar b, double width) => b.IsBucket ? FT(b.BucketStart, width) : $"#{b.Sequence + 1}";
+    private static string Near1(ActorBar b, double width) => b.IsBurstGroup ? $"#{b.GroupLo + 1}–{b.GroupHi + 1}" : b.IsBucket ? FT(b.BucketStart, width) : $"#{b.Sequence + 1}";
     private static string Near2(ActorBar b) => b.IsBucket ? Format.Num(b.Total) : b.IsRunningActor ? "…" : b.MaxMs < 1000 ? $"{b.MaxMs:0}ms" : b.MaxMs < 60_000 ? $"{b.MaxMs / 1000:0.0}s" : Format.Time(b.MaxMs / 1000);
 
     private static string BarTitle(ActorBar b, double width)
     {
         if (b.IsRunningActor) return $"Actor #{b.Sequence + 1}, running, {Format.Ms(b.MaxMs)} so far";
         if (!b.IsBucket) return $"Actor #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
-        var text = $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "actor", "actors")}";
+        var text = b.IsBurstGroup ? $"Actors #{b.GroupLo + 1}–#{b.GroupHi + 1} of the burst at {FT(b.Slot, width)}: {Format.Plural(b.Count, "actor", "actors")}"
+            : $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "actor", "actors")}";
         if (b.Failed > 0) text += $", {b.Failed} failed";
         if (b.Slow > 0) text += $", {b.Slow} slow";
         else if (Format.OverTypical(b.Ratio)) text += $", the slowest {Format.Times(b.Ratio)} typical";

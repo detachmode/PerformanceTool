@@ -42,7 +42,7 @@ public sealed record FakePreset(string Name, LoadPlan Plan, List<FakeProfile> Pr
 /// <summary>
 /// Simulates a run of a few scenarios with different rates, realistic call durations and some failures, so the UI can be
 /// designed without the real runner. Actors are in flight for their duration and write fake log statements that line up with
-/// their outcome. It starts out with a finished run so screenshots are never empty; <c>simulateSeconds</c> (URL <c>?simulate=3h</c>)
+/// their outcome. It starts out with a finished run so screenshots are never empty; <c>simulateSeconds</c> (URL <c>?simulate=3h</c>; <c>burstActors</c> is the debug URL <c>?burst=100</c>)
 /// pre-generates a much longer one to test scaling.
 /// </summary>
 public sealed class FakeRunSource : IRunSource
@@ -91,11 +91,22 @@ public sealed class FakeRunSource : IRunSource
     /// <summary>Length of the finished run that is there on first load (brain 0039).</summary>
     public const int SeedRunSeconds = 30 * 60;
 
-    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null)
+    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null, int burstActors = 0)
     {
         this.catalog = catalog;
         StoreOptions = storeOptions ?? new RunStoreOptions();
         LoadBlackFriday();
+        // Debug (URL "?burst=100", brain 0042): every burst entry starts that many actors at once, a few of them fail, to test big bursts.
+        if (burstActors > 0)
+        {
+            Plan.MaxConcurrency = Math.Max(Plan.MaxConcurrency, burstActors * 3);
+            for (var i = 0; i < Plan.Scenarios.Count; i++)
+                if (Plan.Scenarios[i].Pattern == SpawningPattern.Bursts)
+                {
+                    Plan.Scenarios[i].ActorsPerBurst = burstActors;
+                    Profiles[i] = Profiles[i] with { ErrorRate = 0.02 };
+                }
+        }
         Presets.Add(new("Black Friday mix", Plan.Clone(), [.. Profiles]));
         Presets.Add(MakeSmoke());
         savedFingerprint = Fingerprint(Plan);

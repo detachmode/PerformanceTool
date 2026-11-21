@@ -10,8 +10,10 @@ public enum ActorShow { All, Failed, Slow }
 /// <see cref="MaxMs"/> is its elapsed time; in a time bucket <see cref="Running"/> is the number of running actors.
 /// <see cref="BucketStart"/> is the start time of a single actor (running or finished) or of a time bucket.
 /// </remarks>
-public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0, double Cover = 1, int RatioCode = 0)
+public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0, double Cover = 1, int RatioCode = 0, int GroupLo = -1, int GroupHi = -1)
 {
+    /// <summary>The bar is one of the even groups of a burst (brain 0042): <see cref="GroupLo"/> and <see cref="GroupHi"/> are the lowest and highest actor sequence in it.</summary>
+    public bool IsBurstGroup => GroupLo >= 0;
     /// <summary>The bar belongs to an unfolded burst (brain 0038): <see cref="Burst"/> is the burst's actor count, <see cref="Slot"/> the start of its place on the time grid.</summary>
     /// <remarks><see cref="Cover"/> is how many grid slots wide the bar is (brain 0040): 1 for a slot bar; the bars of an unfolded burst share the empty slots
     /// the burst borrowed, so together they cover a whole number of slots and x stays linear in time across the chart.</remarks>
@@ -26,8 +28,8 @@ public readonly record struct ActorBar(int Count, int Failed, int Slow, double M
     public ActorOutcome Outcome => Failed > 0 ? ActorOutcome.Failed : Slow > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
 }
 
-/// <summary>An unfolded burst (brain 0038): its slot start on the time grid and its actor count (all of them, also those folded into the trailing group bar).</summary>
-public readonly record struct BurstSpan(double Slot, int Actors);
+/// <summary>An unfolded burst (brain 0038): its slot start on the time grid, its actor count and the size of its even groups (brain 0042; 1 = every actor has its own bar).</summary>
+public readonly record struct BurstSpan(double Slot, int Actors, int GroupSize = 1);
 
 /// <summary>
 /// The room a zoomed chart has for unfolding bursts (brain 0040), in CSS pixels: <see cref="SlotPx"/> is the width of one grid slot now,
@@ -273,10 +275,10 @@ public static class ActorBars
     }
 
     // ---- unfolding bursts (brain 0038, rule of brain 0040)
-    /// <summary>Most single-actor bars one unfolded burst shows (the rest of its actors stay one trailing group bar), for the max-bars setting.</summary>
-    public static int UnfoldPerBurst(int maxBars) => Math.Max(12, maxBars / 4);
+    /// <summary>Most bars (single actors or even groups, brain 0042) one unfolded burst shows, for the max-bars setting.</summary>
+    public static int UnfoldPerBurst(int maxBars) => Math.Max(24, maxBars);
     /// <summary>Most bars all unfolded bursts together may show, for the max-bars setting (a safety net: the pixel rule already bounds them).</summary>
-    public static int UnfoldBudget(int maxBars) => Math.Max(24, maxBars);
+    public static int UnfoldBudget(int maxBars) => Math.Max(48, 2 * maxBars);
     /// <summary>The narrowest unfolded actor bar in CSS pixels: 1.5 times the bar width the max-bars setting allows on this chart, at least 4 px.</summary>
     public static double MinActorPx(double chartPx, int maxBars) => Math.Max(4, 1.5 * chartPx / Math.Max(1, maxBars));
     /// <summary>The widest unfolded actor bar in CSS pixels (3rem): zoomed in further, a burst stops growing.</summary>
@@ -285,6 +287,18 @@ public static class ActorBars
     public const double GapShare = 0.35;
     private const double SameStart = 0.001;
 
+    /// <summary>The group sizes a burst splits into (brain 0042): 1, 2, 5, 10, 20, 50, 100, … (stable, easy to read).</summary>
+    public static int NiceGroupSize(int actors, int maxGroups)
+    {
+        maxGroups = Math.Max(1, maxGroups);
+        for (long g = 1; ; g *= 10)
+            foreach (var m in new[] { 1, 2, 5 })
+            {
+                var size = g * m;
+                if (size >= actors || (actors + size - 1) / size <= maxGroups) return (int)Math.Min(size, int.MaxValue);
+            }
+    }
+
     /// <summary>
     /// Unfolds the group bars of a zoomed grid (brain 0038, rule of brain 0040): a slot bar of several actors that start at the same moment (or any group
     /// of a slot of the smallest grid width, which time cannot split further) becomes one ordinary bar per actor as soon as they fit. The burst borrows the
@@ -292,8 +306,9 @@ public static class ActorBars
     /// (<see cref="ActorBar.Cover"/>), so nothing else moves and x stays linear in time. It unfolds when each bar gets at least
     /// <see cref="UnfoldRoom.MinActorPx"/> of the room it may borrow, measured with <see cref="UnfoldRoom.DecideSlotPx"/> (hysteresis); it takes only as
     /// much room as bars of <see cref="UnfoldRoom.MaxActorPx"/> need. The decision depends on the zoom and the data, not on the part of the run in view,
-    /// so panning never folds or unfolds a burst. Bounded: a burst shows at most <paramref name="perBurst"/> bars (failed, then slow actors first, the
-    /// others folded into one trailing group bar that selects the burst), all bursts together at most <paramref name="budget"/> bars, nearest to
+    /// so panning never folds or unfolds a burst. A burst whose actors do not all fit as single bars splits into even groups (brain 0042): contiguous
+    /// slices by actor number of a nice size (<see cref="NiceGroupSize"/>) so that at most as many bars as fit are shown; failed, slow and running actors stay in
+    /// their group (red, amber, counted). Bounded: a burst shows at most <paramref name="perBurst"/> bars, all bursts together at most <paramref name="budget"/> bars, nearest to
     /// <paramref name="focus"/> (run seconds) first.
     /// </summary>
     /// <param name="slots">Bar i of the grid is the slot starting at <c>Slot(firstIdx + i, width)</c> (running actors already counted in).</param>
@@ -326,7 +341,6 @@ public static class ActorBars
 
         static double Start((ActorRecord? Done, RunningActor? Run) e) => e.Done?.StartedAt ?? e.Run!.StartedAt;
         static int Seq((ActorRecord? Done, RunningActor? Run) e) => e.Done?.Sequence ?? e.Run!.Sequence;
-        static int Rank((ActorRecord? Done, RunningActor? Run) e) => e.Done is { } d ? (d.Failed ? 0 : d.Outcome == ActorOutcome.Slow ? 1 : 3) : 2;
         // nearest to the focus first
         var order = Enumerable.Range(0, cand.Count).ToList();
         order.Sort((x, y) => Math.Abs(Slot(cIdx[x], width) + width / 2 - focus).CompareTo(Math.Abs(Slot(cIdx[y], width) + width / 2 - focus)));
@@ -337,8 +351,6 @@ public static class ActorBars
             var list = byIdx[j];
             if (list.Count < 2) continue;
             if (!floor && list.Max(Start) - list.Min(Start) > SameStart) continue;     // time can still split this group
-            var nb = Math.Min(list.Count, perBurst);
-            if (used + nb > budget) continue;
             // the room it may borrow: a share of the empty slots on each side (where there is no neighbour, as much as on the other side)
             var cs = cIdx[j];
             double? gl = prev[j] == long.MinValue ? null : cs - prev[j] - 1, gr = next[j] == long.MaxValue ? null : next[j] - cs - 1;
@@ -347,7 +359,13 @@ public static class ActorBars
             var share = GapShare * gap;
             var m = (long)Math.Round(share);
             long mL = Math.Min(m, cs), mR = m;                                          // no room before the run's start
-            if ((1 + Math.Min(share, cs) + share) * room.DecideSlotPx / nb < room.MinActorPx) continue;      // does not fit (yet)
+            // how many bars fit (decided with the hysteresis width), and the nice group size that makes the burst fit them (brain 0042)
+            var fit = (int)Math.Min(Math.Min(perBurst, budget - used), Math.Floor((1 + Math.Min(share, cs) + share) * room.DecideSlotPx / room.MinActorPx + 1e-9));
+            if (fit < 2) continue;                                                      // not even two groups fit (yet)
+            var gsize = NiceGroupSize(list.Count, fit);
+            if (gsize >= list.Count) continue;                                          // one group = the folded bar
+            var nb = (list.Count + gsize - 1) / gsize;
+            if (used + nb > budget) continue;
             // it takes only as much room as bars of the widest size need (and not more than most of the chart)
             var target = room.MaxActorPx;
             if (room.ChartPx > 0) target = Math.Min(target, 0.9 * room.ChartPx / nb);
@@ -365,34 +383,33 @@ public static class ActorBars
             foreach (var (f0, c) in chosen) if (from < f0 + c.Cover && f0 < from + cover) free = false;
             if (!free) continue;
 
-            var shown = nb;
-            var rest = list.Count - shown;
-            if (rest > 0) shown--;                                                     // the trailing group bar takes the last place
-            // the actors to show singly: all of them, or the most interesting ones (failed, slow, running) of a big burst
-            var pick = rest > 0 ? list.OrderBy(Rank).ThenBy(Seq).Take(shown).ToList() : list;
-            pick = pick.OrderBy(Start).ThenBy(Seq).ToList();
+            // the actors in start order, cut into even groups (a contiguous slice each, so a group stays the same while panning)
+            var ordered = list.OrderBy(Start).ThenBy(Seq).ToList();
             var slot = Slot(cs, width);
             var each = (double)cover / nb;
             var bars = new List<ActorBar>(nb);
-            foreach (var e in pick)
+            for (var gi = 0; gi < ordered.Count; gi += gsize)
             {
-                if (e.Done is { } d) bars.Add(new(1, d.Failed ? 1 : 0, d.Outcome == ActorOutcome.Slow ? 1 : 0, d.DurationMs, d.Sequence, d.StartedAt, 0, list.Count, slot, each, d.RatioCode));
-                else bars.Add(new(0, 0, 0, Math.Max(0, (elapsed - e.Run!.StartedAt) * 1000), e.Run.Sequence, e.Run.StartedAt, 1, list.Count, slot, each));
-            }
-            if (rest > 0)
-            {
-                var picked = new HashSet<int>(pick.Select(Seq));
-                int n = 0, f = 0, sl = 0, run = 0, tint = 0; double ms = 0;
-                foreach (var e in list)
+                var part = ordered.GetRange(gi, Math.Min(gsize, ordered.Count - gi));
+                if (part.Count == 1)
                 {
-                    if (picked.Contains(Seq(e))) continue;
+                    var e = part[0];
+                    if (e.Done is { } d) bars.Add(new(1, d.Failed ? 1 : 0, d.Outcome == ActorOutcome.Slow ? 1 : 0, d.DurationMs, d.Sequence, d.StartedAt, 0, list.Count, slot, each, d.RatioCode));
+                    else bars.Add(new(0, 0, 0, Math.Max(0, (elapsed - e.Run!.StartedAt) * 1000), e.Run.Sequence, e.Run.StartedAt, 1, list.Count, slot, each));
+                    continue;
+                }
+                // failed and slow actors stay in their group, running ones count as running (brain 0042)
+                int n = 0, f = 0, sl = 0, run = 0, tint = 0, lo = int.MaxValue, hi = int.MinValue; double ms = 0;
+                foreach (var e in part)
+                {
+                    lo = Math.Min(lo, Seq(e)); hi = Math.Max(hi, Seq(e));
                     if (e.Done is { } d) { n++; if (d.Failed) f++; else { if (d.SlowCalls > 0) sl++; tint = Math.Max(tint, d.RatioCode); } ms = Math.Max(ms, d.DurationMs); }
                     else { run++; ms = Math.Max(ms, (elapsed - e.Run!.StartedAt) * 1000); }
                 }
-                bars.Add(new(n, f, sl, ms, -1, slot, run, list.Count, slot, each, tint));
+                bars.Add(new(n, f, sl, ms, -1, slot, run, list.Count, slot, each, tint, lo, hi));
             }
             chosen[from] = (cover, bars); used += nb;
-            bursts.Add(new BurstSpan(slot, list.Count));
+            bursts.Add(new BurstSpan(slot, list.Count, gsize));
         }
         if (chosen.Count == 0) return slots;
         bursts.Sort((x, y) => x.Slot.CompareTo(y.Slot));

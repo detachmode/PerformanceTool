@@ -76,7 +76,9 @@ public class BurstUnfoldTests
         var bars = Unfold(slots, a, 0.1, first, new UnfoldRoom(4, 4, 4, 48, 900), out _);
         // burst at 10.0: 4 empty slots to the lone actor at 10.5 and more to the left; 35 % of 4 = 1.4 slots each side: 3.8 slots for 5 bars
         var one = bars.Where(b => b.InBurst && b.Slot == 10.0).ToList();
-        Assert.Empty(one);      // 3.8 slots * 4 px / 5 bars is under the 4 px minimum: it stays folded
+        // 3.8 slots * 4 px is room for 3 bars of the 4 px minimum, not for 5: three even groups (2, 2, 1) instead of five single bars
+        Assert.Equal(3, one.Count);
+        Assert.Equal([2, 2, 1], one.Select(b => b.Total));
         var wider = Unfold(slots, a, 0.1, first, new UnfoldRoom(8, 8, 4, 48, 900), out _);
         var burst = wider.Where(b => b.InBurst && b.Slot == 10.0).ToList();
         Assert.Equal(5, burst.Count);
@@ -88,9 +90,9 @@ public class BurstUnfoldTests
     {
         var a = Run(5, 3);
         var slots = Grid(a, 0.1, out var first);
-        Assert.Same(slots, Unfold(slots, a, 0.1, first, Wide, out var b1, budget: 1));
+        Assert.Same(slots, Unfold(slots, a, 0.1, first, Wide, out var b1, budget: 1));      // not even two bars may be shown
         Assert.Empty(b1);
-        Assert.Same(slots, Unfold(slots, a, 0.1, first, new UnfoldRoom(1, 1, 4), out var b2));
+        Assert.Same(slots, Unfold(slots, a, 0.1, first, new UnfoldRoom(0.3, 0.3, 4), out var b2));
         Assert.Empty(b2);
         Assert.Same(slots, Unfold(slots, a, 0.1, first, default, out _));      // chart width not known yet
     }
@@ -108,21 +110,112 @@ public class BurstUnfoldTests
     }
 
     [Fact]
-    public void A_huge_burst_is_bounded_and_keeps_the_interesting_actors()
+    public void A_huge_burst_splits_into_even_groups_and_failed_actors_stay_in_their_group()
     {
         var a = new List<ActorRecord>();
         for (var i = 0; i < 500; i++) a.Add(A(i, 10.0, i == 400));
         var slots = Grid(a, 0.1, out var first);
         var bars = Unfold(slots, a, 0.1, first, Wide, out var bursts, focus: 10);
         var burst = bars.Where(b => b.InBurst).ToList();
-        Assert.Equal(60, burst.Count);                       // 59 single bars and the trailing group bar
         Assert.Equal(500, bursts[0].Actors);
-        Assert.Contains(burst, b => !b.IsBucket && b.Sequence == 400 && b.Failed == 1);
-        var tail = burst[^1];
-        Assert.True(tail.IsBucket);
-        Assert.Equal(441, tail.Count);
-        Assert.Equal(500, burst.Where(b => !b.IsBucket).Sum(b => b.Count) + tail.Count);
+        Assert.Equal(10, bursts[0].GroupSize);               // at most 60 bars: 500 / 10 = 50 groups of 10
+        Assert.Equal(50, burst.Count);
+        Assert.All(burst, b => { Assert.True(b.IsBucket); Assert.True(b.IsBurstGroup); Assert.Equal(10, b.Total); });
+        var red = Assert.Single(burst, b => b.Failed > 0);   // the failed actor is not shown singly: it turns its group red
+        Assert.Equal((400, 409), (red.GroupLo, red.GroupHi));
+        Assert.Equal(500, burst.Sum(b => b.Total));
         Assert.Equal(slots.Count, bars.Sum(b => b.Cover), 6);
+    }
+
+    [Theory]
+    [InlineData(100, 1, 100)]
+    [InlineData(100, 2, 50)]
+    [InlineData(100, 3, 50)]
+    [InlineData(100, 5, 20)]
+    [InlineData(100, 10, 10)]
+    [InlineData(100, 19, 10)]
+    [InlineData(100, 20, 5)]
+    [InlineData(100, 50, 2)]
+    [InlineData(100, 99, 2)]
+    [InlineData(100, 100, 1)]
+    [InlineData(1000, 60, 20)]
+    [InlineData(1000, 240, 5)]
+    public void Group_sizes_are_nice_and_just_small_enough_for_the_room(int actors, int fit, int expected) =>
+        Assert.Equal(expected, ActorBars.NiceGroupSize(actors, fit));
+
+    [Fact]
+    public void A_burst_of_100_refines_as_the_room_grows_until_every_actor_has_a_bar()
+    {
+        var a = new List<ActorRecord>();
+        for (var i = 0; i < 100; i++) a.Add(A(i, 10.0, i == 37));
+        a.Add(A(100, 8.0)); a.Add(A(101, 12.5));        // quiet time around the burst to borrow
+        var slots = Grid(a, 0.1, out var first);
+        var sizes = new List<int>();
+        foreach (var px in new[] { 0.5, 1.0, 2, 4, 8, 16, 32, 64 })
+        {
+            var bars = Unfold(slots, a, 0.1, first, new UnfoldRoom(px, px, 4, 48, 3000), out var bursts, perBurst: 240, budget: 240);
+            sizes.Add(bursts.Count == 0 ? 100 : bursts[0].GroupSize);
+            var burst = bars.Where(b => b.InBurst).ToList();
+            if (bursts.Count == 0) continue;
+            Assert.True(burst.Count <= 100);
+            Assert.Equal(100, burst.Sum(b => b.Total));
+            Assert.Single(burst, b => b.Failed > 0);          // always exactly one red bar: the group (or actor) of #38
+            var g = bursts[0].GroupSize;
+            Assert.All(burst.Take(burst.Count - 1), b => Assert.Equal(g, b.Total));      // even groups
+            Assert.Equal(slots.Count, bars.Sum(b => b.Cover), 6);
+        }
+        // never coarser when there is more room, and it ends with one bar per actor
+        for (var i = 1; i < sizes.Count; i++) Assert.True(sizes[i] <= sizes[i - 1], string.Join(",", sizes));
+        Assert.Equal(1, sizes[^1]);
+        Assert.Contains(10, sizes);
+        Assert.Contains(50, sizes);
+    }
+
+    [Fact]
+    public void Groups_are_slices_by_actor_number_and_hysteresis_keeps_them_while_zooming_out_a_little()
+    {
+        var a = new List<ActorRecord>();
+        for (var i = 0; i < 100; i++) a.Add(A(i, 10.0));
+        a.Add(A(100, 8.0)); a.Add(A(101, 12.5));
+        var slots = Grid(a, 0.1, out var first);
+        var tight = Unfold(slots, a, 0.1, first, new UnfoldRoom(4, 4, 4, 48, 3000), out var b1, perBurst: 240);
+        var groups = tight.Where(b => b.InBurst).ToList();
+        for (var i = 0; i < groups.Count; i++) Assert.Equal((i * b1[0].GroupSize, (i + 1) * b1[0].GroupSize - 1), (groups[i].GroupLo, groups[i].GroupHi));
+        // the real width shrank (zooming out) but the decision width still is the old one: same groups
+        Unfold(slots, a, 0.1, first, new UnfoldRoom(3, 4, 4, 48, 3000), out var b2, perBurst: 240);
+        Assert.Equal(b1[0].GroupSize, b2[0].GroupSize);
+    }
+
+    [Fact]
+    public void Running_actors_count_into_their_group_as_running()
+    {
+        var a = new List<ActorRecord>();
+        for (var i = 0; i < 20; i++) a.Add(A(i, 10.0));
+        var running = new List<RunningActor>();
+        for (var i = 20; i < 30; i++) running.Add(new(i, 0, 10.0, []));
+        var slots = ActorBars.WithRunning(Grid(a, 0.1, out var first), running, 0.1, 10.5, ActorBars.Slot(first, 0.1));
+        var bars = Unfold(slots, a, 0.1, first, Wide, out var bursts, running: running, focus: 10, perBurst: 10);
+        Assert.Single(bursts);
+        var burst = bars.Where(b => b.InBurst).ToList();
+        Assert.Equal(30, burst.Sum(b => b.Total));
+        Assert.Equal(10, burst.Sum(b => b.Running));
+    }
+
+    [Fact]
+    public void A_burst_of_1000_stays_bounded_at_every_zoom()
+    {
+        var a = new List<ActorRecord>();
+        for (var i = 0; i < 1000; i++) a.Add(A(i, 10.0, i % 97 == 0));
+        a.Add(A(1000, 8.0)); a.Add(A(1001, 12.5));
+        var slots = Grid(a, 0.1, out var first);
+        foreach (var px in new[] { 2.0, 10, 50, 300, 1500, 8000 })
+        {
+            var bars = Unfold(slots, a, 0.1, first, new UnfoldRoom(px, px, 5.6, 48, 900), out var bursts, perBurst: 240, budget: 240);
+            var burst = bars.Where(b => b.InBurst).ToList();
+            Assert.True(burst.Count <= 240, $"{px}: {burst.Count}");
+            Assert.True(bars.Count <= slots.Count + 240);
+            if (bursts.Count > 0) { Assert.Equal(1000, burst.Sum(b => b.Total)); Assert.Equal(11, burst.Sum(b => b.Failed)); }
+        }
     }
 
     [Fact]
@@ -131,9 +224,11 @@ public class BurstUnfoldTests
         var a = Run(30, 30);
         var slots = Grid(a, 0.1, out var first);
         var bars = Unfold(slots, a, 0.1, first, Wide, out var bursts, focus: 12.0, budget: 35);
-        Assert.Single(bursts);
-        Assert.Equal(12.0, bursts[0].Slot);
+        Assert.Equal(2, bursts.Count);
+        Assert.Equal(1, bursts.Single(b => b.Slot == 12.0).GroupSize);      // the burst nearest to the focus gets single bars
+        Assert.True(bursts.Single(b => b.Slot == 10.0).GroupSize > 1);      // the other makes do with what is left: coarser groups
         Assert.True(bars.Count(b => b.InBurst) <= 35);
+        Assert.Equal(60, bars.Where(b => b.InBurst).Sum(b => b.Total));
     }
 
     [Fact]
@@ -164,7 +259,7 @@ public class BurstUnfoldTests
     }
 
     /// <summary>Unfolded bursts in a view of <paramref name="span"/> s on a chart <paramref name="px"/> wide, buffer as the dialog builds it.</summary>
-    private static HashSet<double> UnfoldedInView(List<ActorRecord> a, double viewFrom, double span, double px, int maxBars = 240, double? decide = null)
+    private static HashSet<double> UnfoldedInView(List<ActorRecord> a, double viewFrom, double span, double px, int maxBars = 240, double? decide = null, bool singles = true)
     {
         var g = new ChartGrid();
         g.Ensure(viewFrom, viewFrom + span, 1800, maxBars);
@@ -172,7 +267,7 @@ public class BurstUnfoldTests
         var room = UnfoldRoom.For(px, span, decide ?? span, g.Width, maxBars);
         ActorBars.Unfold(slots, a, a.Count, ActorShow.All, [], g.Width, g.First, 1800, viewFrom + span / 2,
             ActorBars.UnfoldPerBurst(maxBars), ActorBars.UnfoldBudget(maxBars), room, out var bursts);
-        return bursts.Where(b => b.Slot >= viewFrom - 1e-9 && b.Slot < viewFrom + span).Select(b => b.Slot).ToHashSet();
+        return bursts.Where(b => (!singles || b.GroupSize == 1) && b.Slot >= viewFrom - 1e-9 && b.Slot < viewFrom + span).Select(b => b.Slot).ToHashSet();
     }
 
     [Fact]
@@ -186,7 +281,8 @@ public class BurstUnfoldTests
         // desktop chart (900 px, 5.6 px per actor): already at a one minute view
         Assert.NotEmpty(UnfoldedInView(a, 600, 60, 900));
         Assert.Empty(UnfoldedInView(a, 600, 120, 900));
-        // the old rule only unfolded at a view of about one second
+        // the old rule only unfolded at a view of about one second; and before the single bars fit, the burst already splits into even groups
+        Assert.NotEmpty(UnfoldedInView(a, 600, 60, 360, singles: false));
     }
 
     [Fact]

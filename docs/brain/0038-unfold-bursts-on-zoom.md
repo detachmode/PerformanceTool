@@ -1,6 +1,6 @@
 # 0038. Zooming into a burst unfolds it into single actors
 
-- **Status:** Accepted, implemented (details were Proposed; deviations listed in the implementation notes). **Trigger, width and x mapping superseded by [0040](0040-popup-chart-robust-navigation.md)** (unfold as soon as the actors fit, the burst borrows empty time around it, x stays linear in time).
+- **Status:** Accepted, implemented (details were Proposed; deviations listed in the implementation notes). **Per-burst cap and "failed/slow/running shown singly first" superseded by [0042](0042-bursts-split-into-even-groups.md) (a burst that does not fit splits into even groups). Trigger, width and x mapping superseded by [0040](0040-popup-chart-robust-navigation.md)** (unfold as soon as the actors fit, the burst borrows empty time around it, x stays linear in time).
 - **Date:** 2026-11-21
 - **Related:** 0034 (bursts), 0031 update 2 (stable time grid), 0032/0037 (group bars), 0016 (calm UI), 0029 (drill-down)
 

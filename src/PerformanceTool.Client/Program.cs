@@ -28,9 +28,9 @@ builder.Services.AddScenario<UserJourneyScenario>();
 var dataSource = builder.Configuration["DataSource"] ?? "Fake";
 switch (dataSource)
 {
-    // Debug: "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
+    // Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0042). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
     case "Fake": builder.Services.AddSingleton<IRunSource>(sp => new FakeRunSource(sp.GetRequiredService<ScenarioCatalog>(),
-        SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri))); break;
+        SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri), null, BurstActors(sp.GetRequiredService<NavigationManager>().Uri))); break;
     case "Api": builder.Services.AddSingleton<IRunSource, ApiRunSource>(); break;
     default: throw new InvalidOperationException($"Unknown DataSource '{dataSource}'. Use \"Fake\" or \"Api\".");
 }
@@ -51,4 +51,10 @@ static double SimulateSeconds(string uri)
     var m = Regex.Match(uri, @"[?&]simulate=(\d+)([smh])");
     if (!m.Success) return 0;
     return double.Parse(m.Groups[1].Value) * m.Groups[2].Value switch { "h" => 3600, "m" => 60, _ => 1 };
+}
+
+static int BurstActors(string uri)
+{
+    var m = Regex.Match(uri, @"[?&]burst=(\d+)");
+    return m.Success ? Math.Clamp(int.Parse(m.Groups[1].Value), 1, 1000) : 0;
 }
