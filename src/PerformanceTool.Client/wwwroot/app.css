@@ -279,9 +279,15 @@ label { font-size: .72rem; color: var(--muted); }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem .9rem; margin-bottom: .75rem; background: var(--panel); border: 1px solid var(--accent2); border-radius: var(--radius); }
 .notice input { flex: 1 1 200px; }
 .settings { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: flex-end; margin-bottom: 1rem; padding: .65rem .9rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
+.settings.plan-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .5rem .85rem; padding: .55rem .75rem; align-items: center; }
+.plan-ctrl { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.plan-ctrl label { font-size: .72rem; font-weight: 500; color: var(--muted); }
+.plan-ctrl .slider.with-input { gap: .45rem; }
+.plan-ctrl .slider.with-input input.slider-num { flex: 0 0 4.5rem; width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; padding: .22rem .4rem; font-size: .84rem; }
 .settings .num { display: flex; flex-direction: column; gap: .2rem; }
-.settings input { width: 6.5rem; padding: .3rem .5rem; font-size: .85rem; }
-.settings .field-error { flex-basis: 100%; }
+.settings .num input { width: 6.5rem; padding: .3rem .5rem; font-size: .85rem; }
+.plan-ctrl .slider input[type=range] { flex: 1; min-width: 0; width: auto; padding: 0; border: 0; background: none; }
+.settings .field-error { grid-column: 1 / -1; flex-basis: 100%; }
 .ed-hint { margin: 0 0 .75rem; }
 .ed-split { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 1rem; align-items: start; }
 .ed-split .ed-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
