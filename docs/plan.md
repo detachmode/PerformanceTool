@@ -44,6 +44,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
   - R1: the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
   - R2: `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
     tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
+  - R2/R3 also: show tools and chat cards (0049): logs box with Show more full screen, bees, bee, scenario/run, plan changes.
   - R3: chat side panel in the client (Live mode only, only when configured), screenshots against a local
     OpenAI-compatible stub.
 
