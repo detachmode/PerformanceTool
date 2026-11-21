@@ -24,7 +24,7 @@
         {
             var idx = i;
             <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Actors="s.Store.Actors(idx)" Running="s.ActorsInFlight?[idx]"
-                          Target="s.Plan.Scenarios[idx].RatePerMinute" Elapsed="s.Elapsed" OnOpen="i => { open = i; openFilter = DetailFilter.All; }" OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />
+                          Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" OnOpen="i => { open = i; openFilter = DetailFilter.All; }" OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />
         }
     </div>
 </div>

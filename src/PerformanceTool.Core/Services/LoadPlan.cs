@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using PerformanceTool.Services.Scenarios;
 
 namespace PerformanceTool.Services;
@@ -11,6 +12,7 @@ public sealed class LoadPlan
 {
     public const int MaxEntries = 7;
     public const double MaxRatePerMinute = 60_000;
+    public const int MaxActorsPerBurst = 1000;
 
     public List<ScenarioRunConfig> Scenarios { get; set; } = [];
     public int DurationSeconds { get; set; } = 30;
@@ -39,7 +41,16 @@ public sealed class LoadPlan
             var scenario = catalog.Find(entry.ScenarioId);
             var label = string.IsNullOrWhiteSpace(entry.Label) ? entry.ScenarioId : entry.Label;
             if (scenario is null) { errors.Add($"{label}: unknown scenario '{entry.ScenarioId}'."); continue; }
-            if (entry.RatePerMinute is <= 0 or > MaxRatePerMinute || double.IsNaN(entry.RatePerMinute))
+            if (entry.Pattern == SpawningPattern.Bursts)
+            {
+                if (entry.ActorsPerBurst is < 1 or > MaxActorsPerBurst)
+                    errors.Add($"{label}: actors per burst must be between 1 and {MaxActorsPerBurst:N0}.");
+                if (entry.BurstsPerMinute <= 0 || double.IsNaN(entry.BurstsPerMinute))
+                    errors.Add($"{label}: bursts per minute must be greater than 0.");
+                else if (entry.EffectiveRatePerMinute() > MaxRatePerMinute)
+                    errors.Add($"{label}: actors per burst × bursts per minute must not exceed {MaxRatePerMinute:N0} actors per minute.");
+            }
+            else if (entry.RatePerMinute is <= 0 or > MaxRatePerMinute || double.IsNaN(entry.RatePerMinute))
                 errors.Add($"{label}: actors per minute must be between 0 and {MaxRatePerMinute:N0}.");
             foreach (var err in scenario.Spec.Validate(entry.Parameters))
                 errors.Add($"{label}: {err}");
@@ -48,11 +59,30 @@ public sealed class LoadPlan
     }
 }
 
+/// <summary>How a scenario entry starts new actors over time (brain 0034).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpawningPattern
+{
+    /// <summary>Evenly spread: <see cref="ScenarioRunConfig.RatePerMinute"/> actors per minute. The default.</summary>
+    Linear,
+    /// <summary>In clumps: <see cref="ScenarioRunConfig.ActorsPerBurst"/> actors at once, <see cref="ScenarioRunConfig.BurstsPerMinute"/> times per minute.</summary>
+    Bursts,
+}
+
 public sealed class ScenarioRunConfig
 {
     public string ScenarioId { get; set; } = "";
     public string Label { get; set; } = "";
     public double RatePerMinute { get; set; } = 60;
+    /// <summary>Spawning pattern (brain 0034). Missing in old presets = <see cref="SpawningPattern.Linear"/>.</summary>
+    public SpawningPattern Pattern { get; set; } = SpawningPattern.Linear;
+    /// <summary>Bursts only: actors started together by each burst.</summary>
+    public int ActorsPerBurst { get; set; } = 10;
+    /// <summary>Bursts only: how many bursts per minute.</summary>
+    public double BurstsPerMinute { get; set; } = 4;
+
+    /// <summary>Actors per minute the entry aims at: <see cref="RatePerMinute"/> for linear, actors per burst × bursts per minute for bursts.</summary>
+    public double EffectiveRatePerMinute() => Pattern == SpawningPattern.Bursts ? ActorsPerBurst * BurstsPerMinute : RatePerMinute;
     /// <summary>Parameter values as stored in presets. Shape is defined by the scenario's parameter class (brain 0007).</summary>
     public JsonObject Parameters { get; set; } = new();
 
@@ -61,6 +91,9 @@ public sealed class ScenarioRunConfig
         ScenarioId = ScenarioId,
         Label = Label,
         RatePerMinute = RatePerMinute,
+        Pattern = Pattern,
+        ActorsPerBurst = ActorsPerBurst,
+        BurstsPerMinute = BurstsPerMinute,
         Parameters = (JsonObject)Parameters.DeepClone(),
     };
 

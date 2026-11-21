@@ -17,7 +17,7 @@
     var inFlight = views.Sum(v => v.InFlight);
     var failed = views.Sum(v => v.Failed);
     var slow = views.Sum(v => v.SlowActors);
-    var target = s.Plan.Scenarios.Sum(x => x.RatePerMinute);
+    var target = s.Plan.Scenarios.Sum(x => x.EffectiveRatePerMinute());
     var actual = s.Elapsed >= 3 ? views.Sum(v => v.Starts) / (s.Elapsed / 60) : 0;
     var (stateText, stateCss) = s.State switch
     {

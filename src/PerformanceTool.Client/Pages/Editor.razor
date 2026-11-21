@@ -77,7 +77,7 @@
                 {
                     var idx = i;
                     var c = plan.Scenarios[idx];
-                    <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Actors="NoActors" Target="c.RatePerMinute"
+                    <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Actors="NoActors" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
                                   Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="@(idx == selected)"
                                   Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
                 }
@@ -117,11 +117,37 @@
                         <label for="entry-label">Label</label>
                         <input id="entry-label" class="entry-label" value="@cfg.Label" @oninput="e => { cfg.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
                     </div>
-                    <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
-                        <label for="entry-rate">Actors / minute</label>
-                        <input id="entry-rate" type="number" min="0.1" step="any" value="@cfg.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
-                        @if (cfgErr.Rate is not null) { <small class="field-error" role="alert">@cfgErr.Rate</small> }
+                    <div class="field pattern">
+                        <label id="pattern-label">Spawning</label>
+                        <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: actors start evenly. Bursts: several actors start at once, now and then.">
+                            <button type="button" class="@(cfg.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(cfg.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
+                            <button type="button" class="@(cfg.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(cfg.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
+                        </div>
                     </div>
+                    @if (cfg.Pattern == SpawningPattern.Bursts)
+                    {
+                        <div class="field rate @(cfgErr!.Burst is null ? "" : "is-invalid")">
+                            <label for="entry-burst-size">Actors per burst</label>
+                            <input id="entry-burst-size" type="number" min="1" step="1" value="@cfg.ActorsPerBurst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
+                        </div>
+                        <div class="field rate @(cfgErr.BurstRate is null ? "" : "is-invalid")">
+                            <label for="entry-burst-rate">Bursts / minute</label>
+                            <input id="entry-burst-rate" type="number" min="0.1" step="any" value="@cfg.BurstsPerMinute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
+                        </div>
+                        <div class="field wide">
+                            <small class="help">= @Format.Rate(cfg.EffectiveRatePerMinute()) @Terms.PerMinuteShort</small>
+                            @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
+                            @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
+                            <label for="entry-rate">Actors / minute</label>
+                            <input id="entry-rate" type="number" min="0.1" step="any" value="@cfg.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
+                            @if (cfgErr.Rate is not null) { <small class="field-error" role="alert">@cfgErr.Rate</small> }
+                        </div>
+                    }
                     <ParameterEditor Spec="scenario.Spec" Values="cfg.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
                 </div>
                 @if (hasAdvanced)
@@ -143,9 +169,9 @@
 </div>
 
 @code {
-    private sealed record EntryProblems(string? Rate, Dictionary<string, List<string>> Fields)
+    private sealed record EntryProblems(string? Rate, string? Burst, string? BurstRate, Dictionary<string, List<string>> Fields)
     {
-        public int Count => (Rate is null ? 0 : 1) + Fields.Count;
+        public int Count => (Rate is null ? 0 : 1) + (Burst is null ? 0 : 1) + (BurstRate is null ? 0 : 1) + Fields.Count;
     }
 
     private int selected = -1;
@@ -196,6 +222,29 @@
         Edited();
     }
 
+    private void SetPattern(SpawningPattern pattern)
+    {
+        if (selected < 0) return;
+        Sim.Plan.Scenarios[selected].Pattern = pattern;
+        Committed();
+        Edited();
+    }
+
+    private void SetBurstSize(ChangeEventArgs e)
+    {
+        if (selected < 0) return;
+        if (int.TryParse(e.Value?.ToString(), out var v)) Sim.Plan.Scenarios[selected].ActorsPerBurst = v;
+        Edited();
+    }
+
+    private void SetBurstRate(ChangeEventArgs e)
+    {
+        if (selected < 0) return;
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            Sim.Plan.Scenarios[selected].BurstsPerMinute = d;
+        Edited();
+    }
+
     private void SetPlanInt(ChangeEventArgs e, Action<int> set)
     {
         if (int.TryParse(e.Value?.ToString(), out var v)) set(v);
@@ -229,11 +278,17 @@
 
     private EntryProblems EntryErrors(ScenarioRunConfig c)
     {
-        string? rate = null;
-        if (c.RatePerMinute is <= 0 or > LoadPlan.MaxRatePerMinute || double.IsNaN(c.RatePerMinute))
+        string? rate = null, burst = null, burstRate = null;
+        if (c.Pattern == SpawningPattern.Bursts)
+        {
+            if (c.ActorsPerBurst is < 1 or > LoadPlan.MaxActorsPerBurst) burst = $"Actors per burst: between 1 and {LoadPlan.MaxActorsPerBurst:N0}.";
+            if (c.BurstsPerMinute <= 0 || double.IsNaN(c.BurstsPerMinute)) burstRate = "Bursts per minute: more than 0.";
+            else if (c.EffectiveRatePerMinute() > LoadPlan.MaxRatePerMinute) burstRate = $"Together at most {LoadPlan.MaxRatePerMinute:N0} actors per minute.";
+        }
+        else if (c.RatePerMinute is <= 0 or > LoadPlan.MaxRatePerMinute || double.IsNaN(c.RatePerMinute))
             rate = $"Between 0 and {LoadPlan.MaxRatePerMinute:N0} per minute.";
         var fields = Catalog.Find(c.ScenarioId) is { } sc ? sc.Spec.ValidateByField(c.Parameters) : new Dictionary<string, List<string>>();
-        return new(rate, fields);
+        return new(rate, burst, burstRate, fields);
     }
 
     // ---------- list ----------

@@ -265,6 +265,8 @@ label { font-size: .72rem; color: var(--muted); }
 .field input, .field select, .field textarea { width: 100%; box-sizing: border-box; }
 .field textarea { max-height: 40vh; }
 .field.rate { width: 160px; }
+.field.pattern { width: auto; }
+.field.pattern .seg { align-self: flex-start; }
 .field label .opt { margin-left: .35rem; font-size: .66rem; color: var(--faint); }
 .field .help { font-size: .72rem; color: var(--muted); line-height: 1.35; }
 .field .help.warn { color: var(--warn); }
