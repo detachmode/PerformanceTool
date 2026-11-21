@@ -318,6 +318,10 @@ public sealed partial class ParameterSpec
 
     public static bool IsEnvReference(string? value) => value is not null && EnvReference().IsMatch(value.Trim());
 
+    /// <summary>A secret value that is just a <c>{{Key}}</c> placeholder holds no secret itself, so presets keep it (brain 0033).</summary>
+    private static bool IsPlaceholderReference(string value) =>
+        Services.Environments.Placeholders.Split(value.Trim()) is [{ IsPlaceholder: true }];
+
     /// <summary>Blanks secret values that aren't <c>${env:NAME}</c> references. Returns how many were removed.</summary>
     public int StripSecrets(JsonObject json)
     {
@@ -325,7 +329,7 @@ public sealed partial class ParameterSpec
         foreach (var f in Fields)
         {
             if (f.Kind == FieldKind.Secret && json[f.JsonName] is JsonValue v && v.TryGetValue<string>(out var s)
-                && s.Length > 0 && !IsEnvReference(s))
+                && s.Length > 0 && !IsEnvReference(s) && !IsPlaceholderReference(s))
             {
                 json[f.JsonName] = "";
                 removed++;

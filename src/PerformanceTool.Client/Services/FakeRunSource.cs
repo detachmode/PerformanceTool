@@ -482,13 +482,13 @@ public sealed class FakeRunSource : IRunSource
 
         // Each entry is a whole user story; its calls are the requests of that story.
         Add(Entry("user-journey", "Search & add to cart", 40, "",
-                urls("https://shop.example.com/search?q=running+shoes", "https://shop.example.com/search?q=running+shoes&page=2", "https://shop.example.com/products/1042",
-                     "https://shop.example.com/products/1042/images", "https://shop.example.com/products/1042/price", "https://shop.example.com/cart")),
+                urls("{{BaseUrl}}/search?q=running+shoes", "{{BaseUrl}}/search?q=running+shoes&page=2", "{{BaseUrl}}/products/1042",
+                     "{{BaseUrl}}/products/1042/images", "{{BaseUrl}}/products/1042/price", "{{BaseUrl}}/cart")),
             new("Search for a product, open 5 of the results (images, price, stock) and add 2 of them to the cart.",
                 SearchStory(), ThinkMs: 150, TailChance: 0.08, ErrorRate: 0.1,
                 Errors: [new(503, "HTTP 503 Service Unavailable on POST /cart/items", 2), new(500, "HTTP 500 Internal Server Error on GET /products/{id}/availability", 1)],
                 RandomFail: true, ForceFailOn: 2));
-        Add(Entry("http-post-json", "Guest checkout", 30, "https://shop.example.com/api/checkout",
+        Add(Entry("http-post-json", "Guest checkout", 30, "{{BaseUrl}}/api/checkout",
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
             new("Check out as a guest: cart, address, shipping, payment, confirmation.",
                 [new("GET /cart", 220), new("POST /checkout/address", 380), new("POST /checkout/shipping", 310), new("POST /payments", 900, 0.25), new("GET /orders/{id}/confirmation", 260)],
@@ -496,19 +496,20 @@ public sealed class FakeRunSource : IRunSource
                 Errors: [new(422, "HTTP 422 Payment declined", 3), new(500, "HTTP 500 Internal Server Error on POST /payments", 2), new(null, "Payment provider timed out after 10 s", 1)],
                 FailAtCall: 3, ForceFailOn: 3));
         Add(Entry("user-journey", "Browse categories", 90, "",
-                urls("https://shop.example.com/", "https://shop.example.com/categories/12", "https://shop.example.com/categories/7", "https://shop.example.com/categories/31",
-                     "https://shop.example.com/categories/31?page=2", "https://shop.example.com/products/918", "https://shop.example.com/products/204")),
+                urls("{{BaseUrl}}/", "{{BaseUrl}}/categories/12", "{{BaseUrl}}/categories/7", "{{BaseUrl}}/categories/31",
+                     "{{BaseUrl}}/categories/31?page=2", "{{BaseUrl}}/products/918", "{{BaseUrl}}/products/204")),
             new("Open the home page, look through 3 categories with pagination, open 2 products.",
                 [new("GET /", 200), .. Repeat("GET /categories/{id}", 3, 260), new("GET /categories/{id}?page=2", 280), new("GET /products/{id} · 1", 240), new("GET /products/{id} · 2", 240)],
                 ThinkMs: 120, MinCalls: 5, TailChance: 0.12, ErrorRate: 0.0,
                 Errors: [new(503, "HTTP 503 Service Unavailable on GET /categories/{id}", 1)], FailAtCall: 2));
-        Add(Entry("http-custom", "Sign up & first order", 20, "https://shop.example.com/api/accounts"),
+        Add(Entry("http-custom", "Sign up & first order", 20, "{{BaseUrl}}/api/accounts",
+                j => j["auth"] = new JsonObject { ["scheme"] = "Bearer", ["token"] = "{{ApiToken}}", ["username"] = "", ["password"] = "" }),
             new("Create an account, log in, get recommendations and place a first order.",
                 [new("POST /accounts", 520), new("POST /login", 300), new("GET /recommendations", 700, 0.25), new("POST /cart/items", 320), new("POST /checkout", 1100, 0.2), new("GET /orders/{id}/confirmation", 280)],
                 ThinkMs: 250, TailChance: 0.0, ErrorRate: 0.0,
                 Errors: [new(500, "HTTP 500 Internal Server Error on POST /checkout", 2), new(422, "HTTP 422 Payment declined", 1)], FailAtCall: 4));
         Add(Entry("user-journey", "Order history & return", 20, "",
-                urls("https://shop.example.com/login", "https://shop.example.com/orders", "https://shop.example.com/orders/88231", "https://shop.example.com/orders/88231/items")),
+                urls("{{BaseUrl}}/login", "{{BaseUrl}}/orders", "{{BaseUrl}}/orders/88231", "{{BaseUrl}}/orders/88231/items")),
             new("Log in, look up an old order and return one item.",
                 [new("POST /login", 300), new("GET /orders", 450), new("GET /orders/{id}", 380), new("GET /orders/{id}/items", 300), new("POST /returns", 850, 0.25), new("POST /returns/{id}/label", 500)],
                 ThinkMs: 250, TailChance: 0.15, ErrorRate: 0.0,

@@ -15,6 +15,7 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<LogsPopupState>();
 builder.Services.AddSingleton<ViewSettings>();
+builder.Services.AddSingleton<EnvironmentsPopupState>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -33,6 +34,10 @@ switch (dataSource)
     case "Api": builder.Services.AddSingleton<IRunSource, ApiRunSource>(); break;
     default: throw new InvalidOperationException($"Unknown DataSource '{dataSource}'. Use \"Fake\" or \"Api\".");
 }
+
+// Environments (brain 0033) follow the same switch.
+if (dataSource == "Api") builder.Services.AddSingleton<IEnvironmentSource, ApiEnvironmentSource>();
+else builder.Services.AddSingleton<IEnvironmentSource, FakeEnvironmentSource>();
 
 var host = builder.Build();
 

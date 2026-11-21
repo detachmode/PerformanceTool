@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios;
 
 namespace PerformanceTool.Services;
@@ -15,10 +16,20 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         Func<ExecutionResult, ValueTask> onResult,
         Func<int, ValueTask> onDropped,
         CancellationToken ct,
-        Func<ExecutionActivity, ValueTask>? onActivity = null)
+        Func<ExecutionActivity, ValueTask>? onActivity = null,
+        EnvironmentDefinition? environment = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
+
+        // Environment (brain 0033): fill {{Key}} placeholders once, up front. A key the environment doesn't have would only make every actor
+        // fail with a confusing URL error, so the run refuses to start and names the keys instead.
+        var env = environment?.ToValues() ?? EnvironmentValues.None;
+        var unknown = new List<string>();
+        var resolved = plan.Scenarios.Select(e => Placeholders.ResolveJson(e.Parameters, env, unknown)).ToArray();
+        if (unknown.Count > 0)
+            throw new InvalidOperationException(
+                $"{(env.Name.Length == 0 ? "No environment is active" : $"Environment '{env.Name}' has no value")} for: {string.Join(", ", unknown.Select(k => "{{" + k + "}}"))}.");
 
         using var handler = new SocketsHttpHandler
         {
@@ -45,7 +56,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         {
             var config = plan.Scenarios[entry];
             // Bind once per run: typed parameters, ${env:NAME} secrets resolved. Shared read-only by all executions.
-            var parameters = scenarios[entry].Spec.Bind(config.Parameters);
+            var parameters = scenarios[entry].Spec.Bind(resolved[entry]);
             scenarios[entry].Spec.ResolveSecrets(parameters);
             // Due times are computed per run in ticks (not n × a rounded interval), so the run count is exact:
             // 180/min for 8 s is 24 runs, not 25. See docs/brain/0004.
@@ -112,7 +123,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             ScenarioOutcome outcome;
             try
             {
-                outcome = await scenario.ExecuteAsync(parameters, new ScenarioContext(http), execCts.Token);
+                outcome = await scenario.ExecuteAsync(parameters, new ScenarioContext(http, env), execCts.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

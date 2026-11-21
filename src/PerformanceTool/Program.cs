@@ -1,4 +1,5 @@
 using PerformanceTool.Services;
+using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.BuiltIn;
 
@@ -6,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<PresetStore>();
+builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddScoped<LoadRunner>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
@@ -38,6 +40,22 @@ app.MapGet("/api/scenarios", (ScenarioCatalog catalog) => catalog.All.Select(s =
     s.Description,
     Parameters = s.Spec.ToJsonSchema(),
 }));
+
+// Environments (brain 0033): one JSON file each. Minimal REST: list, get, save (create or replace), delete.
+app.MapGet("/api/environments", (EnvironmentStore store, CancellationToken ct) => store.ListAsync(ct));
+app.MapGet("/api/environments/{name}", async (string name, EnvironmentStore store, CancellationToken ct) =>
+    await store.GetAsync(name, ct) is { } e ? Results.Ok(e) : Results.NotFound());
+app.MapPut("/api/environments/{name}", async (string name, EnvironmentDefinition environment, EnvironmentStore store, CancellationToken ct) =>
+{
+    environment.Name = name;
+    try { await store.SaveAsync(environment, ct); return Results.NoContent(); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+app.MapDelete("/api/environments/{name}", async (string name, EnvironmentStore store, CancellationToken ct) =>
+{
+    await store.DeleteAsync(name, ct);
+    return Results.NoContent();
+});
 
 // Unknown API routes are a real 404, not the client app.
 app.Map("/api/{**rest}", () => Results.NotFound());

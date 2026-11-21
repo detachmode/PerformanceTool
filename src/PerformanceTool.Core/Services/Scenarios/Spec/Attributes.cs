@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using PerformanceTool.Services.Environments;
 
 namespace PerformanceTool.Services.Scenarios.Spec;
 
@@ -20,12 +21,15 @@ public sealed class SecretAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class HttpUrlAttribute : ValidationAttribute
 {
+    // A value with a {{Key}} placeholder is checked when the run starts, once the active environment has filled it in (brain 0033).
+    private static bool Ok(string s) => Placeholders.HasPlaceholder(s) || ScenarioContext.IsHttpUrl(s);
+
     protected override ValidationResult? IsValid(object? value, ValidationContext context) => value switch
     {
         null => ValidationResult.Success,
-        string s when s.Length == 0 || ScenarioContext.IsHttpUrl(s) => ValidationResult.Success,
+        string s when s.Length == 0 || Ok(s) => ValidationResult.Success,
         string => new ValidationResult($"{context.DisplayName} must be an absolute http(s) URL.", [context.MemberName!]),
-        IEnumerable<string> items when items.All(ScenarioContext.IsHttpUrl) => ValidationResult.Success,
+        IEnumerable<string> items when items.All(Ok) => ValidationResult.Success,
         IEnumerable<string> => new ValidationResult($"{context.DisplayName}: every entry must be an absolute http(s) URL.", [context.MemberName!]),
         _ => new ValidationResult($"{context.DisplayName}: [HttpUrl] only works on strings and string lists.", [context.MemberName!]),
     };

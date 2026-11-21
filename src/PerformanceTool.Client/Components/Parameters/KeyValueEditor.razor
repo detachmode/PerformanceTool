@@ -1,16 +1,20 @@
 @using System.Text.Json.Nodes
+@using PerformanceTool.Services.Environments
 
 <div class="kv-editor">
     @foreach (var row in rows)
     {
         var r = row;
-        <div class="kv-row" @key="r">
+        <div class="kv-item" @key="r">
+        <div class="kv-row">
             <input id="@(ReferenceEquals(r, rows[0]) ? Id : null)" placeholder="Name" value="@r.Key" disabled="@Disabled" aria-label="Name"
                    @oninput="e => { r.Key = e.Value?.ToString() ?? string.Empty; Sync(); return OnEdited.InvokeAsync(); }" @onchange="OnCommit" />
             <input placeholder="Value" value="@r.Value" disabled="@Disabled" aria-label="Value"
                    @oninput="e => { r.Value = e.Value?.ToString() ?? string.Empty; Sync(); return OnEdited.InvokeAsync(); }" @onchange="OnCommit" />
             <button type="button" class="icon-btn danger" title="Remove" aria-label="Remove" disabled="@Disabled"
                     @onclick="() => { rows.Remove(r); Sync(); return OnCommit.InvokeAsync(); }">✕</button>
+        </div>
+        @if (Placeholders.HasPlaceholder(r.Value)) { <PlaceholderHint Text="@r.Value" /> }
         </div>
     }
     @if (HasDuplicates)
