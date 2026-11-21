@@ -41,3 +41,15 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
 - The chart carries `data-zoomed` (and `data-win`, the exact zoom window in run seconds) while zoomed. CSS then sets `touch-action: pan-y`, so the browser keeps vertical scrolling and leaves horizontal moves to the script; unzoomed it stays `pan-x pan-y`.
 - `dock-magnify.js`: a new touch mode `pan`. From the first 9 px (SLOP) of movement: mostly horizontal while zoomed starts `pan`, otherwise it is a scroll as before. The range moves with the finger (content follows it) by `dx / chart width * span`, clamped to 0 .. run end. The span stays constant.
 - Updates go through the same `OnZoom` path as pinch (throttled to 90 ms, plus once at the end); `PinchZoom` clamps again and follows the live edge when the range reaches the end. No momentum.
+
+## Update 2 (2026-11-21, user)
+- **No tap-and-hold** on touch any more.
+- **Sideways swipe = magnifier:** any sideways swipe on the chart shows the Dock-like magnification under the
+  finger and moves it along the bars (zoomed or not).
+- **Edge panning:** when the finger reaches the edge of the visible bars while zoomed in, the view starts to
+  pan in that direction (moves the visible time range that way) until the finger moves back or the run's start or end is reached.
+  This replaces the map-like pan of update 1.
+- **Smooth panning, no jumps:** groups (bars that stand for several actors, 0032) must not be recalculated
+  from the view's edges while panning. Build groups on a fixed time grid that does not move with the view, and
+  render them a bit beyond the visible edges, so bars slide in smoothly.
+- Tap still selects, pinch still zooms, a vertical swipe still scrolls.

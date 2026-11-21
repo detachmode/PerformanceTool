@@ -28,6 +28,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (H, user feedback):** sideways swipe pans the zoomed time range on touch (0031 update 1).
 
 - **Done (I):** environments (0033): top-bar dropdown, Configure popup, `{{Key}}` placeholders with editor hints, fake data; server `EnvironmentStore`, `/api/environments` (list/get/put/delete) and run-start resolution. Open: the client `ApiEnvironmentSource` (stub), remembering the active environment across reloads, secret flag (Proposed only).
+- **Next (J, user feedback):** smooth panning with stable groups, no tap-and-hold, sideways swipe magnifies, edge panning (0031 update 2).
 - **Waiting on details (user):** bursts per scenario (0034).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
