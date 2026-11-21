@@ -75,7 +75,11 @@
     // The selected bee stays selected when it is folded into a time bucket: that bucket shows as selected.
     double? selStart = selected?.StartedAt ?? (selRunning is { } rs0 ? runningNow.FirstOrDefault(r => r.Sequence == rs0)?.StartedAt : null);
     var selectedBucket = selStart is { } sa0 && bucketed ? BeeBars.BucketOf(sa0, width) : bucket;
-    if (!DataMode.IsFakeMode && selected is { } lazyBee) _ = ApiRun.EnsureBeeDetailLoadedAsync(lazyBee.Sequence);
+    if (selected is { } lazyBee)
+    {
+        if (EnsureDetail is not null) _ = EnsureDetail(lazyBee.Sequence);
+        else if (!DataMode.IsFakeMode) _ = ApiRun.EnsureBeeDetailLoadedAsync(lazyBee.Sequence);
+    }
 }
 
 <div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">
@@ -97,7 +101,10 @@
             <button class="fig" @onclick="() => SetShow(BeeShow.All)" title="Show all bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">@Format.Plural(view.Finished, "bee", "bees")</button>
             <button class="fig @(view.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only the failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">@Format.Plural(view.Failed, "error", "errors")</button>
             <button class="fig @(view.SlowCalls > 0 ? "warn" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only the slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</button>
-            <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort@(shape.Length > 0 ? " · " + shape : "")</span>
+            @if (!Selection)
+            {
+                <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort@(shape.Length > 0 ? " · " + shape : "")</span>
+            }
             @if (stats.Count > 0)
             {
                 <span class="fig-sep" aria-hidden="true"></span>
@@ -204,7 +211,7 @@
                     <span class="state run">Flying</span>
                     <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
-                    <button class="btn ghost small" @onclick="() => Logs.Show(Index, ra.Sequence)">Open logs for this bee</button>
+                    <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Open logs for this bee</button>
                     <button class="icon-btn" @onclick="() => selRunning = null" aria-label="Deselect bee">✕</button>
                 </div>
                 <ol class="calls" aria-label="Calls of @ra.Name so far">
@@ -236,6 +243,10 @@
                         <button class="fig-ratio @BeeOrder.Good(bee.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(bee.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(bee.Ratio) typical</button>
                     }
                     <span class="muted">@Format.Ms(bee.DurationMs) · started @Format.Time(bee.StartedAt)</span>
+                    @if (Notes is not null && Notes.TryGetValue(bee.Sequence, out var beeNote) && !string.IsNullOrWhiteSpace(beeNote))
+                    {
+                        <span class="bee-note" title="Why the assistant picked this bee">@beeNote</span>
+                    }
                     <span class="spacer"></span>
                     @if (detail is not null)
                     {
@@ -248,7 +259,10 @@
                             <WrapToggleButton @bind-Wrapped="beeLogWrap" />
                         }
                     }
-                    <button class="btn ghost small" @onclick="() => Logs.Show(Index, bee.Sequence)" title="Open in full log viewer">Full logs</button>
+                    @if (!Selection || OpenLogs is not null)
+                    {
+                        <button class="btn ghost small" @onclick="() => OpenBeeLogs(bee.Sequence)" title="Open in full log viewer">Full logs</button>
+                    }
                     <button class="icon-btn" @onclick="() => selected = null" aria-label="Deselect bee">✕</button>
                 </div>
                 @if (bee.Error is not null) { <p class="bee-error bad">@bee.Error</p> }
@@ -334,6 +348,22 @@
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>Optional: what to list when the popup opens (the overview card figures lead here, brain 0029).</summary>
     [Parameter] public DetailFilter InitialShow { get; set; }
+    /// <summary>A hand-picked set of bees (the assistant's timeline, brain 0049) instead of one scenario entry: hides the rate figures and the entry actions.</summary>
+    [Parameter] public bool Selection { get; set; }
+    /// <summary>Where the calls and logs of a bee come from when they are not the live run's (a bee set of another run). Null = the live run.</summary>
+    [Parameter] public Func<int, Task>? EnsureDetail { get; set; }
+    /// <summary>What "Full logs" does; null = open the Logs popup for the entry and bee (hidden for a bee set when null).</summary>
+    [Parameter] public Func<int, Task>? OpenLogs { get; set; }
+    /// <summary>The bee (sequence) to select when the popup opens.</summary>
+    [Parameter] public int? InitialBee { get; set; }
+    /// <summary>The assistant's short reason per picked bee (sequence to text), shown in the bee panel.</summary>
+    [Parameter] public IReadOnlyDictionary<int, string>? Notes { get; set; }
+
+    private void OpenBeeLogs(int sequence)
+    {
+        if (OpenLogs is not null) _ = OpenLogs(sequence);
+        else Logs.Show(Index, sequence);
+    }
 
     private ElementReference root;
     private BeeShow show = BeeShow.All;
@@ -415,6 +445,11 @@
     protected override void OnInitialized()
     {
         Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged;
+        if (InitialBee is { } initialBee)
+        {
+            var all = Snapshot.Store.Bees(Index);
+            for (var i = 0; i < all.Count; i++) if (all[i].Sequence == initialBee) { selected = all[i]; break; }
+        }
         switch (InitialShow)
         {
             case DetailFilter.Failed: show = BeeShow.Failed; break;

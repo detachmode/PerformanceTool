@@ -25,6 +25,7 @@ public sealed class SwitchableRunSource : IRunSource
         fake.Changed += OnFakeChanged;
         api.Changed += OnApiChanged;
         mode.Changed += OnModeChanged;
+        if (!mode.IsFakeMode) api.StartSync();
     }
 
     private IRunSource Active => mode.IsFakeMode ? fake : api;
@@ -57,7 +58,9 @@ public sealed class SwitchableRunSource : IRunSource
         {
             _ = scripts.SyncCatalogAsync();
             _ = api.RefreshAsync();
+            api.StartSync();
         }
+        else api.StopSync();
     }
 
     public void Dispose()

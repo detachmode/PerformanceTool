@@ -499,6 +499,16 @@
     private Dictionary<string, string>? planSnap;
     private CancellationTokenSource? debounce;
 
+    private string? handledEditUri;
+
+    /// <summary>"?edit=..." opens the plan editor (the assistant's links lead here); each link carries a new value, so it works again after leaving edit mode.</summary>
+    protected override void OnParametersSet()
+    {
+        if (editMode || Sim.IsRunning || Nav.Uri == handledEditUri || !Nav.Uri.Contains("?edit=", StringComparison.Ordinal)) return;
+        handledEditUri = Nav.Uri;
+        EnterEditMode();
+    }
+
     protected override void OnInitialized()
     {
         wasRunning = Sim.IsRunning;

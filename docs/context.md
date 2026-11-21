@@ -45,4 +45,5 @@ Where actors are listed or grouped: **failed → slow → successful**, then by 
 | **Tile / scenario card** | The small box per entry on the overview, with a value and a little box chart. | `ScenarioTile` | Current |
 | **Details popup** | Opens from a tile; shows everything about one entry (stats, charts, errors, parameters, logs). | `ScenarioDetailDialog` | Current |
 | **Full artifact / summary artifact** | The two CI artifacts per run: everything (incl. logs) vs a small overview. | — | **Decided** (brain 0010) |
+| **Assistant** | The chat in the right side panel (Live mode, when configured): an AI agent that can do what the user can do in the UI (edit the plan, run, read runs, bees and logs) and shows data as small cards. Runs every tool directly, no approval. Its tools speak this language. | `Beesharp.Ai`, `AssistantService` | Proposed (brain 0047, 0048, 0049) |
 | **Run bundle** | The self-describing folder of files a run produces. | — | Proposed (brain 0009) |

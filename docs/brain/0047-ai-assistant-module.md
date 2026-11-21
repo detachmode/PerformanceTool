@@ -1,6 +1,6 @@
 # 0047. AI assistant: server-side agent in its own module, chat side panel
 
-- Status: Accepted (user decisions below; point 5 superseded by 0048); module layout and API shape Proposed; not implemented
+- Status: Accepted (user decisions below; point 5 superseded by 0048); module layout and API shape Proposed; implemented (R1 to R3: see 0050, 0051)
 - Date: 2026-11-21
 
 ## What

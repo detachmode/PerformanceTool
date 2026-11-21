@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Wire DTOs of the assistant's HTTP API (brain 0047). No package dependencies: the browser client and the server both
+       reference this, and the client must never reference Microsoft.Extensions.AI (the trimmed WASM stays small). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PerformanceTool.Ai.Contracts</RootNamespace>
+  </PropertyGroup>
+
+</Project>
