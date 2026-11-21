@@ -55,3 +55,5 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
 - Tap still selects, pinch still zooms, a vertical swipe still scrolls.
 - **Release selects (user, same day):** lifting the finger after a sideways swipe with the magnifier selects
   the last highlighted bar (instead of leaving the selection unchanged).
+- **Double tap zooms in (user, same day):** a double tap on the chart zooms in on touch devices.
+  *Proposed (Claude):* zoom in 2× centred on the tapped spot; the first tap still selects as usual.
