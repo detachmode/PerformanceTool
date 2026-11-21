@@ -50,6 +50,13 @@
         if (aiming) fz = cd;
     }
     var bars = cd.Bars; var scale = cd.Scale; var width = cd.Width; var total = cd.Total;
+    // Zoomed in far enough, the bursts unfold into single-actor bars (brain 0038); the grid below stays the one the script knows (cd.Bars), only this list changes.
+    List<BurstSpan> burstSpans = [];
+    if (win is not null && cd.GridFrom is { } gridStart && width > 0 && (vt - vf) / width <= ActorBars.UnfoldMaxSlots(Settings.MaxBars))
+        bars = ActorBars.Unfold(bars, actors, cd.Finished, show, cd.Running, width, ActorBars.SlotIndex(gridStart, width), cd.ElapsedMs / 1000, (vf + vt) / 2,
+            ActorBars.UnfoldPerBurst(Settings.MaxBars), ActorBars.UnfoldBudget(Settings.MaxBars), out burstSpans);
+    var ovMarks = OverviewMarks(actors, view.Finished, s.Elapsed);
+    unfoldedSlots = burstSpans.Count == 0 ? [] : new HashSet<double>(burstSpans.Select(b => b.Slot));
     var bucketed = width > 0;
     var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
@@ -118,7 +125,7 @@
                 }
             </div>
             <div class="chart-scroll">
-                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-ov="@ovMarks" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
@@ -135,9 +142,9 @@
                         }
                         else
                         {
-                            var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
+                            var on = bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -156,6 +163,11 @@
                                 }
                             </button>
                         }
+                    }
+                    @foreach (var bs in burstSpans)
+                    {
+                        var burst = bs;
+                        <button class="burst-tag @(bucket == burst.Slot ? "on" : "")" data-ub="@T(burst.Slot)" title="Burst at @FT(burst.Slot, width): @Format.Plural(burst.Actors, "actor", "actors") started together. Click to list them." aria-label="Burst at @FT(burst.Slot, width), @Format.Plural(burst.Actors, "actor", "actors"): select them as a group" @onclick="() => PickBar(new ActorBar(0, 0, 0, 0, -1, burst.Slot))">burst · @Format.Plural(burst.Actors, "actor", "actors")</button>
                     }
                     </div>
                 </DockZoom>
@@ -315,6 +327,20 @@
     private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts, int Finished, IReadOnlyList<RunningActor> Running, double? GridFrom = null);
     private ChartData? lastChart, fz;
     private bool aiming;
+    private string ovCache = "";
+    private (int, int) ovKey = (-1, -1);
+    private long ovAt;
+    /// <summary>The overview strip's marks (brain 0035 update 1), recomputed when the finished count or the run's whole seconds changed and the last pass is over 0.7 s old.</summary>
+    private string OverviewMarks(IReadOnlyList<ActorRecord> actors, int count, double elapsed)
+    {
+        var key = (count, (int)elapsed);
+        if (key == ovKey || (Environment.TickCount64 - ovAt < 700 && ovCache.Length > 0)) return ovCache;
+        ovCache = ActorBars.OverviewMarks(actors, count, elapsed);
+        ovKey = key; ovAt = Environment.TickCount64;
+        return ovCache;
+    }
+    /// <summary>Grid slots (their start, run seconds) whose burst is unfolded in the chart at the last render (brain 0038), for stepping through failed actors.</summary>
+    private HashSet<double> unfoldedSlots = [];
 
     private string StepWord => show == ActorShow.Slow ? "slow" : "failed";
     private ActorOutcome StepOutcome => show == ActorShow.Slow ? ActorOutcome.Slow : ActorOutcome.Failed;
@@ -484,13 +510,14 @@
             ? list.Cast<ActorRecord?>().FirstOrDefault(a => a!.Value.StartedAt >= (double.IsNegativeInfinity(vf) ? 0 : vf))
             : list.Cast<ActorRecord?>().LastOrDefault(a => a!.Value.StartedAt < (double.IsPositiveInfinity(vt) ? double.MaxValue : vt));
         // the key of the current position: a group start (grouped bars) or an actor (start time, sequence)
+        // Unfolded bursts (brain 0038) step actor by actor: inside one the key is (slot, sequence + 1), a group bar or the whole burst is (slot, 0).
         ActorRecord? tg = null;
+        (double, long) GKey(ActorRecord a) { var sl = ActorBars.BucketOf(a.StartedAt, w); return (sl, unfoldedSlots.Contains(sl) ? a.Sequence + 1L : 0L); }
         if (w > 0)
         {
-            double? cur = bucket ?? (selected is { } sa ? ActorBars.BucketOf(sa.StartedAt, w) : null);
-            double Key(ActorRecord a) => ActorBars.BucketOf(a.StartedAt, w);
+            (double, long)? cur = bucket is { } bk ? (bk, 0L) : selected is { } sa ? GKey(sa) : null;
             if (cur is { } c)
-                tg = direction > 0 ? list.Cast<ActorRecord?>().FirstOrDefault(a => Key(a!.Value) > c) : list.Cast<ActorRecord?>().LastOrDefault(a => Key(a!.Value) < c);
+                tg = direction > 0 ? list.Cast<ActorRecord?>().FirstOrDefault(a => GKey(a!.Value).CompareTo(c) > 0) : list.Cast<ActorRecord?>().LastOrDefault(a => GKey(a!.Value).CompareTo(c) < 0);
             else
                 tg = FromView();
         }
@@ -512,7 +539,7 @@
             win = to >= elapsed - 0.02 * span ? new Win(Math.Max(0, elapsed - span), elapsed, true) : new Win(from, to, false);
         }
         tailMs = null; fz = null; selRunning = null;
-        if (w > 0 && !(win is not null && ActorBars.BucketActors(actors, count, show, t0, w).Count <= 1))
+        if (w > 0 && !unfoldedSlots.Contains(t0) && !(win is not null && ActorBars.BucketActors(actors, count, show, t0, w).Count <= 1))
         {
             bucket = t0; selected = null;
         }
