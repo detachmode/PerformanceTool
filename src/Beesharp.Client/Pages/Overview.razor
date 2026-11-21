@@ -97,7 +97,7 @@
                         @if (runsOpen)
                         {
                             <div class="dd-backdrop" @onclick="() => runsOpen = false"></div>
-                            <div class="dd-menu right" style="min-width:270px;max-height:60vh;overflow-y:auto" role="menu" aria-label="Stored runs">
+                            <div class="dd-menu" style="min-width:260px;max-height:60vh;overflow-y:auto" role="menu" aria-label="Stored runs">
                                 <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
                                 @if (runsLoading)
                                 {

@@ -201,7 +201,7 @@
             <section class="bee-panel p-run" aria-label="@ra.Name">
                 <div class="bee-head">
                     <b class="bee-title">Bee <BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
-                    <span class="state run">Running</span>
+                    <span class="state run">Flying</span>
                     <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
                     <button class="btn ghost small" @onclick="() => Logs.Show(Index, ra.Sequence)">Open logs for this bee</button>
@@ -648,7 +648,7 @@
     private static string LabelMeta(BeeBar b)
     {
         if (b.IsBucket) return Format.Plural(b.Total, "bee", "bees");
-        if (b.IsRunningBee) return "running";
+        if (b.IsRunningBee) return "flying";
         return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : Format.OverTypical(b.Ratio) ? " · " + Format.Times(b.Ratio) : "");
     }
 

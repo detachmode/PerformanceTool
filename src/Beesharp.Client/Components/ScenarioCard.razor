@@ -13,7 +13,7 @@
         ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow call", "slow calls") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
     var aria = Label + ": "
-        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees running, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
+        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees flying, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
@@ -36,7 +36,7 @@
     else
     {
         <span class="card-figures">
-            <span class="fig"><b>@View.InFlight</b><small>bees running</small></span>
+            <span class="fig"><b>@View.InFlight</b><small>bees flying</small></span>
             <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small></span>
         </span>
         @if (stats.HasData)
