@@ -1,0 +1,21 @@
+@* Compact icon-only line-wrap toggle button for code editors and log consoles. *@
+<button type="button"
+        class="btn ghost small icon-toggle @(Wrapped ? "wrap-on" : "")"
+        aria-pressed="@Aria.Bool(Wrapped)"
+        aria-label="@(Wrapped ? "Disable line wrap" : "Enable line wrap")"
+        title="@(Wrapped ? "Line wrap: On (click to disable)" : "Line wrap: Off (click to enable)")"
+        @onclick="Toggle">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6h18"/>
+        <path d="M3 12h15a3 3 0 1 1 0 6h-4"/>
+        <polyline points="16 16 14 18 16 20"/>
+        <path d="M3 18h7"/>
+    </svg>
+</button>
+
+@code {
+    [Parameter] public bool Wrapped { get; set; } = true;
+    [Parameter] public EventCallback<bool> WrappedChanged { get; set; }
+
+    private Task Toggle() => WrappedChanged.InvokeAsync(!Wrapped);
+}

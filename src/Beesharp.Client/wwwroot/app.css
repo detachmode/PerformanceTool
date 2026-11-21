@@ -423,6 +423,7 @@ label { font-size: .72rem; color: var(--muted); }
 
 /* ----- small screens ----- */
 @media (max-width: 760px) {
+    .brand-name { display: none; }
     .main { padding: calc(var(--top-h) + .9rem) .9rem 8rem; }
     .field { width: 100%; }
     .ed-spawn-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: .5rem .6rem; }
@@ -821,6 +822,7 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .script-diag-dock { flex: none; max-height: 150px; overflow-y: auto; border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; }
 .script-try-body { display: flex; flex-direction: column; gap: .8rem; }
 .btn.wrap-on { border-color: var(--accent2); color: var(--title); background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); }
+.btn.icon-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; flex: none; }
 
 .cs-ed { display: flex; position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }
 .cs-ed:focus-within { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
@@ -863,7 +865,9 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 }
 
 /* ----- preflight script selector & overview output view ----- */
-.preflight-pill { border-color: color-mix(in srgb, var(--accent2) 55%, var(--border)); color: var(--accent); }
+.preflight-pill { border-color: color-mix(in srgb, var(--accent2) 55%, var(--border)); color: var(--accent); cursor: pointer; }
+.preflight-pill.off { border-style: dashed; border-color: var(--border); background: transparent; color: var(--muted); }
+.preflight-pill:hover { border-color: var(--accent2); color: var(--title); }
 .pf-tag { font-size: .64rem; font-weight: 700; letter-spacing: .06em; padding: .08rem .32rem; border-radius: 3px; background: color-mix(in srgb, var(--accent2) 30%, var(--panel2)); color: var(--title); }
 .plan-preflight-ctrl { grid-column: 1 / -1; }
 .plan-preflight-row { display: flex; align-items: center; gap: .45rem; }

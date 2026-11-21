@@ -42,7 +42,11 @@
             <span class="preset-pill" title="Active preset">@Sim.PresetName</span>
             @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
             {
-                <span class="preset-pill preflight-pill" title="Preflight script runs before scenarios start">Preflight: @plan.PreflightScriptId</span>
+                <button type="button" class="preset-pill preflight-pill" @onclick="TogglePlanMoreAsync" title="Preflight script runs before scenarios start (click to change)">Preflight: @plan.PreflightScriptId</button>
+            }
+            else if (!DataMode.IsFakeMode)
+            {
+                <button type="button" class="preset-pill preflight-pill off" @onclick="TogglePlanMoreAsync" title="Set a preflight script to run before scenarios start">+ Preflight</button>
             }
             @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
@@ -165,31 +169,34 @@
                 ⋯
             </button>
         </div>
-        @if (planMoreOpen || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
+        @if (planMoreOpen || editMode || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
         {
             <div class="plan-extra-row">
-                <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
-                    <label for="p-conc">Max in-flight</label>
-                    <div class="slider with-input">
-                        <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
-                               aria-label="Max in-flight slider" disabled="@locked"
-                               @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
-                        <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
-                               @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
-                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
+                @if (planMoreOpen || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
+                {
+                    <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
+                        <label for="p-conc">Max in-flight</label>
+                        <div class="slider with-input">
+                            <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
+                                   aria-label="Max in-flight slider" disabled="@locked"
+                                   @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
+                            <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
+                                   @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
+                                   disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
+                        </div>
                     </div>
-                </div>
-                <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
-                    <label for="p-to">Timeout (s)</label>
-                    <div class="slider with-input">
-                        <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
-                               aria-label="Timeout slider" disabled="@locked"
-                               @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
-                        <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
-                               @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
-                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
+                    <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
+                        <label for="p-to">Timeout (s)</label>
+                        <div class="slider with-input">
+                            <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
+                                   aria-label="Timeout slider" disabled="@locked"
+                                   @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
+                            <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
+                                   @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
+                                   disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
+                        </div>
                     </div>
-                </div>
+                }
                 <div class="plan-ctrl plan-preflight-ctrl">
                     <label for="p-preflight">Preflight script</label>
                     <div class="plan-preflight-row">
@@ -399,6 +406,7 @@
                 <span class="pf-badge @(pfFailed ? "bad" : "run")">@(pfFailed ? "Preflight failed" : "Running preflight…")</span>
                 <b class="mono">@(ApiRun.PreflightScriptName ?? plan.PreflightScriptId ?? "preflight.cs")</b>
                 <span class="spacer"></span>
+                <WrapToggleButton @bind-Wrapped="preflightWrap" />
                 @if (pfFailed)
                 {
                     @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
@@ -422,7 +430,7 @@
                     }
                 </div>
             }
-            <div class="preflight-console sl-console wrap" role="log" aria-live="polite">
+            <div class="preflight-console sl-console @(preflightWrap ? "wrap" : "nowrap")" role="log" aria-live="polite">
                 @if (ApiRun.PreflightLogs.Count == 0)
                 {
                     <div class="muted">Waiting for preflight output…</div>
@@ -477,6 +485,7 @@
     // Edit mode state
     private bool editMode;
     private bool planMoreOpen;
+    private bool preflightWrap = true;
     private bool wasRunning;
     private int selected = -1;
     private bool addOpen, saveAsOpen, savedNote, actionsOpen;

@@ -1,10 +1,11 @@
-@* Full-screen Serilog-style Live Log Console (/logs): streams logs in real time from currently flying bees. *@
+@* Full-screen Serilog-style Live Log Console (/logs): streams logs in real time from currently flying bees with auto-scroll. *@
 @page "/logs"
 @layout MainLayout
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ApiRunSource ApiRun
 @inject IRunSource Sim
 @inject DataModeState DataMode
+@inject IJSRuntime JS
 
 <PageTitle>Live Logs · Beesharp</PageTitle>
 
@@ -20,11 +21,11 @@
         <input class="sl-search" type="search" placeholder="Filter…" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
         <span class="spacer"></span>
         <span class="muted mono" style="font-size:.74rem">@VisibleCount</span>
-        <button type="button" class="btn ghost small @(wrap ? "wrap-on" : "")" @onclick="() => wrap = !wrap" title="Toggle line wrap">Wrap</button>
+        <WrapToggleButton @bind-Wrapped="wrap" />
         <button type="button" class="btn ghost small" @onclick="Clear">Clear</button>
     </div>
 
-    <div class="sl-console @(wrap ? "wrap" : "nowrap")" role="log" aria-live="polite">
+    <div class="sl-console @(wrap ? "wrap" : "nowrap")" @ref="consoleEl" role="log" aria-live="polite">
         @if (DataMode.IsFakeMode)
         {
             <div class="sl-empty">Switch to <b>Live</b> mode to stream real-time logs from flying bees.</div>
@@ -51,6 +52,9 @@
     private bool wrap = true;
     private CancellationTokenSource? pollCts;
     private bool disposed;
+    private ElementReference consoleEl;
+    private IJSObjectReference? scrollMod;
+    private IJSObjectReference? scrollHandle;
 
     private int VisibleCount => VisibleLines().Count;
 
@@ -77,6 +81,23 @@
         DataMode.Changed += OnSimChanged;
         await PullOnceAsync();
         StartPolling();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                scrollMod = await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js");
+                scrollHandle = await scrollMod.InvokeAsync<IJSObjectReference>("attach", consoleEl);
+            }
+            catch { }
+        }
+        else if (scrollHandle is not null)
+        {
+            try { await scrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
     }
 
     private void StartPolling()
@@ -107,7 +128,6 @@
         var batch = await ApiRun.FetchLiveLogsAsync(lastId, 500, ct);
         if (batch.Count == 0) return;
 
-        // If server restarted / cleared ids, reset local buffer.
         if (batch[0].Id <= lastId)
         {
             lines.Clear();
@@ -133,12 +153,20 @@
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         disposed = true;
         pollCts?.Cancel();
         pollCts?.Dispose();
         Sim.Changed -= OnSimChanged;
         DataMode.Changed -= OnSimChanged;
+        if (scrollHandle is not null)
+        {
+            try { await scrollHandle.InvokeVoidAsync("dispose"); await scrollHandle.DisposeAsync(); } catch { }
+        }
+        if (scrollMod is not null)
+        {
+            try { await scrollMod.DisposeAsync(); } catch { }
+        }
     }
 }

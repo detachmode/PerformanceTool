@@ -83,12 +83,7 @@
 
         <span class="spacer"></span>
 
-        <button type="button" class="btn ghost small @(wordWrap ? "wrap-on" : "")"
-                aria-pressed="@Aria.Bool(wordWrap)"
-                @onclick="() => wordWrap = !wordWrap"
-                title="Toggle line wrap">
-            Wrap
-        </button>
+        <WrapToggleButton @bind-Wrapped="wordWrap" />
 
         <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || string.IsNullOrWhiteSpace(scriptCode))">
             @(compiling ? "Saving…" : "Save")
@@ -189,6 +184,8 @@
                                 <span class="muted">@testResult.DurationMs.ToString("0.#") ms</span>
                                 <span class="muted">@testResult.Bytes B</span>
                                 <span class="muted">startup @testResult.StartupDurationMs.ToString("0.#") ms · teardown @testResult.TeardownDurationMs.ToString("0.#") ms</span>
+                                <span class="spacer"></span>
+                                <WrapToggleButton @bind-Wrapped="tryWrap" />
                             </div>
                             @if (!string.IsNullOrEmpty(testResult.Error))
                             {
@@ -209,7 +206,7 @@
                             }
                             @if (testResult.Logs.Count > 0)
                             {
-                                <div class="sl-console compact wrap">
+                                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")">
                                     @foreach (var line in testResult.Logs)
                                     {
                                         <SerilogLine Raw="@line" />
@@ -231,6 +228,8 @@
                             <div class="test-result-head">
                                 <b>@(preflightResult.Success ? "Preflight succeeded" : "Preflight failed")</b>
                                 <span class="muted">@preflightResult.DurationMs.ToString("0.#") ms</span>
+                                <span class="spacer"></span>
+                                <WrapToggleButton @bind-Wrapped="tryWrap" />
                             </div>
                             @if (!string.IsNullOrEmpty(preflightResult.Error))
                             {
@@ -238,7 +237,7 @@
                             }
                             @if (preflightResult.Logs.Count > 0)
                             {
-                                <div class="sl-console compact wrap">
+                                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")">
                                     @foreach (var line in preflightResult.Logs)
                                     {
                                         <SerilogLine Raw="@line" />
@@ -271,6 +270,7 @@
     private string fileName = "order-api-stress.cs";
     private string scriptCode = ScenarioTemplate;
     private bool wordWrap = true;
+    private bool tryWrap = true;
     private bool filesOpen;
     private bool moreOpen;
     private bool renameOpen;

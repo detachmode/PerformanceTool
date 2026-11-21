@@ -243,6 +243,10 @@
                             <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@detail.Logs.Count)</button>
                             <button type="button" class="@(showWaterfall ? "on" : "")" @onclick="() => showWaterfall = true">Waterfall (@detail.Calls.Count)</button>
                         </div>
+                        @if (!showWaterfall)
+                        {
+                            <WrapToggleButton @bind-Wrapped="beeLogWrap" />
+                        }
                     }
                     <button class="btn ghost small" @onclick="() => Logs.Show(Index, bee.Sequence)" title="Open in full log viewer">Full logs</button>
                     <button class="icon-btn" @onclick="() => selected = null" aria-label="Deselect bee">✕</button>
@@ -254,7 +258,7 @@
                 }
                 else if (!showWaterfall)
                 {
-                    <div class="sl-console compact wrap" role="log" aria-label="Logs of @bee.Name">
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-label="Logs of @bee.Name">
                         @if (detail.Logs.Count == 0)
                         {
                             <div class="sl-empty" style="padding:.35rem 0">No logs emitted by this bee.</div>
@@ -337,6 +341,7 @@
     private bool showTypicals;   // the bee panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
     private bool showWaterfall;
+    private bool beeLogWrap = true;
     private double? bucketValue;
     /// <summary>The selected time bucket; any change clears the selected burst group (brain 0043), which the pick that sets it assigns afterwards.</summary>
     private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
