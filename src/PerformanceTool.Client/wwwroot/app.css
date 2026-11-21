@@ -9,6 +9,8 @@
     --running: #5b9bf0; /* actors in flight, calm blue; set to a grey (e.g. #8e88a8) to try the grey variant */
     --good: #4fb286; --slow: #e8b84a; --failed: #f2737d; /* each >= 4:1 on --panel and on --selected */
     --bad: var(--failed); --warn: var(--slow);
+    /* graded slowness (brain 0041): green at the typical time, three calm steps towards amber; the fourth step is --slow itself (slow = over 2x typical). Mixed in OKLCH so the middle stays a clean yellow-green. */
+    --g1: color-mix(in oklch, var(--slow) 25%, var(--good)); --g2: color-mix(in oklch, var(--slow) 50%, var(--good)); --g3: color-mix(in oklch, var(--slow) 75%, var(--good));
     --radius: 6px; --radius-sm: 4px;
     --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", monospace;
 }
@@ -23,6 +25,7 @@ button { font: inherit; color: inherit; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); font-size: .82rem; }
 .bad { color: var(--bad); }
+.t1 { --good: var(--g1); } .t2 { --good: var(--g2); } .t3 { --good: var(--g3); }   /* an ok actor slower than typical: the element's own green moves towards amber (brain 0041) */
 .warn { color: var(--warn); }
 .spacer { flex: 1; }
 :focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
@@ -134,16 +137,34 @@ label { font-size: .72rem; color: var(--muted); }
 .chart.grid .dz-bars { flex: 0 0 100%; will-change: transform; }
 .chart.grid .bar-hit { flex: 0 0 var(--p); min-width: 0; max-width: none; padding: 0 .5px; }
 /* overview strip (brain 0035): the whole run, the lit part is in view; only while zoomed in */
-.dz-over { position: absolute; z-index: 4; top: .15rem; left: .5rem; right: .5rem; height: 22px; display: block; cursor: pointer; touch-action: none; }   /* the whole width of the top section, always there (brain 0035 update 1) */
-.chart:not([data-zoomed]) .dz-over { cursor: default; }
-.ov-marks { position: absolute; left: 0; top: 6px; width: 100%; height: 10px; pointer-events: none; opacity: .5; }   /* muted on purpose: the strip stays quiet (brain 0035 update 1) */
-.ov-track { position: absolute; left: 0; right: 0; top: 8px; height: 6px; border-radius: 3px; background: #ffffff14; }
-.ov-win { position: absolute; top: 6px; height: 10px; min-width: 6px; border-radius: 3px; background: #7b68ee55; border: 1px solid var(--accent2); box-sizing: border-box; }
+/* Overview strip (brain 0035, redesigned in 0040): the whole run as a 12 px track with muted failed/slow marks; the view is an outlined window, the run
+   outside it is dimmed (instead of lighting the inside). The window is at least 16 px (touch 24 px) wide; a pin marks the exact spot of a tiny view. */
+.dz-over { --ovt: 7px; position: absolute; z-index: 4; top: .15rem; left: .5rem; right: .5rem; height: 26px; display: block; cursor: zoom-in; touch-action: pan-y; border-radius: 4px; }
+.dz-over.on { cursor: pointer; }
+.dz-over:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; }
+.ov-track { position: absolute; left: 0; right: 0; top: var(--ovt); height: 12px; border-radius: 3px; background: #ffffff0f; }
+.ov-marks { position: absolute; left: 0; top: var(--ovt); width: 100%; height: 12px; pointer-events: none; opacity: .55; border-radius: 3px; }   /* muted on purpose: the strip stays quiet (brain 0035 update 1) */
+.ov-dim { position: absolute; left: 0; top: var(--ovt); height: 12px; width: 0; display: none; pointer-events: none; background: #17141fb8; }
+.ov-dim:first-of-type { border-radius: 3px 0 0 3px; }
+.ov-win { position: absolute; left: 0; top: calc(var(--ovt) - 4px); height: 20px; width: 0; display: none; box-sizing: border-box; pointer-events: none; border: 1.5px solid #e6e1fbd9; border-radius: 5px; box-shadow: 0 0 0 1px #0000008c, inset 0 0 0 1px #00000059; }
+.dz-over.on .ov-win, .dz-over.on .ov-dim { display: block; }
+.dz-over.on:hover .ov-win, .dz-over.drag .ov-win { border-color: #fff; background: #ffffff0d; }
+.ov-grip { position: absolute; top: 5px; left: 3px; width: 1.5px; height: 7px; border-radius: 1px; background: #e6e1fb99; display: none; }
+.ov-grip.r { left: auto; right: 3px; }
+.ov-win.grips .ov-grip { display: block; }
+.ov-pin { position: absolute; left: -.75px; top: calc(var(--ovt) - 2px); width: 1.5px; height: 16px; display: none; pointer-events: none; background: #fff; }
+.dz-over.on.tiny .ov-pin { display: block; }
+@media (pointer: coarse) {
+  .dz-over { --ovt: 10px; height: 32px; }
+
+}
 @media (pointer: coarse) { .chart { min-width: 0 !important; } .bar-hit { min-width: 0; } }
 .bar { display: block; width: 100%; background: var(--bar); border-radius: 2px 2px 0 0; min-height: 3px; }
 .bar-hit.on .bar { outline: 1.5px solid #ffffffd9; outline-offset: 1px; }
 /* Popup chart polish (brain 0023, update 2): hover card with a tail, faint neighbour labels under the bars, run-time axis. All positioned by dock-magnify.js. */
-.chart:has(> .dz-axis) { height: 246px; padding-top: 3.1rem; padding-bottom: 58px; }
+.chart:has(> .dz-axis) { height: 252px; padding-top: 3.45rem; padding-bottom: 58px; }
+.chart:has(> .dz-axis) > .chart-max { top: 2.05rem; right: 0; z-index: 3; padding: 0 .5rem 0 .35rem; background: var(--panel); }   /* stays readable over a burst label (brain 0040) */
+@media (pointer: coarse) { .chart:has(> .dz-axis) { height: 258px; padding-top: 3.8rem; } .chart:has(> .dz-axis) > .chart-max { top: 2.45rem; } }
 .dz-label { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; box-sizing: border-box; white-space: nowrap; visibility: hidden; opacity: 0;
     transition: opacity .14s ease, visibility 0s .14s; font-variant-numeric: tabular-nums; }
 .dz-label.show { visibility: visible; opacity: 1; transition-delay: 0s; }
@@ -604,10 +625,10 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 /* even gaps: dock-magnify.js snaps every bar edge to a device pixel and sets one gap for the chart (--gap, whole device pixels) */
 .chart .dz-bars > .bar-hit { padding: 0 var(--gap, 1px) 0 0; }
 /* the selected bar's marker: an accent caret in the strip under the bars, pointing up at the bar; positioned by dock-magnify.js */
-.dz-sel { position: absolute; left: 0; bottom: 37px; width: 0; height: 18px; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .15s ease; }
+.dz-sel { position: absolute; left: 0; bottom: 28px; width: 0; height: 27px; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .15s ease; }
 .dz-sel.show { opacity: 1; }
 .dz-sel::before { content: ""; position: absolute; left: -7px; top: 0; width: 14px; height: 9px; background: var(--accent2); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.dz-sel::after { content: ""; position: absolute; left: -1px; top: 8px; width: 2px; height: 10px; border-radius: 1px; background: var(--accent2); }
+.dz-sel::after { content: ""; position: absolute; left: -.75px; top: 8px; width: 1.5px; height: 19px; border-radius: 1px; background: var(--accent2); }   /* the stem runs down to the selection mark on the axis (brain 0040) */
 /* striped groups: a magnified or hovered group shows failed / slow / ok (/ running) side by side, widths by count (data-st, built by dock-magnify.js) */
 .grp-st { position: absolute; inset: 2px; display: flex; gap: 1px; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
 .grp-st > i { flex: 1 1 0; min-width: 3px; background: var(--good); }
@@ -623,4 +644,25 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .chart .dz-bars > .burst-tag:hover, .chart .dz-bars > .burst-tag.on, .chart .dz-bars > .burst-tag:focus-visible { color: var(--title); border-bottom-color: var(--accent2); }
 .bar-hit.inb { background: #ffffff12; }
 /* when the view is only a few slots wide a slot is as wide as the chart: an unfolded actor never gets wider than a comfortable bar */
-.chart.grid .bar-hit[data-ub] { flex-basis: min(var(--p), 3rem); }
+/* brain 0040: the bars of an unfolded burst share the empty slots it borrowed (--k slots each), so x stays linear in time */
+.chart.grid .bar-hit[data-ub] { flex-basis: calc(var(--p) * var(--k, 1)); }
+
+/* ===== the selection pill (brain 0040): the selected bar's time frame stays under the axis, its stem on the lilac mark; grab it to move the selection,
+   click or tap to drill down; outside the view it waits at the edge with an arrow ===== */
+.dz-mark.sel { z-index: 1; }
+.dz-readout.sel { top: 7px; z-index: 2; margin: 0; pointer-events: none; cursor: grab; border-color: var(--accent2); background: #241e35; font: inherit; font-family: var(--mono); font-size: .68rem; line-height: 1.35; padding: 1px 9px; transition: opacity .15s ease, border-color .15s ease; touch-action: pan-y; }
+.dz-readout.sel.show { opacity: 1; pointer-events: auto; }
+.dz-readout.sel.show.dim { opacity: .45; }
+.dz-readout.sel.show.under { opacity: 0; pointer-events: none; }
+.dz-readout.sel:hover { background: #2e2645; }
+.dz-readout.sel:active { cursor: grabbing; }
+.dz-readout.sel.off { color: var(--accent); border-style: dashed; cursor: pointer; }
+.dz-readout.sel.off::before { display: none; }
+@media (pointer: coarse) { .dz-readout.sel { padding: 3px 11px; top: 6px; } }
+.actor-panel.flash { box-shadow: 0 0 0 2px var(--accent2); transition: box-shadow .3s ease; }
+@media (prefers-reduced-motion: reduce) { .dz-readout.sel, .actor-panel.flash { transition: none; } }
+
+/* the "1.4x typical" figure of a selected actor and the typical time under each call (brain 0041, 0029) */
+.fig-ratio { background: none; border: 0; padding: 0 .1rem; font: inherit; font-size: .82rem; font-variant-numeric: tabular-nums; color: var(--good); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.fig-ratio:hover, .fig-ratio[aria-pressed="true"] { text-decoration-style: solid; }
+.call-typ { grid-column: 1 / -1; margin-top: -.15rem; font-size: .74rem; font-variant-numeric: tabular-nums; }

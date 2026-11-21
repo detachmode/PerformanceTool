@@ -42,7 +42,7 @@
     }
 
     private RenderFragment Row(ActorRow a) => @<button class="actor-row @(SelectedSequence == a.Sequence ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(SelectedSequence == a.Sequence)" @onclick="() => OnSelect.InvokeAsync(a)">
-        <ActorChip Sequence="a.Sequence" State="a.State" />
+        <ActorChip Sequence="a.Sequence" State="a.State" Tint="a.Tint" />
         <span class="dur">@(a.IsRunning ? "running" : Format.Ms(a.DurationMs))</span>
         <span class="at">@Format.Time(a.StartedAt)</span>
         <span class="state @ActorOrder.Css(a.State)">@(a.State is ActorState.Failed or ActorState.Slow ? ActorOrder.Word(a.State) : "")</span>

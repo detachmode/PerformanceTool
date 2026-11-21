@@ -1,6 +1,6 @@
 # 0037. Popup chart: selection marker, swipe areas, striped groups, even gaps
 
-- **Status:** Accepted, implemented
+- **Status:** Accepted, implemented. The axis strip (magnifier) starts 14 px under the bars and the caret got a persistent time-frame pill: see [0040](0040-popup-chart-robust-navigation.md).
 - **Date:** 2026-11-21
 - **Related:** 0026 (selection), 0031 (touch gestures, supersedes parts of update 2), 0032 (group bars), 0023 (magnification)
 

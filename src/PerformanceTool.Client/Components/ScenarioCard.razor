@@ -51,7 +51,7 @@
     <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
         @foreach (var a in recent)
         {
-            <i class="@(a.Failed ? "bad" : a.SlowCalls > 0 ? "warn" : "good")" style="height:@(Pct(a.DurationMs / max))%"></i>
+            <i class="@(a.Failed ? "bad" : ActorOrder.Good(a.Tint))" style="height:@(Pct(a.DurationMs / max))%"></i>
         }
         @foreach (var r in runNow)
         {

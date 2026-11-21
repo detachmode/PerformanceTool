@@ -36,7 +36,7 @@
 
             @if (actor is { } a)
             {
-                <button class="chip" @onclick="() => actor = null" title="Remove the actor filter">Actor <ActorChip Sequence="a" State="StateOf(a, scenario)" /> ✕</button>
+                <button class="chip" @onclick="() => actor = null" title="Remove the actor filter">Actor <ActorChip Sequence="a" State="StateOf(a, scenario)" Tint="TintOf(a)" /> ✕</button>
             }
 
             <div class="dd">
@@ -60,7 +60,7 @@
         <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
-                    <ActorChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" OnClick="() => FilterActor(l)" Title="@($"Show only the logs of actor #{l.Sequence + 1}")" />
+                    <ActorChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" Tint="TintOf(l.Sequence)" OnClick="() => FilterActor(l)" Title="@($"Show only the logs of actor #{l.Sequence + 1}")" />
                     <button class="msg" aria-pressed="@Aria.Bool(ReferenceEquals(expanded, l))" title="Show details" @onclick="() => expanded = ReferenceEquals(expanded, l) ? null : l"><span class="visually-hidden">@l.Level: </span>@l.Message</button>
                 </div>
             </ItemContent>
@@ -70,7 +70,7 @@
         @if (expanded is { } x)
         {
             <section class="log-detail" aria-label="Log line details">
-                <div class="log-detail-head"><b>Actor <ActorChip Sequence="x.Sequence" State="StateOf(x.Sequence, x.Entry)" /></b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
+                <div class="log-detail-head"><b>Actor <ActorChip Sequence="x.Sequence" State="StateOf(x.Sequence, x.Entry)" Tint="TintOf(x.Sequence)" /></b><span class="muted">@x.Level · @x.Timestamp.ToString("HH:mm:ss.fff") · @Format.Time(x.AtSeconds) into the run</span><span class="spacer"></span><button class="icon-btn" @onclick="() => expanded = null" aria-label="Close details">✕</button></div>
                 <dl>@foreach (var (k, v) in x.Scope) { <dt>@k</dt><dd>@v</dd> }</dl>
                 @if (x.Exception is not null) { <pre>@x.Exception</pre> }
             </section>
@@ -128,6 +128,9 @@
         if (entry is null && s.ActorsInFlight is { } all && all.Any(l => l.Any(r => r.Sequence == sequence))) return ActorState.Running;
         return ActorOrder.StateOf(s.Store.OutcomeOf(sequence));
     }
+
+    /// <summary>The colour step of an ok actor (brain 0041): how far over its typical time it was.</summary>
+    private int TintOf(int sequence) => Sim.Current.Store.TintOf(sequence);
 
     private void SetScenario(ChangeEventArgs e) => scenario = int.TryParse(e.Value?.ToString(), out var i) ? i : null;
 

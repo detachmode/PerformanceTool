@@ -36,6 +36,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (M, user feedback):** zooming into a burst unfolds it into single actor bars, with a quiet "burst · N actors" label (0038).
 - **Done (M2, user feedback):** the fake data starts with a 30 minute finished run (0039).
 - **Done (M3, user feedback):** overview strip over the whole width, muted red/amber marks of failed and slow actors, always visible (0035 update 1).
+- **Done (N, user feedback):** popup chart navigation bullet proof (0040): no zoom on swipe (root causes fixed), bursts unfold as soon as they fit, redesigned overview strip, persistent selection pill. Open for the user: review the Proposed design and the verdict on compressed time gaps.
+- **Done (O, user feedback):** slowness as a colour gradient from green at typical time to amber (0041): ratio per actor (one byte), four steps, groups take their worst actor, "1.3x typical" drills down to the calls. Open for the user: review the Proposed details.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

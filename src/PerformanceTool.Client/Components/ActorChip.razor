@@ -1,7 +1,7 @@
 @* The actor number (#192) in the colour of its outcome (brain 0028): red failed, yellow slow, green ok, blue running. Use this wherever an actor number is shown.
    With OnClick it is a button (e.g. a log row filters on the actor), otherwise plain text. The outcome is also in the accessible name. *@
 @{
-    var css = ActorOrder.Css(State);
+    var css = ActorOrder.Css(State, Tint);
     var label = $"Actor #{Sequence + 1}, {ActorOrder.Word(State)}";
 }
 @if (OnClick.HasDelegate)
@@ -17,6 +17,8 @@ else
     /// <summary>Zero-based sequence of the actor; shown as #Sequence+1.</summary>
     [Parameter, EditorRequired] public int Sequence { get; set; }
     [Parameter] public ActorState State { get; set; } = ActorState.Ok;
+    /// <summary>The colour step of an ok actor (brain 0041): 0 green at typical time, up to a yellower green the slower it was.</summary>
+    [Parameter] public int Tint { get; set; }
     [Parameter] public EventCallback OnClick { get; set; }
     [Parameter] public string? Title { get; set; }
     [Parameter] public string? Class { get; set; }
