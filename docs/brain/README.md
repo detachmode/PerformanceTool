@@ -72,3 +72,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0032](0032-group-bars-look-different.md) | Group bars: lighter fill with outline plus a small count badge; single actors stay solid | Accepted, implemented |
 | [0033](0033-environments.md) | Environments: arbitrary key-value pairs (credentials allowed), used as `{{Key}}` placeholders and in code, like Bruno; one file per environment; picked in a top-bar dropdown like Bruno | Accepted, implemented (fake data); runner and REST in the server, UI on fake data |
 | [0034](0034-scenario-bursts.md) | Bursts: a spawning pattern per scenario entry | Accepted (details open) |
+| [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted (not implemented) |
