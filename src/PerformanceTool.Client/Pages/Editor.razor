@@ -125,50 +125,79 @@
                     else
                     {
                         <div class="detail-body">
-                            <div class="form" @key="c">
-                                <div class="field wide">
-                                    <label for="entry-label">Label</label>
-                                    <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
+                            <div class="ed-section ed-schedule" @key="c">
+                                <div class="ed-sec-head">
+                                    <span class="ed-sec-title">Scenario &amp; Spawning</span>
+                                    <span class="ed-rate-badge" title="Effective spawn rate">@Format.Rate(c.EffectiveRatePerMinute()) @Terms.PerMinuteShort</span>
                                 </div>
-                                <div class="field pattern">
-                                    <label id="pattern-label">Spawning</label>
-                                    <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: actors start evenly. Bursts: several actors start at once, now and then.">
-                                        <button type="button" class="@(c.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
-                                        <button type="button" class="@(c.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
-                                    </div>
-                                </div>
-                                @if (c.Pattern == SpawningPattern.Bursts)
-                                {
-                                    <div class="field rate @(cfgErr!.Burst is null ? "" : "is-invalid")">
-                                        <label for="entry-burst-size">Actors per burst</label>
-                                        <input id="entry-burst-size" type="number" min="1" step="1" value="@c.ActorsPerBurst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
-                                    </div>
-                                    <div class="field rate @(cfgErr.BurstRate is null ? "" : "is-invalid")">
-                                        <label for="entry-burst-rate">Bursts / minute</label>
-                                        <input id="entry-burst-rate" type="number" min="0.1" step="any" value="@c.BurstsPerMinute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
-                                    </div>
+                                <div class="ed-sched-grid">
                                     <div class="field wide">
-                                        <small class="help">= @Format.Rate(c.EffectiveRatePerMinute()) @Terms.PerMinuteShort</small>
-                                        @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
-                                        @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
+                                        <label for="entry-label">Label</label>
+                                        <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
                                     </div>
-                                }
-                                else
-                                {
-                                    <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
-                                        <label for="entry-rate">Actors / minute</label>
-                                        <input id="entry-rate" type="number" min="0.1" step="any" value="@c.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
-                                        @if (cfgErr.Rate is not null) { <small class="field-error" role="alert">@cfgErr.Rate</small> }
+                                    <div class="ed-spawn-row">
+                                        <div class="field pattern">
+                                            <label id="pattern-label">Spawning</label>
+                                            <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: actors start evenly. Bursts: several actors start at once, now and then.">
+                                                <button type="button" class="@(c.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
+                                                <button type="button" class="@(c.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
+                                            </div>
+                                        </div>
+                                        @if (c.Pattern == SpawningPattern.Bursts)
+                                        {
+                                            <div class="ed-burst-pair">
+                                                <div class="field rate @(cfgErr!.Burst is null ? "" : "is-invalid")">
+                                                    <label for="entry-burst-size">Actors / burst</label>
+                                                    <input id="entry-burst-size" type="number" min="1" step="1" value="@c.ActorsPerBurst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
+                                                </div>
+                                                <div class="field rate @(cfgErr.BurstRate is null ? "" : "is-invalid")">
+                                                    <label for="entry-burst-rate">Bursts / min</label>
+                                                    <input id="entry-burst-rate" type="number" min="0.1" step="any" value="@c.BurstsPerMinute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
+                                                </div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
+                                                <label for="entry-rate">Actors / min</label>
+                                                <input id="entry-rate" type="number" min="0.1" step="any" value="@c.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
+                                            </div>
+                                        }
                                     </div>
-                                }
-                                <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
+                                    @if (c.Pattern == SpawningPattern.Bursts && (cfgErr!.Burst is not null || cfgErr.BurstRate is not null))
+                                    {
+                                        <div class="ed-sched-errors">
+                                            @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
+                                            @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
+                                        </div>
+                                    }
+                                    else if (c.Pattern != SpawningPattern.Bursts && cfgErr!.Rate is not null)
+                                    {
+                                        <div class="ed-sched-errors">
+                                            <small class="field-error" role="alert">@cfgErr.Rate</small>
+                                        </div>
+                                    }
+                                </div>
                             </div>
+
+                            @if (scenario.Spec.Fields.Any(f => !f.Advanced))
+                            {
+                                <div class="ed-section ed-params" @key="@((c, "params"))">
+                                    <div class="ed-sec-head">
+                                        <span class="ed-sec-title">Scenario Parameters</span>
+                                        <span class="ed-sec-meta">@scenario.Name</span>
+                                    </div>
+                                    <div class="form param-grid">
+                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
+                                    </div>
+                                </div>
+                            }
                             @if (hasAdvanced)
                             {
                                 <details class="more" open="@advancedInvalid" @key="@((c, "more"))">
                                     <summary>More options</summary>
-                                    <div class="form">
-                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr.Fields" Show="FieldFilter.Advanced" Edited="Edited" Committed="Committed" />
+                                    <div class="form param-grid">
+                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Advanced" Edited="Edited" Committed="Committed" />
                                     </div>
                                 </details>
                             }
