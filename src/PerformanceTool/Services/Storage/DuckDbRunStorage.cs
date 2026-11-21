@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -574,23 +575,56 @@ public sealed class DuckDbRunStorage : IRunStorage
             }
 
             var escapedId = runId.Replace("'", "''");
-            if (fmt is "parquet" or "csv")
+            if (fmt == "parquet")
             {
-                var ext = fmt == "parquet" ? "parquet" : "csv";
-                var tmp = Path.Combine(Path.GetTempPath(), $"perftool-exp-{Guid.NewGuid():N}.{ext}");
+                // Parquet is single-table, so bundle all 4 tables (runs, actors, calls, logs) as ZSTD Parquet files in one .zip.
+                var tmpDir = Path.Combine(Path.GetTempPath(), $"perftool-pq-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(tmpDir);
+                try
+                {
+                    var tables = new (string File, string Sql)[]
+                    {
+                        ("runs.parquet", $"SELECT * FROM runs WHERE run_id = '{escapedId}'"),
+                        ("actors.parquet", $"SELECT * FROM actors WHERE run_id = '{escapedId}' ORDER BY sequence"),
+                        ("calls.parquet", $"SELECT * FROM calls WHERE run_id = '{escapedId}' ORDER BY sequence, call_index"),
+                        ("logs.parquet", $"SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id"),
+                    };
+
+                    using var ms = new MemoryStream();
+                    using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+                    {
+                        foreach (var (file, sql) in tables)
+                        {
+                            var filePath = Path.Combine(tmpDir, file);
+                            var escapedPath = filePath.Replace("'", "''");
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = $"COPY ({sql}) TO '{escapedPath}' (FORMAT PARQUET, COMPRESSION ZSTD);";
+                                cmd.ExecuteNonQuery();
+                            }
+                            // Parquet files are already ZSTD-compressed, so store without re-compressing.
+                            zip.CreateEntryFromFile(filePath, file, CompressionLevel.NoCompression);
+                        }
+                    }
+                    return new RunExportResult($"{safeRunId}-parquet.zip", "application/zip", ms.ToArray());
+                }
+                finally
+                {
+                    if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true);
+                }
+            }
+
+            if (fmt == "csv")
+            {
+                var tmp = Path.Combine(Path.GetTempPath(), $"perftool-exp-{Guid.NewGuid():N}.csv");
                 try
                 {
                     var escapedPath = tmp.Replace("'", "''");
                     using var cmd = conn.CreateCommand();
-                    cmd.CommandText = fmt == "parquet"
-                        ? $"COPY (SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id) TO '{escapedPath}' (FORMAT PARQUET, COMPRESSION ZSTD);"
-                        : $"COPY (SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id) TO '{escapedPath}' (FORMAT CSV, HEADER);";
+                    cmd.CommandText = $"COPY (SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id) TO '{escapedPath}' (FORMAT CSV, HEADER);";
                     cmd.ExecuteNonQuery();
                     var bytes = File.ReadAllBytes(tmp);
-                    return new RunExportResult(
-                        $"{safeRunId}-logs.{ext}",
-                        fmt == "parquet" ? "application/octet-stream" : "text/csv; charset=utf-8",
-                        bytes);
+                    return new RunExportResult($"{safeRunId}-logs.csv", "text/csv; charset=utf-8", bytes);
                 }
                 finally
                 {

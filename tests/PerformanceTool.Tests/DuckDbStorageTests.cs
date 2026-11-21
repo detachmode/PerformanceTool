@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using PerformanceTool.Services;
@@ -81,11 +82,19 @@ public sealed class DuckDbStorageTests
                 Assert.Contains("Order succeeded", csvText);
                 Assert.Contains("Payment failed for cart", csvText);
 
-                // Export: Parquet (starts with PAR1 magic bytes)
+                // Export: Parquet bundle (.zip containing runs, actors, calls, logs as ZSTD Parquet)
                 var parquetExp = await storage.ExportRunAsync("run-duck-1", "parquet");
                 Assert.NotNull(parquetExp);
-                Assert.True(parquetExp!.Content.Length > 8);
-                Assert.Equal("PAR1", Encoding.ASCII.GetString(parquetExp.Content, 0, 4));
+                Assert.EndsWith("-parquet.zip", parquetExp!.FileName);
+                using (var zip = new ZipArchive(new MemoryStream(parquetExp.Content), ZipArchiveMode.Read))
+                {
+                    var names = zip.Entries.Select(e => e.Name).OrderBy(n => n).ToArray();
+                    Assert.Equal(["actors.parquet", "calls.parquet", "logs.parquet", "runs.parquet"], names);
+                    using var logsStream = zip.GetEntry("logs.parquet")!.Open();
+                    var header = new byte[4];
+                    Assert.Equal(4, logsStream.Read(header, 0, 4));
+                    Assert.Equal("PAR1", Encoding.ASCII.GetString(header));
+                }
 
                 // Export: standalone DuckDB file
                 var duckExp = await storage.ExportRunAsync("run-duck-1", "duckdb");
