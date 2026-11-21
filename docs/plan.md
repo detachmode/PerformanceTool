@@ -25,7 +25,10 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (F, user feedback):** touch gestures on the popup chart (0031): tap selects, hold then drag magnifies, pinch zooms the time range, a swipe scrolls.
 
 - **Done (G, user feedback):** group bars look different from single-actor bars (0032): lighter fill, outline, count badge.
-- **Next (H, user feedback):** sideways swipe pans the zoomed time range on touch (0031 update 1).
+- **Done (H, user feedback):** sideways swipe pans the zoomed time range on touch (0031 update 1).
+
+- **Next (I):** environments (0033): top-bar dropdown, edit popup, `{{Key}}` placeholders, fake data.
+- **Waiting on details (user):** bursts per scenario (0034).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
