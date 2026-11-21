@@ -1,6 +1,6 @@
 # 0035. Overview strip: where am I and how far am I zoomed in
 
-- **Status:** Accepted (not implemented)
+- **Status:** Accepted, implemented
 - **Date:** 2026-11-21
 - **Related:** 0023 (popup chart), 0031 (touch zoom and panning), 0016 (calm UI), 0029 (drill-down)
 
@@ -15,3 +15,7 @@ that shows the part currently in view. Its position shows where you are, its wid
 ## Proposed (Claude, not decided)
 - Show it only while zoomed in (calm UI, 0016).
 - Following 0029, it can be used directly: tap or drag the highlighted area to move the view.
+
+## Implementation notes
+- `.dz-over` inside the chart (top right, 22 px tall touch target, 6 px track), shown only while `data-zoomed`. `dock-magnify.js` sets the lit part (`.ov-win`) from the live view each time the view moves, so it follows an edge pan at frame rate, and pinch/brush at their update rate.
+- Tap on the track centres the view there, dragging the lit part moves it (mouse and touch, pointer capture, view sent to Blazor every 120 ms). Failed/slow ticks in the strip were skipped (calm UI).

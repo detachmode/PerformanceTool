@@ -1,6 +1,6 @@
 # 0031. Touch gestures on the popup bar chart
 
-- **Status:** Accepted, implemented
+- **Status:** Accepted, implemented (update 2 implemented 2026-11-21)
 - **Date:** 2026-11-20
 - **Related:** 0023 (Dock magnification), 0026 (stable clicking)
 
@@ -57,3 +57,9 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
   the last highlighted bar (instead of leaving the selection unchanged).
 - **Double tap zooms in (user, same day):** a double tap on the chart zooms in on touch devices.
   *Proposed (Claude):* zoom in 2× centred on the tapped spot; the first tap still selects as usual.
+
+### Implementation notes (update 2)
+- **Stable grid:** while zoomed (`win` set) `ActorBars.BuildGrid` buckets actors on a time grid whose slot `i` starts at `i * width` from run start (width from a fixed set of nice sizes, `GridWidth(span, maxBars)`, 0.01 s and up). A slot with one actor is a plain actor bar. `ChartGrid` is the sticky buffer: slots from one view-width left to one right of the view, rebuilt only when the width changes or the view is within half a view-width of its edge (not at the run start or the open live end). Unzoomed charts keep the old `Build`.
+- **Sliding:** the bars live in `.dz-bars`, sized by `--p` (percent of the chart per slot) and moved by `translateX` from `dock-magnify.js`, which owns the view while the user drives it (edge pan, overview strip) and tells Blazor at most every 90-200 ms. All layout (hover, magnifier, axis, brush) works in chart coordinates = strip coordinates + offset; the magnifier keeps the total width of the visible bars only. A following window now keeps its width and slides with the live edge.
+- **Touch:** no hold. A sideways swipe (more than 9 px, more horizontal) is `mag`: magnifier under the finger, release selects the bar under it (not after a pinch or a vertical scroll). A finger within max(32 px, 10 % of the width, up to 80 px) of an edge while zoomed pans (speed ~ closeness^1.6 * 0.7 view-widths per second). `touch-action: pan-y` always (this also stops the browser's double-tap zoom). Double tap (under 350 ms, under 24 px, by event time stamp) zooms 2x around the tap; the first tap selects at once.
+- Verified with a published (trimmed) build, Playwright Pixel 7 + CDP touch on `?simulate=3h`: during an edge pan no bucket changed its counts across 189 frames and the absolute position of a fixed bucket moved monotonically, also across a buffer rebuild.
