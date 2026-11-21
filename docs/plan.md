@@ -27,7 +27,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (G, user feedback):** group bars look different from single-actor bars (0032): lighter fill, outline, count badge.
 - **Done (H, user feedback):** sideways swipe pans the zoomed time range on touch (0031 update 1).
 
-- **Next (I):** environments (0033): top-bar dropdown, edit popup, `{{Key}}` placeholders, fake data.
+- **Done (I):** environments (0033): top-bar dropdown, Configure popup, `{{Key}}` placeholders with editor hints, fake data; server `EnvironmentStore`, `/api/environments` (list/get/put/delete) and run-start resolution. Open: the client `ApiEnvironmentSource` (stub), remembering the active environment across reloads, secret flag (Proposed only).
 - **Waiting on details (user):** bursts per scenario (0034).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.

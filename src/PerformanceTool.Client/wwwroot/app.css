@@ -517,3 +517,73 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .bar-hit { container-type: inline-size; }
 @container (min-width: 26px) { .grp-n { display: block; } }
 .bar-hit:hover .grp-n, .bar-hit.on .grp-n, .bar-hit.mag .grp-n { display: block; }
+
+/* ===== environments (brain 0033): top-bar dropdown, Configure popup, {{Key}} hints in the editor ===== */
+.env-picker { position: relative; margin-left: auto; }
+.top .env-picker + .build-stamp { margin-left: 0; }
+.env-btn { display: inline-flex; align-items: center; gap: .45rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .3rem .6rem; cursor: pointer; font-size: .82rem; max-width: 16rem; }
+.env-btn:hover { border-color: var(--accent); }
+.env-btn .env-label { color: var(--faint); font-size: .72rem; }
+.env-btn .env-name { color: var(--title); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.env-btn.none .env-name { color: var(--muted); font-weight: 400; }
+.env-btn .caret { color: var(--muted); font-size: .7rem; }
+.env-backdrop { position: fixed; inset: 0; z-index: 90; }
+.env-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 95; min-width: 13rem; max-width: min(20rem, 90vw); margin: 0; padding: .25rem; list-style: none; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 12px 32px #000a; }
+.env-menu button { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--radius-sm); padding: .45rem .6rem; cursor: pointer; font-size: .85rem; }
+.env-menu button:hover { background: var(--panel2); }
+.env-menu button.on { color: var(--title); font-weight: 600; }
+.env-menu button i { width: .9rem; font-style: normal; color: var(--accent); }
+.env-menu .sep { height: 1px; margin: .25rem .2rem; background: var(--border); }
+.env-menu .configure { color: var(--accent); }
+
+.overlay.envs { z-index: 115; }
+.env-dialog { width: min(860px, 100%); }
+.env-dialog code { font-family: var(--mono); font-size: .8rem; color: var(--accent); }
+.env-dialog .env-sub { font-size: .78rem; }
+.env-body { display: flex; gap: 1rem; align-items: flex-start; }
+.env-list { flex: 0 0 13rem; display: flex; flex-direction: column; gap: .3rem; }
+.env-item { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .5rem; text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .65rem; cursor: pointer; }
+.env-item:hover { border-color: var(--accent); }
+.env-item.on { background: var(--selected); border-color: var(--accent2); }
+.env-item .nm { font-weight: 600; color: var(--title); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-item small { flex-basis: 100%; }
+.env-item .tag { font-size: .68rem; color: var(--accent); border: 1px solid var(--accent2); border-radius: 999px; padding: 0 .4rem; }
+.env-item .dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); }
+.env-list .add-env { align-self: flex-start; margin-top: .3rem; }
+.env-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .7rem; }
+.env-edit .empty { padding: 1.5rem 0; }
+.env-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.env-name-input { font-weight: 600; flex: 0 1 16rem; min-width: 0; }
+.env-edit .notice { margin: 0; }
+.env-table { display: flex; flex-direction: column; gap: .35rem; }
+.env-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr) 2rem; gap: .4rem; align-items: center; }
+.env-row.head { font-size: .72rem; color: var(--muted); }
+.env-row input { width: 100%; min-width: 0; }
+.env-row .key { font-family: var(--mono); font-size: .85rem; }
+.env-row .val { display: flex; gap: .25rem; min-width: 0; }
+.env-row .val input { flex: 1; font-family: var(--mono); font-size: .85rem; }
+.env-edit .add-row { align-self: flex-start; }
+.env-foot { display: flex; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: .7rem; }
+@media (max-width: 760px) {
+    .env-body { flex-direction: column; }
+    .env-list { flex: none; width: 100%; flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+    .env-item small { flex-basis: auto; }
+    .env-btn .env-label { display: none; }
+    .env-btn { max-width: 9rem; }
+    .env-menu { position: fixed; left: .6rem; right: .6rem; top: 3rem; max-width: none; }
+    .env-picker { margin-left: 0; }
+}
+
+/* {{Key}} hints under editor fields: placeholders are highlighted, the resolved text shows on hover or focus (calm UI, brain 0016) */
+.env-hint { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; margin-top: .15rem; font-family: var(--mono); font-size: .74rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.env-hint .ph { font: inherit; color: var(--text); background: #7b68ee33; border: 1px solid transparent; border-radius: 3px; padding: 0 .2rem; cursor: pointer; }
+.env-hint .ph:hover { border-color: var(--accent2); }
+.env-hint .ph.unknown { background: transparent; border: 1px dashed var(--faint); color: var(--muted); }
+.env-hint .env-resolved { display: none; color: var(--text); }
+.env-hint .env-resolved .arrow { margin-right: .35rem; color: var(--faint); }
+.field:hover .env-resolved, .field:focus-within .env-resolved, .list-item:hover .env-resolved, .list-item:focus-within .env-resolved,
+.kv-item:hover .env-resolved, .kv-item:focus-within .env-resolved { display: inline; }
+@media (hover: none) { .env-hint .env-resolved { display: inline; } } /* touch has no hover: always show it */
+.env-hint .env-note { flex-basis: 100%; font-family: inherit; font-style: italic; }
+.list-item, .kv-item { display: flex; flex-direction: column; min-width: 0; }
+.list-item .env-hint { margin-left: 1.7rem; }
