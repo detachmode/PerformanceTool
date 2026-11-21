@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Reflection;
@@ -15,17 +16,17 @@ public enum FieldKind { Text, Multiline, Url, Secret, Toggle, Choice, Integer, S
 
 public sealed record ChoiceOption(string Value, string Label);
 
-/// <summary>Editor/validation metadata for one property of a parameter class.</summary>
+/// <summary>Editor/validation metadata for one property of a parameter class (or JSON Schema property on the client).</summary>
 public sealed class FieldSpec
 {
-    public required PropertyInfo Property { get; init; }
+    public PropertyInfo? Property { get; init; }
     public required string JsonName { get; init; }
     public required string Label { get; init; }
     public required FieldKind Kind { get; init; }
     public string? Description { get; init; }
     public string? Placeholder { get; init; }
     public bool Required { get; init; }
-    /// <summary>The property is a nullable value type (e.g. <c>int?</c>), so "empty" is a valid value.</summary>
+    /// <summary>The property is nullable (e.g. <c>int?</c> or <c>string?</c>), so "empty" / <c>null</c> is a valid value.</summary>
     public bool Nullable { get; init; }
     public double? Min { get; init; }
     public double? Max { get; init; }
@@ -34,6 +35,8 @@ public sealed class FieldSpec
     public bool ItemsAreUrls { get; init; }
     /// <summary>Shown only under "More options" in the editor.</summary>
     public bool Advanced { get; init; }
+    /// <summary>Default JSON value when constructed from a JSON Schema (no CLR <see cref="Property"/>).</summary>
+    public JsonNode? SchemaDefault { get; init; }
 
     public bool Optional => !Required && (Nullable || Kind is FieldKind.Text or FieldKind.Multiline or FieldKind.Url
         or FieldKind.Secret or FieldKind.List or FieldKind.KeyValue);
@@ -41,13 +44,15 @@ public sealed class FieldSpec
 }
 
 /// <summary>
-/// The editor/validation/schema model of a scenario's parameter class, built once per type by reflection.
+/// The editor/validation/schema model of a scenario's parameter class, built once per type by reflection
+/// (or reconstructed from JSON Schema on the WebAssembly client for server-compiled custom scripts).
 /// Parameter values are stored as a <see cref="JsonObject"/> (the preset format) and bound to the typed class
 /// when a run starts. See docs/brain/0007-scenario-editor-derived-from-typed-spec.md.
 /// </summary>
 public sealed partial class ParameterSpec
 {
     private static readonly ConcurrentDictionary<Type, ParameterSpec> Cache = new();
+    private static readonly NullabilityInfoContext Nullability = new();
 
     public static JsonSerializerOptions JsonOptions { get; } = new(JsonSerializerDefaults.Web)
     {
@@ -56,24 +61,117 @@ public sealed partial class ParameterSpec
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private ParameterSpec(Type type, IReadOnlyList<FieldSpec> fields)
+    private readonly ConstructorInfo? defaultCtor;
+
+    private ParameterSpec(Type type, IReadOnlyList<FieldSpec> fields, ConstructorInfo? defaultCtor = null, bool isSchemaOnly = false)
     {
         Type = type;
         Fields = fields;
+        this.defaultCtor = defaultCtor;
+        IsSchemaOnly = isSchemaOnly;
     }
 
     public Type Type { get; }
     public IReadOnlyList<FieldSpec> Fields { get; }
+    public bool IsSchemaOnly { get; }
 
     /// <summary>Returns the (cached) spec. Throws <see cref="NotSupportedException"/> for unsupported property types.</summary>
     public static ParameterSpec For(Type type) => Cache.TryGetValue(type, out var spec) ? spec : Cache.GetOrAdd(type, Build(type));
 
+    /// <summary>
+    /// Reconstructs a schema-only <see cref="ParameterSpec"/> from the JSON Schema returned by <c>GET /api/scenarios</c>.
+    /// Used by the Blazor WebAssembly client to render the generated parameter editor for server-compiled C# scripts.
+    /// </summary>
+    public static ParameterSpec FromJsonSchema(JsonObject schema)
+    {
+        var fields = new List<FieldSpec>();
+        var required = new HashSet<string>(StringComparer.Ordinal);
+        if (schema["required"] is JsonArray reqArr)
+            foreach (var r in reqArr)
+                if (r is JsonValue rv && rv.TryGetValue<string>(out var name)) required.Add(name);
+
+        if (schema["properties"] is JsonObject props)
+        {
+            foreach (var (jsonName, node) in props)
+            {
+                if (node is not JsonObject ps) continue;
+                fields.Add(BuildFieldFromSchema(jsonName, ps, required.Contains(jsonName)));
+            }
+        }
+        return new ParameterSpec(typeof(JsonObject), fields, isSchemaOnly: true);
+    }
+
+    private static FieldSpec BuildFieldFromSchema(string jsonName, JsonObject ps, bool isRequired)
+    {
+        var editorHint = ps["x-editor"]?.GetValue<string>();
+        var nullable = ps["type"] is JsonArray arr && arr.Any(t => t?.GetValue<string>() == "null");
+        var baseType = ps["type"] switch
+        {
+            JsonValue v => v.GetValue<string>(),
+            JsonArray a => a.Select(t => t?.GetValue<string>()).FirstOrDefault(t => t is not null and not "null") ?? "string",
+            _ => "string",
+        };
+
+        FieldKind kind;
+        if (!string.IsNullOrEmpty(editorHint) && Enum.TryParse<FieldKind>(editorHint, ignoreCase: true, out var parsedKind))
+            kind = parsedKind;
+        else
+            kind = baseType switch
+            {
+                "boolean" => FieldKind.Toggle,
+                "integer" => FieldKind.Integer,
+                "number" => FieldKind.Number,
+                "array" => FieldKind.List,
+                "object" => ps["properties"] is JsonObject ? FieldKind.Group : FieldKind.KeyValue,
+                _ => ps["enum"] is JsonArray ? FieldKind.Choice : ps["format"]?.GetValue<string>() == "uri" ? FieldKind.Url : FieldKind.Text,
+            };
+
+        IReadOnlyList<ChoiceOption> options = [];
+        if (kind == FieldKind.Choice && ps["enum"] is JsonArray enumArr)
+            options = enumArr.Select(e => e?.GetValue<string>() ?? "").Where(s => s.Length > 0).Select(s => new ChoiceOption(s, s)).ToList();
+
+        double? min = ps["minimum"] is JsonValue minV && minV.TryGetValue<double>(out var mn) ? mn : null;
+        double? max = ps["maximum"] is JsonValue maxV && maxV.TryGetValue<double>(out var mx) ? mx : null;
+        var children = kind == FieldKind.Group ? FromJsonSchema(ps) : null;
+        var itemsAreUrls = kind == FieldKind.List && ps["items"] is JsonObject items && items["format"]?.GetValue<string>() == "uri";
+
+        return new FieldSpec
+        {
+            Property = null,
+            JsonName = jsonName,
+            Label = ps["title"]?.GetValue<string>() ?? Humanize(jsonName),
+            Description = ps["description"]?.GetValue<string>(),
+            Kind = kind,
+            Required = isRequired,
+            Nullable = nullable,
+            Min = min,
+            Max = max,
+            Options = options,
+            Children = children,
+            ItemsAreUrls = itemsAreUrls,
+            SchemaDefault = ps["default"]?.DeepClone(),
+        };
+    }
+
     // ---------- building ----------
+
+    private static ConstructorInfo? FindDefaultConstructor(Type type)
+    {
+        var parameterless = type.GetConstructor(Type.EmptyTypes);
+        if (parameterless is not null) return parameterless;
+
+        // Support positional records / classes whose primary constructor parameters all have default values.
+        return type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .Where(c => c.GetParameters().Length > 0 && c.GetParameters().All(p => p.HasDefaultValue))
+            .OrderByDescending(c => c.GetParameters().Length)
+            .FirstOrDefault();
+    }
 
     private static ParameterSpec Build(Type type)
     {
-        if (type.GetConstructor(Type.EmptyTypes) is null)
-            throw new NotSupportedException($"Parameter type {type.Name} needs a public parameterless constructor (its property initialisers are the defaults).");
+        var ctor = FindDefaultConstructor(type);
+        if (ctor is null)
+            throw new NotSupportedException($"Parameter type {type.Name} needs a public parameterless constructor or a primary constructor where all parameters have defaults.");
 
         var fields = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0 && !p.IsDefined(typeof(JsonIgnoreAttribute)))
@@ -81,15 +179,17 @@ public sealed partial class ParameterSpec
             .ThenBy(p => p.MetadataToken) // declaration order
             .Select(p => BuildField(type, p))
             .ToList();
-        return new ParameterSpec(type, fields);
+        return new ParameterSpec(type, fields, ctor);
     }
 
     private static FieldSpec BuildField(Type owner, PropertyInfo p)
     {
         var display = p.GetCustomAttribute<DisplayAttribute>();
+        var desc = display?.GetDescription() ?? p.GetCustomAttribute<DescriptionAttribute>()?.Description;
         var range = p.GetCustomAttribute<RangeAttribute>();
         var underlying = System.Nullable.GetUnderlyingType(p.PropertyType);
         var t = underlying ?? p.PropertyType;
+        var isNullableRef = !t.IsValueType && IsNullableReference(p);
         var isUrl = p.IsDefined(typeof(HttpUrlAttribute));
         double? min = null, max = null;
         IReadOnlyList<ChoiceOption> options = [];
@@ -127,7 +227,7 @@ public sealed partial class ParameterSpec
         else if (t == typeof(Dictionary<string, string>))
             kind = FieldKind.KeyValue;
         else if (t.IsClass && !typeof(System.Collections.IEnumerable).IsAssignableFrom(t)
-                 && t.GetConstructor(Type.EmptyTypes) is not null && t.Namespace?.StartsWith("System", StringComparison.Ordinal) != true)
+                 && FindDefaultConstructor(t) is not null && t.Namespace?.StartsWith("System", StringComparison.Ordinal) != true)
         {
             kind = FieldKind.Group;
             children = For(t);
@@ -143,11 +243,11 @@ public sealed partial class ParameterSpec
             Property = p,
             JsonName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? JsonNamingPolicy.CamelCase.ConvertName(p.Name),
             Label = display?.GetName() ?? Humanize(p.Name),
-            Description = display?.GetDescription(),
+            Description = desc,
             Placeholder = display?.GetPrompt(),
             Kind = kind,
             Required = p.IsDefined(typeof(RequiredAttribute)) || p.GetCustomAttribute<MinLengthAttribute>() is { Length: >= 1 },
-            Nullable = underlying is not null,
+            Nullable = underlying is not null || isNullableRef,
             Min = min,
             Max = max,
             Options = options,
@@ -155,6 +255,15 @@ public sealed partial class ParameterSpec
             ItemsAreUrls = kind == FieldKind.List && isUrl,
             Advanced = p.IsDefined(typeof(AdvancedAttribute)),
         };
+    }
+
+    private static bool IsNullableReference(PropertyInfo p)
+    {
+        lock (Nullability)
+        {
+            try { return Nullability.Create(p).ReadState == NullabilityState.Nullable; }
+            catch { return false; }
+        }
     }
 
     private static bool IsStringList(Type t) =>
@@ -173,14 +282,59 @@ public sealed partial class ParameterSpec
 
     // ---------- values ----------
 
-    public object CreateDefault() => Activator.CreateInstance(Type)!;
+    public object CreateDefault()
+    {
+        if (IsSchemaOnly) return DefaultJson();
+        if (defaultCtor is null || defaultCtor.GetParameters().Length == 0)
+            return Activator.CreateInstance(Type)!;
+        var args = defaultCtor.GetParameters().Select(p => p.DefaultValue).ToArray();
+        return defaultCtor.Invoke(args);
+    }
 
-    public JsonObject DefaultJson() => ToJson(CreateDefault());
+    public JsonObject DefaultJson()
+    {
+        if (!IsSchemaOnly) return ToJson(CreateDefault());
+        var obj = new JsonObject();
+        foreach (var f in Fields)
+        {
+            if (f.Kind == FieldKind.Group) obj[f.JsonName] = f.Children!.DefaultJson();
+            else if (f.SchemaDefault is not null) obj[f.JsonName] = f.SchemaDefault.DeepClone();
+            else obj[f.JsonName] = f.Kind switch
+            {
+                FieldKind.Toggle => false,
+                FieldKind.Integer or FieldKind.Slider or FieldKind.Number => f.Nullable ? null : 0,
+                FieldKind.List => new JsonArray(),
+                FieldKind.KeyValue => new JsonObject(),
+                FieldKind.Choice => f.Options.FirstOrDefault()?.Value ?? "",
+                FieldKind.Duration => "00:00:00",
+                _ => f.Nullable ? null : "",
+            };
+        }
+        return obj;
+    }
 
-    public JsonObject ToJson(object value) => (JsonObject)JsonSerializer.SerializeToNode(value, Type, JsonOptions)!;
+    public JsonObject ToJson(object value) =>
+        value is JsonObject jo ? (JsonObject)jo.DeepClone() : (JsonObject)JsonSerializer.SerializeToNode(value, Type, JsonOptions)!;
 
     /// <summary>Binds and re-serialises: fills defaults, drops unknown keys, converts legacy shapes.</summary>
-    public JsonObject Normalize(JsonObject? json, List<string>? problems = null) => ToJson(Bind(json, problems));
+    public JsonObject Normalize(JsonObject? json, List<string>? problems = null)
+    {
+        if (IsSchemaOnly)
+        {
+            var result = DefaultJson();
+            if (json is null) return result;
+            foreach (var f in Fields)
+            {
+                if (!json.TryGetPropertyValue(f.JsonName, out var node)) continue;
+                if (f.Kind == FieldKind.Group && node is JsonObject child)
+                    result[f.JsonName] = f.Children!.Normalize(child, problems);
+                else
+                    result[f.JsonName] = node?.DeepClone();
+            }
+            return result;
+        }
+        return ToJson(Bind(json, problems));
+    }
 
     /// <summary>
     /// Leniently binds stored values to a typed instance. Missing values keep their defaults; values in an older
@@ -189,26 +343,28 @@ public sealed partial class ParameterSpec
     /// </summary>
     public object Bind(JsonObject? json, List<string>? problems = null, string prefix = "")
     {
+        if (IsSchemaOnly) return Normalize(json, problems);
         var obj = CreateDefault();
         if (json is null) return obj;
 
         foreach (var f in Fields)
         {
+            var prop = f.Property!;
             if (!json.TryGetPropertyValue(f.JsonName, out var node)) continue;
             if (node is null)
             {
-                if (f.Nullable) f.Property.SetValue(obj, null);
+                if (f.Nullable) prop.SetValue(obj, null);
                 continue;
             }
 
             if (f.Kind == FieldKind.Group)
             {
-                if (node is JsonObject child) f.Property.SetValue(obj, f.Children!.Bind(child, problems, $"{prefix}{f.Label} › "));
+                if (node is JsonObject child) prop.SetValue(obj, f.Children!.Bind(child, problems, $"{prefix}{f.Label} › "));
                 else problems?.Add($"{prefix}{f.Label}: expected a group of settings, using the defaults.");
                 continue;
             }
 
-            if (TryConvert(node, f, out var value)) f.Property.SetValue(obj, value);
+            if (TryConvert(node, f, out var value)) prop.SetValue(obj, value);
             else problems?.Add($"{prefix}{f.Label}: could not read the stored value {Truncate(node.ToJsonString())}, using the default.");
         }
         return obj;
@@ -216,9 +372,10 @@ public sealed partial class ParameterSpec
 
     private static bool TryConvert(JsonNode node, FieldSpec f, out object? value)
     {
+        var prop = f.Property!;
         try
         {
-            value = node.Deserialize(f.Property.PropertyType, JsonOptions);
+            value = node.Deserialize(prop.PropertyType, JsonOptions);
             if (value is not null || f.Nullable) return true;
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException or NotSupportedException or ArgumentException)
@@ -228,7 +385,7 @@ public sealed partial class ParameterSpec
         // Legacy/loose shapes, mostly from presets saved before parameters were typed.
         value = null;
         if (node is not JsonValue v || !v.TryGetValue<string>(out var s)) return false;
-        var t = System.Nullable.GetUnderlyingType(f.Property.PropertyType) ?? f.Property.PropertyType;
+        var t = System.Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
         switch (f.Kind)
         {
             case FieldKind.List:
@@ -265,6 +422,8 @@ public sealed partial class ParameterSpec
     /// <summary>Validates stored values with the DataAnnotations on the parameter class (recursively).</summary>
     public List<string> Validate(JsonObject? json)
     {
+        if (IsSchemaOnly)
+            return ValidateByField(json).Values.SelectMany(v => v).ToList();
         var errors = new List<string>();
         var obj = Bind(json, errors);
         ValidateObject(obj, "", errors);
@@ -278,8 +437,58 @@ public sealed partial class ParameterSpec
     public Dictionary<string, List<string>> ValidateByField(JsonObject? json)
     {
         var map = new Dictionary<string, List<string>>();
+        if (IsSchemaOnly)
+        {
+            ValidateSchemaFields(json, "", map);
+            return map;
+        }
         ValidateFieldsOf(Bind(json), "", map);
         return map;
+    }
+
+    private void ValidateSchemaFields(JsonObject? json, string prefix, Dictionary<string, List<string>> map)
+    {
+        foreach (var f in Fields)
+        {
+            var key = prefix + f.JsonName;
+            JsonNode? node = null;
+            json?.TryGetPropertyValue(f.JsonName, out node);
+            if (f.Kind == FieldKind.Group)
+            {
+                if (node is JsonObject child) f.Children!.ValidateSchemaFields(child, key + "-", map);
+                continue;
+            }
+            if (f.Required)
+            {
+                var empty = node is null
+                    || (node is JsonValue sv && sv.TryGetValue<string>(out var s) && string.IsNullOrWhiteSpace(s))
+                    || (node is JsonArray arr && arr.Count == 0);
+                if (empty)
+                {
+                    if (!map.TryGetValue(key, out var list)) map[key] = list = [];
+                    list.Add($"{f.Label} is required.");
+                }
+            }
+            if ((f.Min is not null || f.Max is not null) && node is JsonValue nv && TryGetNumber(nv, out var num))
+            {
+                if (f.Min is { } mn && num < mn || f.Max is { } mx && num > mx)
+                {
+                    if (!map.TryGetValue(key, out var list)) map[key] = list = [];
+                    list.Add($"{f.Label} must be between {f.Min} and {f.Max}.");
+                }
+            }
+        }
+    }
+
+    private static bool TryGetNumber(JsonValue v, out double number)
+    {
+        if (v.TryGetValue<double>(out number)) return true;
+        if (v.TryGetValue<int>(out var i)) { number = i; return true; }
+        if (v.TryGetValue<long>(out var l)) { number = l; return true; }
+        if (v.TryGetValue<decimal>(out var d)) { number = (double)d; return true; }
+        if (v.TryGetValue<float>(out var f)) { number = f; return true; }
+        number = 0;
+        return false;
     }
 
     private void ValidateFieldsOf(object obj, string prefix, Dictionary<string, List<string>> map)
@@ -291,13 +500,13 @@ public sealed partial class ParameterSpec
             var members = r.MemberNames.Any() ? r.MemberNames : [""];
             foreach (var m in members)
             {
-                var key = prefix + (Fields.FirstOrDefault(f => f.Property.Name == m)?.JsonName ?? "");
+                var key = prefix + (Fields.FirstOrDefault(f => f.Property?.Name == m)?.JsonName ?? "");
                 if (!map.TryGetValue(key, out var list)) map[key] = list = [];
                 list.Add(r.ErrorMessage ?? "Invalid value.");
             }
         }
         foreach (var f in Fields.Where(f => f.Kind == FieldKind.Group))
-            if (f.Property.GetValue(obj) is { } child)
+            if (f.Property?.GetValue(obj) is { } child)
                 f.Children!.ValidateFieldsOf(child, prefix + f.JsonName + "-", map);
     }
 
@@ -307,7 +516,7 @@ public sealed partial class ParameterSpec
         Validator.TryValidateObject(obj, new ValidationContext(obj), results, validateAllProperties: true);
         errors.AddRange(results.Select(r => prefix + r.ErrorMessage));
         foreach (var f in Fields.Where(f => f.Kind == FieldKind.Group))
-            if (f.Property.GetValue(obj) is { } child)
+            if (f.Property?.GetValue(obj) is { } child)
                 f.Children!.ValidateObject(child, $"{prefix}{f.Label} › ", errors);
     }
 
@@ -343,8 +552,10 @@ public sealed partial class ParameterSpec
     /// <summary>Replaces <c>${env:NAME}</c> in secret fields of a bound instance with the environment variable's value.</summary>
     public void ResolveSecrets(object obj)
     {
+        if (IsSchemaOnly) return;
         foreach (var f in Fields)
         {
+            if (f.Property is null) continue;
             if (f.Kind == FieldKind.Secret && f.Property.GetValue(obj) is string s && EnvReference().Match(s.Trim()) is { Success: true } m)
                 f.Property.SetValue(obj, Environment.GetEnvironmentVariable(m.Groups[1].Value) ?? "");
             else if (f.Kind == FieldKind.Group && f.Property.GetValue(obj) is { } child)

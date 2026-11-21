@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios.Spec;
@@ -5,9 +6,10 @@ using PerformanceTool.Services.Scenarios.Spec;
 namespace PerformanceTool.Services.Scenarios;
 
 /// <summary>
-/// A load-test scenario defined in code. One execution = one bar in the live chart. Derive from
-/// <see cref="Scenario{TParameters}"/> rather than implementing this directly, and register it in <c>Program.cs</c>
-/// with <c>AddScenario&lt;T&gt;()</c>. See docs/brain/0003 and 0007.
+/// A load-test scenario defined in code or C# script. One execution = one bar in the live chart.
+/// Derive from <see cref="Scenario{TParameters}"/> for compiled classes, or use <c>Scenario.Define&lt;T&gt;(...)</c>
+/// in C# scripts. Lifecycle hooks (<see cref="StartupAsync"/> / <see cref="TeardownAsync"/>) run once per scenario
+/// entry per load run (and around single test runs). See docs/brain/0003, 0007 and 0040.
 /// </summary>
 public interface IScenario
 {
@@ -16,21 +18,34 @@ public interface IScenario
     string Name { get; }
     string Description { get; }
 
-    /// <summary>Editor, validation and schema model generated from the parameter type.</summary>
+    /// <summary>Editor, validation and schema model generated from the parameter type (or JSON Schema on the client).</summary>
     ParameterSpec Spec { get; }
 
-    /// <summary>Runs once. <paramref name="parameters"/> is an instance of <see cref="ParameterSpec.Type"/>.</summary>
+    /// <summary>
+    /// Lifecycle hook called once per scenario entry before any actors start.
+    /// Use <see cref="ScenarioContext.State"/> and <see cref="ScenarioContext.RunBackground"/> to share state or
+    /// run background jobs (e.g. token refresh) across all actors of this entry.
+    /// </summary>
+    Task StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>Runs once per actor. <paramref name="parameters"/> is an instance of <see cref="ParameterSpec.Type"/>.</summary>
     Task<ScenarioOutcome> ExecuteAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lifecycle hook called once per scenario entry after all actors finish and background jobs are cancelled.
+    /// Always runs in a <c>finally</c> block even if actors fail or the run is stopped.
+    /// </summary>
+    Task TeardownAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>
-/// Base class for scenarios with typed parameters. <typeparamref name="TParameters"/> is a plain class whose public
-/// properties become editor fields (see docs/brain/0007): property initialisers are the defaults, and
-/// DataAnnotations (<c>[Display]</c>, <c>[Required]</c>, <c>[Range]</c>, <c>[MinLength]</c>) plus
-/// <see cref="HttpUrlAttribute"/>, <see cref="MultilineAttribute"/> and <see cref="SecretAttribute"/> shape the
-/// editor and validation. The same instance is shared by concurrent executions: treat it as read-only.
+/// Base class for scenarios with typed parameters. <typeparamref name="TParameters"/> is a plain class or positional
+/// record whose public properties become editor fields (see docs/brain/0007): property initialisers / constructor defaults
+/// are the defaults, and DataAnnotations (<c>[Display]</c>, <c>[Description]</c>, <c>[Required]</c>, <c>[Range]</c>,
+/// <c>[MinLength]</c>) plus <see cref="HttpUrlAttribute"/>, <see cref="MultilineAttribute"/> and <see cref="SecretAttribute"/>
+/// shape the editor and validation. The same instance is shared by concurrent executions: treat it as read-only.
 /// </summary>
-public abstract class Scenario<TParameters> : IScenario where TParameters : class, new()
+public abstract class Scenario<TParameters> : IScenario where TParameters : class
 {
     public abstract string Id { get; }
     public abstract string Name { get; }
@@ -38,10 +53,20 @@ public abstract class Scenario<TParameters> : IScenario where TParameters : clas
 
     public ParameterSpec Spec { get; } = ParameterSpec.For(typeof(TParameters));
 
+    Task IScenario.StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
+        StartupAsync((TParameters)parameters, context, cancellationToken);
+
     Task<ScenarioOutcome> IScenario.ExecuteAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         ExecuteAsync((TParameters)parameters, context, cancellationToken);
 
+    Task IScenario.TeardownAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
+        TeardownAsync((TParameters)parameters, context, cancellationToken);
+
+    protected virtual Task StartupAsync(TParameters parameters, ScenarioContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+
     protected abstract Task<ScenarioOutcome> ExecuteAsync(TParameters parameters, ScenarioContext context, CancellationToken cancellationToken);
+
+    protected virtual Task TeardownAsync(TParameters parameters, ScenarioContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>Result of one execution. Timing is measured by the runner unless <see cref="Measured"/> is set.</summary>
@@ -63,8 +88,51 @@ public sealed record ScenarioOutcome(int? StatusCode, long Bytes, string? Error 
     public static ScenarioOutcome Failed(string error, int? statusCode = null) => new(statusCode, 0, error);
 }
 
-/// <summary>Shared services for one execution.</summary>
-public sealed class ScenarioContext(HttpClient http, EnvironmentValues? environment = null)
+/// <summary>
+/// Tracks background tasks started by a scenario entry's <see cref="IScenario.StartupAsync"/> hook
+/// (for example, a periodic token-refresh loop) and cancels/awaits them cleanly before <see cref="IScenario.TeardownAsync"/>.
+/// </summary>
+public sealed class ScenarioBackgroundHost : IAsyncDisposable
+{
+    private readonly CancellationTokenSource cts;
+    private readonly List<Task> tasks = [];
+    private int disposed;
+
+    public ScenarioBackgroundHost(CancellationToken runStoppingToken = default) =>
+        cts = CancellationTokenSource.CreateLinkedTokenSource(runStoppingToken);
+
+    public CancellationToken Token => cts.Token;
+
+    public void Run(Func<CancellationToken, Task> work)
+    {
+        var task = Task.Run(() => work(cts.Token), CancellationToken.None);
+        lock (tasks) tasks.Add(task);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        await cts.CancelAsync();
+        Task[] snapshot;
+        lock (tasks) snapshot = [.. tasks];
+        foreach (var t in snapshot)
+        {
+            try { await t; }
+            catch (OperationCanceledException) { }
+            catch { }
+        }
+        cts.Dispose();
+    }
+}
+
+/// <summary>Shared services for one execution or lifecycle hook.</summary>
+public sealed class ScenarioContext(
+    HttpClient http,
+    EnvironmentValues? environment = null,
+    CancellationToken cancellationToken = default,
+    ConcurrentDictionary<string, object?>? state = null,
+    ScenarioBackgroundHost? background = null,
+    Action<string>? logSink = null)
 {
     /// <summary>
     /// The active environment's values (brain 0033), e.g. <c>context.Environment["BaseUrl"]</c>. Placeholders in parameter values are already
@@ -74,6 +142,32 @@ public sealed class ScenarioContext(HttpClient http, EnvironmentValues? environm
 
     /// <summary>Shared by the whole run. Don't dispose it or change its default headers.</summary>
     public HttpClient Http { get; } = http;
+
+    /// <summary>Alias for <see cref="Http"/> (for C# scripts using <c>ctx.HttpClient</c>).</summary>
+    public HttpClient HttpClient => Http;
+
+    /// <summary>Cancellation token for this execution (carries the per-actor timeout and run cancellation).</summary>
+    public CancellationToken CancellationToken { get; } = cancellationToken;
+
+    /// <summary>
+    /// Thread-safe state bag shared across <c>StartupAsync</c>, all <c>ExecuteAsync</c> actors of this scenario entry,
+    /// and <c>TeardownAsync</c>. Ideal for sharing refreshed auth tokens or pre-fetched seed data.
+    /// </summary>
+    public ConcurrentDictionary<string, object?> State { get; } = state ?? new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Starts a background job scoped to the scenario entry's lifetime (e.g. a periodic token refresher started in
+    /// <c>StartupAsync</c>). Automatically cancelled and awaited before <c>TeardownAsync</c>.
+    /// </summary>
+    public void RunBackground(Func<CancellationToken, Task> job)
+    {
+        if (background is null)
+            throw new InvalidOperationException("RunBackground can only be called during StartupAsync.");
+        background.Run(job);
+    }
+
+    /// <summary>Writes a log line captured by test runs and run logs.</summary>
+    public void Log(string message) => logSink?.Invoke(message);
 
     /// <summary>Sends a request, reads the whole body (so transfer time is included) and maps it to an outcome.</summary>
     public async Task<ScenarioOutcome> SendAsync(HttpRequestMessage request, CancellationToken ct)

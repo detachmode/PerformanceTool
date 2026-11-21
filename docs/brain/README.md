@@ -79,3 +79,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0039](0039-fake-seed-run-30-minutes.md) | The fake data starts with a 30 minute finished run (bursts to zoom into) | Accepted, implemented |
 | [0040](0040-popup-chart-robust-navigation.md) | Popup chart navigation bullet proof: a swipe never zooms, bursts unfold as soon as their actors fit (x stays linear in time), redesigned overview strip, persistent grabbable selection pill | Accepted (goal, selection pill), design Proposed, implemented |
 | [0041](0041-graded-slow-colour.md) | Slowness as a colour gradient from green (typical time) to amber; the slow line stays for counting and filters | Accepted, implemented (details Proposed) |
+| [0042](0042-custom-script-scenarios-and-lifecycle.md) | Custom C# script scenarios (Roslyn upload/compile/test-run), Startup/Execute/Teardown lifecycle hooks, and Fake/Live UI toggle | Accepted, implemented |
