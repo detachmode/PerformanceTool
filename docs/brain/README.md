@@ -77,3 +77,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0037](0037-popup-chart-selection-swipe-areas-group-stripes.md) | Popup chart: selection arrow below the bar, magnifier only on the axis strip, bars area scrolls, striped groups, even gaps | Accepted, implemented |
 | [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted, implemented |
 | [0039](0039-fake-seed-run-30-minutes.md) | The fake data starts with a 30 minute finished run (bursts to zoom into) | Accepted, implemented |
+| [0040](0040-popup-chart-robust-navigation.md) | Popup chart navigation bullet proof: a swipe never zooms, bursts unfold as soon as there is room, overview strip clearly shows the view | Accepted (goal), design Proposed, not implemented |
