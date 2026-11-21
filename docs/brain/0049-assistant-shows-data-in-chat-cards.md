@@ -1,6 +1,6 @@
 # 0049. The assistant shows data in small chat cards
 
-- Status: Accepted (principle, user request); card kinds and mechanism Proposed
+- Status: Accepted (principle and bee timeline, user requests); card kinds and mechanism Proposed
 - Date: 2026-11-21
 
 ## What
@@ -30,3 +30,12 @@ fit: a small preview in the chat, the full data on demand.
 - Cards reuse the app's components (`SerilogLine`, `BeeChip`, `BeeBars`, ...) instead of new look-alikes.
 - Every counter or figure on a card is clickable (brain 0029). Colour only for failed = red and slow = amber (brain 0018).
 - Cards re-query live data when opened, so a card stays useful while a run is still going.
+
+## Update 1 (2026-11-21, user request): bee timeline card
+The assistant can **pick any set of bees** (e.g. the five slowest checkouts plus the failed ones around them, also
+across scenarios) and show them **together on one time line**, drawn like the scenario popup's bar chart (same bars,
+colours, groups, time axis). The user inspects them there the same way: click a bar to select the bee and see its
+calls and logs, zoom, step through failed and slow. Show more opens it full screen with the popup chart's
+interactions. Proposed: a `show_bee_timeline` tool (run id plus a list of bee sequences, optional title or reason per
+bee) and a view item that holds the bee list; the client reuses the popup chart (`BeeBars`, `DockZoom`, the side list)
+for these bees instead of a scenario entry.
