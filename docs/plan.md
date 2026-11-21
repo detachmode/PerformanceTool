@@ -33,6 +33,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (J3, user feedback, same agent):** previous/next failed works with zoom and groups (0036).
 - **Done (K):** spawning pattern per scenario entry: linear or bursts (0034), fake data; the server `LoadRunner` supports it too.
 - **Done (L, user feedback):** popup chart polish (0037): caret under the selected bar instead of the purple block, magnifier only on the axis strip and sideways swipe on the bars scrolls the zoomed timeline, striped make-up on highlighted groups, even gaps between bars.
+- **Next (M, user feedback):** zooming into a burst unfolds it into single actor bars (0038).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

@@ -75,3 +75,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted, implemented |
 | [0036](0036-step-through-failed-and-slow.md) | Previous/next failed (or slow) moves the zoomed view and steps through groups | Accepted, implemented |
 | [0037](0037-popup-chart-selection-swipe-areas-group-stripes.md) | Popup chart: selection arrow below the bar, magnifier only on the axis strip, bars area scrolls, striped groups, even gaps | Accepted, implemented |
+| [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted (details Proposed), not implemented |
