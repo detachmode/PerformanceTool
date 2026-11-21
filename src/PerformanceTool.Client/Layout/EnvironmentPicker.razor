@@ -1,0 +1,47 @@
+@* Environment dropdown in the top bar, like Bruno (brain 0033): shows the active environment compactly ("No environment" when none); the menu picks another
+   one or opens the Configure popup. Calm UI (0016): one small button, the list only on demand. *@
+@implements IDisposable
+@inject IEnvironmentSource Envs
+@inject EnvironmentsPopupState Popup
+
+<div class="env-picker" @onkeydown="OnKey">
+    <button type="button" class="env-btn @(Envs.ActiveName is null ? "none" : "")" aria-haspopup="menu" aria-expanded="@Aria.Bool(open)"
+            title="Environment: fills the {{Key}} placeholders when a run starts" @onclick="() => open = !open">
+        <span class="env-label">Environment</span>
+        <span class="env-name">@(Envs.ActiveName ?? "No environment")</span>
+        <span class="caret" aria-hidden="true">▾</span>
+    </button>
+    @if (open)
+    {
+        <div class="env-backdrop" @onclick="() => open = false" role="presentation"></div>
+        <ul class="env-menu" role="menu" aria-label="Environments">
+            <li role="none"><button type="button" role="menuitemradio" aria-checked="@Aria.Bool(Envs.ActiveName is null)" class="@(Envs.ActiveName is null ? "on" : "")" @onclick="() => Pick(null)"><i aria-hidden="true">@(Envs.ActiveName is null ? "✓" : "")</i>No environment</button></li>
+            @foreach (var e in Envs.Environments)
+            {
+                var name = e.Name;
+                var on = name == Envs.ActiveName;
+                <li role="none"><button type="button" role="menuitemradio" aria-checked="@Aria.Bool(on)" class="@(on ? "on" : "")" @onclick="() => Pick(name)"><i aria-hidden="true">@(on ? "✓" : "")</i>@name</button></li>
+            }
+            <li role="separator" class="sep"></li>
+            <li role="none"><button type="button" role="menuitem" class="configure" @onclick="Configure">Configure…</button></li>
+        </ul>
+    }
+</div>
+
+@code {
+    private bool open;
+
+    protected override void OnInitialized() => Envs.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void Pick(string? name) { Envs.SetActive(name); open = false; }
+    private void Configure() { open = false; Popup.Show(); }
+    private void OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") open = false; }
+
+    public void Dispose() => Envs.Changed -= OnChanged;
+}

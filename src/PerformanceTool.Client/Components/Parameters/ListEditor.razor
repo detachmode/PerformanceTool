@@ -1,9 +1,11 @@
 @using System.Text.Json.Nodes
+@using PerformanceTool.Services.Environments
 
 <div class="list-editor">
     @for (var i = 0; i < Items.Count; i++)
     {
         var index = i;
+        <div class="list-item">
         <div class="list-row">
             <span class="idx">@(index + 1)</span>
             <input id="@(index == 0 ? Id : $"{Id}-{index}")" type="@(Urls ? "url" : "text")" value="@Item(index)" disabled="@Disabled"
@@ -11,6 +13,8 @@
             <button type="button" class="icon-btn" title="Move up" aria-label="Move up" disabled="@(Disabled || index == 0)" @onclick="() => { Move(index, -1); return OnCommit.InvokeAsync(); }">↑</button>
             <button type="button" class="icon-btn" title="Move down" aria-label="Move down" disabled="@(Disabled || index == Items.Count - 1)" @onclick="() => { Move(index, 1); return OnCommit.InvokeAsync(); }">↓</button>
             <button type="button" class="icon-btn danger" title="Remove" aria-label="Remove" disabled="@Disabled" @onclick="() => { Items.RemoveAt(index); return OnCommit.InvokeAsync(); }">✕</button>
+        </div>
+        @if (Placeholders.HasPlaceholder(Item(index))) { <PlaceholderHint Text="@Item(index)" /> }
         </div>
     }
     <button type="button" class="btn ghost small" disabled="@Disabled" @onclick="() => { Items.Add(string.Empty); return OnCommit.InvokeAsync(); }">+ Add</button>

@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios.Spec;
 
 namespace PerformanceTool.Services.Scenarios;
@@ -63,8 +64,14 @@ public sealed record ScenarioOutcome(int? StatusCode, long Bytes, string? Error 
 }
 
 /// <summary>Shared services for one execution.</summary>
-public sealed class ScenarioContext(HttpClient http)
+public sealed class ScenarioContext(HttpClient http, EnvironmentValues? environment = null)
 {
+    /// <summary>
+    /// The active environment's values (brain 0033), e.g. <c>context.Environment["BaseUrl"]</c>. Placeholders in parameter values are already
+    /// filled in when the run starts; use this when code needs a value that is not a parameter. Empty when no environment is active.
+    /// </summary>
+    public EnvironmentValues Environment { get; } = environment ?? EnvironmentValues.None;
+
     /// <summary>Shared by the whole run. Don't dispose it or change its default headers.</summary>
     public HttpClient Http { get; } = http;
 

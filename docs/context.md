@@ -30,6 +30,8 @@ Where actors are listed or grouped: **failed → slow → successful**, then by 
 | **Scenario parameters** | The typed settings of a scenario; the editor is generated from them. | `TParameters`, `ParameterSpec` | Current |
 | **Scenario entry** | A scenario as configured inside a mix: label, parameter values and rate. The same scenario can appear several times with different settings. In the UI it's often just called "a scenario". | `ScenarioRunConfig` | Current |
 | **Scenario mix / load plan** | All entries plus duration, max in-flight and timeout. Two names for the same thing. | `LoadPlan` | Current |
+| **Environment** | A named set of key-value pairs (base URL, tenant, token, ...) that scenarios run against; one is active at a time ("No environment" is allowed). Values may be credentials. One JSON file per environment. | `EnvironmentDefinition`, `EnvironmentStore` | **Decided** (brain 0033) |
+| **Placeholder** | `{{Key}}` in a scenario parameter value; the active environment fills it in when the run starts. Unknown keys are left as written and reported. Scenario code reads values with `context.Environment["Key"]`. Not the same as `${env:NAME}` (operating-system variable for secret fields). | `Placeholders` | **Decided** (brain 0033) |
 | **Preset** | A saved, named load plan. | `Preset`, `PresetStore` | Current |
 | **Run (load run)** | Executing a whole load plan once, from start until the duration ends or the user stops it. Contains many actors. | `LoadRunner.RunAsync` | Current |
 | **Rate** | How many new actors start per minute for a scenario entry: **actors per minute**. UI label "Actors / minute" (short "actors/min"). Never "runs / minute": a run is the whole load run. | `RatePerMinute` | **Decided** (follows the Actor rename) |
