@@ -1,0 +1,50 @@
+# 0049. The assistant shows data in small chat cards
+
+- Status: Accepted (principle and bee timeline, user requests); card kinds and mechanism Proposed
+- Date: 2026-11-21
+
+## What
+The assistant (brain 0047) has **show tools**. With them it puts the app's data into the chat as small custom UI
+elements (cards) instead of only describing it in text. Example from the user: a little box with the logs it found
+and a button to show more, full screen.
+
+Proposed mechanism: a show tool (e.g. `show_logs`, `show_bees`, `show_bee`, `show_scenario`, `show_run`,
+`show_plan_changes`) returns a short summary to the model and adds a **view item** to the turn
+(`Beesharp.Ai.Contracts`: kind, title, the query behind it such as run id plus log filter, and a small preview). The
+client renders it as a card in the chat. The card holds the query, not a copy of everything, so "Show more" opens
+the full data: the existing full-screen views where they exist (Logs popup with the filter, scenario popup with
+the bee selected, editor), otherwise a full-screen version of the card.
+
+Proposed card kinds:
+- **Logs**: a few log lines in the Serilog-style colours, a count ("214 lines"), Show more → Logs popup filtered.
+- **Bees**: failed → slow → ok bees with outcome-coloured numbers; a click opens the bee.
+- **Bee**: one bee's calls as a small waterfall plus its error; Show more → bee details.
+- **Scenario / run**: the mini bar chart and the compact figures of a scenario card or a run; every figure drills down.
+- **Plan changes**: what the agent changed in the plan, with a link to the editor.
+
+## Why
+The user wants the agent to show data, not only talk about it. Calm UI (brain 0016) and drill-down (brain 0029)
+fit: a small preview in the chat, the full data on demand.
+
+## Consequences
+- Cards reuse the app's components (`SerilogLine`, `BeeChip`, `BeeBars`, ...) instead of new look-alikes.
+- Every counter or figure on a card is clickable (brain 0029). Colour only for failed = red and slow = amber (brain 0018).
+- Cards re-query live data when opened, so a card stays useful while a run is still going.
+
+## Update 1 (2026-11-21, user request): bee timeline card
+The assistant can **pick any set of bees** (e.g. the five slowest checkouts plus the failed ones around them, also
+across scenarios) and show them **together on one time line**, drawn like the scenario popup's bar chart (same bars,
+colours, groups, time axis). The user inspects them there the same way: click a bar to select the bee and see its
+calls and logs, zoom, step through failed and slow. Show more opens it full screen with the popup chart's
+interactions. Proposed: a `show_bee_timeline` tool (run id plus a list of bee sequences, optional title or reason per
+bee) and a view item that holds the bee list; the client reuses the popup chart (`BeeBars`, `DockZoom`, the side list)
+for these bees instead of a scenario entry.
+
+## Update 2 (implemented, Proposed details)
+Card kinds as proposed (`logs`, `bees`, `bee`, `scenario`, `run`, `plan-changes`, `timeline`; `ViewKinds` in the contracts). How Show more works:
+- **logs**: the Logs popup pre-filtered (scenario entry, bee, failed or slow bees) when it can show the filter; with levels or search a full-screen log list (`AssistantLogsDialog`) that re-queries `/api/runs/{id}/logs`.
+- **bees, bee, scenario, timeline**: the scenario popup (`ScenarioDetailDialog`, `BeeBars`, `DockZoom`, the side list) fed with a **bee set** (`BeeSet`): a synthetic finished run with one entry that holds the bees, so the chart is not copied. The dialog got parameters for it
+  (`Selection`, `EnsureDetail`, `OpenLogs`, `InitialBee`, `Notes`). The card also draws a small `MiniBeeChart` with the same bar markup and colours.
+- **run**: the overview (the run is loaded first when it is another one); each entry row opens that entry's bees. **plan-changes**: the plan editor (`/?edit=...`).
+- Cards re-query through two new read-only endpoints, `GET /api/runs/{id}/summary` and `GET /api/runs/{id}/bees` (host, over `IRunHistoryPort`).
+

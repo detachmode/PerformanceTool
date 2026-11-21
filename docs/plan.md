@@ -40,6 +40,13 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (O, user feedback):** slowness as a colour gradient from green at typical time to amber (0041): ratio per actor (one byte), four steps, groups take their worst actor, "1.3x typical" drills down to the calls. Open for the user: review the Proposed details.
 - **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0043). Debug URL `?burst=100`.
 - **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
+- **Done (R, user request):** AI assistant (0047-0051), in three steps:
+  - R1 (done): the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
+  - R2 (done): `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
+    tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
+  - R2/R3 also: show tools and chat cards (0049): logs box with Show more full screen, bees, bee, scenario/run, plan changes, and picked bees together on one time line like the popup chart (0049 update 1).
+  - R3 (done): chat side panel in the client (Live mode only, only when configured), screenshots against a local
+    OpenAI-compatible stub.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

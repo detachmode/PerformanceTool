@@ -19,6 +19,8 @@ builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
 builder.Services.AddSingleton<CustomScriptsPopupState>();
 builder.Services.AddSingleton<ScriptApiClient>();
+builder.Services.AddSingleton<PerformanceTool.Client.Components.Assistant.AssistantClient>();
+builder.Services.AddSingleton<PerformanceTool.Client.Components.Assistant.AssistantState>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
