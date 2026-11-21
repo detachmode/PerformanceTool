@@ -7,6 +7,7 @@
 @inject IRunSource Sim
 @inject ScenarioCatalog Catalog
 @inject CustomScriptsPopupState ScriptsPopup
+@inject ScriptApiClient ScriptApi
 
 <PageTitle>Editor · PerformanceTool</PageTitle>
 
@@ -83,7 +84,7 @@
                                   Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="@(idx == selected)"
                                   Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
                 }
-                <button class="card card-add" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">
+                <button class="card card-add" @onclick="ToggleAdd" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">
                     <span class="plus">+</span><span>Add scenario</span><small class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</small>
                 </button>
                 @if (addOpen)
@@ -261,6 +262,13 @@
     {
         Sim.Changed += OnChanged;
         Catalog.Changed += OnChanged;
+        _ = ScriptApi.SyncCatalogAsync();
+    }
+
+    private void ToggleAdd()
+    {
+        addOpen = !addOpen;
+        if (addOpen) _ = ScriptApi.SyncCatalogAsync();
     }
 
     private void OnChanged()
