@@ -1,6 +1,6 @@
 # 0034. Bursts: a spawning pattern per scenario
 
-- **Status:** Accepted (idea from the user; details open)
+- **Status:** Accepted (not implemented)
 - **Date:** 2026-11-21
 - **Related:** 0004 (rate = actors per minute), plan item "Ramp-up profiles"
 
@@ -11,6 +11,12 @@ and spikes.
 ## Decision (user)
 Add **burst definitions per scenario entry** that define the spawning pattern (how new actors start over time).
 
-## Open (to decide with the user, one at a time)
-- Which patterns: e.g. a spike of N actors at once, repeated waves, a ramp from one rate to another.
-- How a pattern is entered in the editor and shown on the cards and charts.
+- Two spawning patterns per scenario entry:
+  - **Linear:** just **actors per minute** (today's behaviour, the default).
+  - **Bursts:** **actors per burst** and **bursts per minute**: each burst starts that many actors at once.
+
+## Proposed (Claude, not decided)
+- Editor: a small "Linear / Bursts" switch on the scenario entry; Bursts shows the two numbers instead of
+  actors per minute.
+- Cards and player bar show the resulting actors per minute (actors per burst × bursts per minute), with the
+  burst shape in small text (e.g. "10 × 4/min").

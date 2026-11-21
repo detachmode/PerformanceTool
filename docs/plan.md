@@ -31,7 +31,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (J, user feedback):** smooth panning with stable groups, no tap-and-hold, sideways swipe magnifies, edge panning (0031 update 2).
 - **Done (J2, user feedback, same agent):** overview strip showing the viewed area (0035).
 - **Done (J3, user feedback, same agent):** previous/next failed works with zoom and groups (0036).
-- **Waiting on details (user):** bursts per scenario (0034).
+- **Next (K):** spawning pattern per scenario entry: linear or bursts (0034).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
