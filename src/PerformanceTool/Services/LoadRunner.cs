@@ -60,7 +60,10 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             scenarios[entry].Spec.ResolveSecrets(parameters);
             // Due times are computed per run in ticks (not n × a rounded interval), so the run count is exact:
             // 180/min for 8 s is 24 runs, not 25. See docs/brain/0004.
-            var ticksPerRun = TimeSpan.TicksPerMinute / config.RatePerMinute;
+            // Bursts (brain 0034): one tick starts ActorsPerBurst actors together; linear is a "burst" of one.
+            var bursts = config.Pattern == SpawningPattern.Bursts;
+            var perTick = bursts ? Math.Max(1, config.ActorsPerBurst) : 1;
+            var ticksPerRun = TimeSpan.TicksPerMinute / (bursts ? config.BurstsPerMinute : config.RatePerMinute);
 
             for (long n = 0; ; n++)
             {
@@ -73,6 +76,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     catch (OperationCanceledException) { return; }
                 }
 
+                for (var k = 0; k < perTick; k++)
+                {
                 if (!gate.Wait(0))
                 {
                     await onDropped(entry);
@@ -111,6 +116,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     }
                 }, CancellationToken.None);
                 lock (inFlight) inFlight.Add(task);
+                }
             }
         }
 

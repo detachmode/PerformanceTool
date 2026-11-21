@@ -71,6 +71,6 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0031](0031-touch-gestures-on-popup-chart.md) | Touch on the popup chart: tap selects (no zoom), sideways swipe magnifies, a finger at the edge pans, pinch and double tap zoom | Accepted, implemented (update 2: stable grid, swipe magnifier, edge pan, double tap) |
 | [0032](0032-group-bars-look-different.md) | Group bars: lighter fill with outline plus a small count badge; single actors stay solid | Accepted, implemented |
 | [0033](0033-environments.md) | Environments: arbitrary key-value pairs (credentials allowed), used as `{{Key}}` placeholders and in code, like Bruno; one file per environment; picked in a top-bar dropdown like Bruno | Accepted, implemented (fake data); runner and REST in the server, UI on fake data |
-| [0034](0034-scenario-bursts.md) | Spawning pattern per scenario entry: linear (actors/min) or bursts (actors per burst × bursts per minute) | Accepted (not implemented) |
+| [0034](0034-scenario-bursts.md) | Spawning pattern per scenario entry: linear (actors/min) or bursts (actors per burst × bursts per minute) | Accepted, implemented (fake data) |
 | [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted, implemented |
 | [0036](0036-step-through-failed-and-slow.md) | Previous/next failed (or slow) moves the zoomed view and steps through groups | Accepted, implemented |

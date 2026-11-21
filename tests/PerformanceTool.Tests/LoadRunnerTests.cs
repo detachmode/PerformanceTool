@@ -159,4 +159,32 @@ public class LoadRunnerTests
             Assert.Equal(0, expected);
         }
     }
+
+    [Fact]
+    public async Task Bursts_start_their_actors_together()
+    {
+        // 5 actors per burst, 120 bursts/min = one burst every 0.5 s, for 2 s: 4 bursts = 20 actors, in clumps of 5.
+        var e = Entry(1);
+        e.Pattern = SpawningPattern.Bursts;
+        e.ActorsPerBurst = 5;
+        e.BurstsPerMinute = 120;
+        var (results, dropped) = await Run(new LoadPlan { DurationSeconds = 2, Scenarios = [e] });
+        Assert.Equal(20, results.Count);
+        Assert.Equal(0, dropped[0]);
+        var clumps = results.GroupBy(r => Math.Round(r.StartedAtSeconds * 2)).ToList();
+        Assert.Equal(4, clumps.Count);
+        Assert.All(clumps, g => Assert.Equal(5, g.Count()));
+    }
+
+    [Fact]
+    public async Task Bursts_respect_max_in_flight()
+    {
+        var e = Entry(1, delayMs: 300);
+        e.Pattern = SpawningPattern.Bursts;
+        e.ActorsPerBurst = 8;
+        e.BurstsPerMinute = 60; // one burst at t=0, duration 1 s -> only the first burst
+        var (results, dropped) = await Run(new LoadPlan { DurationSeconds = 1, MaxConcurrency = 5, Scenarios = [e] });
+        Assert.Equal(5, results.Count);
+        Assert.Equal(3, dropped[0]);
+    }
 }

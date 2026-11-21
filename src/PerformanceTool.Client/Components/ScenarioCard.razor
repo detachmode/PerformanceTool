@@ -13,7 +13,7 @@
         ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow call", "slow calls") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
     var aria = Label + ": "
-        + (Idle ? Format.Rate(Target) + " actors per minute" : View.InFlight + " actors running, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " actors per minute")
+        + (Idle ? Format.Rate(Target) + " actors per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " actors running, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " actors per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
@@ -24,7 +24,7 @@
     @if (Idle)
     {
         <span class="card-figures">
-            <span class="fig"><b>@Format.Rate(Target)</b><small>@Terms.PerMinuteShort</small></span>
+            <span class="fig"><b>@Format.Rate(Target)</b><small>@Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small></span>
         </span>
         <span class="card-kind">@Subtitle</span>
     }
@@ -32,7 +32,7 @@
     {
         <span class="card-figures">
             <span class="fig"><b>@View.InFlight</b><small>actors running</small></span>
-            <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort</small></span>
+            <span class="fig"><b>@Format.Rate(actual)</b><small>/ @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small></span>
         </span>
         @if (stats.HasData)
         {
@@ -70,6 +70,8 @@
     [Parameter, EditorRequired] public ScenarioView View { get; set; } = default!;
     [Parameter, EditorRequired] public IReadOnlyList<ActorRecord> Actors { get; set; } = default!;
     [Parameter] public double Target { get; set; }
+    /// <summary>Burst shape in small text, e.g. "10 × 4/min" (brain 0034); empty for linear.</summary>
+    [Parameter] public string Shape { get; set; } = "";
     [Parameter] public IReadOnlyList<RunningActor>? Running { get; set; }
     [Parameter] public double Elapsed { get; set; }
     /// <summary>Editor mode (brain 0024): the card shows the configured scenario, not run data.</summary>

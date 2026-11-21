@@ -11,7 +11,8 @@
     var actors = s.Store.Actors(Index);
     var label = s.Labels[Index];
     var actual = s.Elapsed > 0 ? view.Starts / (s.Elapsed / 60) : 0;
-    var target = s.Plan.Scenarios[Index].RatePerMinute;
+    var target = s.Plan.Scenarios[Index].EffectiveRatePerMinute();
+    var shape = Format.Shape(s.Plan.Scenarios[Index]);
     var runningAll = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
     // The brushed time window (brain 0023, update 3): actors that started in [from, to). A window that reaches the live edge follows it (to = open).
     // The view [vf, vt]: a following window keeps its width and slides with the live edge.
@@ -75,7 +76,7 @@
             <button class="fig" @onclick="() => SetShow(ActorShow.All)" title="Show all actors" aria-pressed="@Aria.Bool(show == ActorShow.All)">@Format.Plural(view.Finished, "actor", "actors")</button>
             <button class="fig @(view.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(ActorShow.Failed)" disabled="@(view.Failed == 0)" title="Show only the failed actors" aria-pressed="@Aria.Bool(show == ActorShow.Failed)">@Format.Plural(view.Failed, "error", "errors")</button>
             <button class="fig @(view.SlowCalls > 0 ? "warn" : "")" @onclick="() => SetShow(ActorShow.Slow)" disabled="@(view.SlowActors == 0)" title="Show only the slow actors" aria-pressed="@Aria.Bool(show == ActorShow.Slow)">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</button>
-            <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort</span>
+            <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort@(shape.Length > 0 ? " · " + shape : "")</span>
             @if (stats.Count > 0)
             {
                 <span class="fig-sep" aria-hidden="true"></span>

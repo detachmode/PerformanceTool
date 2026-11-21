@@ -35,6 +35,9 @@ Where actors are listed or grouped: **failed → slow → successful**, then by 
 | **Preset** | A saved, named load plan. | `Preset`, `PresetStore` | Current |
 | **Run (load run)** | Executing a whole load plan once, from start until the duration ends or the user stops it. Contains many actors. | `LoadRunner.RunAsync` | Current |
 | **Rate** | How many new actors start per minute for a scenario entry: **actors per minute**. UI label "Actors / minute" (short "actors/min"). Never "runs / minute": a run is the whole load run. | `RatePerMinute` | **Decided** (follows the Actor rename) |
+| **Spawning pattern** | How a scenario entry starts new actors over time: **linear** or **bursts**. Default linear. | `ScenarioRunConfig.Pattern`, `SpawningPattern` | **Decided** (brain 0034) |
+| **Linear** | Spawning pattern: actors start evenly spread, at the entry's **actors per minute**. | `SpawningPattern.Linear`, `RatePerMinute` | **Decided** (brain 0034) |
+| **Burst** | Spawning pattern: **actors per burst** start at once, **bursts per minute** times a minute. Effective rate = actors per burst x bursts per minute. UI shows e.g. "15 × 6/min". | `SpawningPattern.Bursts`, `ActorsPerBurst`, `BurstsPerMinute`, `EffectiveRatePerMinute()` | **Decided** (brain 0034) |
 | **In flight** | Actors that have started and not finished yet ("running"). | in-flight counts | Current |
 | **Max in-flight** | Upper limit of actors in flight across the run. | `MaxConcurrency` | Current |
 | **Dropped** | An actor that was due but not started because max in-flight was reached. | `onDropped` | Current |

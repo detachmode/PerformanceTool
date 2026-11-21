@@ -1,4 +1,5 @@
 using System.Globalization;
+using PerformanceTool.Services;
 
 namespace PerformanceTool.Client.Components;
 
@@ -13,6 +14,9 @@ public static class Format
     }
 
     public static string Num(double value) => value.ToString("N0", CultureInfo.InvariantCulture);
+    /// <summary>The burst shape of an entry in small text, e.g. "10 × 4/min"; empty for a linear entry (brain 0034).</summary>
+    public static string Shape(ScenarioRunConfig c) => c.Pattern == SpawningPattern.Bursts ? $"{c.ActorsPerBurst} × {Rate(c.BurstsPerMinute)}/min" : "";
+
     public static string Rate(double value) => value.ToString(value >= 10 ? "0" : "0.#", CultureInfo.InvariantCulture);
 
     /// <summary>A call or actor duration: "850 ms", "3.4 s", "1:05".</summary>
