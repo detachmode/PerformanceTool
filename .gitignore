@@ -428,6 +428,8 @@ FodyWeavers.xsd
 # Claude Code agent worktrees (temporary working copies of background agents)
 .claude/worktrees/
 
-# Uploaded runtime custom scenario scripts & SQLite run storage
+# Uploaded runtime custom scenario scripts & DuckDB/SQLite run storage
 src/PerformanceTool/scripts/
 src/PerformanceTool/data/
+src/Beesharp/scripts/
+src/Beesharp/data/
