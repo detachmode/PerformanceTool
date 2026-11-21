@@ -18,6 +18,9 @@ public readonly record struct ActorBar(int Count, int Failed, int Slow, double M
     public ActorOutcome Outcome => Failed > 0 ? ActorOutcome.Failed : Slow > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
 }
 
+/// <summary>One stripe of a highlighted group bar (brain 0037): its kind ("bad", "warn", "good", "run"), actor count and share of the bar in percent.</summary>
+public readonly record struct StripeSegment(string Kind, int Count, double Share);
+
 /// <summary>
 /// Builds the bounded bar list of the actor chart. Up to <see cref="MaxBars"/> actors get one bar each; more than that are aggregated
 /// into time buckets of a "nice" width, so the number of bars never depends on the length of the run.
@@ -199,6 +202,45 @@ public static class ActorBars
         }
         return bars;
     }
+
+    /// <summary>
+    /// The make-up of a group bar as stripes (brain 0037): failed, slow, ok, running, in that order, zero counts left out. Each share is in percent of
+    /// the bar, proportional to the count, but at least <paramref name="minShare"/> percent so a single failed actor in a big group stays visible;
+    /// the shares add up to 100.
+    /// </summary>
+    public static List<StripeSegment> Stripes(ActorBar bar, double minShare = 4)
+    {
+        var ok = Math.Max(0, bar.Count - bar.Failed - bar.Slow);
+        var parts = new List<StripeSegment>(4);
+        if (bar.Failed > 0) parts.Add(new("bad", bar.Failed, 0));
+        if (bar.Slow > 0) parts.Add(new("warn", bar.Slow, 0));
+        if (ok > 0) parts.Add(new("good", ok, 0));
+        if (bar.Running > 0) parts.Add(new("run", bar.Running, 0));
+        if (parts.Count == 0) return parts;
+        minShare = Math.Clamp(minShare, 0, 100.0 / parts.Count);
+        // segments below the minimum get the minimum; the others share what is left in proportion to their counts (repeat until stable)
+        var fixedMin = new bool[parts.Count];
+        for (var pass = 0; pass < parts.Count; pass++)
+        {
+            var left = 100 - minShare * fixedMin.Count(f => f);
+            var free = 0;
+            for (var i = 0; i < parts.Count; i++) if (!fixedMin[i]) free += parts[i].Count;
+            var again = false;
+            for (var i = 0; i < parts.Count; i++)
+                if (!fixedMin[i] && parts[i].Count * left / free < minShare) { fixedMin[i] = true; again = true; }
+            if (!again) break;
+        }
+        var rest = 100 - minShare * fixedMin.Count(f => f);
+        var freeCount = 0;
+        for (var i = 0; i < parts.Count; i++) if (!fixedMin[i]) freeCount += parts[i].Count;
+        for (var i = 0; i < parts.Count; i++)
+            parts[i] = parts[i] with { Share = fixedMin[i] ? minShare : parts[i].Count * rest / freeCount };
+        return parts;
+    }
+
+    /// <summary>The stripes as a compact attribute for the script: "bad:12.5 good:87.5".</summary>
+    public static string StripeData(ActorBar bar) =>
+        string.Join(' ', Stripes(bar).Select(p => p.Kind + ":" + p.Share.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)));
 
     /// <summary>The next (or previous) actor with the given outcome after <paramref name="fromSequence"/>, wrapping around; null if there is none.</summary>
     public static ActorRecord? Step(IReadOnlyList<ActorRecord> actors, int count, ActorOutcome outcome, int? fromSequence, int direction)

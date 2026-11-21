@@ -43,6 +43,8 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
 - Updates go through the same `OnZoom` path as pinch (throttled to 90 ms, plus once at the end); `PinchZoom` clamps again and follows the live edge when the range reaches the end. No momentum.
 
 ## Update 2 (2026-11-21, user)
+> **Superseded in part by 0037:** the sideways-swipe magnifier (with edge panning and release-selects) now works only on the axis strip under the bars; a sideways swipe on the bars scrolls the zoomed timeline.
+
 - **No tap-and-hold** on touch any more.
 - **Sideways swipe = magnifier:** any sideways swipe on the chart shows the Dock-like magnification under the
   finger and moves it along the bars (zoomed or not).
