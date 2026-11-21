@@ -70,7 +70,7 @@ public sealed class SqliteStorageTests
                 Assert.All(slowLogs.Items, r => Assert.True(r.IsSlow));
 
                 // Filter by indexed bee_name
-                var bee1Logs = await storage.QueryLogsAsync("run-1", new LogQuery(BeeName: "Bee #1"));
+                var bee1Logs = await storage.QueryLogsAsync("run-1", new LogQuery(BeeName: "B1"));
                 Assert.Equal(1, bee1Logs.TotalCount);
                 Assert.Equal("Order succeeded", bee1Logs.Items[0].Message);
 

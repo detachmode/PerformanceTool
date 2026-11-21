@@ -375,7 +375,7 @@ public sealed class FakeRunSource : IRunSource
         var at = bee.StartedAt;
         var ms = bee.DurationMs;
         var error = bee.Error;
-        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Bee"] = $"#{seq + 1}" };
+        var scope = new Dictionary<string, string> { ["RunId"] = runId, ["Scenario"] = label, ["Bee"] = $"B{seq + 1}" };
         var list = new List<FakeLogEntry>(calls.Count * 2 + 4);
         var callScopes = new Dictionary<int, IReadOnlyDictionary<string, string>>();
         // Exception texts are always interned (brain 0028); messages only where the caller knows they repeat (intern: true).
@@ -392,7 +392,7 @@ public sealed class FakeRunSource : IRunSource
                     : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index));
         }
 
-        Log(0, "Debug", $"Bee #{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
+        Log(0, "Debug", $"B{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
         if (rng.NextDouble() < 0.15) Log(0.4, "Trace", "Request headers: Accept=application/json, User-Agent=Beesharp/1.0", call: calls[0], intern: true);
 
         foreach (var c in calls)
@@ -425,7 +425,7 @@ public sealed class FakeRunSource : IRunSource
                     $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n   at PerformanceTool.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at PerformanceTool.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38", c);
             }
         }
-        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"Bee #{seq + 1} finished" : $"Bee #{seq + 1} finished with failure: {error}");
+        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"B{seq + 1} finished" : $"B{seq + 1} finished with failure: {error}");
         return list;
     }
 

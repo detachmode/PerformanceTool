@@ -116,7 +116,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         lock (sync)
         {
             var id = ++nextLiveLogId;
-            var name = sequence >= 0 ? $"Bee #{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : "Preflight";
+            var name = sequence >= 0 ? $"B{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : "Preflight";
             liveLogs.Enqueue(new LiveLogEntryDto(id, sequence, name, entry, atSeconds, DateTimeOffset.UtcNow, level, message, exception));
             while (liveLogs.Count > MaxLiveLogs)
                 liveLogs.Dequeue();

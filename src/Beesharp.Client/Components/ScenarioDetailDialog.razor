@@ -200,7 +200,7 @@
             var denom = Math.Max(1, Math.Max(scale, elapsedMs));
             <section class="bee-panel p-run" aria-label="@ra.Name">
                 <div class="bee-head">
-                    <b class="bee-title">Bee <BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
+                    <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
                     <span class="state run">Flying</span>
                     <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
@@ -229,7 +229,7 @@
             var detail = s.Store.Detail(bee.Sequence);
             <section class="bee-panel p-@Cls(bee.Outcome)" aria-label="@bee.Name">
                 <div class="bee-head">
-                    <b class="bee-title">Bee <BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
+                    <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
                     <span class="state @Cls(bee.Outcome)">@(bee.Failed ? "Failed" : bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
                     @if (!bee.Failed && Format.OverTypical(bee.Ratio))
                     {
@@ -653,7 +653,7 @@
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>Label inside the hovered bar (brain 0023): bee number or time range, then start time and duration or bee count. Times are run time (m:ss).</summary>
-    private static string LabelTop(BeeBar b, double width) => b.IsBurstGroup ? $"#{b.GroupLo + 1}–#{b.GroupHi + 1}" : b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"#{b.Sequence + 1}";
+    private static string LabelTop(BeeBar b, double width) => b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1}" : b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"B{b.Sequence + 1}";
 
     /// <summary>Run time m:ss, with decimals when the bucket width is below a second (zoomed in far).</summary>
     private static string FT(double seconds, double width)
@@ -685,14 +685,14 @@
     private static string Status(BeeBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : BeeOrder.Good(b.Step);
 
     /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
-    private static string Near1(BeeBar b, double width) => b.IsBurstGroup ? $"#{b.GroupLo + 1}–{b.GroupHi + 1}" : b.IsBucket ? FT(b.BucketStart, width) : $"#{b.Sequence + 1}";
+    private static string Near1(BeeBar b, double width) => b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1}" : b.IsBucket ? FT(b.BucketStart, width) : $"B{b.Sequence + 1}";
     private static string Near2(BeeBar b) => b.IsBucket ? Format.Num(b.Total) : b.IsRunningBee ? "…" : b.MaxMs < 1000 ? $"{b.MaxMs:0}ms" : b.MaxMs < 60_000 ? $"{b.MaxMs / 1000:0.0}s" : Format.Time(b.MaxMs / 1000);
 
     private static string BarTitle(BeeBar b, double width)
     {
-        if (b.IsRunningBee) return $"Bee #{b.Sequence + 1}, running, {Format.Ms(b.MaxMs)} so far";
-        if (!b.IsBucket) return $"Bee #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
-        var text = b.IsBurstGroup ? $"Bees #{b.GroupLo + 1}–#{b.GroupHi + 1} of the burst at {FT(b.Slot, width)}: {Format.Plural(b.Count, "bee", "bees")}"
+        if (b.IsRunningBee) return $"B{b.Sequence + 1}, flying, {Format.Ms(b.MaxMs)} so far";
+        if (!b.IsBucket) return $"B{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
+        var text = b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1} of the burst at {FT(b.Slot, width)}: {Format.Plural(b.Count, "bee", "bees")}"
             : $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "bee", "bees")}";
         if (b.Failed > 0) text += $", {b.Failed} failed";
         if (b.Slow > 0) text += $", {b.Slow} slow";

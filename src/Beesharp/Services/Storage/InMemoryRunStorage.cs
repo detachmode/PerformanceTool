@@ -46,7 +46,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             var isFailed = beeOutcome == 2;
             var isSlow = slowCalls > 0;
             if (isFailed) bucket.FailedBees++;
-            var beeName = $"Bee #{r.Sequence + 1}";
+            var beeName = $"B{r.Sequence + 1}";
             bucket.Bees[r.Sequence] = new StoredBeeDetail(
                 runId, r.Sequence, r.Entry, r.StartedAtSeconds, r.ElapsedMs, r.StatusCode, r.Bytes, r.Error,
                 r.Calls ?? [], r.Logs ?? []);

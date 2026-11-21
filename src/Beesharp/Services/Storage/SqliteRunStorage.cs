@@ -248,7 +248,7 @@ public sealed class SqliteRunStorage : IRunStorage
 
                             case BeeOp a:
                                 var r = a.Result;
-                                var beeName = $"Bee #{r.Sequence + 1}";
+                                var beeName = $"B{r.Sequence + 1}";
                                 var isFailed = a.BeeOutcome == 2 ? 1 : 0;
                                 var isSlow = a.SlowCalls > 0 ? 1 : 0;
                                 insertBeeCmd.Parameters["$runId"].Value = a.RunId;

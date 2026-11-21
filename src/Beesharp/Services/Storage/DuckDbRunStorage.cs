@@ -283,7 +283,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 var row = beeApp.CreateRow();
                 row.AppendValue(a.RunId)
                    .AppendValue(r.Sequence)
-                   .AppendValue($"Bee #{r.Sequence + 1}")
+                   .AppendValue($"B{r.Sequence + 1}")
                    .AppendValue(r.Entry)
                    .AppendValue(r.StartedAtSeconds)
                    .AppendValue(r.ElapsedMs)
@@ -333,7 +333,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             foreach (var a in beesToAppend)
             {
                 if (a.Result.Logs is not { Count: > 0 } logs) continue;
-                var beeName = $"Bee #{a.Result.Sequence + 1}";
+                var beeName = $"B{a.Result.Sequence + 1}";
                 var isFailed = a.BeeOutcome == 2;
                 var isSlow = a.SlowCalls > 0;
                 for (var i = 0; i < logs.Count; i++)

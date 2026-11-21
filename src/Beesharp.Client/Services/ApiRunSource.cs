@@ -266,7 +266,7 @@ public sealed class ApiRunSource : IRunSource
                 calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,
                     activeStore.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: detail.Error is null && detail.DurationMs >= 1500, TypicalMs: null, Errors: activeStore.Errors));
 
-            var scope = new Dictionary<string, string> { ["Bee"] = $"Bee #{sequence + 1}" };
+            var scope = new Dictionary<string, string> { ["Bee"] = $"B{sequence + 1}" };
             var startedUtc = activeStartedUtc;
             var beeLogs = detail.Logs;
             var beeDetail = new BeeDetail(

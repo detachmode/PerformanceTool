@@ -83,7 +83,7 @@
         <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig" OnNearEnd="@(useServer && filtered.Count < serverTotal ? EventCallback.Factory.Create(this, OnNearEndAsync) : default)">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
-                    <BeeChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" Tint="TintOf(l.Sequence)" OnClick="() => FilterBee(l)" Title="@($"Show only the logs of bee #{l.Sequence + 1}")" />
+                    <BeeChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" Tint="TintOf(l.Sequence)" OnClick="() => FilterBee(l)" Title="@($"Show only the logs of B{l.Sequence + 1}")" />
                     <button class="msg" aria-pressed="@Aria.Bool(ReferenceEquals(expanded, l))" title="Show details" @onclick="() => expanded = ReferenceEquals(expanded, l) ? null : l"><span class="visually-hidden">@l.Level: </span>@l.Message</button>
                 </div>
             </ItemContent>

@@ -62,7 +62,7 @@ public sealed class DuckDbStorageTests
                 // Indexed filters: failed, slow, bee_name, level, search
                 Assert.Equal(2, (await storage.QueryLogsAsync("run-duck-1", new LogQuery(Failed: true))).TotalCount);
                 Assert.Equal(2, (await storage.QueryLogsAsync("run-duck-1", new LogQuery(Slow: true))).TotalCount);
-                Assert.Equal(1, (await storage.QueryLogsAsync("run-duck-1", new LogQuery(BeeName: "Bee #1"))).TotalCount);
+                Assert.Equal(1, (await storage.QueryLogsAsync("run-duck-1", new LogQuery(BeeName: "B1"))).TotalCount);
                 Assert.Equal(1, (await storage.QueryLogsAsync("run-duck-1", new LogQuery(Levels: ["Warning"], Search: "gateway"))).TotalCount);
 
                 // Export: JSON

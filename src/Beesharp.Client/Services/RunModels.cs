@@ -91,7 +91,7 @@ public readonly record struct BeeRecord(int Sequence, int Entry, double StartedA
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => ErrorId != ErrorDictionary.None;
     public BeeOutcome Outcome => Failed ? BeeOutcome.Failed : SlowCalls > 0 ? BeeOutcome.Slow : BeeOutcome.Ok;
-    public string Name => $"Bee #{Sequence + 1}";
+    public string Name => $"B{Sequence + 1}";
     /// <summary>How many times its typical duration the bee's worst call took (brain 0041); kept in one byte (<see cref="RatioCode"/>).</summary>
     public double Ratio => SlowCallRule.Decode(RatioCode);
     /// <summary>The colour step (0 pure green to <see cref="SlowCallRule.MaxStep"/> full amber). A slow bee is always full amber.</summary>
@@ -119,7 +119,7 @@ public sealed record ScenarioView(int Finished, int Failed, int SlowBees, int Sl
 /// </summary>
 public sealed record RunningBee(int Sequence, int Entry, double StartedAt, IReadOnlyList<FakeCall> Calls)
 {
-    public string Name => $"Bee #{Sequence + 1}";
+    public string Name => $"B{Sequence + 1}";
 }
 
 /// <summary>Immutable view of the run for the pages. Arrays are small; the bulk data sits in <see cref="Store"/> and is read up to the counts here.</summary>
