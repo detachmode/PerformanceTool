@@ -63,7 +63,7 @@
 
     protected override void OnParametersSet()
     {
-        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; }
+        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; nearEndNotifiedAt = -1; }
         if (Variable) Rebuild();
         Window();
     }
@@ -105,11 +105,6 @@
         var overscan = Variable ? OverscanPx : 6.0 * RowHeight;
         first = IndexAt(Math.Max(0, top - overscan));
         last = Math.Min(count, IndexAt(top + height + overscan) + 1);
-        if (OnNearEnd.HasDelegate && last >= count - 25 && last != nearEndNotifiedAt)
-        {
-            nearEndNotifiedAt = count;
-            _ = OnNearEnd.InvokeAsync();
-        }
     }
 
     private int nearEndNotifiedAt = -1;
@@ -134,6 +129,8 @@
             if (Variable) await Measure();
         }
         catch (JSDisconnectedException) { }
+        catch (JSException) { }
+        catch (OperationCanceledException) { }
     }
 
     /// <summary>Reads the real heights of the rendered rows and corrects the offsets behind them. The rendered rows themselves do not move.</summary>
@@ -189,6 +186,11 @@
         }
         (top, height) = (scrollTop, clientHeight);
         Window();
+        if (OnNearEnd.HasDelegate && Items.Count > 0 && last >= Items.Count - 25 && nearEndNotifiedAt != Items.Count)
+        {
+            nearEndNotifiedAt = Items.Count;
+            _ = OnNearEnd.InvokeAsync();
+        }
         StateHasChanged();
     }
 

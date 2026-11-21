@@ -79,7 +79,7 @@
             <input class="search" type="search" placeholder="Search messages or actor…" aria-label="Search messages" autocomplete="off" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
         </div>
 
-        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig" OnNearEnd="OnNearEndAsync">
+        <VirtualList Class="log-list" Role="log" Label="Log lines" Items="filtered" Variable="true" RowHeight="40" ResetKey="@builtSig" OnNearEnd="@(useServer && filtered.Count < serverTotal ? EventCallback.Factory.Create(this, OnNearEndAsync) : default)">
             <ItemContent Context="l">
                 <div class="logrow lv-@l.Level @(ReferenceEquals(expanded, l) ? "on" : "")">
                     <ActorChip Sequence="l.Sequence" State="StateOf(l.Sequence, l.Entry)" Tint="TintOf(l.Sequence)" OnClick="() => FilterActor(l)" Title="@($"Show only the logs of actor #{l.Sequence + 1}")" />
