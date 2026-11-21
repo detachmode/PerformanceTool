@@ -31,6 +31,8 @@
     var playShort = s.State switch { FakeRunState.Running => "Pause", FakeRunState.Paused => "Resume", FakeRunState.Finished => "Run again", _ => "Start run" };
     var playLabel = s.State switch { FakeRunState.Running => "Pause run", FakeRunState.Paused => "Resume run", _ => "Start run" };
 }
+@if (active || s.Paused)
+{
 <section class="player @(open ? "open" : "")" aria-label="Run player">
     <div class="pl-main">
         <button class="play @stateCss" @onclick="Toggle" aria-label="@playLabel" title="@playLabel (space)">
@@ -73,6 +75,7 @@
     </div>
     <span class="visually-hidden" role="status" aria-live="polite">Run @stateText.ToLowerInvariant()</span>
 </section>
+}
 
 @code {
     private bool open;

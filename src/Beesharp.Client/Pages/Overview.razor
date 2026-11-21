@@ -12,6 +12,7 @@
 @inject ScenarioCatalog Catalog
 @inject CustomScriptsPopupState ScriptsPopup
 @inject ScriptApiClient ScriptApi
+@inject LogsPopupState Logs
 @inject NavigationManager Nav
 
 <PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
@@ -122,6 +123,11 @@
                         }
                     </div>
                 }
+                @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
+                {
+                    <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download title="Export this run as a ZIP of Parquet files">Export</a>
+                }
+                <button type="button" class="btn ghost small" @onclick="() => Logs.Show()" aria-haspopup="dialog" title="Open run logs">Logs</button>
                 <button type="button" class="btn primary small edit-mode-btn" @onclick="EnterEditMode" disabled="@locked"
                         title="@(locked ? "Stop the running test to edit scenarios" : "Edit scenarios, spawning and parameters")">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -144,6 +150,13 @@
                            disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
                 </div>
             </div>
+            <button type="button" class="btn primary small plan-run-btn"
+                    disabled="@(locked || plan.Scenarios.Count == 0)"
+                    @onclick="StartRun"
+                    title="@(locked ? "Run is in progress" : "Start load test run")">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>
+                <span>Run</span>
+            </button>
             <button type="button" class="btn ghost small plan-more-btn @(planMoreOpen ? "on" : "")"
                     aria-expanded="@Aria.Bool(planMoreOpen)"
                     aria-label="@(planMoreOpen ? "Hide max in-flight, timeout and preflight" : "Show max in-flight, timeout and preflight")"
@@ -506,6 +519,13 @@
         Sim.Plan.PreflightScriptId = string.IsNullOrEmpty(val) ? null : val;
         Committed();
         Edited();
+    }
+
+    private void StartRun()
+    {
+        if (Sim.IsRunning || Sim.Plan.Scenarios.Count == 0) return;
+        if (editMode) ExitEditMode();
+        Sim.Start();
     }
 
     private void EnterEditMode()
