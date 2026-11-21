@@ -128,14 +128,15 @@
                                 }
                                 else if (bar.Running > 0)
                                 {
-                                    <span class="bar-stack" style="height:@Pct(bar.MaxMs / scale)%">
+                                    <span class="bar-stack @(IsGroup(bar) ? "grp " + BarCls(bar.Outcome) : null)" style="height:@Pct(bar.MaxMs / scale)%">
                                         <i class="bar run" style="flex:@bar.Running"></i>
-                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar.Outcome)" style="flex:@bar.Count"></i> }
+                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar.Outcome) @(IsGroup(bar) ? "grp" : null)" style="flex:@bar.Count"></i> }
+                                        @if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }
                                     </span>
                                 }
                                 else
                                 {
-                                    <i class="bar @BarCls(bar.Outcome)" style="height:@Pct(bar.MaxMs / scale)%"></i>
+                                    <i class="bar @BarCls(bar.Outcome) @(IsGroup(bar) ? "grp" : null)" style="height:@Pct(bar.MaxMs / scale)%">@if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }</i>
                                 }
                             </button>
                         }
@@ -448,6 +449,9 @@
         selRunning = null;
         bucket = null;
     }
+
+    /// <summary>A bar that stands for several actors (brain 0032): lighter fill, outline and a count badge.</summary>
+    private static bool IsGroup(ActorBar b) => b.IsBucket && b.Total > 1;
 
     private static string BarCls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "good" };
     private static string Cls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "" };

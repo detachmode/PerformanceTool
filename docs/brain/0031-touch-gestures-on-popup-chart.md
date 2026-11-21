@@ -32,3 +32,7 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
 - `.chart` uses `touch-action: pan-x pan-y` (scrolling allowed, browser pinch-zoom off). The old touch brush (hold, then drag) is gone; pinch replaces it.
 - Pinch sends the range live (at most every 90 ms) through `DockZoom.OnZoom`; `ScenarioDetailDialog.PinchZoom` clamps it to the run, follows the live edge
   and resets when it covers the whole run. It uses the same zoom window as the brush, so "Reset zoom" works.
+
+## Update 1 (2026-11-21, user)
+- **Swipe sideways while zoomed in** moves the zoomed time range left or right (pan along the timeline). It
+  stops at the run's start and end. Vertical swipes still scroll the page. When not zoomed, swipes scroll as before.
