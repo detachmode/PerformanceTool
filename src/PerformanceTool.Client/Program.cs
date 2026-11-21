@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Microsoft.JSInterop;
 using PerformanceTool.Client;
 using PerformanceTool.Client.Services;
 using PerformanceTool.Services.Scenarios;
@@ -11,11 +12,13 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+builder.Services.AddSingleton(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<LogsPopupState>();
 builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
+builder.Services.AddSingleton<CustomScriptsPopupState>();
+builder.Services.AddSingleton<ScriptApiClient>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -23,21 +26,22 @@ builder.Services.AddScenario<HttpPostJsonScenario>();
 builder.Services.AddScenario<CustomRequestScenario>();
 builder.Services.AddScenario<UserJourneyScenario>();
 
-// Data source (brain 0015): wwwroot/appsettings.json -> "DataSource": "Fake" (in-browser simulation) or "Api" (not implemented yet).
-// One instance per browser tab, so the run survives navigation between pages.
-var dataSource = builder.Configuration["DataSource"] ?? "Fake";
-switch (dataSource)
-{
-    // Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0042). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
-    case "Fake": builder.Services.AddSingleton<IRunSource>(sp => new FakeRunSource(sp.GetRequiredService<ScenarioCatalog>(),
-        SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri), null, BurstActors(sp.GetRequiredService<NavigationManager>().Uri))); break;
-    case "Api": builder.Services.AddSingleton<IRunSource, ApiRunSource>(); break;
-    default: throw new InvalidOperationException($"Unknown DataSource '{dataSource}'. Use \"Fake\" or \"Api\".");
-}
+// Data source (brain 0015, 0040): default comes from wwwroot/appsettings.json ("Fake" or "Api"),
+// and the user can toggle Fake <-> Live mode at runtime from the top bar.
+var initialFake = !string.Equals(builder.Configuration["DataSource"], "Api", StringComparison.OrdinalIgnoreCase);
+builder.Services.AddSingleton(sp => new DataModeState(sp.GetRequiredService<IJSRuntime>(), initialFake));
 
-// Environments (brain 0033) follow the same switch.
-if (dataSource == "Api") builder.Services.AddSingleton<IEnvironmentSource, ApiEnvironmentSource>();
-else builder.Services.AddSingleton<IEnvironmentSource, FakeEnvironmentSource>();
+// Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0044). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
+builder.Services.AddSingleton(sp => new FakeRunSource(
+    sp.GetRequiredService<ScenarioCatalog>(),
+    SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri), null,
+    BurstActors(sp.GetRequiredService<NavigationManager>().Uri)));
+builder.Services.AddSingleton<FakeEnvironmentSource>();
+builder.Services.AddSingleton<ApiEnvironmentSource>();
+builder.Services.AddSingleton<ApiRunSource>();
+
+builder.Services.AddSingleton<IRunSource, SwitchableRunSource>();
+builder.Services.AddSingleton<IEnvironmentSource, SwitchableEnvironmentSource>();
 
 var host = builder.Build();
 

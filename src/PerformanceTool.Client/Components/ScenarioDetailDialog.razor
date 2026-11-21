@@ -305,9 +305,9 @@
     private bool showTypicals;   // the actor panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
     private double? bucketValue;
-    /// <summary>The selected time bucket; any change clears the selected burst group (brain 0042), which the pick that sets it assigns afterwards.</summary>
+    /// <summary>The selected time bucket; any change clears the selected burst group (brain 0043), which the pick that sets it assigns afterwards.</summary>
     private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
-    /// <summary>The selected even group of an unfolded burst (brain 0042): the burst's slot and the lowest and highest actor sequence in the group.</summary>
+    /// <summary>The selected even group of an unfolded burst (brain 0043): the burst's slot and the lowest and highest actor sequence in the group.</summary>
     private (double Slot, int Lo, int Hi)? groupSel;
     private sealed record Win(double From, double To, bool Follow);
     private Win? win;
@@ -368,7 +368,7 @@
     private readonly UnfoldHysteresis unfoldPlay = new();
     private void SetChartSize(double px) { if (Math.Abs(px - chartPx) >= 1) { chartPx = px; fz = null; } }
     /// <summary>Grid slots (their start, run seconds) whose burst is unfolded in the chart at the last render (brain 0038), for stepping through failed actors.</summary>
-    private Dictionary<double, int> unfoldedSlots = [];     // slot -> size of the burst's even groups (brain 0042)
+    private Dictionary<double, int> unfoldedSlots = [];     // slot -> size of the burst's even groups (brain 0043)
 
     private string StepWord => show == ActorShow.Slow ? "slow" : "failed";
     private ActorOutcome StepOutcome => show == ActorShow.Slow ? ActorOutcome.Slow : ActorOutcome.Failed;
@@ -554,7 +554,7 @@
         // the key of the current position: a group start (grouped bars) or an actor (start time, sequence)
         // Unfolded bursts (brain 0038) step actor by actor: inside one the key is (slot, sequence + 1), a group bar or the whole burst is (slot, 0).
         ActorRecord? tg = null;
-        // brain 0042: a burst in even groups steps group by group (the key is the group number), a burst of single bars actor by actor
+        // brain 0043: a burst in even groups steps group by group (the key is the group number), a burst of single bars actor by actor
         var order = new Dictionary<double, List<int>>();
         if (w > 0 && unfoldedSlots.Count > 0)
         {

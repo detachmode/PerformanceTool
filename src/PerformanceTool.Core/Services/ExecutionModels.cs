@@ -1,7 +1,33 @@
 namespace PerformanceTool.Services;
 
+/// <summary>One call recorded inside an actor's execution (HTTP or custom step).</summary>
+public sealed record RecordedCall(
+    string Name,
+    double OffsetMs,
+    double DurationMs,
+    int? StatusCode,
+    long Bytes = 0,
+    string? Error = null);
+
+/// <summary>One log statement emitted by an actor via <c>ctx.Logger</c> or <c>ctx.Log</c>.</summary>
+public sealed record RecordedLog(
+    double AtSeconds,
+    string Level,
+    string Message,
+    string? Exception = null,
+    int? CallIndex = null);
+
 /// <summary>One scenario execution (one actor's playthrough). <see cref="Entry"/> is the index into <see cref="LoadPlan.Scenarios"/>.</summary>
-public sealed record ExecutionResult(int Sequence, int Entry, double StartedAtSeconds, double ElapsedMs, int? StatusCode, long Bytes, string? Error)
+public sealed record ExecutionResult(
+    int Sequence,
+    int Entry,
+    double StartedAtSeconds,
+    double ElapsedMs,
+    int? StatusCode,
+    long Bytes,
+    string? Error,
+    IReadOnlyList<RecordedCall>? Calls = null,
+    IReadOnlyList<RecordedLog>? Logs = null)
 {
     public bool Success => Error is null;
 }

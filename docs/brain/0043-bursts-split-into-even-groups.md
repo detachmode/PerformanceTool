@@ -1,4 +1,4 @@
-# 0042. A burst that does not fit splits into even groups, not "first few plus the rest"
+# 0043. A burst that does not fit splits into even groups, not "first few plus the rest"
 
 - **Status:** Accepted, implemented (details were Proposed; deviations and choices in the implementation notes)
 - **Date:** 2026-11-21

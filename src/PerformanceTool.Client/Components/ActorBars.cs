@@ -12,7 +12,7 @@ public enum ActorShow { All, Failed, Slow }
 /// </remarks>
 public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0, double Cover = 1, int RatioCode = 0, int GroupLo = -1, int GroupHi = -1)
 {
-    /// <summary>The bar is one of the even groups of a burst (brain 0042): <see cref="GroupLo"/> and <see cref="GroupHi"/> are the lowest and highest actor sequence in it.</summary>
+    /// <summary>The bar is one of the even groups of a burst (brain 0043): <see cref="GroupLo"/> and <see cref="GroupHi"/> are the lowest and highest actor sequence in it.</summary>
     public bool IsBurstGroup => GroupLo >= 0;
     /// <summary>The bar belongs to an unfolded burst (brain 0038): <see cref="Burst"/> is the burst's actor count, <see cref="Slot"/> the start of its place on the time grid.</summary>
     /// <remarks><see cref="Cover"/> is how many grid slots wide the bar is (brain 0040): 1 for a slot bar; the bars of an unfolded burst share the empty slots
@@ -28,7 +28,7 @@ public readonly record struct ActorBar(int Count, int Failed, int Slow, double M
     public ActorOutcome Outcome => Failed > 0 ? ActorOutcome.Failed : Slow > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
 }
 
-/// <summary>An unfolded burst (brain 0038): its slot start on the time grid, its actor count and the size of its even groups (brain 0042; 1 = every actor has its own bar).</summary>
+/// <summary>An unfolded burst (brain 0038): its slot start on the time grid, its actor count and the size of its even groups (brain 0043; 1 = every actor has its own bar).</summary>
 public readonly record struct BurstSpan(double Slot, int Actors, int GroupSize = 1);
 
 /// <summary>
@@ -275,7 +275,7 @@ public static class ActorBars
     }
 
     // ---- unfolding bursts (brain 0038, rule of brain 0040)
-    /// <summary>Most bars (single actors or even groups, brain 0042) one unfolded burst shows, for the max-bars setting.</summary>
+    /// <summary>Most bars (single actors or even groups, brain 0043) one unfolded burst shows, for the max-bars setting.</summary>
     public static int UnfoldPerBurst(int maxBars) => Math.Max(24, maxBars);
     /// <summary>Most bars all unfolded bursts together may show, for the max-bars setting (a safety net: the pixel rule already bounds them).</summary>
     public static int UnfoldBudget(int maxBars) => Math.Max(48, 2 * maxBars);
@@ -287,7 +287,7 @@ public static class ActorBars
     public const double GapShare = 0.35;
     private const double SameStart = 0.001;
 
-    /// <summary>The group sizes a burst splits into (brain 0042): 1, 2, 5, 10, 20, 50, 100, … (stable, easy to read).</summary>
+    /// <summary>The group sizes a burst splits into (brain 0043): 1, 2, 5, 10, 20, 50, 100, … (stable, easy to read).</summary>
     public static int NiceGroupSize(int actors, int maxGroups)
     {
         maxGroups = Math.Max(1, maxGroups);
@@ -306,7 +306,7 @@ public static class ActorBars
     /// (<see cref="ActorBar.Cover"/>), so nothing else moves and x stays linear in time. It unfolds when each bar gets at least
     /// <see cref="UnfoldRoom.MinActorPx"/> of the room it may borrow, measured with <see cref="UnfoldRoom.DecideSlotPx"/> (hysteresis); it takes only as
     /// much room as bars of <see cref="UnfoldRoom.MaxActorPx"/> need. The decision depends on the zoom and the data, not on the part of the run in view,
-    /// so panning never folds or unfolds a burst. A burst whose actors do not all fit as single bars splits into even groups (brain 0042): contiguous
+    /// so panning never folds or unfolds a burst. A burst whose actors do not all fit as single bars splits into even groups (brain 0043): contiguous
     /// slices by actor number of a nice size (<see cref="NiceGroupSize"/>) so that at most as many bars as fit are shown; failed, slow and running actors stay in
     /// their group (red, amber, counted). Bounded: a burst shows at most <paramref name="perBurst"/> bars, all bursts together at most <paramref name="budget"/> bars, nearest to
     /// <paramref name="focus"/> (run seconds) first.
@@ -359,7 +359,7 @@ public static class ActorBars
             var share = GapShare * gap;
             var m = (long)Math.Round(share);
             long mL = Math.Min(m, cs), mR = m;                                          // no room before the run's start
-            // how many bars fit (decided with the hysteresis width), and the nice group size that makes the burst fit them (brain 0042)
+            // how many bars fit (decided with the hysteresis width), and the nice group size that makes the burst fit them (brain 0043)
             var fit = (int)Math.Min(Math.Min(perBurst, budget - used), Math.Floor((1 + Math.Min(share, cs) + share) * room.DecideSlotPx / room.MinActorPx + 1e-9));
             if (fit < 2) continue;                                                      // not even two groups fit (yet)
             var gsize = NiceGroupSize(list.Count, fit);
@@ -398,7 +398,7 @@ public static class ActorBars
                     else bars.Add(new(0, 0, 0, Math.Max(0, (elapsed - e.Run!.StartedAt) * 1000), e.Run.Sequence, e.Run.StartedAt, 1, list.Count, slot, each));
                     continue;
                 }
-                // failed and slow actors stay in their group, running ones count as running (brain 0042)
+                // failed and slow actors stay in their group, running ones count as running (brain 0043)
                 int n = 0, f = 0, sl = 0, run = 0, tint = 0, lo = int.MaxValue, hi = int.MinValue; double ms = 0;
                 foreach (var e in part)
                 {

@@ -6,6 +6,8 @@
 @implements IDisposable
 @inject IRunSource Sim
 @inject ScenarioCatalog Catalog
+@inject CustomScriptsPopupState ScriptsPopup
+@inject ScriptApiClient ScriptApi
 
 <PageTitle>Editor · PerformanceTool</PageTitle>
 
@@ -40,6 +42,7 @@
             </select>
             <button class="btn primary" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
             <button class="btn ghost" @onclick="OpenSaveAs" disabled="@locked" title="Save the scenarios as a new preset">Save as…</button>
+            <button class="btn ghost" @onclick="ScriptsPopup.Show" title="Upload, compile and test-run custom C# script scenarios">Custom scripts…</button>
         </div>
     </section>
     <p class="muted ed-hint">You are editing the loaded scenarios. A preset is loaded into them and saved from them.</p>
@@ -81,7 +84,7 @@
                                   Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="@(idx == selected)"
                                   Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
                 }
-                <button class="card card-add" @onclick="() => addOpen = !addOpen" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">
+                <button class="card card-add" @onclick="ToggleAdd" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="@Aria.Bool(addOpen)">
                     <span class="plus">+</span><span>Add scenario</span><small class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</small>
                 </button>
                 @if (addOpen)
@@ -255,7 +258,18 @@
     private string? pendingLoad;
     private bool disposed;
 
-    protected override void OnInitialized() => Sim.Changed += OnChanged;
+    protected override void OnInitialized()
+    {
+        Sim.Changed += OnChanged;
+        Catalog.Changed += OnChanged;
+        _ = ScriptApi.SyncCatalogAsync();
+    }
+
+    private void ToggleAdd()
+    {
+        addOpen = !addOpen;
+        if (addOpen) _ = ScriptApi.SyncCatalogAsync();
+    }
 
     private void OnChanged()
     {
@@ -360,5 +374,6 @@
         disposed = true;
         debounce?.Cancel();
         Sim.Changed -= OnChanged;
+        Catalog.Changed -= OnChanged;
     }
 }

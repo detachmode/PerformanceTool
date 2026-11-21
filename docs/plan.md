@@ -38,8 +38,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (M3, user feedback):** overview strip over the whole width, muted red/amber marks of failed and slow actors, always visible (0035 update 1).
 - **Done (N, user feedback):** popup chart navigation bullet proof (0040): no zoom on swipe (root causes fixed), bursts unfold as soon as they fit, redesigned overview strip, persistent selection pill. Open for the user: review the Proposed design and the verdict on compressed time gaps.
 - **Done (O, user feedback):** slowness as a colour gradient from green at typical time to amber (0041): ratio per actor (one byte), four steps, groups take their worst actor, "1.3x typical" drills down to the calls. Open for the user: review the Proposed details.
-- **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0042). Debug URL `?burst=100`.
-- **Next (Q, user feedback):** the lilac selection marker as one robust piece (0043).
+- **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0043). Debug URL `?burst=100`.
+- **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

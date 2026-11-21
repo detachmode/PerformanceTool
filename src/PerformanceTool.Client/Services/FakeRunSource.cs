@@ -96,7 +96,7 @@ public sealed class FakeRunSource : IRunSource
         this.catalog = catalog;
         StoreOptions = storeOptions ?? new RunStoreOptions();
         LoadBlackFriday();
-        // Debug (URL "?burst=100", brain 0042): every burst entry starts that many actors at once, a few of them fail, to test big bursts.
+        // Debug (URL "?burst=100", brain 0043): every burst entry starts that many actors at once, a few of them fail, to test big bursts.
         if (burstActors > 0)
         {
             Plan.MaxConcurrency = Math.Max(Plan.MaxConcurrency, burstActors * 3);

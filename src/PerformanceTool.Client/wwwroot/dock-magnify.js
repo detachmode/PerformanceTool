@@ -38,6 +38,7 @@ const growFrame = () => {
     let any = false;
     const t = performance.now();
     for (const el of tracked) {
+        if (!el || !el.isConnected) { tracked.delete(el); continue; }
         const runs = el.querySelectorAll('[data-start]');
         if (runs.length === 0) continue;
         any = true;
@@ -51,6 +52,7 @@ const growFrame = () => {
 const wakeGrow = () => { if (!growRaf) growRaf = requestAnimationFrame(growFrame); };
 
 export function attach(el, ref, options) {
+    if (!el) return;
     tracked.add(el);
     const watch = new MutationObserver(wakeGrow);
     watch.observe(el, { childList: true, subtree: true });
