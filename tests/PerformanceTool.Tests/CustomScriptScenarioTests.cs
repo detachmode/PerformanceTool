@@ -219,8 +219,8 @@ public sealed class CustomScriptScenarioTests
             Assert.Equal("Bearer", capturedRequest!.Headers.Authorization?.Scheme);
             Assert.Equal("secret-123", capturedRequest.Headers.Authorization?.Parameter);
             Assert.Equal(42, capturedBody?.Length);
-            Assert.Contains("startup-ok", testRun.Logs);
-            Assert.Contains("teardown-ok", testRun.Logs);
+            Assert.Contains(testRun.Logs, l => l.Contains("startup-ok"));
+            Assert.Contains(testRun.Logs, l => l.Contains("teardown-ok"));
         }
         finally
         {

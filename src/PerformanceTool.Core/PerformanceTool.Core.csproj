@@ -10,8 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Only for AddScenario<T>() on IServiceCollection. -->
+    <!-- Only for AddScenario<T>() on IServiceCollection and ILogger on ScenarioContext. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

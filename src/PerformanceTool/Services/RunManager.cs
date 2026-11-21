@@ -11,7 +11,9 @@ public sealed record LiveActorDto(
     double DurationMs,
     int? StatusCode,
     long Bytes,
-    string? Error);
+    string? Error,
+    IReadOnlyList<RecordedCall>? Calls = null,
+    IReadOnlyList<RecordedLog>? Logs = null);
 
 public sealed record LiveScenarioViewDto(
     int Starts,
@@ -131,7 +133,9 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments)
                                 res.ElapsedMs,
                                 res.StatusCode,
                                 res.Bytes,
-                                res.Error));
+                                res.Error,
+                                res.Calls,
+                                res.Logs));
                         }
                         return ValueTask.CompletedTask;
                     },

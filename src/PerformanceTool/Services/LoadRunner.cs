@@ -145,11 +145,21 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 using var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 execCts.CancelAfter(timeout);
                 var startedAt = clockRef.Elapsed.TotalSeconds;
+                var calls = new List<RecordedCall>();
+                var logs = new List<RecordedLog>();
+                var ctx = new ScenarioContext(
+                    http,
+                    env,
+                    execCts.Token,
+                    state,
+                    callSink: c => { lock (calls) calls.Add(c); },
+                    structuredLogSink: l => { lock (logs) logs.Add(l); },
+                    runSeconds: () => clockRef.Elapsed.TotalSeconds);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;
                 try
                 {
-                    outcome = await scenario.ExecuteAsync(parameters, new ScenarioContext(http, env, execCts.Token, state), execCts.Token);
+                    outcome = await scenario.ExecuteAsync(parameters, ctx, execCts.Token);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -166,7 +176,16 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 sw.Stop();
 
                 var elapsed = outcome.Measured ?? sw.Elapsed;
-                await onResult(new ExecutionResult(seq, entry, startedAt, elapsed.TotalMilliseconds, outcome.StatusCode, outcome.Bytes, outcome.FailureReason));
+                await onResult(new ExecutionResult(
+                    seq,
+                    entry,
+                    startedAt,
+                    elapsed.TotalMilliseconds,
+                    outcome.StatusCode,
+                    outcome.Bytes,
+                    outcome.FailureReason,
+                    calls.Count > 0 ? calls : null,
+                    logs.Count > 0 ? logs : null));
             }
 
             await Task.WhenAll(Enumerable.Range(0, plan.Scenarios.Count).Select(ScheduleEntry));

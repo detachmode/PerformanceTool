@@ -30,7 +30,16 @@ public sealed class ApiRunSource : IRunSource
     public bool IsRunning => Current.Running;
     public event Action? Changed;
 
-    private sealed record LiveActorDto(int Sequence, int Entry, double StartedAt, double DurationMs, int? StatusCode, long Bytes, string? Error);
+    private sealed record LiveActorDto(
+        int Sequence,
+        int Entry,
+        double StartedAt,
+        double DurationMs,
+        int? StatusCode,
+        long Bytes,
+        string? Error,
+        List<RecordedCall>? Calls,
+        List<RecordedLog>? Logs);
     private sealed record LiveScenarioViewDto(int Starts, int InFlight, int Failed, int Dropped);
     private sealed record LiveRunStatusDto(
         string RunId,
@@ -199,23 +208,67 @@ public sealed class ApiRunSource : IRunSource
         {
             if (a.Entry < 0 || a.Entry >= count) continue;
             finished[a.Entry]++;
-            var isSlow = a.Error is null && a.DurationMs >= 1500;
-            if (isSlow) { slowActors[a.Entry]++; slowCalls[a.Entry]++; }
             var errId = store.Errors.Intern(a.Error);
-            var record = new ActorRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, isSlow ? 1 : 0, errId, store.Errors);
-            var call = new FakeCall(0, "HTTP", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: isSlow, TypicalMs: null, Errors: store.Errors);
-            var at = a.StartedAt + a.DurationMs / 1000.0;
-            var ts = dto.StartedUtc.AddSeconds(at);
-            var level = a.Error is not null ? "Error" : isSlow ? "Warning" : "Information";
-            var logMsg = a.Error is null
-                ? $"Completed in {a.DurationMs:0} ms (HTTP {a.StatusCode?.ToString() ?? "-"}, {a.Bytes} B)"
-                : $"Failed in {a.DurationMs:0} ms: {a.Error}";
+
+            List<FakeCall> callList;
+            int actorSlowCalls = 0;
+            if (a.Calls is { Count: > 0 })
+            {
+                callList = new List<FakeCall>(a.Calls.Count);
+                for (var ci = 0; ci < a.Calls.Count; ci++)
+                {
+                    var rc = a.Calls[ci];
+                    var callSlow = rc.Error is null && rc.DurationMs >= 1500;
+                    if (callSlow) actorSlowCalls++;
+                    var callErrId = store.Errors.Intern(rc.Error);
+                    callList.Add(new FakeCall(ci, rc.Name, rc.OffsetMs, rc.DurationMs, rc.StatusCode, callErrId, Skipped: false, ThinkBeforeMs: 0, Slow: callSlow, TypicalMs: null, Errors: store.Errors));
+                }
+            }
+            else
+            {
+                var isSlow = a.Error is null && a.DurationMs >= 1500;
+                if (isSlow) actorSlowCalls = 1;
+                callList = [new FakeCall(0, "Run", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: isSlow, TypicalMs: null, Errors: store.Errors)];
+            }
+
+            if (actorSlowCalls > 0)
+            {
+                slowActors[a.Entry]++;
+                slowCalls[a.Entry] += actorSlowCalls;
+            }
+
+            var record = new ActorRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, actorSlowCalls, errId, store.Errors);
             var scope = new Dictionary<string, string> { ["Actor"] = record.Name };
+            var actorLogs = a.Logs;
+            var startedUtc = dto.StartedUtc;
+            var actorSnapshot = a;
             var detail = new ActorDetail(
                 a.Sequence,
                 a.Entry,
-                [call],
-                () => [new FakeLogEntry(at, ts, level, logMsg, errId, store.Errors, a.Entry, a.Sequence, scope, 0)]);
+                callList,
+                () =>
+                {
+                    if (actorLogs is { Count: > 0 })
+                    {
+                        return actorLogs.Select(l => new FakeLogEntry(
+                            l.AtSeconds,
+                            startedUtc.AddSeconds(l.AtSeconds),
+                            l.Level,
+                            l.Message,
+                            store.Errors.Intern(l.Exception),
+                            store.Errors,
+                            actorSnapshot.Entry,
+                            actorSnapshot.Sequence,
+                            scope,
+                            l.CallIndex)).ToList();
+                    }
+                    var at = actorSnapshot.StartedAt + actorSnapshot.DurationMs / 1000.0;
+                    var level = actorSnapshot.Error is not null ? "Error" : actorSlowCalls > 0 ? "Warning" : "Information";
+                    var logMsg = actorSnapshot.Error is null
+                        ? $"Completed in {actorSnapshot.DurationMs:0} ms (HTTP {actorSnapshot.StatusCode?.ToString() ?? "-"}, {actorSnapshot.Bytes} B)"
+                        : $"Failed in {actorSnapshot.DurationMs:0} ms: {actorSnapshot.Error}";
+                    return [new FakeLogEntry(at, startedUtc.AddSeconds(at), level, logMsg, errId, store.Errors, actorSnapshot.Entry, actorSnapshot.Sequence, scope, 0)];
+                });
             store.Complete(record, detail);
         }
 

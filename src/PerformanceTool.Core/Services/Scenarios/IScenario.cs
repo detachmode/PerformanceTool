@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Logging;
 using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios.Spec;
 
@@ -126,34 +128,79 @@ public sealed class ScenarioBackgroundHost : IAsyncDisposable
 }
 
 /// <summary>Shared services for one execution or lifecycle hook.</summary>
-public sealed class ScenarioContext(
-    HttpClient http,
-    EnvironmentValues? environment = null,
-    CancellationToken cancellationToken = default,
-    ConcurrentDictionary<string, object?>? state = null,
-    ScenarioBackgroundHost? background = null,
-    Action<string>? logSink = null)
+public sealed class ScenarioContext
 {
+    private readonly ScenarioBackgroundHost? background;
+    private readonly Action<RecordedCall>? callSink;
+    private readonly Action<RecordedLog>? logSink;
+    private readonly Func<double> runSeconds;
+    private readonly Stopwatch actorClock;
+    private int currentCallIndex = -1;
+
+    public ScenarioContext(
+        HttpClient http,
+        EnvironmentValues? environment = null,
+        CancellationToken cancellationToken = default,
+        ConcurrentDictionary<string, object?>? state = null,
+        ScenarioBackgroundHost? background = null,
+        Action<string>? logSink = null,
+        Action<RecordedCall>? callSink = null,
+        Action<RecordedLog>? structuredLogSink = null,
+        Func<double>? runSeconds = null)
+    {
+        Http = http;
+        Environment = environment ?? EnvironmentValues.None;
+        CancellationToken = cancellationToken;
+        State = state ?? new(StringComparer.Ordinal);
+        this.background = background;
+        this.callSink = callSink;
+        this.runSeconds = runSeconds ?? (() => actorClock.Elapsed.TotalSeconds);
+        actorClock = Stopwatch.StartNew();
+
+        if (structuredLogSink is not null)
+        {
+            this.logSink = structuredLogSink;
+        }
+        else if (logSink is not null)
+        {
+            this.logSink = entry =>
+            {
+                var line = entry.Exception is null
+                    ? $"[{entry.Level}] {entry.Message}"
+                    : $"[{entry.Level}] {entry.Message} ({entry.Exception})";
+                logSink(line);
+            };
+        }
+
+        Logger = new ScenarioContextLogger(this);
+    }
+
     /// <summary>
     /// The active environment's values (brain 0033), e.g. <c>context.Environment["BaseUrl"]</c>. Placeholders in parameter values are already
     /// filled in when the run starts; use this when code needs a value that is not a parameter. Empty when no environment is active.
     /// </summary>
-    public EnvironmentValues Environment { get; } = environment ?? EnvironmentValues.None;
+    public EnvironmentValues Environment { get; }
 
     /// <summary>Shared by the whole run. Don't dispose it or change its default headers.</summary>
-    public HttpClient Http { get; } = http;
+    public HttpClient Http { get; }
 
     /// <summary>Alias for <see cref="Http"/> (for C# scripts using <c>ctx.HttpClient</c>).</summary>
     public HttpClient HttpClient => Http;
 
     /// <summary>Cancellation token for this execution (carries the per-actor timeout and run cancellation).</summary>
-    public CancellationToken CancellationToken { get; } = cancellationToken;
+    public CancellationToken CancellationToken { get; }
 
     /// <summary>
     /// Thread-safe state bag shared across <c>StartupAsync</c>, all <c>ExecuteAsync</c> actors of this scenario entry,
     /// and <c>TeardownAsync</c>. Ideal for sharing refreshed auth tokens or pre-fetched seed data.
     /// </summary>
-    public ConcurrentDictionary<string, object?> State { get; } = state ?? new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, object?> State { get; }
+
+    /// <summary>
+    /// Per-actor <see cref="ILogger"/> (brain 0012): log lines are attached to this actor and shown in test runs,
+    /// the scenario details popup and the Logs popup.
+    /// </summary>
+    public ILogger Logger { get; }
 
     /// <summary>
     /// Starts a background job scoped to the scenario entry's lifetime (e.g. a periodic token refresher started in
@@ -166,8 +213,55 @@ public sealed class ScenarioContext(
         background.Run(job);
     }
 
-    /// <summary>Writes a log line captured by test runs and run logs.</summary>
-    public void Log(string message) => logSink?.Invoke(message);
+    /// <summary>Writes an Information log line captured by test runs and run logs.</summary>
+    public void Log(string message) => Logger.LogInformation("{Message}", message);
+
+    /// <summary>Records one call/step inside this actor (for multi-step scenarios or simulated calls without HTTP).</summary>
+    public void RecordCall(string name, double durationMs, int? statusCode = 200, long bytes = 0, string? error = null, double? offsetMs = null)
+    {
+        var off = offsetMs ?? Math.Max(0, actorClock.Elapsed.TotalMilliseconds - durationMs);
+        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error));
+    }
+
+    /// <summary>Measures an async step as a named call, recording its offset, duration and any failure.</summary>
+    public async Task MeasureCallAsync(string name, Func<Task> work, int? statusCode = 200, long bytes = 0)
+    {
+        var idx = Interlocked.Increment(ref currentCallIndex);
+        var offsetMs = actorClock.Elapsed.TotalMilliseconds;
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            await work();
+            sw.Stop();
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes));
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, ex.Message));
+            throw;
+        }
+        finally
+        {
+            _ = idx;
+        }
+    }
+
+    internal void EmitLog(LogLevel level, string message, Exception? exception)
+    {
+        if (logSink is null) return;
+        var levelName = level switch
+        {
+            LogLevel.Trace => "Trace",
+            LogLevel.Debug => "Debug",
+            LogLevel.Information => "Information",
+            LogLevel.Warning => "Warning",
+            LogLevel.Error or LogLevel.Critical => "Error",
+            _ => "Information",
+        };
+        int? callIdx = currentCallIndex >= 0 ? currentCallIndex : null;
+        logSink(new RecordedLog(runSeconds(), levelName, message, exception?.Message, callIdx));
+    }
 
     /// <summary>Sends a request, reads the whole body (so transfer time is included) and maps it to an outcome.</summary>
     public async Task<ScenarioOutcome> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -182,4 +276,16 @@ public sealed class ScenarioContext(
 
     public static bool IsHttpUrl([NotNullWhen(true)] string? value) =>
         Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https";
+
+    private sealed class ScenarioContextLogger(ScenarioContext owner) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (!IsEnabled(logLevel)) return;
+            owner.EmitLog(logLevel, formatter(state, exception), exception);
+        }
+    }
 }

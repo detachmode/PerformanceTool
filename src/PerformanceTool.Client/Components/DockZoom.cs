@@ -38,6 +38,7 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
     private IJSObjectReference? module;
     private DotNetObjectReference<DockZoom>? self;
     private bool attached;
+    private bool disposed;
 
     protected override void BuildRenderTree(RenderTreeBuilder b)
     {
@@ -50,15 +51,17 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || disposed) return;
         try
         {
             module = await JS.InvokeAsync<IJSObjectReference>("import", "./dock-magnify.js");
+            if (disposed) return;
             self = DotNetObjectReference.Create(this);
             await module.InvokeVoidAsync("attach", element, self, new { select = Select, magnify = Magnify });
             attached = true;
         }
         catch (JSDisconnectedException) { }
+        catch (JSException) { }
         catch (OperationCanceledException) { }
     }
 
@@ -78,8 +81,10 @@ public sealed class DockZoom : ComponentBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        disposed = true;
         try { if (module is not null) { if (attached) await module.InvokeVoidAsync("detach", element); await module.DisposeAsync(); } }
         catch (JSDisconnectedException) { }
+        catch (JSException) { }
         catch (InvalidOperationException) { }
         self?.Dispose();
     }

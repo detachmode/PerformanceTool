@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using Microsoft.Extensions.Logging;
 using PerformanceTool.Services.Environments;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.Spec;
@@ -291,7 +292,13 @@ public sealed class ScriptScenarioStore
             started = true;
 
             execSw.Start();
-            var execCtx = new ScenarioContext(http, envValues, execCts.Token, state, logSink: msg => logs.Enqueue(msg));
+            var execCtx = new ScenarioContext(
+                http,
+                envValues,
+                execCts.Token,
+                state,
+                logSink: msg => logs.Enqueue(msg),
+                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error)));
             outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
             execSw.Stop();
         }
@@ -384,6 +391,7 @@ public sealed class ScriptScenarioStore
             typeof(RangeAttribute).Assembly,
             typeof(JsonSerializer).Assembly,
             typeof(ConcurrentDictionary<,>).Assembly,
+            typeof(ILogger).Assembly,
             typeof(IScenario).Assembly,
         }.Distinct();
 
@@ -404,6 +412,7 @@ public sealed class ScriptScenarioStore
                 "System.Text.Json.Nodes",
                 "System.Threading",
                 "System.Threading.Tasks",
+                "Microsoft.Extensions.Logging",
                 "PerformanceTool.Services.Scenarios",
                 "PerformanceTool.Services.Scenarios.Spec",
                 "PerformanceTool.Services.Environments");
