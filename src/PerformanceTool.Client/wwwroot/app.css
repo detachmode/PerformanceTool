@@ -772,8 +772,18 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .script-try-body { display: flex; flex-direction: column; gap: .8rem; }
 .btn.wrap-on { border-color: var(--accent2); color: var(--title); background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); }
 
-.cs-ed { position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }
+.cs-ed { display: flex; position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }
 .cs-ed:focus-within { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
+.cs-gutter {
+    flex: none; width: 2.9rem; overflow: hidden; user-select: none;
+    padding: .85rem .45rem .85rem .25rem; box-sizing: border-box;
+    background: color-mix(in srgb, var(--panel) 55%, var(--input));
+    border-right: 1px solid var(--border);
+    font-family: var(--mono); font-size: .84rem; line-height: 1.55;
+    color: var(--faint); text-align: right; font-variant-numeric: tabular-nums;
+}
+.cs-ln { box-sizing: border-box; }
+.cs-stage { position: relative; flex: 1 1 auto; min-width: 0; height: 100%; }
 .cs-hl, .cs-ta {
     position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: .85rem 1rem;
     font-family: var(--mono); font-size: .84rem; line-height: 1.55; tab-size: 4;
@@ -782,7 +792,8 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .cs-ed.wrap .cs-hl, .cs-ed.wrap .cs-ta { white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; overflow-x: hidden; overflow-y: auto; }
 .cs-ed.nowrap .cs-hl, .cs-ed.nowrap .cs-ta { white-space: pre; overflow-wrap: normal; overflow: auto; }
 .cs-hl { pointer-events: none; color: var(--text); background: transparent; user-select: none; }
-.cs-hl code { font-family: inherit; font-size: inherit; line-height: inherit; }
+.cs-hl code { display: block; font-family: inherit; font-size: inherit; line-height: inherit; }
+.hl-row { min-height: 1.55em; }
 .cs-ta { background: transparent; color: transparent; caret-color: var(--title); resize: none; outline: none; box-shadow: none !important; }
 .cs-ta::selection { background: #7b68ee55; color: transparent; }
 
@@ -796,5 +807,6 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 @media (max-width: 760px) {
     .script-fullscreen { height: calc(100dvh - var(--top-h) - 62px); }
     .script-bar { padding: .35rem .5rem; gap: .35rem; }
+    .cs-gutter { width: 2.35rem; padding: .65rem .35rem .65rem .15rem; font-size: .8rem; }
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }

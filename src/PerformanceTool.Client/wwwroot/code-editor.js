@@ -1,10 +1,32 @@
-// Lightweight scroll-sync and Tab-indentation helper for CSharpCodeEditor.
-export function attach(textarea, pre) {
-    if (!textarea || !pre) return { dispose() {} };
+// Lightweight scroll-sync, line-number alignment, and Tab-indentation helper for CSharpCodeEditor.
+export function attach(textarea, pre, gutter) {
+    if (!textarea || !pre) return { sync() {}, dispose() {} };
 
     const syncScroll = () => {
         pre.scrollTop = textarea.scrollTop;
         pre.scrollLeft = textarea.scrollLeft;
+        if (gutter) gutter.scrollTop = textarea.scrollTop;
+    };
+
+    const syncGutter = () => {
+        if (!gutter) return;
+        const rows = pre.querySelectorAll(".hl-row");
+        const count = rows.length;
+        // Reuse existing gutter nodes where possible to avoid DOM churn while typing.
+        while (gutter.children.length > count) gutter.removeChild(gutter.lastChild);
+        while (gutter.children.length < count) {
+            const el = document.createElement("div");
+            el.className = "cs-ln";
+            gutter.appendChild(el);
+        }
+        for (let i = 0; i < count; i++) {
+            const el = gutter.children[i];
+            const num = String(i + 1);
+            if (el.textContent !== num) el.textContent = num;
+            const h = rows[i].getBoundingClientRect().height;
+            if (h > 0) el.style.height = h + "px";
+        }
+        gutter.scrollTop = textarea.scrollTop;
     };
 
     const onKeyDown = (e) => {
@@ -19,13 +41,21 @@ export function attach(textarea, pre) {
         }
     };
 
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => { syncGutter(); syncScroll(); }) : null;
+    if (ro) ro.observe(pre);
+
     textarea.addEventListener("scroll", syncScroll, { passive: true });
     textarea.addEventListener("keydown", onKeyDown);
+    syncGutter();
     syncScroll();
 
     return {
-        sync: syncScroll,
+        sync() {
+            syncGutter();
+            syncScroll();
+        },
         dispose() {
+            if (ro) ro.disconnect();
             textarea.removeEventListener("scroll", syncScroll);
             textarea.removeEventListener("keydown", onKeyDown);
         }

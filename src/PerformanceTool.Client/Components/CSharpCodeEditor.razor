@@ -1,4 +1,4 @@
-@* Lightweight C# syntax-highlighted code editor with toggleable line wrap and synced scrolling. *@
+@* Lightweight C# syntax-highlighted code editor with aligned line numbers, toggleable line wrap, and synced scrolling. *@
 @using System.Net
 @using System.Text
 @using System.Text.RegularExpressions
@@ -6,12 +6,15 @@
 @inject IJSRuntime JS
 
 <div class="cs-ed @(WordWrap ? "wrap" : "nowrap")">
-    <pre class="cs-hl" @ref="preEl" aria-hidden="true"><code>@Highlight(Value)</code></pre>
-    <textarea class="cs-ta" @ref="taEl" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
-              wrap="@(WordWrap ? "soft" : "off")"
-              aria-label="@AriaLabel"
-              value="@Value"
-              @oninput="OnInput"></textarea>
+    <div class="cs-gutter" @ref="gutterEl" aria-hidden="true"></div>
+    <div class="cs-stage">
+        <pre class="cs-hl" @ref="preEl" aria-hidden="true"><code>@Highlight(Value)</code></pre>
+        <textarea class="cs-ta" @ref="taEl" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+                  wrap="@(WordWrap ? "soft" : "off")"
+                  aria-label="@AriaLabel"
+                  value="@Value"
+                  @oninput="OnInput"></textarea>
+    </div>
 </div>
 
 @code {
@@ -22,6 +25,7 @@
 
     private ElementReference taEl;
     private ElementReference preEl;
+    private ElementReference gutterEl;
     private IJSObjectReference? module;
     private IJSObjectReference? handle;
 
@@ -32,7 +36,7 @@
             try
             {
                 module = await JS.InvokeAsync<IJSObjectReference>("import", "./code-editor.js");
-                handle = await module.InvokeAsync<IJSObjectReference>("attach", taEl, preEl);
+                handle = await module.InvokeAsync<IJSObjectReference>("attach", taEl, preEl, gutterEl);
             }
             catch { }
         }
@@ -69,48 +73,60 @@
         @"|(?<id>\b[A-Za-z_][A-Za-z0-9_]*\b)",
         RegexOptions.Compiled);
 
-    private static MarkupString Highlight(string? code)
+    private static MarkupString Highlight(string? raw)
     {
-        if (string.IsNullOrEmpty(code)) return new MarkupString("\n");
-        var sb = new StringBuilder(code.Length + 256);
+        var code = (raw ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
+        var sb = new StringBuilder(code.Length + 512);
         var pos = 0;
+
+        sb.Append("<div class=\"hl-row\">");
+        var lineHasContent = false;
+
+        void AppendSegment(string text, string? cssClass)
+        {
+            var parts = text.Split('\n');
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (i > 0)
+                {
+                    if (!lineHasContent) sb.Append("&#8203;");
+                    sb.Append("</div><div class=\"hl-row\">");
+                    lineHasContent = false;
+                }
+                var part = parts[i];
+                if (part.Length == 0) continue;
+                lineHasContent = true;
+                var enc = WebUtility.HtmlEncode(part);
+                if (cssClass is null) sb.Append(enc);
+                else sb.Append("<span class=\"").Append(cssClass).Append("\">").Append(enc).Append("</span>");
+            }
+        }
 
         foreach (Match m in TokenRx.Matches(code))
         {
             if (m.Index > pos)
-                sb.Append(WebUtility.HtmlEncode(code[pos..m.Index]));
+                AppendSegment(code[pos..m.Index], null);
 
             var tok = m.Value;
-            var enc = WebUtility.HtmlEncode(tok);
-
-            if (m.Groups["cmt"].Success)
-                sb.Append("<span class=\"hl-cmt\">").Append(enc).Append("</span>");
-            else if (m.Groups["str"].Success)
-                sb.Append("<span class=\"hl-str\">").Append(enc).Append("</span>");
-            else if (m.Groups["num"].Success)
-                sb.Append("<span class=\"hl-num\">").Append(enc).Append("</span>");
+            string? cls = null;
+            if (m.Groups["cmt"].Success) cls = "hl-cmt";
+            else if (m.Groups["str"].Success) cls = "hl-str";
+            else if (m.Groups["num"].Success) cls = "hl-num";
             else if (m.Groups["id"].Success)
             {
-                if (Keywords.Contains(tok))
-                    sb.Append("<span class=\"hl-kw\">").Append(enc).Append("</span>");
-                else if (char.IsUpper(tok[0]))
-                    sb.Append("<span class=\"hl-type\">").Append(enc).Append("</span>");
-                else
-                    sb.Append(enc);
-            }
-            else
-            {
-                sb.Append(enc);
+                if (Keywords.Contains(tok)) cls = "hl-kw";
+                else if (char.IsUpper(tok[0])) cls = "hl-type";
             }
 
+            AppendSegment(tok, cls);
             pos = m.Index + m.Length;
         }
 
         if (pos < code.Length)
-            sb.Append(WebUtility.HtmlEncode(code[pos..]));
+            AppendSegment(code[pos..], null);
 
-        // Keep a trailing newline so scrolling to the last empty line matches the textarea height.
-        if (code.EndsWith('\n')) sb.Append('\n');
+        if (!lineHasContent) sb.Append("&#8203;");
+        sb.Append("</div>");
         return new MarkupString(sb.ToString());
     }
 
