@@ -6,6 +6,8 @@
 @implements IAsyncDisposable
 @inject IRunSource Sim
 @inject LogsPopupState Logs
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
 @inject IJSRuntime JS
 
 @{
@@ -62,6 +64,10 @@
     <button class="inst extra" @onclick="() => Logs.Show(null, null, ActorShow.Slow)" aria-haspopup="dialog" title="Show the slow actors in the logs" aria-label="Slow: @Format.Num(slow). Open slow actors in logs"><span class="lbl">Slow</span><span class="val @(slow > 0 ? "warn" : "")">@Format.Num(slow)</span></button>
 
     <div class="pl-end">
+        @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
+        {
+            <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=duckdb")" download title="Export this run as a standalone DuckDB file">Export</a>
+        }
         <button class="btn ghost small logs-btn" @onclick="() => Logs.Show()" aria-haspopup="dialog">Logs</button>
         <button class="btn ghost small more-btn" @onclick="() => open = !open" aria-expanded="@Aria.Bool(open)" aria-label="Run details">@(open ? "✕" : "⋯")</button>
     </div>

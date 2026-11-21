@@ -512,6 +512,28 @@ public sealed class SqliteRunStorage : IRunStorage
         return Task.FromResult(new LogPageResult(total, offset, limit, items));
     }
 
+    public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
+    {
+        await FlushAsync(ct);
+        var fmt = (format ?? "json").Trim().ToLowerInvariant();
+        var safeRunId = new string(runId.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
+        var runs = await ListRunsAsync(500, ct);
+        var summary = runs.FirstOrDefault(r => r.RunId == runId);
+        if (summary is null) return null;
+
+        var logs = await QueryLogsAsync(runId, new LogQuery(Offset: 0, Limit: 1000), ct);
+        if (fmt == "csv")
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("id,sequence,actor_name,entry,at_seconds,level,message,exception,call_index,is_failed,is_slow");
+            foreach (var l in logs.Items)
+                sb.AppendLine($"{l.Id},{l.Sequence},\"{l.ActorName}\",{l.Entry},{l.AtSeconds},\"{l.Level}\",\"{l.Message.Replace("\"", "\"\"")}\",\"{(l.Exception ?? "").Replace("\"", "\"\"")}\",{l.CallIndex},{l.IsFailed},{l.IsSlow}");
+            return new RunExportResult($"{safeRunId}-logs.csv", "text/csv; charset=utf-8", Encoding.UTF8.GetBytes(sb.ToString()));
+        }
+        var payload = new { run = summary, logs = logs.Items };
+        return new RunExportResult($"{safeRunId}.json", "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(payload, JsonOpts));
+    }
+
     public async ValueTask DisposeAsync()
     {
         queue.Writer.TryComplete();

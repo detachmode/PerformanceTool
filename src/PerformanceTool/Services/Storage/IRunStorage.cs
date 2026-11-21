@@ -57,8 +57,13 @@ public sealed record LogPageResult(
     int Limit,
     IReadOnlyList<StoredLogRow> Items);
 
+public sealed record RunExportResult(
+    string FileName,
+    string ContentType,
+    byte[] Content);
+
 /// <summary>
-/// Pluggable persistence layer for runs, actors, calls and logs (brain 0045).
+/// Pluggable persistence layer for runs, actors, calls and logs (brain 0045, 0046).
 /// Implementations must accept high-throughput writes without blocking <see cref="LoadRunner"/> actors.
 /// </summary>
 public interface IRunStorage : IAsyncDisposable
@@ -75,4 +80,7 @@ public interface IRunStorage : IAsyncDisposable
     Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default);
     Task<StoredActorDetail?> GetActorDetailAsync(string runId, int sequence, CancellationToken ct = default);
     Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default);
+
+    /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
+    Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default);
 }

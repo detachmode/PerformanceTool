@@ -25,6 +25,19 @@
             <span class="spacer"></span>
             @if (useServer)
             {
+                <div class="dd">
+                    <button class="btn ghost small" aria-haspopup="true" aria-expanded="@Aria.Bool(exportOpen)" @onclick="() => exportOpen = !exportOpen" title="Export this run from @ApiRun.StorageProvider">Export ▾</button>
+                    @if (exportOpen)
+                    {
+                        <div class="dd-backdrop" @onclick="() => exportOpen = false"></div>
+                        <div class="dd-menu" role="menu" aria-label="Export format">
+                            <a class="dd-item" href="@ExportUrl("parquet")" download @onclick="() => exportOpen = false">Parquet (.parquet)</a>
+                            <a class="dd-item" href="@ExportUrl("duckdb")" download @onclick="() => exportOpen = false">DuckDB (.duckdb)</a>
+                            <a class="dd-item" href="@ExportUrl("json")" download @onclick="() => exportOpen = false">JSON (.json)</a>
+                            <a class="dd-item" href="@ExportUrl("csv")" download @onclick="() => exportOpen = false">CSV (.csv)</a>
+                        </div>
+                    }
+                </div>
                 <button class="btn ghost small" @onclick="RefreshServer" disabled="@serverLoading" title="Reload matching logs from server">Refresh</button>
             }
             <button class="icon-btn" @onclick="Popup.Close" aria-label="Close">✕</button>
@@ -112,7 +125,10 @@
     private readonly bool[] level = [true, true, true, true, true];
     private string search = "";
     private bool levelsOpen;
+    private bool exportOpen;
     private FakeLogEntry? expanded;
+
+    private string ExportUrl(string fmt) => $"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format={fmt}";
 
     private List<FakeLogEntry> filtered = [];
     private string builtSig = "";

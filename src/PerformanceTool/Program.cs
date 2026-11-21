@@ -12,10 +12,13 @@ builder.Services.AddSingleton<PresetStore>();
 builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddSingleton<LoadRunner>();
 builder.Services.AddSingleton<ScriptScenarioStore>();
-if (string.Equals(builder.Configuration["Storage:Provider"], "Memory", StringComparison.OrdinalIgnoreCase))
+var storageProvider = builder.Configuration["Storage:Provider"] ?? "DuckDb";
+if (string.Equals(storageProvider, "Memory", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IRunStorage, InMemoryRunStorage>();
-else
+else if (string.Equals(storageProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IRunStorage, SqliteRunStorage>();
+else
+    builder.Services.AddSingleton<IRunStorage, DuckDbRunStorage>();
 builder.Services.AddSingleton<RunManager>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
@@ -140,6 +143,11 @@ app.MapGet("/api/runs/{runId}/logs", (
         runId,
         new LogQuery(entry, actor, actorName, outcome, failed, slow, levelList, search, offset ?? 0, limit ?? 200),
         ct);
+});
+app.MapGet("/api/runs/{runId}/export", async (string runId, string? format, IRunStorage storage, CancellationToken ct) =>
+{
+    var export = await storage.ExportRunAsync(runId, format ?? "json", ct);
+    return export is null ? Results.NotFound() : Results.File(export.Content, export.ContentType, export.FileName);
 });
 
 // Environments (brain 0033): one JSON file each. Minimal REST: list, get, save (create or replace), delete.

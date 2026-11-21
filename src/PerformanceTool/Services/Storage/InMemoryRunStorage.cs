@@ -127,5 +127,16 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
+    {
+        var runs = await ListRunsAsync(500, ct);
+        var summary = runs.FirstOrDefault(r => r.RunId == runId);
+        if (summary is null) return null;
+        var logs = await QueryLogsAsync(runId, new LogQuery(Offset: 0, Limit: 1000), ct);
+        var safeRunId = new string(runId.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
+        var payload = new { run = summary, logs = logs.Items };
+        return new RunExportResult($"{safeRunId}.json", "application/json; charset=utf-8", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload));
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
