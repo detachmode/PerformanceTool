@@ -151,14 +151,14 @@ public sealed class FakeRunSource : IRunSource
 
     public bool IsEntryChanged(ScenarioRunConfig entry) => !savedEntries.Contains(EntryFingerprint(entry));
 
-    private static string EntryFingerprint(ScenarioRunConfig s) => $"{s.ScenarioId}|{s.Label}|{s.RatePerMinute}|{s.Parameters.ToJsonString()}";
+    private static string EntryFingerprint(ScenarioRunConfig s) => $"{s.ScenarioId}|{s.Label}|{s.RatePerMinute}|{s.Pattern}|{s.ActorsPerBurst}|{s.BurstsPerMinute}|{s.Parameters.ToJsonString()}";
 
     /// <summary>A string that changes whenever anything the editor can change changes.</summary>
     private static string Fingerprint(LoadPlan plan)
     {
         var sb = new StringBuilder().Append(plan.DurationSeconds).Append('|').Append(plan.MaxConcurrency).Append('|').Append(plan.TimeoutSeconds);
         foreach (var s in plan.Scenarios)
-            sb.Append('\n').Append(s.ScenarioId).Append('|').Append(s.Label).Append('|').Append(s.RatePerMinute).Append('|').Append(s.Parameters.ToJsonString());
+            sb.Append('\n').Append(s.ScenarioId).Append('|').Append(s.Label).Append('|').Append(s.RatePerMinute).Append('|').Append(s.Pattern).Append('|').Append(s.ActorsPerBurst).Append('|').Append(s.BurstsPerMinute).Append('|').Append(s.Parameters.ToJsonString());
         return sb.ToString();
     }
 
@@ -235,7 +235,7 @@ public sealed class FakeRunSource : IRunSource
         typicals = new CallTypicals();
         starts = new int[n]; inFlight = new int[n]; failed = new int[n]; slowActors = new int[n]; slowCalls = new int[n];
         // First fire at a random offset inside the first interval, like independent arrival streams.
-        nextFire = runPlan.Scenarios.Select(s => rng.NextDouble() * 60 / Math.Max(0.1, s.RatePerMinute)).ToArray();
+        nextFire = runPlan.Scenarios.Select(s => rng.NextDouble() * FireInterval(s)).ToArray();
         sequence = 0;
         elapsed = 0;
         runId = "run-" + rng.Next(0x1000000).ToString("x6");
@@ -250,16 +250,22 @@ public sealed class FakeRunSource : IRunSource
         elapsed = Math.Min(now, runPlan.DurationSeconds);
         for (var i = 0; i < runPlan.Scenarios.Count; i++)
         {
-            var interval = 60 / Math.Max(0.1, runPlan.Scenarios[i].RatePerMinute);
+            var interval = FireInterval(runPlan.Scenarios[i]);
+            var perTick = runPlan.Scenarios[i].Pattern == SpawningPattern.Bursts ? Math.Max(1, runPlan.Scenarios[i].ActorsPerBurst) : 1;
             while (nextFire[i] <= elapsed && nextFire[i] < runPlan.DurationSeconds)
             {
-                Fire(i, nextFire[i]);
+                // A burst starts all its actors at the same moment (brain 0034).
+                for (var k = 0; k < perTick; k++) Fire(i, nextFire[i]);
                 nextFire[i] += interval * (0.9 + rng.NextDouble() * 0.2);
             }
         }
         CompletePending(now);
         if (now >= runPlan.DurationSeconds && pending.Count == 0) Finish(runPlan.DurationSeconds);
     }
+
+    /// <summary>Seconds between two fire moments: between actors (linear) or between bursts.</summary>
+    private static double FireInterval(ScenarioRunConfig s) =>
+        60 / Math.Max(0.1, s.Pattern == SpawningPattern.Bursts ? s.BurstsPerMinute : s.RatePerMinute);
 
     /// <summary>Completes the actors whose end has come. While paused the time keeps running for them only (they finish, nothing new starts).</summary>
     private void CompletePending(double now)
@@ -439,6 +445,15 @@ public sealed class FakeRunSource : IRunSource
 
     // ---------- the fake plan ----------
 
+    /// <summary>Makes an entry start its actors in bursts (brain 0034), e.g. 10 actors 6 times a minute.</summary>
+    private static ScenarioRunConfig Bursts(ScenarioRunConfig c, int actorsPerBurst, double burstsPerMinute)
+    {
+        c.Pattern = SpawningPattern.Bursts;
+        c.ActorsPerBurst = actorsPerBurst;
+        c.BurstsPerMinute = burstsPerMinute;
+        return c;
+    }
+
     private ScenarioRunConfig Entry(string scenarioId, string label, double rate, string url, Action<JsonObject>? tweak = null)
     {
         var scenario = catalog.Find(scenarioId) ?? catalog.All[0];
@@ -495,9 +510,9 @@ public sealed class FakeRunSource : IRunSource
                 ThinkMs: 300, TailChance: 0.05, ErrorRate: 0.12,
                 Errors: [new(422, "HTTP 422 Payment declined", 3), new(500, "HTTP 500 Internal Server Error on POST /payments", 2), new(null, "Payment provider timed out after 10 s", 1)],
                 FailAtCall: 3, ForceFailOn: 3));
-        Add(Entry("user-journey", "Browse categories", 90, "",
+        Add(Bursts(Entry("user-journey", "Browse categories", 90, "",
                 urls("{{BaseUrl}}/", "{{BaseUrl}}/categories/12", "{{BaseUrl}}/categories/7", "{{BaseUrl}}/categories/31",
-                     "{{BaseUrl}}/categories/31?page=2", "{{BaseUrl}}/products/918", "{{BaseUrl}}/products/204")),
+                     "{{BaseUrl}}/categories/31?page=2", "{{BaseUrl}}/products/918", "{{BaseUrl}}/products/204")), 15, 6),
             new("Open the home page, look through 3 categories with pagination, open 2 products.",
                 [new("GET /", 200), .. Repeat("GET /categories/{id}", 3, 260), new("GET /categories/{id}?page=2", 280), new("GET /products/{id} · 1", 240), new("GET /products/{id} · 2", 240)],
                 ThinkMs: 120, MinCalls: 5, TailChance: 0.12, ErrorRate: 0.0,

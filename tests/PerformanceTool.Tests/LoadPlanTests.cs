@@ -55,4 +55,48 @@ public class LoadPlanTests
         copy.Scenarios[0].Parameters["url"] = "https://changed.test";
         Assert.Equal("https://example.com", plan.Scenarios[0].Parameters["url"]!.GetValue<string>());
     }
+
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Old_preset_without_pattern_loads_as_linear()
+    {
+        var plan = JsonSerializer.Deserialize<LoadPlan>(LegacyPresetPlan, WebJson)!;
+        Assert.All(plan.Scenarios, s => Assert.Equal(SpawningPattern.Linear, s.Pattern));
+        Assert.All(plan.Scenarios, s => Assert.Equal(s.RatePerMinute, s.EffectiveRatePerMinute()));
+    }
+
+    [Fact]
+    public void Bursts_round_trip_and_effective_rate()
+    {
+        var entry = ScenarioRunConfig.CreateFor(Catalog.Find("http-get")!);
+        entry.Pattern = SpawningPattern.Bursts;
+        entry.ActorsPerBurst = 10;
+        entry.BurstsPerMinute = 4;
+        var json = JsonSerializer.Serialize(new LoadPlan { Scenarios = [entry] }, WebJson);
+        Assert.Contains("\"Bursts\"", json);
+        var back = JsonSerializer.Deserialize<LoadPlan>(json, WebJson)!.Scenarios[0];
+        Assert.Equal(SpawningPattern.Bursts, back.Pattern);
+        Assert.Equal(10, back.ActorsPerBurst);
+        Assert.Equal(4, back.BurstsPerMinute);
+        Assert.Equal(40, back.EffectiveRatePerMinute());
+        Assert.Equal(40, back.Clone().EffectiveRatePerMinute());
+    }
+
+    [Fact]
+    public void Burst_validation()
+    {
+        var entry = ScenarioRunConfig.CreateFor(Catalog.Find("http-get")!);
+        entry.Pattern = SpawningPattern.Bursts;
+        var plan = new LoadPlan { Scenarios = [entry] };
+        Assert.Empty(plan.Validate(Catalog));
+        entry.ActorsPerBurst = 0;
+        Assert.Contains(plan.Validate(Catalog), e => e.Contains("actors per burst"));
+        entry.ActorsPerBurst = 1000;
+        entry.BurstsPerMinute = 100;
+        Assert.Contains(plan.Validate(Catalog), e => e.Contains("must not exceed"));
+        entry.ActorsPerBurst = 5;
+        entry.BurstsPerMinute = 0;
+        Assert.Contains(plan.Validate(Catalog), e => e.Contains("bursts per minute"));
+    }
 }
