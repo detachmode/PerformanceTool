@@ -14,24 +14,37 @@
     var target = s.Plan.Scenarios[Index].RatePerMinute;
     var runningAll = s.ActorsInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
     // The brushed time window (brain 0023, update 3): actors that started in [from, to). A window that reaches the live edge follows it (to = open).
-    var from = win?.From ?? double.NegativeInfinity;
-    var to = win is { Follow: false } w1 ? w1.To : double.PositiveInfinity;
+    // The view [vf, vt]: a following window keeps its width and slides with the live edge.
+    double vf = 0, vt = 0;
+    if (win is { } w0) { var sp0 = w0.To - w0.From; if (w0.Follow) { vt = s.Elapsed; vf = Math.Max(0, vt - sp0); } else { vf = w0.From; vt = w0.To; } }
+    var from = win is null ? double.NegativeInfinity : vf;
+    var to = win is { Follow: false } ? vt : double.PositiveInfinity;
     IReadOnlyList<RunningActor> runningNow = win is null ? runningAll : runningAll.Where(r => r.StartedAt >= from && r.StartedAt < to).ToList();
     // While the user aims at the chart (brain 0026) the bars of the moment of aiming are shown again; running bars still grow with the clock,
     // and actors that were running at that moment get their final colour in place once they finish.
     ChartData cd;
     if (aiming && fz is not null)
     {
-        var resolved = show == ActorShow.All ? ActorBars.ResolveFinished(fz.Bars, fz.Running, actors, fz.Finished, view.Finished, fz.Width) : fz.Bars;
+        var resolved = show == ActorShow.All ? ActorBars.ResolveFinished(fz.Bars, fz.Running, actors, fz.Finished, view.Finished, fz.Width, fz.GridFrom) : fz.Bars;
         cd = ReferenceEquals(resolved, fz.Bars) ? fz : fz with { Bars = resolved };
     }
     else
     {
-        var b0 = ActorBars.Build(actors, view.Finished, show, out var total0, out var width0, from, to, Settings.MaxBars);
+        List<ActorBar> b0; int total0; double width0; double? gridFrom = null; IReadOnlyList<RunningActor> runningBars = runningNow;
+        if (win is not null)
+        {
+            // zoomed: bars on the stable time grid, buffered beyond both edges of the view (the script slides them while panning)
+            grid.Ensure(vf, vt, s.Elapsed, Settings.MaxBars);
+            width0 = grid.Width; gridFrom = grid.From;
+            b0 = ActorBars.BuildGrid(actors, view.Finished, show, width0, grid.First, grid.LastNow(s.Elapsed), vf, vt, out total0);
+            var gTo = grid.To;
+            runningBars = runningAll.Where(r => r.StartedAt >= gridFrom && r.StartedAt < gTo).ToList();
+        }
+        else b0 = ActorBars.Build(actors, view.Finished, show, out total0, out width0, from, to, Settings.MaxBars);
         var scale0 = b0.Count == 0 ? 1 : Math.Max(1, b0.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
-        if (show == ActorShow.All) b0 = ActorBars.WithRunning(b0, runningNow, width0, s.Elapsed);
+        if (show == ActorShow.All) b0 = ActorBars.WithRunning(b0, runningBars, width0, s.Elapsed, gridFrom);
         if (b0.Count > 0 && scale0 <= 1) scale0 = Math.Max(1, b0.Max(b => b.MaxMs));
-        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts, view.Finished, runningNow);
+        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts, view.Finished, runningBars, gridFrom);
         lastChart = cd;
         if (aiming) fz = cd;
     }
@@ -104,12 +117,14 @@
                 }
             </div>
             <div class="chart-scroll">
-                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(bars.Count > 60 ? "chart dense" : "chart")" style="@(bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is { } wd ? $"{wd.From.ToString("R", CultureInfo.InvariantCulture)} {wd.To.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Actors" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
                     <span class="chart-max">@Format.Ms(scale)</span>
                     <span class="dz-label" aria-hidden="true"></span>
                     <span class="dz-strip" aria-hidden="true"></span>
                     <span class="dz-axis" aria-hidden="true"></span>
                     <span class="dz-brush" aria-hidden="true"><span></span></span>
+                    <span class="dz-over" title="The whole run: the lit part is in view. Tap or drag to move the view." aria-hidden="true"></span>
+                    <div class="dz-bars">
                     @foreach (var b in bars)
                     {
                         var bar = b;
@@ -121,7 +136,7 @@
                         {
                             var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-n1="@Near1(bar)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -141,13 +156,14 @@
                             </button>
                         }
                     }
+                    </div>
                 </DockZoom>
             </div>
             </div>
             <p class="chart-note muted">
-                @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @Format.Time(width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
+                @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @FT(width, width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
                 else { <text>One bar per actor, taller = slower. The axis shows the run time of the actors at that position. Click an actor to see its calls.</text> }
-                <text> Drag across the chart to zoom into a time frame (touch: hold to magnify, pinch to zoom, swipe sideways to pan when zoomed).</text>
+                <text> Drag across the chart to zoom into a time frame (touch: swipe sideways to magnify, hold at the edge to pan, pinch or double tap to zoom).</text>
             </p>
         }
 
@@ -259,6 +275,7 @@
     private double? bucket;
     private sealed record Win(double From, double To, bool Follow);
     private Win? win;
+    private readonly ChartGrid grid = new();
     private bool listHover;
     private List<ActorRow> sideCache = [];
     private int[] sideCounts = new int[4];
@@ -294,7 +311,7 @@
     private bool refocus = true;
     private DockZoom? zoom;
     // Freeze while aiming (brain 0026): the chart data of the last normal render, and the data held while the user aims.
-    private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts, int Finished, IReadOnlyList<RunningActor> Running);
+    private sealed record ChartData(List<ActorBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts, int Finished, IReadOnlyList<RunningActor> Running, double? GridFrom = null);
     private ChartData? lastChart, fz;
     private bool aiming;
 
@@ -441,13 +458,61 @@
         }
     }
 
+    /// <summary>
+    /// Previous / next failed (or slow) actor in time order, wrapping around. With grouped bars (brain 0032) it steps to the previous / next group that
+    /// holds one and selects the group; when zoomed in and the target is outside the view, the view moves to it (same span, brain 0036).
+    /// </summary>
     private void StepTo(int direction)
     {
-        var found = ActorBars.Step(Snapshot.Store.Actors(Index), Snapshot.Scenarios[Index].Finished, StepOutcome, selected?.Sequence, direction);
-        if (found is null) return;
-        selected = found;
-        selRunning = null;
-        bucket = null;
+        var actors = Snapshot.Store.Actors(Index);
+        var count = Snapshot.Scenarios[Index].Finished;
+        var outcome = StepOutcome;
+        var list = new List<ActorRecord>();
+        for (var i = 0; i < count; i++) if (actors[i].Outcome == outcome) list.Add(actors[i]);
+        if (list.Count == 0) return;
+        list.Sort((x, y) => x.StartedAt != y.StartedAt ? x.StartedAt.CompareTo(y.StartedAt) : x.Sequence.CompareTo(y.Sequence));
+        var w = lastChart?.Width ?? 0;
+        var elapsed = Snapshot.Elapsed;
+        double vf = double.NegativeInfinity, vt = double.PositiveInfinity;
+        if (win is { } wv) { var sp = wv.To - wv.From; if (wv.Follow) { vt = elapsed; vf = Math.Max(0, vt - sp); } else { vf = wv.From; vt = wv.To; } }
+
+        ActorRecord? FromView() => direction > 0
+            ? list.Cast<ActorRecord?>().FirstOrDefault(a => a!.Value.StartedAt >= (double.IsNegativeInfinity(vf) ? 0 : vf))
+            : list.Cast<ActorRecord?>().LastOrDefault(a => a!.Value.StartedAt < (double.IsPositiveInfinity(vt) ? double.MaxValue : vt));
+        // the key of the current position: a group start (grouped bars) or an actor (start time, sequence)
+        ActorRecord? tg = null;
+        if (w > 0)
+        {
+            double? cur = bucket ?? (selected is { } sa ? ActorBars.BucketOf(sa.StartedAt, w) : null);
+            double Key(ActorRecord a) => ActorBars.BucketOf(a.StartedAt, w);
+            if (cur is { } c)
+                tg = direction > 0 ? list.Cast<ActorRecord?>().FirstOrDefault(a => Key(a!.Value) > c) : list.Cast<ActorRecord?>().LastOrDefault(a => Key(a!.Value) < c);
+            else
+                tg = FromView();
+        }
+        else if (selected is { } cs)
+        {
+            tg = direction > 0 ? list.Cast<ActorRecord?>().FirstOrDefault(a => a!.Value.StartedAt > cs.StartedAt || (a.Value.StartedAt == cs.StartedAt && a.Value.Sequence > cs.Sequence))
+                : list.Cast<ActorRecord?>().LastOrDefault(a => a!.Value.StartedAt < cs.StartedAt || (a.Value.StartedAt == cs.StartedAt && a.Value.Sequence < cs.Sequence));
+        }
+        else tg = FromView();
+        var target = tg ?? (direction > 0 ? list[0] : list[^1]);     // wrap around
+
+        double t0 = target.StartedAt, t1 = target.StartedAt;
+        if (w > 0) { t0 = ActorBars.BucketOf(target.StartedAt, w); t1 = t0 + w; }
+        if (win is not null && (t0 < vf || t1 > vt) && vt - vf > 0)
+        {
+            var span = vt - vf;
+            var from = Math.Clamp((t0 + t1) / 2 - span / 2, 0, Math.Max(0, elapsed - span));
+            var to = from + span;
+            win = to >= elapsed - 0.02 * span ? new Win(Math.Max(0, elapsed - span), elapsed, true) : new Win(from, to, false);
+        }
+        tailMs = null; fz = null; selRunning = null;
+        if (w > 0 && !(win is not null && ActorBars.BucketActors(actors, count, show, t0, w).Count <= 1))
+        {
+            bucket = t0; selected = null;
+        }
+        else { bucket = null; selected = target; }
     }
 
     /// <summary>A bar that stands for several actors (brain 0032): lighter fill, outline and a count badge.</summary>
@@ -459,7 +524,17 @@
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>Label inside the hovered bar (brain 0023): actor number or time range, then start time and duration or actor count. Times are run time (m:ss).</summary>
-    private static string LabelTop(ActorBar b, double width) => b.IsBucket ? $"{Format.Time(b.BucketStart)}–{Format.Time(b.BucketStart + width)}" : $"#{b.Sequence + 1}";
+    private static string LabelTop(ActorBar b, double width) => b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"#{b.Sequence + 1}";
+
+    /// <summary>Run time m:ss, with decimals when the bucket width is below a second (zoomed in far).</summary>
+    private static string FT(double seconds, double width)
+    {
+        if (width >= 1) return Format.Time(seconds);
+        var d = width < 0.1 ? 2 : 1;
+        var whole = Math.Floor(seconds);
+        var frac = (int)Math.Floor((seconds - whole) * (d == 2 ? 100 : 10) + 1e-6);
+        return Format.Time(whole) + "." + frac.ToString(d == 2 ? "00" : "0", CultureInfo.InvariantCulture);
+    }
 
     private static string T(double seconds) => seconds.ToString("0.###", CultureInfo.InvariantCulture);
 
@@ -480,14 +555,14 @@
     private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : "good";
 
     /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
-    private static string Near1(ActorBar b) => b.IsBucket ? Format.Time(b.BucketStart) : $"#{b.Sequence + 1}";
+    private static string Near1(ActorBar b, double width) => b.IsBucket ? FT(b.BucketStart, width) : $"#{b.Sequence + 1}";
     private static string Near2(ActorBar b) => b.IsBucket ? Format.Num(b.Total) : b.IsRunningActor ? "…" : b.MaxMs < 1000 ? $"{b.MaxMs:0}ms" : b.MaxMs < 60_000 ? $"{b.MaxMs / 1000:0.0}s" : Format.Time(b.MaxMs / 1000);
 
     private static string BarTitle(ActorBar b, double width)
     {
         if (b.IsRunningActor) return $"Actor #{b.Sequence + 1}, running, {Format.Ms(b.MaxMs)} so far";
         if (!b.IsBucket) return $"Actor #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : "");
-        var text = $"{Format.Time(b.BucketStart)} to {Format.Time(b.BucketStart + width)}: {Format.Plural(b.Count, "actor", "actors")}";
+        var text = $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "actor", "actors")}";
         if (b.Failed > 0) text += $", {b.Failed} failed";
         if (b.Slow > 0) text += $", {b.Slow} slow";
         if (b.Running > 0) text += $", {b.Running} running";

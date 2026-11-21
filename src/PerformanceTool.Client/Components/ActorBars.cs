@@ -85,7 +85,7 @@ public static class ActorBars
     private const int MaxRunningBars = 24;
 
     /// <summary>Adds the actors in flight to the bars: as blue bars at the right edge, or counted into their (newest) time bucket.</summary>
-    public static List<ActorBar> WithRunning(List<ActorBar> bars, IReadOnlyList<RunningActor> running, double bucketWidth, double elapsed)
+    public static List<ActorBar> WithRunning(List<ActorBar> bars, IReadOnlyList<RunningActor> running, double bucketWidth, double elapsed, double? gridFirst = null)
     {
         if (running.Count == 0) return bars;
         var result = new List<ActorBar>(bars);
@@ -95,13 +95,15 @@ public static class ActorBars
                 result.Add(new(0, 0, 0, Math.Max(0, (elapsed - r.StartedAt) * 1000), r.Sequence, r.StartedAt, 1));
             return result;
         }
-        var first = result[0].BucketStart;
+        var first = gridFirst ?? result[0].BucketStart;
         foreach (var r in running)
         {
             var k = (int)Math.Max(0, Math.Round((BucketOf(r.StartedAt, bucketWidth) - first) / bucketWidth));
             while (result.Count <= k && result.Count < bars.Count + 3) result.Add(new(0, 0, 0, 0, -1, first + result.Count * bucketWidth));
             k = Math.Min(k, result.Count - 1);
             var b = result[k];
+            // a single-actor slot of a grid becomes a plain slot again once an actor runs in it
+            if (gridFirst is not null && !b.IsBucket && b.Total > 0) b = b with { Sequence = -1, BucketStart = Slot(SlotIndex(first, bucketWidth) + k, bucketWidth) };
             result[k] = b with { Running = b.Running + 1, MaxMs = Math.Max(b.MaxMs, (elapsed - r.StartedAt) * 1000) };
         }
         return result;
@@ -112,7 +114,7 @@ public static class ActorBars
     /// (brain 0023, update 3): a running bar becomes a finished bar at the same position, a running actor of a time bucket moves into
     /// the bucket's counts. Only the actors finished since the freeze (frozenCount..nowCount) are looked at.
     /// </summary>
-    public static List<ActorBar> ResolveFinished(List<ActorBar> bars, IReadOnlyList<RunningActor> frozenRunning, IReadOnlyList<ActorRecord> actors, int frozenCount, int nowCount, double bucketWidth)
+    public static List<ActorBar> ResolveFinished(List<ActorBar> bars, IReadOnlyList<RunningActor> frozenRunning, IReadOnlyList<ActorRecord> actors, int frozenCount, int nowCount, double bucketWidth, double? gridFirst = null)
     {
         if (frozenRunning.Count == 0 || nowCount <= frozenCount || bars.Count == 0) return bars;
         var seqs = new HashSet<int>(frozenRunning.Count);
@@ -131,7 +133,7 @@ public static class ActorBars
             }
             else
             {
-                var k = (int)Math.Round((BucketOf(a.StartedAt, bucketWidth) - result[0].BucketStart) / bucketWidth);
+                var k = (int)Math.Round((BucketOf(a.StartedAt, bucketWidth) - (gridFirst ?? result[0].BucketStart)) / bucketWidth);
                 if (k < 0 || k >= result.Count || result[k].Running == 0) continue;
                 var b = result[k];
                 result[k] = b with { Running = b.Running - 1, Count = b.Count + 1, Failed = b.Failed + done.Failed, Slow = b.Slow + done.Slow, MaxMs = Math.Max(b.MaxMs, a.DurationMs) };
@@ -153,7 +155,50 @@ public static class ActorBars
     }
 
     /// <summary>The bucket start a given actor falls into (for highlighting and for stepping to an actor).</summary>
-    public static double BucketOf(double startedAt, double width) => Math.Floor(startedAt / width) * width;
+    public static double BucketOf(double startedAt, double width) => Slot(SlotIndex(startedAt, width), width);
+
+    // ---- stable time grid (brain 0031 update 2): while zoomed, bucket edges are multiples of the width counted from the run start, so a bucket
+    // keeps the same actors whatever part of the run is in view; panning only moves the bars.
+    private static readonly double[] GridWidths = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 43200, 86400];
+
+    /// <summary>The bucket width for a view of <paramref name="span"/> seconds: the smallest nice width that keeps the visible bars below <paramref name="maxBars"/>.</summary>
+    public static double GridWidth(double span, int maxBars) => GridWidths.FirstOrDefault(w => span / w < maxBars, GridWidths[^1]);
+    public static long SlotIndex(double t, double width) => (long)Math.Floor(t / width + 1e-9);
+    /// <summary>Start time of a grid slot, rounded to 3 decimals so it survives being written to a key and parsed back.</summary>
+    public static double Slot(long index, double width) => Math.Round(index * width, 3);
+
+    /// <summary>
+    /// The bars of the grid slots firstIdx..lastIdx (empty slots included, so bar i is always the slot firstIdx + i). A slot with exactly one actor
+    /// is a plain actor bar. <paramref name="total"/> counts the actors that started in the view [viewFrom, viewTo).
+    /// </summary>
+    public static List<ActorBar> BuildGrid(IReadOnlyList<ActorRecord> actors, int count, ActorShow show, double width, long firstIdx, long lastIdx,
+        double viewFrom, double viewTo, out int total)
+    {
+        total = 0;
+        var slots = (int)Math.Max(0, lastIdx - firstIdx + 1);
+        var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots];
+        var seq = new int[slots]; var st = new double[slots]; var slowOne = new bool[slots];
+        for (var i = 0; i < count; i++)
+        {
+            var a = actors[i];
+            if (!Includes(show, a)) continue;
+            if (a.StartedAt >= viewFrom && a.StartedAt < viewTo) total++;
+            var idx = SlotIndex(a.StartedAt, width);
+            if (idx < firstIdx || idx > lastIdx) continue;
+            var k = (int)(idx - firstIdx);
+            n[k]++; seq[k] = a.Sequence; st[k] = a.StartedAt; slowOne[k] = a.Outcome == ActorOutcome.Slow;
+            if (a.Failed) f[k]++;
+            else if (a.SlowCalls > 0) sl[k]++;
+            if (a.DurationMs > ms[k]) ms[k] = a.DurationMs;
+        }
+        var bars = new List<ActorBar>(slots);
+        for (var k = 0; k < slots; k++)
+        {
+            if (n[k] == 1) bars.Add(new(1, f[k], slowOne[k] ? 1 : 0, ms[k], seq[k], st[k]));
+            else bars.Add(new(n[k], f[k], sl[k], ms[k], -1, Slot(firstIdx + k, width)));
+        }
+        return bars;
+    }
 
     /// <summary>The next (or previous) actor with the given outcome after <paramref name="fromSequence"/>, wrapping around; null if there is none.</summary>
     public static ActorRecord? Step(IReadOnlyList<ActorRecord> actors, int count, ActorOutcome outcome, int? fromSequence, int direction)
@@ -169,5 +214,41 @@ public static class ActorBars
             if (actors[i].Outcome == outcome) return actors[i];
         }
         return null;
+    }
+}
+
+/// <summary>
+/// The sticky bar buffer of a zoomed chart: the grid slots from one view-width left of the view to one view-width right of it. It is only rebuilt
+/// when the bucket width changes or the view comes within half a view-width of an edge (not at the run's start or newest end), so panning in
+/// between does not touch the bars; the script just slides them.
+/// </summary>
+public sealed class ChartGrid
+{
+    public double Width { get; private set; }
+    public long First { get; private set; }
+    public long Last { get; private set; } = -1;
+    /// <summary>The buffer reaches the newest end of the run and grows with it.</summary>
+    public bool Open { get; private set; }
+    public double From => ActorBars.Slot(First, Width);
+    public long LastNow(double elapsed) => Open ? Math.Max(Last, ActorBars.SlotIndex(elapsed, Width)) : Last;
+    public double To => Open ? double.PositiveInfinity : ActorBars.Slot(Last + 1, Width);
+
+    public void Ensure(double viewFrom, double viewTo, double elapsed, int maxBars)
+    {
+        var span = Math.Max(viewTo - viewFrom, 1e-6);
+        var w = ActorBars.GridWidth(span, maxBars);
+        var need = Width != w || Last < First;
+        if (!need)
+        {
+            var lo = From; var hi = To;
+            if ((First > 0 && viewFrom < lo + 0.5 * span) || (!Open && viewTo > hi - 0.5 * span) || viewFrom < lo || viewTo > hi) need = true;
+        }
+        if (!need) return;
+        Width = w;
+        First = Math.Max(0, ActorBars.SlotIndex(viewFrom - span, w));
+        var end = ActorBars.SlotIndex(viewTo + span, w);
+        var run = ActorBars.SlotIndex(Math.Max(0, elapsed), w);
+        Open = end >= run;
+        Last = Open ? run : end;
     }
 }
