@@ -18,6 +18,7 @@ public sealed class RunStore
     private readonly Queue<ActorDetail>[][] detailQueues;
     private readonly int[] detailCounts;
     private byte[] outcomes = new byte[1024];
+    private byte[] ratios = new byte[1024];
     private readonly List<ActorDetail> unindexed = [];
     private int unindexedCompactAt = 2000;
     private readonly List<FakeLogEntry> lines = [];
@@ -44,6 +45,11 @@ public sealed class RunStore
     public IReadOnlyList<ActorRecord> Actors(int entry) => actors[entry];
 
     public ActorOutcome OutcomeOf(int sequence) => sequence >= 0 && sequence < outcomes.Length ? (ActorOutcome)outcomes[sequence] : ActorOutcome.Ok;
+    /// <summary>The colour step of a finished actor (brain 0041), by sequence; 0 for an unknown actor.</summary>
+    public int TintOf(int sequence) => OutcomeOf(sequence) == ActorOutcome.Slow ? SlowCallRule.MaxStep
+        : sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Step(SlowCallRule.Decode(ratios[sequence])) : 0;
+    /// <summary>How many times its typical duration the worst call of a finished actor took (1 when unknown).</summary>
+    public double RatioOf(int sequence) => sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Decode(ratios[sequence]) : 1;
     public ActorDetail? Detail(int sequence) => details.GetValueOrDefault(sequence);
 
     /// <summary>Cheap check whether the calls and log lines of an actor are still kept (false once evicted, or for an unknown actor).</summary>
@@ -52,8 +58,14 @@ public sealed class RunStore
     public void Complete(ActorRecord record, ActorDetail detail)
     {
         actors[record.Entry].Add(record);
-        if (record.Sequence >= outcomes.Length) Array.Resize(ref outcomes, Math.Max(outcomes.Length * 2, record.Sequence + 1));
+        if (record.Sequence >= outcomes.Length)
+        {
+            var size = Math.Max(outcomes.Length * 2, record.Sequence + 1);
+            Array.Resize(ref outcomes, size);
+            Array.Resize(ref ratios, size);
+        }
         outcomes[record.Sequence] = (byte)record.Outcome;
+        ratios[record.Sequence] = record.RatioCode;
         details[record.Sequence] = detail;
         unindexed.Add(detail);
         var queues = detailQueues[record.Entry];

@@ -10,12 +10,16 @@ public enum ActorShow { All, Failed, Slow }
 /// <see cref="MaxMs"/> is its elapsed time; in a time bucket <see cref="Running"/> is the number of running actors.
 /// <see cref="BucketStart"/> is the start time of a single actor (running or finished) or of a time bucket.
 /// </remarks>
-public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0, double Cover = 1)
+public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0, double Cover = 1, int RatioCode = 0)
 {
     /// <summary>The bar belongs to an unfolded burst (brain 0038): <see cref="Burst"/> is the burst's actor count, <see cref="Slot"/> the start of its place on the time grid.</summary>
     /// <remarks><see cref="Cover"/> is how many grid slots wide the bar is (brain 0040): 1 for a slot bar; the bars of an unfolded burst share the empty slots
     /// the burst borrowed, so together they cover a whole number of slots and x stays linear in time across the chart.</remarks>
     public bool InBurst => Burst > 0;
+    /// <summary>The colour step of the bar (brain 0041): the worst (highest) step of the actors in it, so a group is as yellow as its worst actor, like red and amber.</summary>
+    public int Step => Failed > 0 ? 0 : Slow > 0 ? SlowCallRule.MaxStep : SlowCallRule.Step(Ratio);
+    /// <summary>How many times its typical duration the worst call took (of the worst actor in a group), brain 0041.</summary>
+    public double Ratio => SlowCallRule.Decode((byte)RatioCode);
     public int Total => Count + Running;
     public bool IsRunningActor => Sequence >= 0 && Running > 0 && Count == 0;
     public bool IsBucket => Sequence < 0;
@@ -102,7 +106,7 @@ public static class ActorBars
             for (var i = 0; i < count; i++)
             {
                 var a = actors[i];
-                if (Includes(show, a) && a.StartedAt >= from && a.StartedAt < to) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt));
+                if (Includes(show, a) && a.StartedAt >= from && a.StartedAt < to) bars.Add(new(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt, 0, 0, 0, 1, a.RatioCode));
             }
             return bars;
         }
@@ -111,7 +115,7 @@ public static class ActorBars
         bucketWidth = Widths.FirstOrDefault(w => span / w < maxBars, Widths[^1]);
         var first = (long)Math.Floor(min / bucketWidth);
         var slots = (int)((long)Math.Floor(max / bucketWidth) - first + 1);
-        var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots];
+        var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots]; var tn = new int[slots];
         for (var i = 0; i < count; i++)
         {
             var a = actors[i];
@@ -120,9 +124,10 @@ public static class ActorBars
             n[k]++;
             if (a.Failed) f[k]++;
             else if (a.SlowCalls > 0) sl[k]++;
+            if (!a.Failed && a.RatioCode > tn[k]) tn[k] = a.RatioCode;
             if (a.DurationMs > ms[k]) ms[k] = a.DurationMs;
         }
-        for (var k = 0; k < slots; k++) bars.Add(new(n[k], f[k], sl[k], ms[k], -1, (first + k) * bucketWidth));
+        for (var k = 0; k < slots; k++) bars.Add(new(n[k], f[k], sl[k], ms[k], -1, (first + k) * bucketWidth, 0, 0, 0, 1, tn[k]));
         return bars;
     }
 
@@ -169,7 +174,7 @@ public static class ActorBars
             var a = actors[i];
             if (!seqs.Contains(a.Sequence)) continue;
             result ??= new List<ActorBar>(bars);
-            var done = new ActorBar(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt);
+            var done = new ActorBar(1, a.Failed ? 1 : 0, a.Outcome == ActorOutcome.Slow ? 1 : 0, a.DurationMs, a.Sequence, a.StartedAt, 0, 0, 0, 1, a.RatioCode);
             if (bucketWidth <= 0)
             {
                 var k = result.FindIndex(b => b.IsRunningActor && b.Sequence == a.Sequence);
@@ -180,7 +185,7 @@ public static class ActorBars
                 var k = (int)Math.Round((BucketOf(a.StartedAt, bucketWidth) - (gridFirst ?? result[0].BucketStart)) / bucketWidth);
                 if (k < 0 || k >= result.Count || result[k].Running == 0) continue;
                 var b = result[k];
-                result[k] = b with { Running = b.Running - 1, Count = b.Count + 1, Failed = b.Failed + done.Failed, Slow = b.Slow + done.Slow, MaxMs = Math.Max(b.MaxMs, a.DurationMs) };
+                result[k] = b with { Running = b.Running - 1, Count = b.Count + 1, Failed = b.Failed + done.Failed, Slow = b.Slow + done.Slow, MaxMs = Math.Max(b.MaxMs, a.DurationMs), RatioCode = Math.Max(b.RatioCode, a.Failed ? 0 : a.RatioCode) };
             }
         }
         return result ?? bars;
@@ -220,7 +225,7 @@ public static class ActorBars
     {
         total = 0;
         var slots = (int)Math.Max(0, lastIdx - firstIdx + 1);
-        var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots];
+        var n = new int[slots]; var f = new int[slots]; var sl = new int[slots]; var ms = new double[slots]; var tn = new int[slots];
         var seq = new int[slots]; var st = new double[slots]; var slowOne = new bool[slots];
         for (var i = 0; i < count; i++)
         {
@@ -232,14 +237,15 @@ public static class ActorBars
             var k = (int)(idx - firstIdx);
             n[k]++; seq[k] = a.Sequence; st[k] = a.StartedAt; slowOne[k] = a.Outcome == ActorOutcome.Slow;
             if (a.Failed) f[k]++;
-            else if (a.SlowCalls > 0) sl[k]++;
+            else { if (a.SlowCalls > 0) sl[k]++; if (a.RatioCode > tn[k]) tn[k] = a.RatioCode; }
+            if (!a.Failed && a.RatioCode > tn[k]) tn[k] = a.RatioCode;
             if (a.DurationMs > ms[k]) ms[k] = a.DurationMs;
         }
         var bars = new List<ActorBar>(slots);
         for (var k = 0; k < slots; k++)
         {
-            if (n[k] == 1) bars.Add(new(1, f[k], slowOne[k] ? 1 : 0, ms[k], seq[k], st[k]));
-            else bars.Add(new(n[k], f[k], sl[k], ms[k], -1, Slot(firstIdx + k, width)));
+            if (n[k] == 1) bars.Add(new(1, f[k], slowOne[k] ? 1 : 0, ms[k], seq[k], st[k], 0, 0, 0, 1, tn[k]));
+            else bars.Add(new(n[k], f[k], sl[k], ms[k], -1, Slot(firstIdx + k, width), 0, 0, 0, 1, tn[k]));
         }
         return bars;
     }
@@ -370,20 +376,20 @@ public static class ActorBars
             var bars = new List<ActorBar>(nb);
             foreach (var e in pick)
             {
-                if (e.Done is { } d) bars.Add(new(1, d.Failed ? 1 : 0, d.Outcome == ActorOutcome.Slow ? 1 : 0, d.DurationMs, d.Sequence, d.StartedAt, 0, list.Count, slot, each));
+                if (e.Done is { } d) bars.Add(new(1, d.Failed ? 1 : 0, d.Outcome == ActorOutcome.Slow ? 1 : 0, d.DurationMs, d.Sequence, d.StartedAt, 0, list.Count, slot, each, d.RatioCode));
                 else bars.Add(new(0, 0, 0, Math.Max(0, (elapsed - e.Run!.StartedAt) * 1000), e.Run.Sequence, e.Run.StartedAt, 1, list.Count, slot, each));
             }
             if (rest > 0)
             {
                 var picked = new HashSet<int>(pick.Select(Seq));
-                int n = 0, f = 0, sl = 0, run = 0; double ms = 0;
+                int n = 0, f = 0, sl = 0, run = 0, tint = 0; double ms = 0;
                 foreach (var e in list)
                 {
                     if (picked.Contains(Seq(e))) continue;
-                    if (e.Done is { } d) { n++; if (d.Failed) f++; else if (d.SlowCalls > 0) sl++; ms = Math.Max(ms, d.DurationMs); }
+                    if (e.Done is { } d) { n++; if (d.Failed) f++; else { if (d.SlowCalls > 0) sl++; tint = Math.Max(tint, d.RatioCode); } ms = Math.Max(ms, d.DurationMs); }
                     else { run++; ms = Math.Max(ms, (elapsed - e.Run!.StartedAt) * 1000); }
                 }
-                bars.Add(new(n, f, sl, ms, -1, slot, run, list.Count, slot, each));
+                bars.Add(new(n, f, sl, ms, -1, slot, run, list.Count, slot, each, tint));
             }
             chosen[from] = (cover, bars); used += nb;
             bursts.Add(new BurstSpan(slot, list.Count));
@@ -436,7 +442,9 @@ public static class ActorBars
 
     /// <summary>The stripes as a compact attribute for the script: "bad:12.5 good:87.5".</summary>
     public static string StripeData(ActorBar bar) =>
-        string.Join(' ', Stripes(bar).Select(p => p.Kind + ":" + p.Share.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)));
+        string.Join(' ', Stripes(bar).Select(p => p.Kind + ":" + p.Share.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+            // the ok stripe takes the group's colour step (brain 0041), unless slow actors in the group make the step theirs
+            + (p.Kind == "good" && bar.Slow == 0 && bar.Step is > 0 and < SlowCallRule.MaxStep ? ":" + bar.Step : "")));
 
     /// <summary>The next (or previous) actor with the given outcome after <paramref name="fromSequence"/>, wrapping around; null if there is none.</summary>
     public static ActorRecord? Step(IReadOnlyList<ActorRecord> actors, int count, ActorOutcome outcome, int? fromSequence, int direction)

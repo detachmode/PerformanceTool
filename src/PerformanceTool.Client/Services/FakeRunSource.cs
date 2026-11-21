@@ -333,6 +333,7 @@ public sealed class FakeRunSource : IRunSource
     {
         var calls = new List<FakeCall>(p.Calls.Count);
         var slow = 0;
+        var worst = 1.0;
         foreach (var c in p.Calls)
         {
             if (c.Skipped || c.Failed) { calls.Add(c); continue; }
@@ -340,9 +341,10 @@ public sealed class FakeRunSource : IRunSource
             var isSlow = SlowCallRule.IsSlow(c.DurationMs, typical);
             typicals.Add(p.Entry, c.Name, c.DurationMs);
             if (isSlow) slow++;
+            worst = Math.Max(worst, SlowCallRule.Ratio(c.DurationMs, typical));
             calls.Add(c with { Slow = isSlow, TypicalMs = typical });
         }
-        var record = new ActorRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors);
+        var record = new ActorRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors, SlowCallRule.Encode(worst));
         if (record.Failed) failed[p.Entry]++;
         else if (slow > 0) slowActors[p.Entry]++;
         slowCalls[p.Entry] += slow;

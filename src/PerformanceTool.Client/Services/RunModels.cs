@@ -86,12 +86,16 @@ public sealed class FakeLogEntry
 /// The small, permanent record of one finished actor. Cheap enough to keep for hours of run. The error text lives once in the
 /// run's <see cref="ErrorDictionary"/> (brain 0028); <see cref="Error"/> resolves it.
 /// </summary>
-public readonly record struct ActorRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors)
+public readonly record struct ActorRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors, byte RatioCode = 0)
 {
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => ErrorId != ErrorDictionary.None;
     public ActorOutcome Outcome => Failed ? ActorOutcome.Failed : SlowCalls > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
     public string Name => $"Actor #{Sequence + 1}";
+    /// <summary>How many times its typical duration the actor's worst call took (brain 0041); kept in one byte (<see cref="RatioCode"/>).</summary>
+    public double Ratio => SlowCallRule.Decode(RatioCode);
+    /// <summary>The colour step (0 pure green to <see cref="SlowCallRule.MaxStep"/> full amber). A slow actor is always full amber.</summary>
+    public int Tint => SlowCalls > 0 ? SlowCallRule.MaxStep : SlowCallRule.Step(Ratio);
 }
 
 /// <summary>Calls and log lines of one actor. Only kept for a limited number of actors per scenario (<see cref="RunStoreOptions"/>); log lines are generated on first use.</summary>

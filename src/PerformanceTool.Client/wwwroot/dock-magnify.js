@@ -310,7 +310,7 @@ export function attach(el, ref, options) {
         if (!s) { s = mk('grp-st'); s.setAttribute('aria-hidden', 'true'); g.append(s); }
         if (s.__st === st) return;
         s.__st = st;
-        s.replaceChildren(...st.split(' ').map(p => { const [k, v] = p.split(':'), e = mk(k, 'i'); e.style.flexGrow = v; return e; }));
+        s.replaceChildren(...st.split(' ').map(p => { const [k, v, t] = p.split(':'), e = mk(t ? k + ' t' + t : k, 'i'); e.style.flexGrow = v; return e; }));
     };
 
     let gapPx = 0;

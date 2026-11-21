@@ -9,6 +9,8 @@
     --running: #5b9bf0; /* actors in flight, calm blue; set to a grey (e.g. #8e88a8) to try the grey variant */
     --good: #4fb286; --slow: #e8b84a; --failed: #f2737d; /* each >= 4:1 on --panel and on --selected */
     --bad: var(--failed); --warn: var(--slow);
+    /* graded slowness (brain 0041): green at the typical time, three calm steps towards amber; the fourth step is --slow itself (slow = over 2x typical). Mixed in OKLCH so the middle stays a clean yellow-green. */
+    --g1: color-mix(in oklch, var(--slow) 25%, var(--good)); --g2: color-mix(in oklch, var(--slow) 50%, var(--good)); --g3: color-mix(in oklch, var(--slow) 75%, var(--good));
     --radius: 6px; --radius-sm: 4px;
     --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", monospace;
 }
@@ -23,6 +25,7 @@ button { font: inherit; color: inherit; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); font-size: .82rem; }
 .bad { color: var(--bad); }
+.t1 { --good: var(--g1); } .t2 { --good: var(--g2); } .t3 { --good: var(--g3); }   /* an ok actor slower than typical: the element's own green moves towards amber (brain 0041) */
 .warn { color: var(--warn); }
 .spacer { flex: 1; }
 :focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
@@ -658,3 +661,8 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 @media (pointer: coarse) { .dz-readout.sel { padding: 3px 11px; top: 6px; } }
 .actor-panel.flash { box-shadow: 0 0 0 2px var(--accent2); transition: box-shadow .3s ease; }
 @media (prefers-reduced-motion: reduce) { .dz-readout.sel, .actor-panel.flash { transition: none; } }
+
+/* the "1.4x typical" figure of a selected actor and the typical time under each call (brain 0041, 0029) */
+.fig-ratio { background: none; border: 0; padding: 0 .1rem; font: inherit; font-size: .82rem; font-variant-numeric: tabular-nums; color: var(--good); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.fig-ratio:hover, .fig-ratio[aria-pressed="true"] { text-decoration-style: solid; }
+.call-typ { grid-column: 1 / -1; margin-top: -.15rem; font-size: .74rem; font-variant-numeric: tabular-nums; }

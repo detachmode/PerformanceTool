@@ -156,15 +156,15 @@
                                 }
                                 else if (bar.Running > 0)
                                 {
-                                    <span class="bar-stack @(IsGroup(bar) ? "grp " + BarCls(bar.Outcome) : null)" style="height:@Pct(bar.MaxMs / scale)%">
+                                    <span class="bar-stack @(IsGroup(bar) ? "grp " + BarCls(bar) : null)" style="height:@Pct(bar.MaxMs / scale)%">
                                         <i class="bar run" style="flex:@bar.Running"></i>
-                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar.Outcome) @(IsGroup(bar) ? "grp" : null)" style="flex:@bar.Count"></i> }
+                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar) @(IsGroup(bar) ? "grp" : null)" style="flex:@bar.Count"></i> }
                                         @if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }
                                     </span>
                                 }
                                 else
                                 {
-                                    <i class="bar @BarCls(bar.Outcome) @(IsGroup(bar) ? "grp" : null)" style="height:@Pct(bar.MaxMs / scale)%">@if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }</i>
+                                    <i class="bar @BarCls(bar) @(IsGroup(bar) ? "grp" : null)" style="height:@Pct(bar.MaxMs / scale)%">@if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }</i>
                                 }
                             </button>
                         }
@@ -220,8 +220,12 @@
             var detail = s.Store.Detail(actor.Sequence);
             <section class="actor-panel p-@Cls(actor.Outcome)" aria-label="@actor.Name">
                 <div class="actor-head">
-                    <b class="actor-title">Actor <ActorChip Sequence="actor.Sequence" State="ActorOrder.StateOf(actor.Outcome)" /></b>
+                    <b class="actor-title">Actor <ActorChip Sequence="actor.Sequence" State="ActorOrder.StateOf(actor.Outcome)" Tint="actor.Tint" /></b>
                     <span class="state @Cls(actor.Outcome)">@(actor.Failed ? "Failed" : actor.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                    @if (!actor.Failed && Format.OverTypical(actor.Ratio))
+                    {
+                        <button class="fig-ratio @ActorOrder.Good(actor.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(actor.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(actor.Ratio) typical</button>
+                    }
                     <span class="muted">@Format.Ms(actor.DurationMs) · started @Format.Time(actor.StartedAt)</span>
                     <span class="spacer"></span>
                     <button class="btn ghost small" @onclick="() => Logs.Show(Index, actor.Sequence)">Open logs for this actor</button>
@@ -238,12 +242,17 @@
                         @foreach (var c in detail.Calls)
                         {
                             var call = c;
-                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : "good";
+                            var callRatio = call.Skipped || call.Failed ? 1 : SlowCallRule.Ratio(call.DurationMs, call.TypicalMs);
+                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : ActorOrder.Good(SlowCallRule.Step(callRatio));
                             <li class="call @cls @(call.Skipped ? "skipped" : "")">
                                 <span class="call-name" title="@call.Name">@call.Name</span>
                                 <span class="track"><i style="left:@Pct(call.OffsetMs / Math.Max(1, actor.DurationMs))%;width:@(Math.Max(0.8, call.DurationMs / Math.Max(1, actor.DurationMs) * 100).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                                 <span class="call-dur">@(call.Skipped ? "" : Format.Ms(call.DurationMs))</span>
-                                <span class="call-status" title="@(call.Slow ? $"Typical for this call: {Format.Ms(call.TypicalMs ?? 0)}" : call.Error)">@CallStatus(call)</span>
+                                <span class="call-status" title="@(call.TypicalMs is { } tyMs && !call.Skipped ? $"Typical for this call: {Format.Ms(tyMs)}" : call.Error)">@CallStatus(call)</span>
+                                @if (showTypicals && !call.Skipped && call.TypicalMs is { } typ)
+                                {
+                                    <span class="call-typ muted">typical @Format.Ms(typ)@(Format.OverTypical(callRatio) ? " · " + Format.Times(callRatio) : "")</span>
+                                }
                             </li>
                         }
                     </ol>
@@ -289,6 +298,7 @@
     private ElementReference root;
     private ActorShow show = ActorShow.All;
     private ActorRecord? selected;
+    private bool showTypicals;   // the actor panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
     private double? bucket;
     private sealed record Win(double From, double To, bool Follow);
@@ -559,7 +569,7 @@
     /// <summary>A bar that stands for several actors (brain 0032): lighter fill, outline and a count badge.</summary>
     private static bool IsGroup(ActorBar b) => b.IsBucket && b.Total > 1;
 
-    private static string BarCls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "good" };
+    private static string BarCls(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : ActorOrder.Good(b.Step);
     private static string Cls(ActorOutcome o) => o switch { ActorOutcome.Failed => "bad", ActorOutcome.Slow => "warn", _ => "" };
     private static string Ms(double v) => v.ToString("0", CultureInfo.InvariantCulture);
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
@@ -585,7 +595,7 @@
     {
         if (b.IsBucket) return Format.Plural(b.Total, "actor", "actors");
         if (b.IsRunningActor) return "running";
-        return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : "");
+        return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : Format.OverTypical(b.Ratio) ? " · " + Format.Times(b.Ratio) : "");
     }
 
     private static string LabelSub(ActorBar b)
@@ -594,7 +604,7 @@
         return "";   // buckets show coloured counts instead (data-bad / data-slow / data-ok / data-runn, drawn by dock-magnify.js)
     }
 
-    private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : "good";
+    private static string Status(ActorBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : ActorOrder.Good(b.Step);
 
     /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
     private static string Near1(ActorBar b, double width) => b.IsBucket ? FT(b.BucketStart, width) : $"#{b.Sequence + 1}";
@@ -603,10 +613,11 @@
     private static string BarTitle(ActorBar b, double width)
     {
         if (b.IsRunningActor) return $"Actor #{b.Sequence + 1}, running, {Format.Ms(b.MaxMs)} so far";
-        if (!b.IsBucket) return $"Actor #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : "");
+        if (!b.IsBucket) return $"Actor #{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
         var text = $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "actor", "actors")}";
         if (b.Failed > 0) text += $", {b.Failed} failed";
         if (b.Slow > 0) text += $", {b.Slow} slow";
+        else if (Format.OverTypical(b.Ratio)) text += $", the slowest {Format.Times(b.Ratio)} typical";
         if (b.Running > 0) text += $", {b.Running} running";
         return text;
     }

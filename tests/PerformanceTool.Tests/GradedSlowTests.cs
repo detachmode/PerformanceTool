@@ -1,0 +1,101 @@
+using PerformanceTool.Client.Components;
+using PerformanceTool.Client.Services;
+
+namespace PerformanceTool.Tests;
+
+/// <summary>The graded slow colour (brain 0041): ratio to the typical time, colour step, compact storage, group bars.</summary>
+public class GradedSlowTests
+{
+    [Fact]
+    public void Ratio_is_one_at_or_below_typical_or_without_a_typical()
+    {
+        Assert.Equal(1, SlowCallRule.Ratio(80, 100));
+        Assert.Equal(1, SlowCallRule.Ratio(100, 100));
+        Assert.Equal(1, SlowCallRule.Ratio(500, null));
+        Assert.Equal(1.4, SlowCallRule.Ratio(140, 100), 6);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0)]
+    [InlineData(1.0, 0)]     // at typical: pure green
+    [InlineData(1.01, 1)]    // anything slower than typical gets a tint
+    [InlineData(1.25, 1)]
+    [InlineData(1.26, 2)]
+    [InlineData(1.5, 2)]
+    [InlineData(1.75, 3)]
+    [InlineData(1.99, 3)]    // just under the slow line is never full amber
+    [InlineData(2.0, 4)]     // at the slow line and beyond: full amber
+    [InlineData(9.0, 4)]
+    public void Step_rises_from_green_at_typical_to_amber_at_the_slow_line(double ratio, int step) =>
+        Assert.Equal(step, SlowCallRule.Step(ratio));
+
+    [Fact]
+    public void Slow_calls_are_always_full_amber()
+    {
+        for (var d = 100.0; d < 400; d += 3.7)
+            if (SlowCallRule.IsSlow(d, 100))
+                Assert.Equal(SlowCallRule.MaxStep, SlowCallRule.Step(SlowCallRule.Ratio(d, 100)));
+    }
+
+    [Fact]
+    public void Ratio_fits_one_byte_and_never_rounds_up_over_the_slow_line()
+    {
+        Assert.Equal((byte)0, SlowCallRule.Encode(1));
+        Assert.Equal(1.0, SlowCallRule.Decode(0));
+        Assert.Equal(1.4, SlowCallRule.Decode(SlowCallRule.Encode(1.4)), 1);
+        Assert.True(SlowCallRule.Decode(SlowCallRule.Encode(1.999)) < SlowCallRule.Factor);
+        Assert.Equal((byte)255, SlowCallRule.Encode(100));
+    }
+
+    private static ActorRecord Actor(double ratio, int slowCalls = 0, int errorId = ErrorDictionary.None) =>
+        new(0, 0, 0, 100, slowCalls, errorId, null, SlowCallRule.Encode(ratio));
+
+    [Fact]
+    public void Actor_tint_follows_its_worst_call_and_a_slow_actor_is_always_amber()
+    {
+        Assert.Equal(0, Actor(1).Tint);
+        Assert.Equal(2, Actor(1.4).Tint);
+        Assert.Equal(SlowCallRule.MaxStep, Actor(2.6, slowCalls: 1).Tint);
+        Assert.Equal("good", ActorOrder.Good(0));
+        Assert.Equal("good t2", ActorOrder.Good(2));
+        Assert.Equal("warn", ActorOrder.Good(SlowCallRule.MaxStep));
+        Assert.Equal("good t1", ActorOrder.Css(ActorState.Ok, 1));
+        Assert.Equal("bad", ActorOrder.Css(ActorState.Failed, 3));
+    }
+
+    [Fact]
+    public void A_group_bar_takes_the_step_of_its_worst_ok_actor_and_ignores_failed_actors()
+    {
+        var actors = new[]
+        {
+            Actor(1.0) with { Sequence = 0, StartedAt = 1 },
+            Actor(1.6) with { Sequence = 1, StartedAt = 1.2 },
+            Actor(1.2) with { Sequence = 2, StartedAt = 1.4 },
+            Actor(1.9, errorId: 1) with { Sequence = 3, StartedAt = 1.5 },
+        };
+        var bar = ActorBars.BuildGrid(actors, actors.Length, ActorShow.All, 10, 0, 0, 0, 10, out _).Single();
+        Assert.Equal(1, bar.Failed);
+        Assert.Equal(SlowCallRule.Step(1.6), SlowCallRule.Step(bar.Ratio));
+        var ok = ActorBars.BuildGrid(actors, 3, ActorShow.All, 10, 0, 0, 0, 10, out _).Single();
+        Assert.Equal(SlowCallRule.Step(1.6), ok.Step);
+    }
+
+    [Fact]
+    public void Single_ok_bar_has_its_own_step_and_ratio()
+    {
+        var bars = ActorBars.Build([Actor(1.3)], 1, ActorShow.All, out _, out _);
+        Assert.Equal(2, bars[0].Step);
+        Assert.Equal(1.3, bars[0].Ratio, 1);
+    }
+
+    [Fact]
+    public void Store_keeps_the_ratio_per_actor()
+    {
+        var store = new RunStore(1);
+        var a = Actor(1.5) with { Sequence = 7 };
+        store.Complete(a, new ActorDetail(7, 0, [], () => []));
+        Assert.Equal(2, store.TintOf(7));
+        Assert.Equal(a.Ratio, store.RatioOf(7), 6);
+        Assert.Equal(0, store.TintOf(99));
+    }
+}
