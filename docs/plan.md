@@ -42,7 +42,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
 - **Now (R, user request, front of the queue):** AI assistant (0047), in three steps, one commit each:
   - R1 (done): the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
-  - R2: `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
+  - R2 (done): `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
     tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
   - R2/R3 also: show tools and chat cards (0049): logs box with Show more full screen, bees, bee, scenario/run, plan changes, and picked bees together on one time line like the popup chart (0049 update 1).
   - R3: chat side panel in the client (Live mode only, only when configured), screenshots against a local

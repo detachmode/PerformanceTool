@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
     <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
+    <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" />
   </ItemGroup>
 
 </Project>

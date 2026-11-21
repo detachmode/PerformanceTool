@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using PerformanceTool.Ai;
+using PerformanceTool.AiAdapters;
 using PerformanceTool.Api;
 using PerformanceTool.Services;
 using PerformanceTool.Services.Environments;
@@ -23,6 +25,15 @@ else if (string.Equals(storageProvider, "Sqlite", StringComparison.OrdinalIgnore
 else
     builder.Services.AddSingleton<IRunStorage, DuckDbRunStorage>();
 builder.Services.AddSingleton<RunManager>();
+
+// AI assistant (brain 0047): the module in src/Beesharp.Ai only knows its ports; these adapters connect them to the host's services.
+// Configure with AI__Model, AI__ApiKey, AI__Endpoint (see AGENTS.md). Without a model the assistant reports "not configured".
+builder.Services.AddSingleton<IPlanWorkspacePort, PlanWorkspaceAdapter>();
+builder.Services.AddSingleton<IRunPort, RunAdapter>();
+builder.Services.AddSingleton<IRunHistoryPort, RunHistoryAdapter>();
+builder.Services.AddSingleton<IEnvironmentPort, EnvironmentAdapter>();
+builder.Services.AddSingleton<IScriptPort, ScriptAdapter>();
+builder.Services.AddBeesharpAi(builder.Configuration);
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -212,6 +223,8 @@ app.MapDelete("/api/environments/{name}", async (string name, EnvironmentStore s
     await store.DeleteAsync(name, ct);
     return Results.NoContent();
 });
+
+app.MapBeesharpAi();
 
 // Unknown API routes are a real 404, not the client app.
 app.Map("/api/{**rest}", () => Results.NotFound());

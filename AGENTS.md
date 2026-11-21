@@ -30,6 +30,14 @@ Three projects plus tests (brain 0015), all `net11.0`:
   - **Trimming:** Release publish trims. `PerformanceTool.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
 - `src/PerformanceTool` — ASP.NET Core host. `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
   `GET /api/scenarios`. It serves the client (project reference, static web assets via `MapStaticAssets`, `MapFallbackToFile("index.html")`). No Razor UI of its own.
+- `src/Beesharp.Ai.Contracts`, `src/Beesharp.Ai` — the **AI assistant** (brain 0047 to 0051). Contracts = wire DTOs (no dependencies; the client references only these, never Microsoft.Extensions.AI).
+  `Beesharp.Ai` = the agent on Microsoft.Extensions.AI: `AddBeesharpAi(config)`, `MapBeesharpAi()` (`/api/assistant`: `GET status`, `POST chat`, `DELETE sessions/{id}`), `AssistantService` (own tool loop, sessions in memory),
+  `Ports/` (the interfaces it needs: plan, run, run history, environments, scripts; it never references the host) and `Tools/AssistantToolbox*.cs`. The host implements the ports in `src/Beesharp/Ai/*Adapter.cs`.
+  **Configure** with environment variables (section `AI`): `AI__Model` (required), `AI__ApiKey` and/or `AI__Endpoint` (any OpenAI-compatible server, e.g. Ollama `http://localhost:11434/v1`), `AI__Provider` (only `OpenAI`),
+  `AI__SystemPrompt`, `AI__MaxToolCalls` (default 24). Without a model the assistant is "not configured" and the chat icon stays hidden.
+  **Add a tool:** a public method with `[AssistantTool("snake_name")]` and `[Description]`s (tool language, entries and bees numbered from 1) in the toolbox file of its area; bound its output; call `rec.Read(...)`, `rec.Change(area, ...)` or `rec.Show(card)` with a one-line summary. No approval step (brain 0048). A new card kind: a `ViewKinds` constant, a builder in `AssistantToolbox.Show.cs`, a card in `Components/Assistant/`.
+  The server owns the Live plan: `Services/PlanWorkspace.cs` + `Api/PlanEndpoints.cs` (`/api/plan`, `/api/presets`, brain 0050); `ApiRunSource` pushes editor edits and pulls server changes (400 ms loop).
+  The chat panel is `Components/Assistant/` in the client (right side panel, Live mode only, only when `GET /api/assistant/status` says configured).
 - `tests/PerformanceTool.Tests` — references Core and the server.
 
 ## Build, test and run
