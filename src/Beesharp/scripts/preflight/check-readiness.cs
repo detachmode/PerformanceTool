@@ -6,6 +6,6 @@ Log("Step 1/3: Checking target environment readiness...");
 await Task.Delay(500, CancellationToken);
 
 Log("Step 2/3: Warming up caches & verifying auth token...");
-await Task.Delay(500, CancellationToken);
+await Task.Delay(5000, CancellationToken);
 
 Log("Step 3/3: All preflight checks passed! Ready to launch scenarios.");

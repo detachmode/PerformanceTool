@@ -2,7 +2,7 @@ public record OrderFlowParams(
     [property: Description("Tenant or store name logged on each step")]
     string StoreName = "DemoShop",
     [property: Description("Number of items checked in inventory")]
-    [property: Range(1, 5)]
+    [property: Range(1, 20)]
     int ItemCount = 3,
     [property: Range(1, 500)]
     int Delay = 200,
@@ -33,7 +33,7 @@ Scenario.Define<OrderFlowParams>("Multi-Step Order Flow (ILogger)", async (p, ct
         var idx = i;
         await ctx.MeasureCallAsync($"2.{idx} Check inventory #{idx}", async () =>
         {
-            var ms = Random.Shared.Next(20, 70);
+            var ms = Random.Shared.Next(20, 70) + p.Delay;
             await Task.Delay(ms, ctx.CancellationToken);
             log.LogInformation("Inventory check for item #{Item} OK ({Ms} ms)", idx, ms);
         });

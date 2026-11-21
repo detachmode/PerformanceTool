@@ -18,7 +18,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         Func<int, ValueTask> onDropped,
         CancellationToken ct,
         Func<ExecutionActivity, ValueTask>? onActivity = null,
-        EnvironmentDefinition? environment = null)
+        EnvironmentDefinition? environment = null,
+        Action<LiveLogEvent>? onLiveLog = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
@@ -66,7 +67,14 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 scenarios[i].Spec.ResolveSecrets(boundParams[i]);
                 states[i] = new ConcurrentDictionary<string, object?>(StringComparer.Ordinal);
                 backgrounds[i] = new ScenarioBackgroundHost(ct);
-                var startupCtx = new ScenarioContext(http, env, ct, states[i], backgrounds[i]);
+                var entryIdx = i;
+                var startupCtx = new ScenarioContext(
+                    http,
+                    env,
+                    ct,
+                    states[i],
+                    backgrounds[i],
+                    structuredLogSink: onLiveLog is null ? null : l => onLiveLog(new LiveLogEvent(-1, entryIdx, l)));
                 await scenarios[i].StartupAsync(boundParams[i], startupCtx, ct);
                 startedEntries.Add(i);
             }
@@ -153,7 +161,11 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     execCts.Token,
                     state,
                     callSink: c => { lock (calls) calls.Add(c); },
-                    structuredLogSink: l => { lock (logs) logs.Add(l); },
+                    structuredLogSink: l =>
+                    {
+                        lock (logs) logs.Add(l);
+                        onLiveLog?.Invoke(new LiveLogEvent(seq, entry, l));
+                    },
                     runSeconds: () => clockRef.Elapsed.TotalSeconds);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;

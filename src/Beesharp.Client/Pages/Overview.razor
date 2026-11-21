@@ -422,7 +422,7 @@
                     }
                 </div>
             }
-            <div class="preflight-console" role="log" aria-live="polite">
+            <div class="preflight-console sl-console wrap" role="log" aria-live="polite">
                 @if (ApiRun.PreflightLogs.Count == 0)
                 {
                     <div class="muted">Waiting for preflight output…</div>
@@ -431,8 +431,7 @@
                 {
                     @foreach (var line in ApiRun.PreflightLogs)
                     {
-                        var cls = line.Contains("[ERR]") ? "err" : line.Contains("[WRN]") ? "warn" : "";
-                        <div class="pf-line @cls">@line</div>
+                        <SerilogLine Raw="@line" />
                     }
                 }
             </div>

@@ -26,6 +26,17 @@ public sealed record LiveScenarioViewDto(
 
 public sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
 
+public sealed record LiveLogEntryDto(
+    long Id,
+    int Sequence,
+    string BeeName,
+    int Entry,
+    double AtSeconds,
+    DateTimeOffset Timestamp,
+    string Level,
+    string Message,
+    string? Exception);
+
 public sealed record LiveRunStatusDto(
     string RunId,
     string State,
@@ -71,6 +82,9 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private int[] dropped = [];
     private readonly List<LiveBeeDto> bees = [];
     private readonly Dictionary<int, LiveRunningBeeDto> activeBees = [];
+    private readonly Queue<LiveLogEntryDto> liveLogs = new();
+    private long nextLiveLogId;
+    private const int MaxLiveLogs = 5000;
     private int lastSequence = -1;
     private long totalLogs;
     private string? runError;
@@ -78,6 +92,36 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private string? preflightScriptName;
     private readonly List<string> preflightLogs = [];
     private string? preflightError;
+
+    /// <summary>Returns live log lines emitted by currently flying bees (and preflight) with <c>Id &gt; afterId</c>.</summary>
+    public IReadOnlyList<LiveLogEntryDto> GetLiveLogs(long afterId = 0, int limit = 500)
+    {
+        limit = Math.Clamp(limit, 1, 2000);
+        lock (sync)
+        {
+            if (liveLogs.Count == 0) return [];
+            var result = new List<LiveLogEntryDto>();
+            foreach (var item in liveLogs)
+            {
+                if (item.Id <= afterId) continue;
+                result.Add(item);
+                if (result.Count >= limit) break;
+            }
+            return result;
+        }
+    }
+
+    private void AppendLiveLog(int sequence, int entry, double atSeconds, string level, string message, string? exception = null)
+    {
+        lock (sync)
+        {
+            var id = ++nextLiveLogId;
+            var name = sequence >= 0 ? $"Bee #{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : "Preflight";
+            liveLogs.Enqueue(new LiveLogEntryDto(id, sequence, name, entry, atSeconds, DateTimeOffset.UtcNow, level, message, exception));
+            while (liveLogs.Count > MaxLiveLogs)
+                liveLogs.Dequeue();
+        }
+    }
 
     /// <summary>Restores the most recent persisted run from <see cref="IRunStorage"/> on server startup.</summary>
     public async Task RestoreLatestAsync(CancellationToken ct = default)
@@ -121,6 +165,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             dropped = new int[count];
             bees.Clear();
             activeBees.Clear();
+            liveLogs.Clear();
             lastSequence = -1;
             totalLogs = data.TotalLogs;
             runError = data.Error;
@@ -244,6 +289,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             dropped = new int[cloned.Scenarios.Count];
             bees.Clear();
             activeBees.Clear();
+            liveLogs.Clear();
             lastSequence = -1;
             totalLogs = 0;
             runError = null;
@@ -266,7 +312,12 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     var preRes = await preflights.ExecuteAsync(
                         preflightMeta.ScriptId,
                         environmentName,
-                        onLog: line => { lock (sync) preflightLogs.Add(line); },
+                        onLog: line =>
+                        {
+                            lock (sync) preflightLogs.Add(line);
+                            var lvl = line.Contains("[ERR]") ? "Error" : line.Contains("[WRN]") ? "Warning" : "Information";
+                            AppendLiveLog(-1, -1, 0, lvl, line);
+                        },
                         ct: runCts.Token);
 
                     if (!preRes.Success)
@@ -354,7 +405,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         }
                         return ValueTask.CompletedTask;
                     },
-                    environment: env);
+                    environment: env,
+                    onLiveLog: ev => AppendLiveLog(ev.Sequence, ev.Entry, ev.Log.AtSeconds, ev.Log.Level, ev.Log.Message, ev.Log.Exception));
             }
             catch (OperationCanceledException)
             {

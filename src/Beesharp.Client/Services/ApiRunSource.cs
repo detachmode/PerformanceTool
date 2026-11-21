@@ -25,6 +25,17 @@ public sealed record ServerLogPageDto(
     int Limit,
     List<ServerLogRowDto> Items);
 
+public sealed record ClientLiveLogDto(
+    long Id,
+    int Sequence,
+    string BeeName,
+    int Entry,
+    double AtSeconds,
+    DateTimeOffset Timestamp,
+    string Level,
+    string Message,
+    string? Exception);
+
 public sealed record ServerRunSummaryDto(
     string RunId,
     DateTimeOffset StartedUtc,
@@ -203,6 +214,12 @@ public sealed class ApiRunSource : IRunSource
             }
         }
         catch { }
+    }
+
+    public async Task<List<ClientLiveLogDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<ClientLiveLogDto>>($"api/runs/live-logs?afterId={afterId}&limit={limit}", JsonOpts, ct) ?? []; }
+        catch { return []; }
     }
 
     public async Task<List<ServerRunSummaryDto>> ListRunsAsync(int limit = 30, CancellationToken ct = default)

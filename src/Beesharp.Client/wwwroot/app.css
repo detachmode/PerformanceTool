@@ -888,3 +888,36 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .boot-title span { color: var(--accent2); }
 .boot-sub { font-size: .82rem; color: var(--muted); }
 @keyframes boot-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .88; } }
+
+/* ----- Serilog-style live console logs (/logs & Try modal) ----- */
+.main:has(.live-logs-page) { max-width: none; padding: var(--top-h) 0 0; }
+.live-logs-page { display: flex; flex-direction: column; height: calc(100dvh - var(--top-h)); background: #0b0a08; }
+.shell:has(.player) .live-logs-page { height: calc(100dvh - var(--top-h) - 72px); }
+.sl-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.sl-live-dot.on { background: var(--good); box-shadow: 0 0 8px var(--good); animation: lamp 1.5s ease-in-out infinite; }
+.sl-search { flex: 1 1 120px; max-width: 240px; min-width: 80px; padding: .24rem .5rem; font-size: .8rem; }
+.sl-console { flex: 1 1 auto; min-height: 0; overflow: auto; padding: .5rem .75rem; background: #0b0a08; font-family: var(--mono); font-size: .78rem; line-height: 1.42; }
+.sl-console.compact { flex: none; max-height: 260px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .45rem .6rem; }
+.sl-console.wrap .sl-line { white-space: pre-wrap; word-break: break-word; }
+.sl-console.nowrap .sl-line { white-space: pre; }
+.sl-empty { color: var(--faint); padding: 1.2rem .4rem; font-family: inherit; }
+.sl-line { margin: 0; padding: 1px 0; }
+.sl-br { color: #57534e; }
+.sl-ts { color: #78716c; }
+.sl-bee { color: #d6b872; }
+.sl-lvl { font-weight: 700; }
+.sl-lvl.trc { color: #57534e; }
+.sl-lvl.dbg { color: #94a3b8; }
+.sl-lvl.inf { color: #34d399; }
+.sl-lvl.out { color: #7dd3fc; }
+.sl-lvl.wrn { color: #fbbf24; }
+.sl-lvl.err { color: #f05252; }
+.sl-msg { color: #f5f2eb; }
+.sl-line.sl-trc .sl-msg, .sl-line.sl-dbg .sl-msg { color: #a8a29e; }
+.sl-line.sl-wrn .sl-msg { color: #fde68a; }
+.sl-line.sl-err .sl-msg { color: #fecaca; }
+
+@media (max-width: 760px) {
+    .shell:has(.player) .live-logs-page { height: calc(100dvh - var(--top-h) - 62px); }
+    .sl-console { padding: .4rem .5rem; font-size: .74rem; }
+}

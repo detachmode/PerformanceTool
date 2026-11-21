@@ -290,11 +290,27 @@ public sealed class ScriptScenarioStore
         var teardownSw = new Stopwatch();
         ScenarioOutcome outcome;
 
+        static string FormatSerilog(RecordedLog l)
+        {
+            var tag = l.Level switch
+            {
+                "Trace" => "TRC",
+                "Debug" => "DBG",
+                "Warning" => "WRN",
+                "Error" or "Critical" => "ERR",
+                _ => "INF",
+            };
+            var ts = DateTimeOffset.Now.ToString("HH:mm:ss.fff");
+            var msg = string.IsNullOrEmpty(l.Exception) ? l.Message : $"{l.Message}\n{l.Exception}";
+            return $"[{ts} {tag}] {msg}";
+        }
+
         await using var bgHost = new ScenarioBackgroundHost(execCts.Token);
         var started = false;
         try
         {
-            var startupCtx = new ScenarioContext(http, envValues, execCts.Token, state, bgHost, msg => logs.Enqueue(msg));
+            var startupCtx = new ScenarioContext(http, envValues, execCts.Token, state, bgHost,
+                structuredLogSink: l => logs.Enqueue(FormatSerilog(l)));
             await scenario.StartupAsync(bound, startupCtx, execCts.Token);
             startupSw.Stop();
             started = true;
@@ -305,7 +321,7 @@ public sealed class ScriptScenarioStore
                 envValues,
                 execCts.Token,
                 state,
-                logSink: msg => logs.Enqueue(msg),
+                structuredLogSink: l => logs.Enqueue(FormatSerilog(l)),
                 callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error)));
             outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
             execSw.Stop();
@@ -330,12 +346,13 @@ public sealed class ScriptScenarioStore
                 teardownSw.Start();
                 try
                 {
-                    var teardownCtx = new ScenarioContext(http, envValues, CancellationToken.None, state, logSink: msg => logs.Enqueue(msg));
+                    var teardownCtx = new ScenarioContext(http, envValues, CancellationToken.None, state,
+                        structuredLogSink: l => logs.Enqueue(FormatSerilog(l)));
                     await scenario.TeardownAsync(bound, teardownCtx, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
-                    logs.Enqueue($"Teardown error: {ex.InnerException?.Message ?? ex.Message}");
+                    logs.Enqueue($"[{DateTimeOffset.Now:HH:mm:ss.fff} ERR] Teardown error: {ex.InnerException?.Message ?? ex.Message}");
                 }
                 teardownSw.Stop();
             }

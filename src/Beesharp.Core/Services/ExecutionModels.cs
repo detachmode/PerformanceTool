@@ -38,3 +38,6 @@ public sealed record ExecutionResult(
 /// cancelled because the user stopped the run. The end event is raised after <c>onResult</c>.
 /// </summary>
 public sealed record ExecutionActivity(int Sequence, int Entry, double AtSeconds, bool Started, int InFlight, int TotalInFlight);
+
+/// <summary>A log line emitted in real time by a currently flying bee (or scenario startup/teardown when Sequence &lt; 0).</summary>
+public sealed record LiveLogEvent(int Sequence, int Entry, RecordedLog Log);

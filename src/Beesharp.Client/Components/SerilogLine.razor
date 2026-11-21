@@ -1,0 +1,71 @@
+@* Compact Serilog-style colored console log line (supports structured fields or raw "[ts LVL] msg" lines). *@
+@using System.Text.RegularExpressions
+@{
+    var (ts, tag, css, bee, msg) = Parse();
+}
+<div class="sl-line sl-@css">
+    @if (ts.Length > 0)
+    {
+        <span class="sl-br">[</span><span class="sl-ts">@ts</span><text> </text><span class="sl-lvl @css">@tag</span><span class="sl-br">]</span><text> </text>
+    }
+    @if (!string.IsNullOrEmpty(bee))
+    {
+        <span class="sl-bee">[@bee]</span><text> </text>
+    }
+    <span class="sl-msg">@msg</span>
+</div>
+
+@code {
+    [Parameter] public string? Raw { get; set; }
+    [Parameter] public DateTimeOffset? Timestamp { get; set; }
+    [Parameter] public string? Level { get; set; }
+    [Parameter] public string? BeeName { get; set; }
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string? Exception { get; set; }
+
+    private static readonly Regex RawRx = new(
+        @"^\[(?<ts>[^\]]+?)(?:\s+(?<lvl>TRC|VRB|DBG|INF|WRN|ERR|FTL|OUT))?\]\s*(?:\[(?<lvl2>TRC|VRB|DBG|INF|WRN|ERR|FTL|OUT)\]\s*)?(?<msg>[\s\S]*)$",
+        RegexOptions.Compiled);
+
+    private (string Ts, string Tag, string Css, string? Bee, string Msg) Parse()
+    {
+        if (Raw is null)
+        {
+            var tag = ShortTag(Level);
+            var css = CssOf(tag);
+            var ts = (Timestamp ?? DateTimeOffset.Now).ToLocalTime().ToString("HH:mm:ss.fff");
+            var body = string.IsNullOrEmpty(Exception) ? (Message ?? "") : $"{Message}\n{Exception}";
+            return (ts, tag, css, BeeName, body);
+        }
+
+        var m = RawRx.Match(Raw);
+        if (m.Success)
+        {
+            var tag = m.Groups["lvl"].Success ? m.Groups["lvl"].Value
+                : m.Groups["lvl2"].Success ? m.Groups["lvl2"].Value
+                : "INF";
+            return (m.Groups["ts"].Value, tag, CssOf(tag), BeeName, m.Groups["msg"].Value);
+        }
+        return ("", "INF", "inf", BeeName, Raw);
+    }
+
+    private static string ShortTag(string? lvl) => lvl switch
+    {
+        "Trace" => "TRC",
+        "Debug" => "DBG",
+        "Warning" => "WRN",
+        "Error" => "ERR",
+        "Critical" => "FTL",
+        _ => "INF",
+    };
+
+    private static string CssOf(string tag) => tag switch
+    {
+        "TRC" or "VRB" => "trc",
+        "DBG" => "dbg",
+        "WRN" => "wrn",
+        "ERR" or "FTL" => "err",
+        "OUT" => "out",
+        _ => "inf",
+    };
+}

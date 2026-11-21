@@ -209,10 +209,10 @@
                             }
                             @if (testResult.Logs.Count > 0)
                             {
-                                <div class="test-logs">
+                                <div class="sl-console compact wrap">
                                     @foreach (var line in testResult.Logs)
                                     {
-                                        <div><code>@line</code></div>
+                                        <SerilogLine Raw="@line" />
                                     }
                                 </div>
                             }
@@ -238,10 +238,10 @@
                             }
                             @if (preflightResult.Logs.Count > 0)
                             {
-                                <div class="test-logs">
+                                <div class="sl-console compact wrap">
                                     @foreach (var line in preflightResult.Logs)
                                     {
-                                        <div><code>@line</code></div>
+                                        <SerilogLine Raw="@line" />
                                     }
                                 </div>
                             }
