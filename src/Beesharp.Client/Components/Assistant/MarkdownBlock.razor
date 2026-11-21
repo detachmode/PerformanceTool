@@ -1,0 +1,191 @@
+@* Lightweight, XSS-safe Markdown renderer for assistant replies: headings, bold/italic, inline code, fenced code blocks, lists, blockquotes, tables, and links. *@
+@using System.Net
+@using System.Text
+@using System.Text.RegularExpressions
+
+<div class="asst-md">@Render(Text)</div>
+
+@code {
+    [Parameter] public string? Text { get; set; }
+
+    private static readonly Regex InlineCodeRx = new(@"`([^`\n]+)`", RegexOptions.Compiled);
+    private static readonly Regex BoldRx = new(@"\*\*(.+?)\*\*", RegexOptions.Compiled);
+    private static readonly Regex ItalicRx = new(@"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", RegexOptions.Compiled);
+    private static readonly Regex LinkRx = new(@"\[([^\]]+)\]\((https?://[^\s)]+)\)", RegexOptions.Compiled);
+    private static readonly Regex OrderedListRx = new(@"^\s*\d+\.\s+(.*)$", RegexOptions.Compiled);
+    private static readonly Regex UnorderedListRx = new(@"^\s*[-*•]\s+(.*)$", RegexOptions.Compiled);
+    private static readonly Regex HeadingRx = new(@"^(#{1,3})\s+(.*)$", RegexOptions.Compiled);
+    private static readonly Regex TableSepRx = new(@"^\s*\|?[\s:-]+\|[\s|:-]*$", RegexOptions.Compiled);
+
+    private static MarkupString Render(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new MarkupString("");
+        var lines = raw.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var sb = new StringBuilder(raw.Length + 128);
+        var i = 0;
+
+        while (i < lines.Length)
+        {
+            var line = lines[i];
+
+            // Fenced code block
+            if (line.TrimStart().StartsWith("```", StringComparison.Ordinal))
+            {
+                var lang = line.TrimStart()[3..].Trim();
+                i++;
+                var code = new StringBuilder();
+                while (i < lines.Length && !lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal))
+                {
+                    if (code.Length > 0) code.Append('\n');
+                    code.Append(lines[i]);
+                    i++;
+                }
+                if (i < lines.Length) i++; // skip closing fence
+                sb.Append("<pre class=\"md-pre\">");
+                if (lang.Length > 0)
+                    sb.Append("<span class=\"md-lang\">").Append(WebUtility.HtmlEncode(lang)).Append("</span>");
+                sb.Append("<code>").Append(WebUtility.HtmlEncode(code.ToString())).Append("</code></pre>");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                i++;
+                continue;
+            }
+
+            // Horizontal rule
+            if (line.Trim() is "---" or "***" or "___")
+            {
+                sb.Append("<hr class=\"md-hr\" />");
+                i++;
+                continue;
+            }
+
+            // Heading
+            var hm = HeadingRx.Match(line);
+            if (hm.Success)
+            {
+                var lvl = hm.Groups[1].Value.Length + 2; // h3..h5 inside chat panel
+                sb.Append($"<h{lvl} class=\"md-h{hm.Groups[1].Value.Length}\">").Append(RenderInline(hm.Groups[2].Value)).Append($"</h{lvl}>");
+                i++;
+                continue;
+            }
+
+            // Blockquote
+            if (line.TrimStart().StartsWith('>'))
+            {
+                sb.Append("<blockquote class=\"md-quote\">");
+                var first = true;
+                while (i < lines.Length && lines[i].TrimStart().StartsWith('>'))
+                {
+                    if (!first) sb.Append("<br />");
+                    first = false;
+                    var content = lines[i].TrimStart()[1..].TrimStart();
+                    sb.Append(RenderInline(content));
+                    i++;
+                }
+                sb.Append("</blockquote>");
+                continue;
+            }
+
+            // Markdown table
+            if (line.Contains('|') && i + 1 < lines.Length && TableSepRx.IsMatch(lines[i + 1]))
+            {
+                var headers = SplitTableRow(line);
+                i += 2; // skip header + separator
+                sb.Append("<div class=\"md-table-wrap\"><table class=\"md-table\"><thead><tr>");
+                foreach (var h in headers) sb.Append("<th>").Append(RenderInline(h)).Append("</th>");
+                sb.Append("</tr></thead><tbody>");
+                while (i < lines.Length && lines[i].Contains('|') && !string.IsNullOrWhiteSpace(lines[i]))
+                {
+                    var cells = SplitTableRow(lines[i]);
+                    sb.Append("<tr>");
+                    foreach (var c in cells) sb.Append("<td>").Append(RenderInline(c)).Append("</td>");
+                    sb.Append("</tr>");
+                    i++;
+                }
+                sb.Append("</tbody></table></div>");
+                continue;
+            }
+
+            // Unordered list
+            if (UnorderedListRx.IsMatch(line))
+            {
+                sb.Append("<ul class=\"md-list\">");
+                while (i < lines.Length && UnorderedListRx.Match(lines[i]) is { Success: true } um)
+                {
+                    sb.Append("<li>").Append(RenderInline(um.Groups[1].Value)).Append("</li>");
+                    i++;
+                }
+                sb.Append("</ul>");
+                continue;
+            }
+
+            // Ordered list
+            if (OrderedListRx.IsMatch(line))
+            {
+                sb.Append("<ol class=\"md-list\">");
+                while (i < lines.Length && OrderedListRx.Match(lines[i]) is { Success: true } om)
+                {
+                    sb.Append("<li>").Append(RenderInline(om.Groups[1].Value)).Append("</li>");
+                    i++;
+                }
+                sb.Append("</ol>");
+                continue;
+            }
+
+            // Paragraph
+            sb.Append("<p>");
+            var pFirst = true;
+            while (i < lines.Length
+                   && !string.IsNullOrWhiteSpace(lines[i])
+                   && !lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal)
+                   && !HeadingRx.IsMatch(lines[i])
+                   && !UnorderedListRx.IsMatch(lines[i])
+                   && !OrderedListRx.IsMatch(lines[i])
+                   && !lines[i].TrimStart().StartsWith('>')
+                   && !(lines[i].Contains('|') && i + 1 < lines.Length && TableSepRx.IsMatch(lines[i + 1])))
+            {
+                if (!pFirst) sb.Append("<br />");
+                pFirst = false;
+                sb.Append(RenderInline(lines[i]));
+                i++;
+            }
+            sb.Append("</p>");
+        }
+
+        return new MarkupString(sb.ToString());
+    }
+
+    private static string[] SplitTableRow(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith('|')) trimmed = trimmed[1..];
+        if (trimmed.EndsWith('|')) trimmed = trimmed[..^1];
+        return trimmed.Split('|').Select(c => c.Trim()).ToArray();
+    }
+
+    private static string RenderInline(string text)
+    {
+        // Extract inline code spans first so markdown inside backticks is never mangled.
+        var codeSpans = new List<string>();
+        var withPlaceholders = InlineCodeRx.Replace(text, m =>
+        {
+            var idx = codeSpans.Count;
+            codeSpans.Add($"<code class=\"md-code\">{WebUtility.HtmlEncode(m.Groups[1].Value)}</code>");
+            return $"\u0000CODE{idx}\u0000";
+        });
+
+        var encoded = WebUtility.HtmlEncode(withPlaceholders);
+        encoded = LinkRx.Replace(encoded, m =>
+            $"<a class=\"md-link\" href=\"{m.Groups[2].Value}\" target=\"_blank\" rel=\"noopener noreferrer\">{m.Groups[1].Value}</a>");
+        encoded = BoldRx.Replace(encoded, "<strong>$1</strong>");
+        encoded = ItalicRx.Replace(encoded, "<em>$1</em>");
+
+        for (var i = 0; i < codeSpans.Count; i++)
+            encoded = encoded.Replace($"\u0000CODE{i}\u0000", codeSpans[i]);
+
+        return encoded;
+    }
+}

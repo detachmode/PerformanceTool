@@ -44,7 +44,7 @@
                             var b = block;
                             @if (b.Item is { Type: AssistantItemTypes.Text } t)
                             {
-                                <p class="asst-text">@t.Text</p>
+                                <MarkdownBlock Text="@t.Text" />
                             }
                             else if (b.Item is { Type: AssistantItemTypes.View, View: { } view })
                             {
@@ -98,8 +98,10 @@
         </div>
 
         <footer class="asst-composer">
-            <textarea @ref="composer" rows="1" placeholder="Ask or tell the assistant…" aria-label="Message" @bind="draft" @bind:event="oninput" disabled="@Assistant.Busy"></textarea>
-            <button type="button" class="btn primary small" @onclick="SendDraftAsync" disabled="@(Assistant.Busy || string.IsNullOrWhiteSpace(draft))" title="Send (Enter)">Send</button>
+            <div class="asst-composer-box">
+                <textarea @ref="composer" rows="1" placeholder="Ask or tell the assistant…" aria-label="Message" @bind="draft" @bind:event="oninput" disabled="@Assistant.Busy"></textarea>
+                <button type="button" class="btn primary small asst-send" @onclick="SendDraftAsync" disabled="@(Assistant.Busy || string.IsNullOrWhiteSpace(draft))" title="Send (Enter)">Send</button>
+            </div>
         </footer>
     </aside>
 }
