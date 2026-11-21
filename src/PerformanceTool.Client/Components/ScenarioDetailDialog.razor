@@ -4,6 +4,8 @@
 @implements IDisposable
 @inject LogsPopupState Logs
 @inject ViewSettings Settings
+@inject ScenarioCatalog Catalog
+@inject CustomScriptsPopupState ScriptsPopup
 
 @{
     var s = Snapshot;
@@ -78,6 +80,10 @@
         <div class="dlg-head">
             <h2 id="scn-title">@label</h2>
             <span class="spacer"></span>
+            @if (Index < s.Plan.Scenarios.Count && Catalog.IsCustom(s.Plan.Scenarios[Index].ScenarioId))
+            {
+                <button class="btn ghost small" @onclick="() => ScriptsPopup.Show(s.Plan.Scenarios[Index].ScenarioId)" title="View and edit this scenario's .cs file on the server">Edit .cs</button>
+            }
             <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">⚙</button>
             <button class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
         </div>

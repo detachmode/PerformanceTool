@@ -184,7 +184,9 @@ public sealed class ScriptScenarioStore
 
         var scenario = built[0];
         var id = SanitizeId(string.IsNullOrWhiteSpace(scriptId) ? scenario.Id : scriptId);
-        var cleanFileName = string.IsNullOrWhiteSpace(fileName) ? $"{id}.csx" : Path.GetFileName(fileName.Trim());
+        var cleanFileName = string.IsNullOrWhiteSpace(fileName) ? $"{id}.cs" : Path.GetFileName(fileName.Trim());
+        if (!cleanFileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !cleanFileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
+            cleanFileName += ".cs";
 
         StoredScript? previous;
         lock (sync) scripts.TryGetValue(id, out previous);
@@ -204,8 +206,10 @@ public sealed class ScriptScenarioStore
         if (persist)
         {
             Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, $"{id}.csx");
+            var path = Path.Combine(directory, $"{id}.cs");
             await File.WriteAllTextAsync(path, code, ct);
+            var legacyCsx = Path.Combine(directory, $"{id}.csx");
+            if (File.Exists(legacyCsx)) File.Delete(legacyCsx);
         }
 
         var stored = new StoredScript(id, cleanFileName, code, scenario, updated);
@@ -222,8 +226,12 @@ public sealed class ScriptScenarioStore
             if (!scripts.Remove(scriptId, out existing)) return false;
         }
         catalog.UnregisterCustom(existing.Scenario.Id);
-        var path = Path.Combine(directory, $"{SanitizeId(scriptId)}.csx");
-        if (File.Exists(path)) File.Delete(path);
+        var safeId = SanitizeId(scriptId);
+        foreach (var ext in new[] { ".cs", ".csx" })
+        {
+            var path = Path.Combine(directory, $"{safeId}{ext}");
+            if (File.Exists(path)) File.Delete(path);
+        }
         return true;
     }
 

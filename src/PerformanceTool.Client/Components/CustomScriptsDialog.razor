@@ -16,7 +16,7 @@
     <div class="dialog scripts-dialog" role="dialog" aria-modal="true" aria-labelledby="scripts-title" @onclick:stopPropagation="true">
         <div class="dlg-head">
             <h2 id="scripts-title">Custom C# Scenarios</h2>
-            <span class="muted env-sub">Upload or edit <code>.csx</code> scripts compiled on the server</span>
+            <span class="muted env-sub">Display and edit <code>.cs</code> files stored on the server</span>
             <span class="spacer"></span>
             @if (statusMessage is not null)
             {
@@ -43,17 +43,17 @@
                         <small class="muted">@item.FileName</small>
                     </button>
                 }
-                <button type="button" class="btn ghost small add-env" @onclick="NewScript">+ New script</button>
-                <label class="btn ghost small upload-lbl" title="Upload a .csx or .cs scenario script">
-                    Upload .csx…
-                    <InputFile OnChange="OnFileUpload" accept=".csx,.cs" style="display:none" />
+                <button type="button" class="btn ghost small add-env" @onclick="NewScript">+ New .cs file</button>
+                <label class="btn ghost small upload-lbl" title="Upload a .cs or .csx scenario script">
+                    Upload .cs…
+                    <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
                 </label>
             </nav>
 
             <section class="env-edit scripts-edit" aria-label="Script editor and test runner">
                 <div class="env-name-row">
                     <label class="visually-hidden" for="script-filename">Script file name</label>
-                    <input id="script-filename" class="env-name-input" value="@fileName" placeholder="order-stress.csx" autocomplete="off"
+                    <input id="script-filename" class="env-name-input" value="@fileName" placeholder="order-stress.cs" autocomplete="off"
                            @oninput="e => fileName = e.Value?.ToString() ?? string.Empty" />
                     <span class="spacer"></span>
                     <button class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || string.IsNullOrWhiteSpace(scriptCode))">
@@ -157,7 +157,7 @@
     private ClientScriptSummary? selectedSummary;
     private ParameterSpec? compiledSpec;
     private JsonObject testParams = new();
-    private string fileName = "order-api-stress.csx";
+    private string fileName = "order-api-stress.cs";
     private string scriptCode = StarterTemplate;
     private List<ClientScriptDiagnostic> diagnostics = [];
     private ClientTestRunResult? testResult;
@@ -223,7 +223,13 @@
         try
         {
             scripts = await Api.ListScriptsAsync();
-            if (selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } found)
+            if (selectedId is null && Popup.SelectScenarioId is { Length: > 0 } targetScenarioId
+                && scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, targetScenarioId, StringComparison.OrdinalIgnoreCase)
+                                            || string.Equals(s.ScriptId, targetScenarioId, StringComparison.OrdinalIgnoreCase)) is { } byScenario)
+            {
+                Select(byScenario);
+            }
+            else if (selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } found)
                 Select(found);
             else if (scripts.Count > 0 && selectedSummary is null)
                 Select(scripts[0]);
@@ -255,7 +261,7 @@
         selectedSummary = null;
         compiledSpec = null;
         testParams = new JsonObject();
-        fileName = "custom-scenario.csx";
+        fileName = "custom-scenario.cs";
         scriptCode = StarterTemplate;
         diagnostics = [];
         testResult = null;

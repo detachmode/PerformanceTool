@@ -42,7 +42,7 @@
             </select>
             <button class="btn primary" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
             <button class="btn ghost" @onclick="OpenSaveAs" disabled="@locked" title="Save the scenarios as a new preset">Save as…</button>
-            <button class="btn ghost" @onclick="ScriptsPopup.Show" title="Upload, compile and test-run custom C# script scenarios">Custom scripts…</button>
+            <button class="btn ghost" @onclick="() => ScriptsPopup.Show()" title="View, edit, upload and test-run custom .cs scenario files on the server">Scripts (.cs)</button>
         </div>
     </section>
     <p class="muted ed-hint">You are editing the loaded scenarios. A preset is loaded into them and saved from them.</p>
@@ -110,6 +110,10 @@
                 <div class="detail-head">
                     <span class="muted" title="@scenario.Description">@scenario.Name</span>
                     <span class="spacer"></span>
+                    @if (Catalog.IsCustom(cfg.ScenarioId))
+                    {
+                        <button class="btn ghost small" @onclick="() => ScriptsPopup.Show(cfg.ScenarioId)" title="View and edit this scenario's .cs file on the server">Edit .cs</button>
+                    }
                     @if (dirty) { <span class="unsaved small" role="status"><i></i>Unsaved</span> }
                     <button class="btn primary small" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
                     <button class="icon-btn" @onclick="() => selected = -1" aria-label="Close settings">✕</button>

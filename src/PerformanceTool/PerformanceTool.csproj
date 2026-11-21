@@ -8,6 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Runtime-uploaded custom scenario .cs files are compiled by Roslyn at runtime, not by MSBuild. -->
+    <Compile Remove="scripts/**" />
+    <Content Remove="scripts/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.13.0" />
     <ProjectReference Include="../PerformanceTool.Core/PerformanceTool.Core.csproj" />
     <ProjectReference Include="../PerformanceTool.Client/PerformanceTool.Client.csproj" />
