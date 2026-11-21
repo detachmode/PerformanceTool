@@ -136,15 +136,25 @@ export function attach(el, ref, options) {
         const a = Math.max(0, Math.min(1, v[0] / E)), b = Math.max(a, Math.min(1, v[1] / E));
         ovWin.style.left = (a * 100).toFixed(3) + '%'; ovWin.style.width = ((b - a) * 100).toFixed(3) + '%';
     };
+    // Even gaps (brain 0037): the strip starts on a whole device pixel (the offset is snapped, which also aligns an unzoomed chart), every bar edge
+    // is snapped to a device pixel (cumulative rounding, so the total width stays the same) and each bar keeps the same gap (--gap, whole device
+    // pixels) on its right. Browsers round every edge on their own, which made gaps of 1 and 2 device pixels alternate.
+    const dpr = () => window.devicePixelRatio || 1;
     const applyOff = () => {
-        const v = curView(), o = grid && v ? -(v[0] - grid.buf) / (v[1] - v[0]) * Wc : 0;
-        if (o !== off) { off = o; box.style.transform = o ? `translateX(${o}px)` : ''; if (active) kick(); else idle(); }
+        const v = curView(), raw = grid && v ? -(v[0] - grid.buf) / (v[1] - v[0]) * Wc : 0;
+        const d = dpr(), a0 = box === el ? 0 : box.getBoundingClientRect().left - off;      // the strip's page x without our transform
+        const o = box === el ? 0 : Math.round((a0 + raw) * d) / d - a0;
+        if (Math.abs(o - off) > 1e-4) {
+            off = o; box.style.transform = Math.abs(o) > 1e-4 ? `translateX(${o.toFixed(4)}px)` : '';
+            if (active || raf) kick();
+            else { if (rest.length === items.length && items.length) placeSel(restEl()); idle(); }      // the caret moves with the bars in the same frame
+        }
         updateOver();
     };
     const syncGrid = () => {
         readGrid();
         if (!grid) releaseOwn();
-        else if (owns && view && !edgeRaf && !strip2 && Math.abs(grid.a - view[0]) < 0.03 * (view[1] - view[0])) releaseOwn();
+        else if (owns && view && !edgeRaf && !strip2 && tmode !== 'pan' && Math.abs(grid.a - view[0]) < 0.03 * (view[1] - view[0])) releaseOwn();
         applyOff(); idle();
     };
     // the view goes to Blazor at most every 90 ms, and once more at the end of a gesture; Blazor clamps it and follows the live edge
@@ -185,7 +195,69 @@ export function attach(el, ref, options) {
     if (strip) for (let j = 0; j < NEAR * 2; j++) { const n = mk('dz-n'); n.append(mk('', 'a'), mk('', 'b')); strip.append(n); near.push(n); }
     let ticks = [], mark = null, readout = null;
     if (axis) { mark = mk('dz-mark'); readout = mk('dz-readout'); axis.append(mark, readout); }
+    // ---- selection marker (brain 0037): an accent caret under the selected bar, in the strip below the bars, pointing up at it. It follows the
+    // bar's current layout (magnifier, pan) every frame.
+    const selEl = select && axis ? mk('dz-sel') : null;
+    if (selEl) el.append(selEl);
+    let selKey = null, selShown = false, selTimer = 0;
+    const selIndex = () => { for (let i = 0; i < items.length; i++) if (items[i].classList.contains('on')) return i; return -1; };
+    const placeSel = L => {
+        if (!selEl) return;
+        const i = selIndex(), q = i >= 0 ? L[i] : null;
+        const cx = q ? q.left + Math.max(1, q.width - gapPx) / 2 : NaN;
+        if (!q || !(cx > -1 && cx < el.clientWidth + 1)) { if (selShown) { selShown = false; selEl.classList.remove('show'); } return; }
+        const key = items[i].dataset.key, d = dpr(), x = Math.round(cx * d) / d;
+        if (key !== selKey && selShown && !reduced()) {      // a new selection: the caret glides to it
+            selEl.style.transition = 'transform 200ms ease, opacity 150ms ease';
+            if (selTimer) clearTimeout(selTimer);
+            selTimer = setTimeout(() => { selTimer = 0; selEl.style.transition = ''; }, 230);
+        }
+        selKey = key;
+        const tr = `translateX(${x.toFixed(3)}px)`;
+        if (selEl.__tr !== tr) { selEl.__tr = tr; selEl.style.transform = tr; }
+        if (!selShown) { selShown = true; selEl.classList.add('show'); }
+    };
+    // ---- striped groups (brain 0037): a magnified (or hovered) group bar shows its make-up as vertical stripes. data-st (from Blazor) lists the
+    // segments in order failed, slow, ok, running with their share in percent; the stripes are built here only when a group is highlighted.
+    const stripes = it => {
+        const st = it.dataset.st, g = st ? it.querySelector(':scope > .grp') : null;
+        if (!g) return;
+        let s = g.querySelector(':scope > .grp-st');
+        if (!s) { s = mk('grp-st'); s.setAttribute('aria-hidden', 'true'); g.append(s); }
+        if (s.__st === st) return;
+        s.__st = st;
+        s.replaceChildren(...st.split(' ').map(p => { const [k, v] = p.split(':'), e = mk(k, 'i'); e.style.flexGrow = v; return e; }));
+    };
 
+    let gapPx = 0;
+    const setW = (it, w) => {
+        const fl = `0 0 ${w.toFixed(6)}px`;
+        if (it.__fl !== fl) { it.__fl = fl; it.style.flex = fl; it.style.minWidth = '0'; it.style.maxWidth = 'none'; }
+    };
+    // Widths from the start of the strip, snapped so that every edge lands on a device pixel. Each edge is also a multiple of 1/64 px (the
+    // browser's layout unit), so the widths are exact and rounding does not add up along several hundred bars.
+    const q64 = v => Math.round(v * 64) / 64;
+    const snapW = ws => {
+        const d = dpr(), out = new Array(ws.length);
+        let acc = 0, prev = 0;
+        for (let i = 0; i < ws.length; i++) { acc += ws[i]; const e = q64(Math.round(acc * d) / d); out[i] = e - prev; prev = e; }
+        return out;
+    };
+    // one gap for the whole chart, from the resting pitch, in whole device pixels; it stays the same while magnifying and panning
+    const gapFor = pitch => {
+        const d = dpr(), g = Math.min(3.5, Math.max(0.5, pitch * 0.3));
+        let dev = Math.max(1, Math.round(g * d));
+        if (pitch * d < 3) dev = pitch * d >= 2 ? 1 : 0;
+        return q64(dev / d);
+    };
+    const settle = () => {      // back to the resting layout (snapped widths stay inline)
+        for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            if (rest[i]) setW(it, rest[i].width);
+            if (it.__dz !== undefined) { it.style.removeProperty('--dz'); it.__dz = undefined; }
+            if (it.__mg) { it.classList.remove('mag'); it.__mg = undefined; }
+        }
+    };
     const clear = () => {
         for (const it of items) { it.style.flex = ''; it.style.minWidth = ''; it.style.maxWidth = ''; it.style.removeProperty('--dz'); it.classList.remove('mag'); it.__fl = it.__dz = it.__mg = undefined; }
     };
@@ -196,9 +268,19 @@ export function attach(el, ref, options) {
         const er = box.getBoundingClientRect(), base = box === el ? el.clientLeft : (parseFloat(getComputedStyle(el).paddingLeft) || 0) + el.clientLeft;
         rest = items.map(it => { const r = it.getBoundingClientRect(); return { left: r.left - er.left + (box === el ? -el.clientLeft : base), width: r.width }; });
         width = el.clientWidth;
-        // a bar cannot be narrower than its own padding (border-box): the layout below must not promise less, or the hit test drifts from what is drawn
-        const cs = items.length ? getComputedStyle(items[0]) : null;
-        minW = cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0;
+        const n = rest.length;
+        if (n && box !== el) {
+            const pitch = grid ? rest[0].width : (rest[n - 1].left + rest[n - 1].width - rest[0].left) / n;
+            gapPx = gapFor(pitch);
+            box.style.setProperty('--gap', gapPx.toFixed(6) + 'px');
+            const sw = snapW(rest.map(r => r.width));
+            let x = rest[0].left;
+            rest = sw.map(w => { const r = { left: x, width: w }; x += w; return r; });
+            for (let i = 0; i < n; i++) setW(items[i], rest[i].width);
+        }
+        // a bar cannot be narrower than its own gap (padding, border-box) plus a device pixel: the layout below must not promise less, or the hit
+        // test drifts from what is drawn
+        minW = box !== el ? gapPx + 1 / dpr() : (() => { const cs = items.length ? getComputedStyle(items[0]) : null; return cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0; })();
     };
     let axisDirty = true, psig = '';
     const refresh = () => {
@@ -291,14 +373,14 @@ export function attach(el, ref, options) {
     // one (or the hovered bar), so labels never overlap; the opacity fades with the distance.
     const showNear = h => {
         if (!strip) return;
-        const W = el.clientWidth;
+        const W = el.clientWidth, sel = selShown ? selIndex() : -1;      // the selected bar's caret sits where its label would be
         let slot = 0;
         for (const dir of [-1, 1]) {
             let edge = h >= 0 ? (dir < 0 ? layout[h].left : layout[h].left + layout[h].width) : 0;
             for (let a = 1; a <= NEAR; a++) {
                 const n = near[slot++], j = h + dir * a;
                 let shown = false;
-                if (h >= 0 && j >= 0 && j < items.length && !items[j].classList.contains('empty')) {
+                if (h >= 0 && j >= 0 && j < items.length && j !== sel && !items[j].classList.contains('empty')) {
                     const ds = items[j].dataset, L = layout[j];
                     const w = Math.max((ds.n1 || '').length, (ds.n2 || '').length) * CW + 2, cx = L.left + L.width / 2, x0 = cx - w / 2;
                     const ok = dir < 0 ? cx + w / 2 <= edge - 1 && x0 >= 0 : x0 >= edge + 1 && x0 + w <= W;
@@ -312,6 +394,7 @@ export function attach(el, ref, options) {
                         if (n.lastChild.textContent !== ds.n2) n.lastChild.textContent = ds.n2;
                     }
                 }
+                if (j === sel && h >= 0 && layout[j]) { const c = layout[j].left + layout[j].width / 2; edge = dir < 0 ? Math.min(edge, c - 9) : Math.max(edge, c + 9); }
                 if (!shown && n.style.opacity !== '0') n.style.opacity = 0;
             }
         }
@@ -355,36 +438,43 @@ export function attach(el, ref, options) {
             for (let i = lo; i <= hi; i++) if (fin[i] !== minW && w[i] * f < minW) { fin[i] = minW; again = true; }
             if (!again) break;
         }
+        const tw = new Array(n);
+        for (let i = 0; i < n; i++) {
+            const inr = i >= lo && i <= hi;
+            tw[i] = !inr ? rest[i].width : fin[i] === minW ? minW : w[i] * f;
+        }
+        const sw = box !== el ? snapW(tw) : tw;      // even gaps: every edge on a device pixel (brain 0037)
         let x = rest[0].left;
         layout = new Array(n);
         for (let i = 0; i < n; i++) {
-            const inr = i >= lo && i <= hi;
-            const wi = !inr ? rest[i].width : fin[i] === minW ? minW : w[i] * f;
-            const gap = i < n - 1 ? rest[i + 1].left - rest[i].left - rest[i].width : 0;
-            layout[i] = { left: x + off, width: wi + gap };
+            const wi = sw[i];
+            layout[i] = { left: x + off, width: wi };
             const it = items[i];
-            const fl = `0 0 ${wi.toFixed(2)}px`, dz = (1 + TALL * cur[i]).toFixed(3);      // only touch what changed (a zoomed chart holds several hundred bars)
-            if (it.__fl !== fl) { it.__fl = fl; it.style.flex = fl; it.style.minWidth = '0'; it.style.maxWidth = 'none'; }
+            const dz = (1 + TALL * cur[i]).toFixed(3);      // only touch what changed (a zoomed chart holds several hundred bars)
+            setW(it, wi);
             if (it.__dz !== dz) { it.__dz = dz; it.style.setProperty('--dz', dz); }
             const mg = cur[i] > 0.5; if (it.__mg !== mg) { it.__mg = mg; it.classList.toggle('mag', mg); }   // group badges show on magnified bars (brain 0032)
-            x += wi + gap;
+            if (mg) stripes(it);      // and their make-up as stripes (brain 0037)
+            x += wi;
         }
         const h = info ? hov : -1;
-        showCard(h, info); showNear(h); drawAxis(layout, h);
+        showCard(h, info); showNear(h); drawAxis(layout, h); placeSel(layout);
         if (active || moving) raf = requestAnimationFrame(frame);
-        else { clear(); layout = []; last = 0; showCard(-1, null); showNear(-1); drawAxis(restEl(), -1); }
+        else { settle(); layout = []; last = 0; showCard(-1, null); showNear(-1); const L = restEl(); drawAxis(L, -1); placeSel(L); }
     };
     // static axis at rest, redrawn when bars change (Blazor re-render) or the chart is resized
     let idleRaf = 0;
-    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); drawAxis(restEl(), -1); glide(); }); };
+    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); applyOff(); const L = restEl(); drawAxis(L, -1); placeSel(L); glide(); }); };
     const attrWatch = new MutationObserver(idle);
-    attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1', 'data-key'], subtree: true });
+    attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1', 'data-key', 'aria-pressed'], subtree: true });
     const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; Wc = el.clientWidth; applyOff(); idle(); }) : null;
     const gridWatch = new MutationObserver(syncGrid);     // runs before the next paint: a rebuilt buffer never shows at the wrong offset
     gridWatch.observe(el, { attributes: true, attributeFilter: ['data-grid', 'data-buf', 'data-win', 'data-elapsed', 'data-zoomed', 'style'] });
     if (box !== el) gridWatch.observe(box, { childList: true });
     syncGrid();
     if (sizeWatch) sizeWatch.observe(el);
+    const scroller = el.parentElement, onScroll = () => applyOff();      // a scrolled chart moves on the page: keep the bars on whole device pixels
+    if (scroller) scroller.addEventListener('scroll', onScroll, { passive: true });
     idle();
     function kick() { if (!raf) raf = requestAnimationFrame(frame); }
     const rel = e => e.clientX - el.getBoundingClientRect().left - el.clientLeft;
@@ -401,16 +491,17 @@ export function attach(el, ref, options) {
 
     // ---- brush (brain 0023, update 3): a mouse drag of more than 6 px is a brush, less is a click (the bar under the pointer at press time is
     // picked on release). The brush covers the bars it overlaps in the resting layout; Blazor gets the time frame (data-t0 .. data-t1 of those bars).
-    // ---- touch (brain 0031, update 2): a tap picks the bar (no magnification), a second tap close by zooms in 2x; a sideways swipe turns the
-    // magnifier on under the finger and moves with it, lifting selects the bar under the finger; while zoomed, a finger held at the left or right
-    // edge pans the view that way (faster the nearer the edge); two fingers pinch the time range; a vertical swipe is left to the browser (scroll).
-    // The chart only stops the page from scrolling while a swipe-magnify or pinch is going on (touch-action: pan-y does the rest).
+    // ---- touch (brain 0031 update 2, brain 0037): a tap picks the bar (no magnification), a second tap close by zooms in 2x. A sideways swipe in
+    // the strip under the bars (axis) turns the magnifier on under the finger and moves with it, lifting selects the bar under the finger; while
+    // zoomed, a finger held at the left or right edge pans the view that way (faster the nearer the edge). A sideways swipe on the bars of a
+    // zoomed chart scrolls the timeline (content follows the finger, no magnifier). Two fingers pinch the time range; a vertical swipe is left to
+    // the browser (scroll). The chart only stops the page from scrolling while a magnify, pan or pinch is going on (touch-action: pan-y does the rest).
     const THRESH = 6, SLOP = 9, MINSPAN = 0.5, DT = 350, DD = 24;
     const brushEl = select ? el.querySelector(':scope > .dz-brush') : null;
     let drag = null;
     const pts = new Map();            // touch pointers on the chart: id -> {x, y}
     let tmode = '';                    // '' | 'wait' (finger down, may become a tap) | 'scroll' | 'mag' (swipe-magnifier) | 'pinch' | 'done' (gesture over, fingers still down)
-    let tkey = null, tdown = null, pinch = null, lastTap = null;
+    let tkey = null, tdown = null, pinch = null, lastTap = null, tpan = null;
     const spanOf = (a, b) => {
         refresh(); const lo = Math.min(a, b), hi = Math.max(a, b), idx = [];
         rest.forEach((q, i) => { if (q.left + off + q.width > lo && q.left + off < hi) idx.push(i); });
@@ -498,13 +589,25 @@ export function attach(el, ref, options) {
     const endTouch = () => {      // all fingers up (or the gesture was taken away)
         edge = 0; if (pinch) pinch = null;
         flushZoom();
-        pts.clear(); tmode = ''; tkey = null; tdown = null; down = false; active = false; kick(); syncAim();
+        pts.clear(); tmode = ''; tkey = null; tdown = null; tpan = null; down = false; active = false; kick(); syncAim();
+    };
+    // Two swipe areas (brain 0037): the strip under the bars (time axis and neighbour labels, the chart's bottom padding) is the magnifier's
+    // track; a sideways swipe on the bars scrolls the zoomed timeline (content follows the finger).
+    const inAxis = y => {
+        const r = el.getBoundingClientRect(), pb = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+        return pb > 0 && y - r.top - el.clientTop >= el.clientHeight - pb;
+    };
+    const panMove = x => {
+        const v0 = tpan.v, span = v0[1] - v0[0], E = runEnd();
+        const from = Math.max(0, Math.min(v0[0] - (x - tdown.x) / Math.max(1, Wc) * span, Math.max(0, E - span)));
+        view = [from, from + span]; own(); applyOff();
+        queueZoom(from, from + span, false, 120);
     };
     const onTouchDown = e => {
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         down = true;
         if (pts.size === 1) {
-            tmode = 'wait'; tkey = null; tdown = { x: e.clientX, y: e.clientY };
+            tmode = 'wait'; tkey = null; tdown = { x: e.clientX, y: e.clientY, axis: inAxis(e.clientY) };
             const i = hit(rel(e)); tkey = i >= 0 ? items[i].dataset.key : null;
             px = rel(e);
         } else if (pts.size === 2) {
@@ -520,13 +623,18 @@ export function attach(el, ref, options) {
             const dx = e.clientX - tdown.x, dy = e.clientY - tdown.y;
             if (Math.hypot(dx, dy) >= SLOP) {
                 lastTap = null;
-                if (Math.abs(dx) > Math.abs(dy)) {
+                if (Math.abs(dx) > Math.abs(dy) && tdown.axis) {      // axis strip: magnifier under the finger
                     tmode = 'mag'; px = rel(e); active = true; kick(); edgeCheck();
                     window.__dock.mags = (window.__dock.mags || 0) + 1;
                     try { el.setPointerCapture(e.pointerId); } catch (_) { }
-                } else tmode = 'scroll';
+                } else if (Math.abs(dx) > Math.abs(dy) && grid && curView()) {      // bars, zoomed in: scroll the timeline
+                    tmode = 'pan'; tpan = { v: curView().slice() }; active = false; kick(); panMove(e.clientX);
+                    window.__dock.pans = (window.__dock.pans || 0) + 1;
+                    try { el.setPointerCapture(e.pointerId); } catch (_) { }
+                } else tmode = 'scroll';      // vertical, or sideways on the bars of an unzoomed chart: the page's own behaviour
             }
         } else if (tmode === 'mag') { px = rel(e); active = true; kick(); edgeCheck(); }
+        else if (tmode === 'pan') panMove(e.clientX);
         else if (tmode === 'pinch') pinchMove();
     };
     const onTouchUp = e => {
@@ -548,7 +656,7 @@ export function attach(el, ref, options) {
         if (pts.size === 0) endTouch();
     };
     // Stop the page from scrolling or zooming while a swipe-magnify or pinch is going on (needs a non-passive listener); a vertical swipe still scrolls.
-    const onTouchMoveEv = e => { if (tmode === 'mag' || tmode === 'pinch' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
+    const onTouchMoveEv = e => { if (tmode === 'mag' || tmode === 'pan' || tmode === 'pinch' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
     const onContext = e => { if (tmode) e.preventDefault(); };
 
     // ---- overview strip (brain 0035): the whole run as a thin line, the lit part is the view. Tap or drag (mouse or touch) moves the view.
@@ -633,6 +741,7 @@ export function attach(el, ref, options) {
         if (aimTimer) clearTimeout(aimTimer);
         if (raf) cancelAnimationFrame(raf);
         clear(); attrWatch.disconnect(); gridWatch.disconnect(); if (edgeRaf) cancelAnimationFrame(edgeRaf); if (ownTimer) clearTimeout(ownTimer); box.style.transform = ''; if (sizeWatch) sizeWatch.disconnect();
+        if (scroller) scroller.removeEventListener('scroll', onScroll); if (selEl) selEl.remove(); if (selTimer) clearTimeout(selTimer);
         if (idleRaf) cancelAnimationFrame(idleRaf);
         if (tip) tip.classList.remove('show');
         tracked.delete(el); watch.disconnect();

@@ -137,7 +137,7 @@
                         {
                             var on = bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningActor ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "")" data-key="@key" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? ActorBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningActor ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningActor)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -164,7 +164,7 @@
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "actor", "actors") in time buckets of @FT(width, width); a bar is red or yellow if any actor in it failed or was slow. Click a bar to list its actors.</text> }
                 else { <text>One bar per actor, taller = slower. The axis shows the run time of the actors at that position. Click an actor to see its calls.</text> }
-                <text> Drag across the chart to zoom into a time frame (touch: swipe sideways to magnify, hold at the edge to pan, pinch or double tap to zoom).</text>
+                <text> Drag across the chart to zoom into a time frame (touch: swipe the time axis to magnify, swipe the bars to scroll, pinch or double tap to zoom).</text>
             </p>
         }
 
@@ -386,9 +386,12 @@
         if (span >= elapsed * 0.98) { ResetZoom(); return; }
         var from = r.From < 0 ? 0 : r.From;
         var to = from + span;
+        // a pan (same span: swipe on the bars, edge pan, overview strip) keeps the bucket width, so a selected group stays selected (brain 0037)
+        var pan = win is { } ow && Math.Abs(ow.To - ow.From - span) <= 1e-6 * Math.Max(1, span);
         if (to >= elapsed - 0.02 * span) win = new Win(Math.Max(0, elapsed - span), elapsed, true);
         else win = new Win(from, to, false);
-        bucket = null; fz = null; tailMs = null;
+        if (!pan) bucket = null;
+        fz = null; tailMs = null;
     }
     private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
     private void ResetZoom() { win = null; bucket = null; fz = null; tailMs = null; }
