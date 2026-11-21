@@ -10,13 +10,18 @@ public enum ActorShow { All, Failed, Slow }
 /// <see cref="MaxMs"/> is its elapsed time; in a time bucket <see cref="Running"/> is the number of running actors.
 /// <see cref="BucketStart"/> is the start time of a single actor (running or finished) or of a time bucket.
 /// </remarks>
-public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0)
+public readonly record struct ActorBar(int Count, int Failed, int Slow, double MaxMs, int Sequence, double BucketStart, int Running = 0, int Burst = 0, double Slot = 0)
 {
+    /// <summary>The bar belongs to an unfolded burst (brain 0038): <see cref="Burst"/> is the burst's actor count, <see cref="Slot"/> the start of its place on the time grid.</summary>
+    public bool InBurst => Burst > 0;
     public int Total => Count + Running;
     public bool IsRunningActor => Sequence >= 0 && Running > 0 && Count == 0;
     public bool IsBucket => Sequence < 0;
     public ActorOutcome Outcome => Failed > 0 ? ActorOutcome.Failed : Slow > 0 ? ActorOutcome.Slow : ActorOutcome.Ok;
 }
+
+/// <summary>An unfolded burst (brain 0038): its slot start on the time grid and its actor count (all of them, also those folded into the trailing group bar).</summary>
+public readonly record struct BurstSpan(double Slot, int Actors);
 
 /// <summary>One stripe of a highlighted group bar (brain 0037): its kind ("bad", "warn", "good", "run"), actor count and share of the bar in percent.</summary>
 public readonly record struct StripeSegment(string Kind, int Count, double Share);
@@ -201,6 +206,125 @@ public static class ActorBars
             else bars.Add(new(n[k], f[k], sl[k], ms[k], -1, Slot(firstIdx + k, width)));
         }
         return bars;
+    }
+
+    /// <summary>Bins of the overview strip (brain 0035 update 1): the strip's cost depends on this, not on the number of actors.</summary>
+    public const int OverviewBins = 300;
+
+    /// <summary>
+    /// Where failed and slow actors were over the whole run, for the overview strip: one character per bin of [0, <paramref name="elapsed"/>]:
+    /// 'f' if an actor that started in the bin failed, else 's' if one was slow, else '.'. One pass over the actors, a fixed number of bins.
+    /// </summary>
+    public static string OverviewMarks(IReadOnlyList<ActorRecord> actors, int count, double elapsed, int bins = OverviewBins)
+    {
+        if (elapsed <= 0 || bins <= 0) return "";
+        var m = new char[bins];
+        Array.Fill(m, '.');
+        for (var i = 0; i < count; i++)
+        {
+            var a = actors[i];
+            if (a.Outcome == ActorOutcome.Ok) continue;
+            var k = Math.Clamp((int)(a.StartedAt / elapsed * bins), 0, bins - 1);
+            if (a.Failed) m[k] = 'f'; else if (m[k] == '.') m[k] = 's';
+        }
+        return new string(m);
+    }
+
+    // ---- unfolding bursts (brain 0038)
+    /// <summary>Unfolding starts when at most this share of the max-bars setting is in view as grid slots (so the zoom has given each slot some width).</summary>
+    public const double UnfoldShare = 0.4;
+    /// <summary>The most slots in view at which bursts unfold, for the max-bars setting.</summary>
+    public static double UnfoldMaxSlots(int maxBars) => Math.Max(8, maxBars * UnfoldShare);
+    /// <summary>Most single-actor bars one unfolded burst shows (the rest of its actors stay one trailing group bar), for the max-bars setting.</summary>
+    public static int UnfoldPerBurst(int maxBars) => Math.Max(12, maxBars / 4);
+    /// <summary>Most extra bars all unfolded bursts together may add to the chart, for the max-bars setting.</summary>
+    public static int UnfoldBudget(int maxBars) => Math.Max(24, maxBars);
+    private const double SameStart = 0.001;
+
+    /// <summary>
+    /// Unfolds the group bars of a zoomed grid (brain 0038): a slot bar of several actors that start at the same moment (or any group of a slot that is
+    /// already the smallest grid width, which time cannot split further) is replaced by one ordinary bar per actor, in actor order, side by side in
+    /// its place. The bars before and after stay as they are. Bounded: a burst shows at most <paramref name="perBurst"/> bars (failed, then slow
+    /// actors first, the others folded into one trailing group bar that selects the burst), all bursts together add at most
+    /// <paramref name="budget"/> bars, and the bursts nearest to <paramref name="focus"/> (the view's centre, in run seconds) are unfolded first.
+    /// Every returned bar of a burst carries <see cref="ActorBar.Burst"/> and <see cref="ActorBar.Slot"/>.
+    /// </summary>
+    /// <param name="slots">Bar i of the grid is the slot starting at <c>Slot(firstIdx + i, width)</c> (running actors already counted in).</param>
+    public static List<ActorBar> Unfold(List<ActorBar> slots, IReadOnlyList<ActorRecord> actors, int count, ActorShow show, IReadOnlyList<RunningActor> running,
+        double width, long firstIdx, double elapsed, double focus, int perBurst, int budget, out List<BurstSpan> bursts)
+    {
+        bursts = [];
+        if (width <= 0 || slots.Count == 0 || perBurst < 2) return slots;
+        var cand = new List<int>();
+        for (var k = 0; k < slots.Count; k++) if (slots[k].IsBucket && slots[k].Total >= 2) cand.Add(k);
+        if (cand.Count == 0) return slots;
+        var floor = width <= GridWidths[0] + 1e-9;
+        // the actors of the candidate slots, in one pass over the actors
+        var byIdx = new Dictionary<int, List<(ActorRecord? Done, RunningActor? Run)>>();
+        foreach (var k in cand) byIdx[k] = [];
+        for (var i = 0; i < count; i++)
+        {
+            var a = actors[i];
+            if (!Includes(show, a)) continue;
+            var k = (int)(SlotIndex(a.StartedAt, width) - firstIdx);
+            if (byIdx.TryGetValue(k, out var l)) l.Add((a, null));
+        }
+        if (show == ActorShow.All)
+            foreach (var r in running)
+            {
+                var k = (int)(SlotIndex(r.StartedAt, width) - firstIdx);
+                if (byIdx.TryGetValue(k, out var l)) l.Add((null, r));
+            }
+        // nearest to the focus first
+        cand.Sort((x, y) => Math.Abs(Slot(firstIdx + x, width) + width / 2 - focus).CompareTo(Math.Abs(Slot(firstIdx + y, width) + width / 2 - focus)));
+        var chosen = new Dictionary<int, List<ActorBar>>();
+        var extra = 0;
+        foreach (var k in cand)
+        {
+            var list = byIdx[k];
+            if (list.Count < 2) continue;
+            double Start((ActorRecord? Done, RunningActor? Run) e) => e.Done?.StartedAt ?? e.Run!.StartedAt;
+            int Seq((ActorRecord? Done, RunningActor? Run) e) => e.Done?.Sequence ?? e.Run!.Sequence;
+            if (!floor && list.Max(Start) - list.Min(Start) > SameStart) continue;     // time can still split this group
+            var shown = Math.Min(list.Count, perBurst);
+            var rest = list.Count - shown;
+            if (rest > 0) shown--;                                                     // the trailing group bar takes the last place
+            var cost = shown + (rest > 0 ? 1 : 0) - 1;
+            if (extra + cost > budget) continue;
+            // the actors to show singly: all of them, or the most interesting ones (failed, slow, running) of a big burst
+            static int Rank((ActorRecord? Done, RunningActor? Run) e) => e.Done is { } d ? (d.Failed ? 0 : d.Outcome == ActorOutcome.Slow ? 1 : 3) : 2;
+            var pick = rest > 0 ? list.OrderBy(Rank).ThenBy(Seq).Take(shown).ToList() : list;
+            pick = pick.OrderBy(Start).ThenBy(Seq).ToList();
+            var slot = Slot(firstIdx + k, width);
+            var bars = new List<ActorBar>(pick.Count + 1);
+            foreach (var e in pick)
+            {
+                if (e.Done is { } d) bars.Add(new(1, d.Failed ? 1 : 0, d.Outcome == ActorOutcome.Slow ? 1 : 0, d.DurationMs, d.Sequence, d.StartedAt, 0, list.Count, slot));
+                else bars.Add(new(0, 0, 0, Math.Max(0, (elapsed - e.Run!.StartedAt) * 1000), e.Run.Sequence, e.Run.StartedAt, 1, list.Count, slot));
+            }
+            if (rest > 0)
+            {
+                var picked = new HashSet<int>(pick.Select(Seq));
+                int n = 0, f = 0, sl = 0, run = 0; double ms = 0;
+                foreach (var e in list)
+                {
+                    if (picked.Contains(Seq(e))) continue;
+                    if (e.Done is { } d) { n++; if (d.Failed) f++; else if (d.SlowCalls > 0) sl++; ms = Math.Max(ms, d.DurationMs); }
+                    else { run++; ms = Math.Max(ms, (elapsed - e.Run!.StartedAt) * 1000); }
+                }
+                bars.Add(new(n, f, sl, ms, -1, slot, run, list.Count, slot));
+            }
+            chosen[k] = bars; extra += cost;
+            bursts.Add(new BurstSpan(slot, list.Count));
+        }
+        if (chosen.Count == 0) return slots;
+        bursts.Sort((x, y) => x.Slot.CompareTo(y.Slot));
+        var result = new List<ActorBar>(slots.Count + extra);
+        for (var k = 0; k < slots.Count; k++)
+        {
+            if (chosen.TryGetValue(k, out var bs)) result.AddRange(bs); else result.Add(slots[k]);
+        }
+        return result;
     }
 
     /// <summary>

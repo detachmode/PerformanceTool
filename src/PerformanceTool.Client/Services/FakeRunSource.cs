@@ -88,6 +88,9 @@ public sealed class FakeRunSource : IRunSource
     /// <summary>Limits of the next run's <see cref="RunStore"/> (brain 0028). Changing a value also applies to the run in progress.</summary>
     public RunStoreOptions StoreOptions { get; }
 
+    /// <summary>Length of the finished run that is there on first load (brain 0039).</summary>
+    public const int SeedRunSeconds = 30 * 60;
+
     public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null)
     {
         this.catalog = catalog;
@@ -99,9 +102,10 @@ public sealed class FakeRunSource : IRunSource
         savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
         // Pre-seed a finished run, simulated in virtual time.
         BeginRun();
-        if (simulateSeconds > 0) runPlan.DurationSeconds = (int)simulateSeconds;
+        // The seeded run is 30 minutes (brain 0039) so there is plenty to zoom into; "?simulate=" overrides. The editable plan keeps its own duration.
+        runPlan.DurationSeconds = simulateSeconds > 0 ? (int)simulateSeconds : SeedRunSeconds;
         runStartedUtc = DateTimeOffset.UtcNow.AddSeconds(-runPlan.DurationSeconds - 20);
-        var step = simulateSeconds > 0 ? 0.25 : 0.05;
+        var step = 0.25;
         for (var t = step; t < runPlan.DurationSeconds + 60; t += step) { Step(t); if (state != FakeRunState.Running) break; }
         if (state == FakeRunState.Running) Finish(runPlan.DurationSeconds);
         Current = Snapshot();

@@ -72,7 +72,8 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0032](0032-group-bars-look-different.md) | Group bars: lighter fill with outline plus a small count badge; single actors stay solid | Accepted, implemented |
 | [0033](0033-environments.md) | Environments: arbitrary key-value pairs (credentials allowed), used as `{{Key}}` placeholders and in code, like Bruno; one file per environment; picked in a top-bar dropdown like Bruno | Accepted, implemented (fake data); runner and REST in the server, UI on fake data |
 | [0034](0034-scenario-bursts.md) | Spawning pattern per scenario entry: linear (actors/min) or bursts (actors per burst × bursts per minute) | Accepted, implemented (fake data) |
-| [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted, implemented |
+| [0035](0035-zoom-overview-strip.md) | Overview strip under the popup chart: whole run with the viewed area highlighted | Accepted, implemented (update 1: whole width, muted red/amber marks of failed and slow actors, always visible) |
 | [0036](0036-step-through-failed-and-slow.md) | Previous/next failed (or slow) moves the zoomed view and steps through groups | Accepted, implemented |
 | [0037](0037-popup-chart-selection-swipe-areas-group-stripes.md) | Popup chart: selection arrow below the bar, magnifier only on the axis strip, bars area scrolls, striped groups, even gaps | Accepted, implemented |
-| [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted (details Proposed), not implemented |
+| [0038](0038-unfold-bursts-on-zoom.md) | Zooming into a burst unfolds it into single actors side by side; the rest keeps the time axis | Accepted, implemented |
+| [0039](0039-fake-seed-run-30-minutes.md) | The fake data starts with a 30 minute finished run (bursts to zoom into) | Accepted, implemented |

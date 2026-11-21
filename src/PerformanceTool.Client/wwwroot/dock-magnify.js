@@ -114,6 +114,27 @@ export function attach(el, ref, options) {
     let grid = null, off = 0, Wc = el.clientWidth;
     let view = null, owns = false, ownTimer = 0;          // the view while the script drives it (edge pan, overview strip), until Blazor has caught up
     let edge = 0, edgeRaf = 0, edgeLast = 0, zoomNext = null, zoomTimer = 0, zoomAt = 0, strip2 = null;
+    // Unfolded bursts (brain 0038): consecutive bars with the same data-ub are one grid slot (a cell). cellOf[i] is the cell of bar i, cellStart/cellEnd
+    // its first and last bar; without unfolded bursts a cell is one bar. Empty (identity) while there is no burst, so a normal chart is unchanged.
+    let cellOf = [], cellStart = [], cellEnd = [], bursts = new Map(), strBase = 0;
+    const buildCells = () => {
+        cellOf = []; cellStart = []; cellEnd = []; bursts = new Map();
+        let prev = null, c = -1, any = false;
+        for (let i = 0; i < items.length; i++) {
+            const ub = items[i].dataset.ub;
+            if (ub !== undefined) { any = true; if (!bursts.has(ub)) bursts.set(ub, [i, i]); else bursts.get(ub)[1] = i; }
+            if (ub === undefined || ub !== prev) { c++; cellStart[c] = i; }
+            prev = ub === undefined ? null : ub; cellOf[i] = c; cellEnd[c] = i;
+        }
+        if (!any) { cellOf = []; cellStart = []; cellEnd = []; }
+    };
+    // x (strip coordinates, resting layout) of a time: the slot's cell, by the time inside the slot
+    const xOfTime = (t, span) => {
+        const sl = (t - grid.buf) / grid.bw;
+        if (cellOf.length === 0 || cellOf.length !== rest.length) return sl * (Wc * grid.bw / span);
+        const nc = cellStart.length, c = Math.max(0, Math.min(nc - 1, Math.floor(sl))), a = rest[cellStart[c]], z = rest[cellEnd[c]];
+        return a.left - strBase + (sl - c) * (z.left + z.width - a.left);
+    };
     const runEnd = () => (parseFloat(el.dataset.elapsed) || 0) / 1000;
     const readGrid = () => {
         const bw = parseFloat(el.dataset.grid), buf = parseFloat(el.dataset.buf), wv = (el.dataset.win || '').split(' ').map(parseFloat);
@@ -128,11 +149,32 @@ export function attach(el, ref, options) {
     const releaseOwn = () => { owns = false; view = null; if (ownTimer) { clearTimeout(ownTimer); ownTimer = 0; } };
     const over = select ? el.querySelector(':scope > .dz-over') : null;
     let ovWin = null;
-    if (over) { ovWin = mk('ov-win'); over.append(mk('ov-track'), ovWin); }
+    // The strip shows where failed (red) and slow (amber) actors were over the whole run (brain 0035 update 1): data-ov has one character per
+    // bin of the run ('f' failed, 's' slow, '.' neither), drawn on a canvas under the lit window. Bounded: the number of bins, not of actors.
+    let ovCanvas = null, ovKey = '';
+    if (over) { ovWin = mk('ov-win'); ovCanvas = mk('ov-marks', 'canvas'); over.append(mk('ov-track'), ovCanvas, ovWin); }
+    const drawOv = () => {
+        if (!ovCanvas) return;
+        const d = dpr(), w = Math.round(over.clientWidth * d), h = Math.round(10 * d), data = el.dataset.ov || '';
+        const key = data + '|' + w + '|' + h;
+        if (key === ovKey || w <= 0) return;
+        ovKey = key;
+        ovCanvas.width = w; ovCanvas.height = h;
+        const c = ovCanvas.getContext('2d'), cs = getComputedStyle(el), n = data.length;
+        c.clearRect(0, 0, w, h);
+        if (!n) return;
+        const col = { f: cs.getPropertyValue('--failed').trim() || '#e5484d', s: cs.getPropertyValue('--slow').trim() || '#f5a524' };
+        for (const kind of ['s', 'f']) {      // red on top of amber
+            c.fillStyle = col[kind];
+            for (let i = 0; i < n; i++) if (data[i] === kind) { const x0 = Math.floor(i / n * w), x1 = Math.max(x0 + Math.round(1.5 * d), Math.floor((i + 1) / n * w)); c.fillRect(x0, 0, x1 - x0, h); }
+        }
+    };
     const updateOver = () => {
         if (!over) return;
+        drawOv();
         const v = curView(), E = runEnd();
-        if (!v || E <= 0) return;
+        if (!v || E <= 0) { ovWin.style.display = 'none'; return; }
+        ovWin.style.display = '';
         const a = Math.max(0, Math.min(1, v[0] / E)), b = Math.max(a, Math.min(1, v[1] / E));
         ovWin.style.left = (a * 100).toFixed(3) + '%'; ovWin.style.width = ((b - a) * 100).toFixed(3) + '%';
     };
@@ -141,13 +183,14 @@ export function attach(el, ref, options) {
     // pixels) on its right. Browsers round every edge on their own, which made gaps of 1 and 2 device pixels alternate.
     const dpr = () => window.devicePixelRatio || 1;
     const applyOff = () => {
-        const v = curView(), raw = grid && v ? -(v[0] - grid.buf) / (v[1] - v[0]) * Wc : 0;
+        if (grid) refresh();      // unfolded bursts (brain 0038) make the strip's own layout the truth: it has to be current
+        const v = curView(), raw = grid && v ? -xOfTime(v[0], v[1] - v[0]) : 0;
         const d = dpr(), a0 = box === el ? 0 : box.getBoundingClientRect().left - off;      // the strip's page x without our transform
         const o = box === el ? 0 : Math.round((a0 + raw) * d) / d - a0;
         if (Math.abs(o - off) > 1e-4) {
             off = o; box.style.transform = Math.abs(o) > 1e-4 ? `translateX(${o.toFixed(4)}px)` : '';
             if (active || raf) kick();
-            else { if (rest.length === items.length && items.length) placeSel(restEl()); idle(); }      // the caret moves with the bars in the same frame
+            else { if (rest.length === items.length && items.length) { placeSel(restEl()); placeTags(restEl()); } idle(); }      // the caret moves with the bars in the same frame
         }
         updateOver();
     };
@@ -174,6 +217,8 @@ export function attach(el, ref, options) {
         let lo = 0, hi = L.length - 1;
         if (hi >= 0 && x >= L[0].left && x < L[hi].left + L[hi].width) {
             while (lo < hi) { const m = (lo + hi + 1) >> 1; if (L[m].left <= x) lo = m; else hi = m - 1; }
+            // inside an unfolded burst (brain 0038) the whole stretch is one instant: the time of its grid slot, by position in the stretch
+            if (cellOf.length === L.length) { const c = cellOf[lo], a = L[cellStart[c]], z = L[cellEnd[c]], cw = z.left + z.width - a.left; return grid.buf + (c + (x - a.left) / cw) * grid.bw; }
             return grid.buf + (lo + (x - L[lo].left) / L[lo].width) * grid.bw;
         }
         const v = curView(); return v[0] + x / Wc * (v[1] - v[0]);
@@ -200,6 +245,31 @@ export function attach(el, ref, options) {
     const selEl = select && axis ? mk('dz-sel') : null;
     if (selEl) el.append(selEl);
     let selKey = null, selShown = false, selTimer = 0;
+    // ---- burst labels (brain 0038): "burst · N actors" over an unfolded stretch, in the strip so it slides with the bars; width and place follow the
+    // current layout (magnifier, pan). A click or tap on it picks the burst's actors as a group (key b<slot>).
+    const placeTags = L => {
+        if (bursts.size === 0 || L.length !== items.length) return;
+        for (const t of box.querySelectorAll(':scope > .burst-tag')) {
+            const r = bursts.get(t.dataset.ub);
+            if (!r || !L[r[0]] || !L[r[1]]) { t.style.visibility = 'hidden'; continue; }
+            const x = L[r[0]].left - off - strBase, w = Math.max(4, L[r[1]].left + L[r[1]].width - L[r[0]].left - gapPx);
+            const tr = `translateX(${x.toFixed(2)}px)`;
+            if (t.__tr !== tr) { t.__tr = tr; t.style.transform = tr; }
+            const ww = w.toFixed(2) + 'px';
+            if (t.__w !== ww) { t.__w = ww; t.style.width = ww; }
+            if (t.style.visibility) t.style.visibility = '';
+        }
+    };
+    if (select) {
+        let tagDown = null;
+        el.addEventListener('pointerdown', e => { const t = e.target.closest && e.target.closest('.burst-tag'); if (!t) return; e.stopPropagation(); tagDown = { id: e.pointerId, x: e.clientX, y: e.clientY, ub: t.dataset.ub }; }, true);
+        el.addEventListener('pointerup', e => {
+            const d = tagDown; if (!d || d.id !== e.pointerId) return; tagDown = null;
+            e.stopPropagation();
+            if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) pickKey('b' + d.ub);
+        }, true);
+        el.addEventListener('pointercancel', () => { tagDown = null; }, true);
+    }
     const selIndex = () => { for (let i = 0; i < items.length; i++) if (items[i].classList.contains('on')) return i; return -1; };
     const placeSel = L => {
         if (!selEl) return;
@@ -268,6 +338,7 @@ export function attach(el, ref, options) {
         const er = box.getBoundingClientRect(), base = box === el ? el.clientLeft : (parseFloat(getComputedStyle(el).paddingLeft) || 0) + el.clientLeft;
         rest = items.map(it => { const r = it.getBoundingClientRect(); return { left: r.left - er.left + (box === el ? -el.clientLeft : base), width: r.width }; });
         width = el.clientWidth;
+        strBase = box === el ? 0 : (parseFloat(getComputedStyle(el).paddingLeft) || 0) + el.clientLeft;
         const n = rest.length;
         if (n && box !== el) {
             const pitch = grid ? rest[0].width : (rest[n - 1].left + rest[n - 1].width - rest[0].left) / n;
@@ -278,6 +349,7 @@ export function attach(el, ref, options) {
             rest = sw.map(w => { const r = { left: x, width: w }; x += w; return r; });
             for (let i = 0; i < n; i++) setW(items[i], rest[i].width);
         }
+        buildCells();
         // a bar cannot be narrower than its own gap (padding, border-box) plus a device pixel: the layout below must not promise less, or the hit
         // test drifts from what is drawn
         minW = box !== el ? gapPx + 1 / dpr() : (() => { const cs = items.length ? getComputedStyle(items[0]) : null; return cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 0; })();
@@ -458,18 +530,18 @@ export function attach(el, ref, options) {
             x += wi;
         }
         const h = info ? hov : -1;
-        showCard(h, info); showNear(h); drawAxis(layout, h); placeSel(layout);
+        showCard(h, info); showNear(h); drawAxis(layout, h); placeSel(layout); placeTags(layout);
         if (active || moving) raf = requestAnimationFrame(frame);
-        else { settle(); layout = []; last = 0; showCard(-1, null); showNear(-1); const L = restEl(); drawAxis(L, -1); placeSel(L); }
+        else { settle(); layout = []; last = 0; showCard(-1, null); showNear(-1); const L = restEl(); drawAxis(L, -1); placeSel(L); placeTags(L); }
     };
     // static axis at rest, redrawn when bars change (Blazor re-render) or the chart is resized
     let idleRaf = 0;
-    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); applyOff(); const L = restEl(); drawAxis(L, -1); placeSel(L); glide(); }); };
+    const idle = () => { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; if (active || raf) return; refresh(); applyOff(); const L = restEl(); drawAxis(L, -1); placeSel(L); placeTags(L); glide(); }); };
     const attrWatch = new MutationObserver(idle);
     attrWatch.observe(el, { childList: true, attributes: true, attributeFilter: ['data-t0', 'data-t1', 'data-key', 'aria-pressed'], subtree: true });
-    const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; Wc = el.clientWidth; applyOff(); idle(); }) : null;
+    const sizeWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { axisDirty = true; ovKey = ''; Wc = el.clientWidth; applyOff(); idle(); }) : null;
     const gridWatch = new MutationObserver(syncGrid);     // runs before the next paint: a rebuilt buffer never shows at the wrong offset
-    gridWatch.observe(el, { attributes: true, attributeFilter: ['data-grid', 'data-buf', 'data-win', 'data-elapsed', 'data-zoomed', 'style'] });
+    gridWatch.observe(el, { attributes: true, attributeFilter: ['data-grid', 'data-buf', 'data-win', 'data-elapsed', 'data-zoomed', 'data-ov', 'style'] });
     if (box !== el) gridWatch.observe(box, { childList: true });
     syncGrid();
     if (sizeWatch) sizeWatch.observe(el);
@@ -496,7 +568,7 @@ export function attach(el, ref, options) {
     // zoomed, a finger held at the left or right edge pans the view that way (faster the nearer the edge). A sideways swipe on the bars of a
     // zoomed chart scrolls the timeline (content follows the finger, no magnifier). Two fingers pinch the time range; a vertical swipe is left to
     // the browser (scroll). The chart only stops the page from scrolling while a magnify, pan or pinch is going on (touch-action: pan-y does the rest).
-    const THRESH = 6, SLOP = 9, MINSPAN = 0.5, DT = 350, DD = 24;
+    const THRESH = 6, SLOP = 9, MINSPAN = 0.05, DT = 350, DD = 24;      // MINSPAN: the narrowest view a pinch or double tap gives, in s (a burst is one instant, brain 0038)
     const brushEl = select ? el.querySelector(':scope > .dz-brush') : null;
     let drag = null;
     const pts = new Map();            // touch pointers on the chart: id -> {x, y}
@@ -507,7 +579,15 @@ export function attach(el, ref, options) {
         rest.forEach((q, i) => { if (q.left + off + q.width > lo && q.left + off < hi) idx.push(i); });
         return idx;
     };
-    const rangeOf = idx => { let a = Infinity, b = -Infinity; for (const i of idx) { a = Math.min(a, t0(i)); b = Math.max(b, t1(i)); } return [a, b]; };
+    // the time frame of some bars; a bar of an unfolded burst stands for its grid slot (brain 0038: the burst is one instant)
+    const rangeOf = idx => {
+        let a = Infinity, b = -Infinity;
+        for (const i of idx) {
+            const d = items[i].dataset, u = d.ts !== undefined;
+            a = Math.min(a, u ? parseFloat(d.ts) : t0(i)); b = Math.max(b, u ? parseFloat(d.te) : t1(i));
+        }
+        return [a, b];
+    };
     const startBrush = () => {
         if (!drag || drag.brushing || !brushEl) return;
         drag.brushing = true; active = false; kick();
@@ -547,13 +627,14 @@ export function attach(el, ref, options) {
         const [a, b] = curRange();
         const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
         pinch = { a, b, d0: Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac0: ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth) };
+        if (grid && cellOf.length) { refresh(); pinch.tc0 = timeAt(restEl(), (p.x + q.x) / 2 - r.left - el.clientLeft); }      // the time under the fingers, bursts counted as instants
         return b > a;
     };
     const pinchMove = () => {
         const [p, q] = Array.from(pts.values()), r = el.getBoundingClientRect();
         const d = Math.max(10, Math.hypot(p.x - q.x, p.y - q.y)), frac = ((p.x + q.x) / 2 - r.left) / Math.max(1, el.clientWidth);
         const span0 = pinch.b - pinch.a, span = Math.max(MINSPAN, span0 * pinch.d0 / d);
-        const tc = pinch.a + pinch.frac0 * span0, from = tc - frac * span;
+        const tc = pinch.tc0 !== undefined ? pinch.tc0 : pinch.a + pinch.frac0 * span0, from = tc - frac * span;
         queueZoom(from, from + span);
     };
     // double tap: zoom in 2x around the tapped time
