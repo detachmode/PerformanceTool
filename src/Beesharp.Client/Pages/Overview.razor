@@ -39,15 +39,6 @@
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
             <h1>Scenarios</h1>
-            <span class="preset-pill" title="Active preset">@Sim.PresetName</span>
-            @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
-            {
-                <button type="button" class="preset-pill preflight-pill" @onclick="TogglePlanMoreAsync" title="Preflight script runs before scenarios start (click to change)">Preflight: @plan.PreflightScriptId</button>
-            }
-            else if (!DataMode.IsFakeMode)
-            {
-                <button type="button" class="preset-pill preflight-pill off" @onclick="TogglePlanMoreAsync" title="Set a preflight script to run before scenarios start">+ Preflight</button>
-            }
             @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
             @if (!editMode)
@@ -163,64 +154,106 @@
             </button>
             <button type="button" class="btn ghost small plan-more-btn @(planMoreOpen ? "on" : "")"
                     aria-expanded="@Aria.Bool(planMoreOpen)"
-                    aria-label="@(planMoreOpen ? "Hide max in-flight, timeout and preflight" : "Show max in-flight, timeout and preflight")"
-                    title="@(planMoreOpen ? "Hide max in-flight, timeout & preflight" : "Max in-flight, timeout & preflight")"
-                    @onclick="TogglePlanMoreAsync">
+                    aria-label="@(planMoreOpen ? "Hide max in-flight and timeout" : "Show max in-flight and timeout")"
+                    title="@(planMoreOpen ? "Hide max in-flight & timeout" : "Max in-flight & timeout")"
+                    @onclick="() => planMoreOpen = !planMoreOpen">
                 ⋯
             </button>
         </div>
-        @if (planMoreOpen || editMode || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
+        @if (planMoreOpen || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
         {
             <div class="plan-extra-row">
-                @if (planMoreOpen || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
-                {
-                    <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
-                        <label for="p-conc">Max in-flight</label>
-                        <div class="slider with-input">
-                            <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
-                                   aria-label="Max in-flight slider" disabled="@locked"
-                                   @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
-                            <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
-                                   @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
-                                   disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
-                        </div>
+                <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
+                    <label for="p-conc">Max in-flight</label>
+                    <div class="slider with-input">
+                        <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
+                               aria-label="Max in-flight slider" disabled="@locked"
+                               @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
+                        <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
+                               @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
+                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
                     </div>
-                    <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
-                        <label for="p-to">Timeout (s)</label>
-                        <div class="slider with-input">
-                            <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
-                                   aria-label="Timeout slider" disabled="@locked"
-                                   @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
-                            <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
-                                   @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
-                                   disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
-                        </div>
-                    </div>
-                }
-                <div class="plan-ctrl plan-preflight-ctrl">
-                    <label for="p-preflight">Preflight script</label>
-                    <div class="plan-preflight-row">
-                        <select id="p-preflight" value="@(plan.PreflightScriptId ?? "")" disabled="@locked" @onchange="SetPreflight">
-                            <option value="">None (start scenarios immediately)</option>
-                            @foreach (var pf in preflights)
-                            {
-                                <option value="@pf.ScriptId">@pf.FileName</option>
-                            }
-                        </select>
-                        @if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
-                        {
-                            <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?preflight={Uri.EscapeDataString(plan.PreflightScriptId)}")' title="Edit this preflight script">Edit</button>
-                        }
-                        else
-                        {
-                            <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo("editor?preflight=new")' title="Create a new preflight script">+ New</button>
-                        }
+                </div>
+                <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
+                    <label for="p-to">Timeout (s)</label>
+                    <div class="slider with-input">
+                        <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
+                               aria-label="Timeout slider" disabled="@locked"
+                               @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
+                        <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
+                               @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
+                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
                     </div>
                 </div>
             </div>
         }
         @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
     </section>
+
+    @if (!DataMode.IsFakeMode && (!string.IsNullOrWhiteSpace(plan.PreflightScriptId) || editMode))
+    {
+        var activePf = !string.IsNullOrWhiteSpace(plan.PreflightScriptId)
+            ? preflights.FirstOrDefault(p => string.Equals(p.ScriptId, plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase))
+            : null;
+        <section class="preflight-box @(string.IsNullOrWhiteSpace(plan.PreflightScriptId) && !preflightPickerOpen ? "empty" : "")" aria-label="Preflight program">
+            @if (preflightPickerOpen)
+            {
+                <div class="detail-head preflight-box-head">
+                    <span class="pf-tag">PREFLIGHT</span>
+                    <b>Select preflight script</b>
+                    <span class="spacer"></span>
+                    <button type="button" class="icon-btn" @onclick="() => preflightPickerOpen = false" aria-label="Close">✕</button>
+                </div>
+                <ul class="add-menu inline" aria-label="Available preflight scripts">
+                    @foreach (var pf in preflights)
+                    {
+                        var chosen = pf;
+                        <li>
+                            <button type="button" @onclick="() => PickPreflight(chosen.ScriptId)">
+                                <b>@chosen.FileName</b>
+                                <span>Runs before scenarios start</span>
+                            </button>
+                        </li>
+                    }
+                    <li>
+                        <button type="button" @onclick='() => Nav.NavigateTo("editor?preflight=new")'>
+                            <b>+ Create new preflight .cs…</b>
+                            <span>Open the C# Script Editor with a preflight template</span>
+                        </button>
+                    </li>
+                </ul>
+            }
+            else if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
+            {
+                <div class="preflight-box-row">
+                    <span class="pf-tag">PREFLIGHT</span>
+                    <div class="preflight-box-info">
+                        <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
+                        <span class="muted">Runs once before scenarios start</span>
+                    </div>
+                    <span class="spacer"></span>
+                    @if (editMode)
+                    {
+                        <button type="button" class="btn ghost small" disabled="@locked" @onclick="OpenPreflightPickerAsync">Change</button>
+                        <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?preflight={Uri.EscapeDataString(plan.PreflightScriptId)}")'>Edit .cs</button>
+                        <button type="button" class="icon-btn danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?preflight={Uri.EscapeDataString(plan.PreflightScriptId)}")'>Edit .cs</button>
+                    }
+                </div>
+            }
+            else if (editMode)
+            {
+                <button type="button" class="preflight-add-btn" disabled="@locked" @onclick="OpenPreflightPickerAsync">
+                    <span class="plus">+</span>
+                    <span>Add preflight program</span>
+                    <small class="muted">Optional C# script that runs before scenarios start</small>
+                </button>
+            }
+        </section>
+    }
 
     @if (editMode)
     {
@@ -485,6 +518,7 @@
     // Edit mode state
     private bool editMode;
     private bool planMoreOpen;
+    private bool preflightPickerOpen;
     private bool preflightWrap = true;
     private bool wasRunning;
     private int selected = -1;
@@ -529,16 +563,24 @@
         if (!disposed) await InvokeAsync(StateHasChanged);
     }
 
-    private async Task TogglePlanMoreAsync()
+    private async Task OpenPreflightPickerAsync()
     {
-        planMoreOpen = !planMoreOpen;
-        if (planMoreOpen) await LoadPreflightsAsync();
+        preflightPickerOpen = true;
+        await LoadPreflightsAsync();
     }
 
-    private void SetPreflight(ChangeEventArgs e)
+    private void PickPreflight(string scriptId)
     {
-        var val = e.Value?.ToString()?.Trim();
-        Sim.Plan.PreflightScriptId = string.IsNullOrEmpty(val) ? null : val;
+        Sim.Plan.PreflightScriptId = scriptId;
+        preflightPickerOpen = false;
+        Committed();
+        Edited();
+    }
+
+    private void RemovePreflight()
+    {
+        Sim.Plan.PreflightScriptId = null;
+        preflightPickerOpen = false;
         Committed();
         Edited();
     }
@@ -567,6 +609,7 @@
         editMode = false;
         selected = -1;
         addOpen = false;
+        preflightPickerOpen = false;
         actionsOpen = false;
         saveAsOpen = false;
         pendingLoad = null;

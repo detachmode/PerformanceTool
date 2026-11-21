@@ -864,14 +864,19 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }
 
-/* ----- preflight script selector & overview output view ----- */
-.preflight-pill { border-color: color-mix(in srgb, var(--accent2) 55%, var(--border)); color: var(--accent); cursor: pointer; }
-.preflight-pill.off { border-style: dashed; border-color: var(--border); background: transparent; color: var(--muted); }
-.preflight-pill:hover { border-color: var(--accent2); color: var(--title); }
-.pf-tag { font-size: .64rem; font-weight: 700; letter-spacing: .06em; padding: .08rem .32rem; border-radius: 3px; background: color-mix(in srgb, var(--accent2) 30%, var(--panel2)); color: var(--title); }
-.plan-preflight-ctrl { grid-column: 1 / -1; }
-.plan-preflight-row { display: flex; align-items: center; gap: .45rem; }
-.plan-preflight-row select { flex: 1 1 auto; min-width: 0; padding: .28rem .48rem; font-size: .84rem; }
+/* ----- preflight box (below Duration, above scenarios) & overview output view ----- */
+.pf-tag { font-size: .64rem; font-weight: 700; letter-spacing: .06em; padding: .12rem .4rem; border-radius: 4px; background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); color: var(--accent); border: 1px solid rgba(245, 183, 0, 0.35); flex: none; }
+.preflight-box { margin-bottom: .85rem; background: var(--panel); border: 1px solid var(--border); border-left: 3.5px solid var(--accent2); border-radius: var(--radius); overflow: hidden; }
+.preflight-box.empty { border-style: dashed; border-left-style: dashed; border-left-color: var(--border); background: transparent; }
+.preflight-box-head { padding: .5rem .8rem; }
+.preflight-box-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .55rem .8rem; }
+.preflight-box-info { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.preflight-box-info .mono { font-family: var(--mono); font-size: .84rem; color: var(--title); }
+.preflight-box-info .muted { font-size: .74rem; }
+.preflight-add-btn { width: 100%; display: flex; align-items: center; gap: .55rem; padding: .55rem .85rem; background: transparent; border: 0; color: var(--muted); font-weight: 600; cursor: pointer; text-align: left; flex-wrap: wrap; }
+.preflight-add-btn .plus { font-size: 1.15rem; line-height: 1; color: var(--accent); }
+.preflight-add-btn:hover:not(:disabled) { color: var(--text); background: var(--panel); }
+.preflight-add-btn:disabled { opacity: .45; cursor: default; }
 
 .preflight-view { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--running); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
 .preflight-view.failed { border-color: #f2737d80; border-left-color: var(--bad); }
