@@ -37,6 +37,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (M2, user feedback):** the fake data starts with a 30 minute finished run (0039).
 - **Done (M3, user feedback):** overview strip over the whole width, muted red/amber marks of failed and slow actors, always visible (0035 update 1).
 - **Next (N, user feedback):** popup chart navigation bullet proof (0040): no zoom on swipe, earlier burst unfold, readable overview strip.
+- **Queued (O, user feedback, after N):** slowness as a colour gradient from green at typical time to amber (0041).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
