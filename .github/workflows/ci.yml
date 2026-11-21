@@ -46,14 +46,14 @@ jobs:
             nuget-${{ runner.os }}-
 
       - name: Restore
-        run: dotnet restore PerformanceTool.slnx
+        run: dotnet restore Beesharp.slnx
 
       - name: Build
-        run: dotnet build PerformanceTool.slnx --no-restore -c Release
+        run: dotnet build Beesharp.slnx --no-restore -c Release
 
       - name: Test
         run: >
-          dotnet test PerformanceTool.slnx --no-build -c Release
+          dotnet test Beesharp.slnx --no-build -c Release
           --logger "trx;LogFileName=test-results.trx"
           --results-directory TestResults
 

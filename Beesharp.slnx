@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Beesharp.Client/Beesharp.Client.csproj" />
+    <Project Path="src/Beesharp.Core/Beesharp.Core.csproj" />
+    <Project Path="src/Beesharp/Beesharp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Beesharp.Tests/Beesharp.Tests.csproj" />
+  </Folder>
+</Solution>

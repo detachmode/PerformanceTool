@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- ASP.NET Core host (brain 0015): REST API, load runner, preset store. It also serves the WebAssembly client. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PerformanceTool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Runtime-uploaded custom scenario .cs files are compiled by Roslyn at runtime, not by MSBuild. -->
+    <Compile Remove="scripts/**" />
+    <Content Remove="scripts/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.6.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.13.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,40 @@
+@* Settings popup (brain 0023, update 3): zoom strength and the number of bars before the popup chart groups bees. Changes apply live and are
+   kept in localStorage. Anchored under the top bar without a dark scrim, so the chart behind can be watched while adjusting. *@
+@using System.Globalization
+@inject ViewSettings Settings
+
+<div class="overlay settings" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="Settings.Close" role="presentation">
+    <div class="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="set-title" @onclick:stopPropagation="true">
+        <div class="dlg-head">
+            <h2 id="set-title">Settings</h2>
+            <span class="spacer"></span>
+            <button class="icon-btn" @onclick="Settings.Close" aria-label="Close">✕</button>
+        </div>
+        <div class="set-field">
+            <label for="set-zoom">Zoom strength <output id="set-zoom-val" class="set-val">@Settings.Zoom.ToString("0.0", CultureInfo.InvariantCulture)×</output></label>
+            <input id="set-zoom" type="range" min="@ViewSettings.ZoomMin.ToString(CultureInfo.InvariantCulture)" max="@ViewSettings.ZoomMax.ToString(CultureInfo.InvariantCulture)" step="0.1" value="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" @oninput="SetZoom" />
+            <span class="help">How much the bar under the pointer grows in the scenario popup chart.</span>
+        </div>
+        <div class="set-field">
+            <label for="set-bars">Bars before grouping <output id="set-bars-val" class="set-val">@Settings.MaxBars</output></label>
+            <input id="set-bars" type="range" min="@ViewSettings.MaxBarsMin" max="@ViewSettings.MaxBarsMax" step="10" value="@Settings.MaxBars" @oninput="SetBars" />
+            <span class="help">The popup chart shows one bar per bee up to this many, then groups bees into time buckets.</span>
+        </div>
+        <div class="set-foot">
+            <button class="btn ghost small" @onclick="Settings.ResetAsync" disabled="@Settings.IsDefault">Reset to defaults</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ElementReference root;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { try { await root.FocusAsync(); } catch (Exception) { } }
+    }
+
+    private void OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") Settings.Close(); }
+    private Task SetZoom(ChangeEventArgs e) => double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? Settings.SetAsync(zoom: v) : Task.CompletedTask;
+    private Task SetBars(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? Settings.SetAsync(maxBars: v) : Task.CompletedTask;
+}

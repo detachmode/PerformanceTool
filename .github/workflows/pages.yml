@@ -46,7 +46,7 @@ jobs:
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "BUILD_TIME=$BUILD_TIME" >> "$GITHUB_ENV"
-          dotnet publish src/PerformanceTool.Client -c Release -o out \
+          dotnet publish src/Beesharp.Client -c Release -o out \
             -p:BuildSha="${{ github.sha }}" -p:BuildTime="$BUILD_TIME"
 
       - name: Prepare site
