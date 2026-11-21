@@ -321,7 +321,7 @@ export function attach(el, ref, options) {
     let drag = null, holdTimer = 0;
     const pts = new Map();            // touch pointers on the chart: id -> {x, y}
     let tmode = '';                    // '' | 'wait' (finger down, may become tap or hold) | 'scroll' | 'hold' | 'pinch' | 'done' (gesture over, fingers still down)
-    let tkey = null, tdown = null, pinch = null, zoomTimer = 0, zoomAt = 0;
+    let tkey = null, tdown = null, pinch = null, pan = null, zoomTimer = 0, zoomAt = 0;
     const spanOf = (a, b) => {
         refresh(); const lo = Math.min(a, b), hi = Math.max(a, b), idx = [];
         rest.forEach((q, i) => { if (q.left + q.width > lo && q.left < hi) idx.push(i); });
@@ -356,11 +356,12 @@ export function attach(el, ref, options) {
     // pinch: spreading the fingers zooms the time range in, pinching zooms out; the time under the fingers' midpoint stays under it.
     // Blazor gets the range live (at most every 90 ms) and once more at the end; it clamps it to the run and follows the live edge.
     const sendZoom = force => {
-        if (!pinch || !pinch.next) return;
+        const g = pinch || pan;
+        if (!g || !g.next) return;
         const now = performance.now();
         if (!force && now - zoomAt < 90) { if (!zoomTimer) zoomTimer = setTimeout(() => { zoomTimer = 0; sendZoom(false); }, 90); return; }
         if (zoomTimer) { clearTimeout(zoomTimer); zoomTimer = 0; }
-        zoomAt = now; const [a, b] = pinch.next; pinch.next = null;
+        zoomAt = now; const [a, b] = g.next; g.next = null;
         window.__dock.zooms = (window.__dock.zooms || 0) + 1;
         ref.invokeMethodAsync('Zoom', a, b);
     };
@@ -381,9 +382,28 @@ export function attach(el, ref, options) {
         pinch.next = [from, from + span];
         sendZoom(false);
     };
+    // pan (update 1 of 0031): while zoomed in (the owner sets data-zoomed), a one-finger sideways swipe moves the time range, the content
+    // follows the finger. Direction is decided from the first SLOP px; mostly vertical stays a scroll. Clamped to 0 .. run end here (and again by Blazor).
+    const panStart = () => {
+        refresh();
+        if (items.length === 0) return false;
+        let a = Infinity, b = -Infinity;
+        for (let i = 0; i < items.length; i++) { a = Math.min(a, t0(i)); b = Math.max(b, t1(i)); }
+        const wv = (el.dataset.win || '').split(' ').map(parseFloat);     // the exact zoom window from Blazor, so the span does not drift with bar rounding
+        if (wv.length === 2 && wv[1] > wv[0]) { a = wv[0]; b = wv[1]; }
+        pan = { a, b, x0: tdown.x, next: null, w: Math.max(1, el.clientWidth) };
+        return b > a;
+    };
+    const panMove = x => {
+        const span = pan.b - pan.a, end = (parseFloat(el.dataset.elapsed) || 0) / 1000;
+        let from = pan.a - (x - pan.x0) / pan.w * span;
+        from = Math.max(0, Math.min(from, Math.max(0, end - span)));
+        pan.next = [from, from + span];
+        sendZoom(false);
+    };
     const endTouch = () => {      // all fingers up (or the gesture was taken away)
         if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
-        if (pinch) { sendZoom(true); pinch = null; }
+        if (pinch || pan) { sendZoom(true); pinch = null; pan = null; }
         pts.clear(); tmode = ''; tkey = null; tdown = null; down = false; active = false; kick(); syncAim();
     };
     const onTouchDown = e => {
@@ -411,7 +431,14 @@ export function attach(el, ref, options) {
         const p = pts.get(e.pointerId); if (!p) return;
         p.x = e.clientX; p.y = e.clientY;
         if (tmode === 'wait') {
-            if (Math.hypot(e.clientX - tdown.x, e.clientY - tdown.y) >= SLOP) { tmode = 'scroll'; if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; } }
+            const dx = e.clientX - tdown.x, dy = e.clientY - tdown.y;
+            if (Math.hypot(dx, dy) >= SLOP) {
+                if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+                tmode = (el.dataset.zoomed && Math.abs(dx) > Math.abs(dy) && panStart()) ? 'pan' : 'scroll';
+                if (tmode === 'pan') { window.__dock.pans = (window.__dock.pans || 0) + 1; try { el.setPointerCapture(e.pointerId); } catch (_) { } panMove(e.clientX); }
+            }
+        } else if (tmode === 'pan') panMove(e.clientX);
+        else if (false) {
         } else if (tmode === 'hold') { px = rel(e); active = true; kick(); }
         else if (tmode === 'pinch') pinchMove();
     };
@@ -419,11 +446,12 @@ export function attach(el, ref, options) {
         const was = pts.has(e.pointerId); pts.delete(e.pointerId);
         if (!was) return;
         if (tmode === 'wait' && e.type === 'pointerup') { const k = tkey; endTouch(); pickKey(k); return; }
+        if (tmode === 'pan') { sendZoom(true); pan = null; tmode = 'done'; }
         if (tmode === 'pinch' && pts.size === 1) { sendZoom(true); pinch = null; tmode = 'done'; active = false; kick(); }
         if (pts.size === 0) endTouch();
     };
     // Stop the page from scrolling or zooming while a hold-drag or pinch is going on (needs a non-passive listener); a plain swipe still scrolls.
-    const onTouchMoveEv = e => { if (tmode === 'hold' || tmode === 'pinch' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
+    const onTouchMoveEv = e => { if (tmode === 'hold' || tmode === 'pinch' || tmode === 'pan' || tmode === 'done' || e.touches.length > 1) { if (e.cancelable) e.preventDefault(); } };
     const onContext = e => { if (tmode) e.preventDefault(); };
 
     const onMove = e => { px = rel(e); active = true; kick(); };

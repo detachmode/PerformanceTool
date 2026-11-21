@@ -36,3 +36,8 @@ The desktop mouse behaviour (hover magnification, drag to zoom) stays as it is.
 ## Update 1 (2026-11-21, user)
 - **Swipe sideways while zoomed in** moves the zoomed time range left or right (pan along the timeline). It
   stops at the run's start and end. Vertical swipes still scroll the page. When not zoomed, swipes scroll as before.
+
+### Implementation notes (update 1)
+- The chart carries `data-zoomed` (and `data-win`, the exact zoom window in run seconds) while zoomed. CSS then sets `touch-action: pan-y`, so the browser keeps vertical scrolling and leaves horizontal moves to the script; unzoomed it stays `pan-x pan-y`.
+- `dock-magnify.js`: a new touch mode `pan`. From the first 9 px (SLOP) of movement: mostly horizontal while zoomed starts `pan`, otherwise it is a scroll as before. The range moves with the finger (content follows it) by `dx / chart width * span`, clamped to 0 .. run end. The span stays constant.
+- Updates go through the same `OnZoom` path as pinch (throttled to 90 ms, plus once at the end); `PinchZoom` clamps again and follows the live edge when the range reaches the end. No momentum.
