@@ -30,22 +30,42 @@
     <section class="preset-bar" aria-label="Presets">
         <div class="preset-title">
             <h1>Scenarios</h1>
-            <span class="muted">Loaded from preset “@Sim.PresetName”</span>
-            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved changes</span> }
+            <span class="preset-pill" title="Active preset">@Sim.PresetName</span>
+            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
         </div>
         <div class="preset-actions">
-            <label class="visually-hidden" for="load-preset">Load a preset into the scenarios</label>
-            <select id="load-preset" value="" @onchange="OnLoadPicked" disabled="@locked">
-                <option value="">Load preset…</option>
-                @foreach (var p in Sim.PresetNames) { <option value="@p">@p</option> }
-            </select>
-            <button class="btn primary" @onclick="Save" disabled="@(locked || !dirty)" title="Save the scenarios to the preset “@Sim.PresetName”">Save</button>
-            <button class="btn ghost" @onclick="OpenSaveAs" disabled="@locked" title="Save the scenarios as a new preset">Save as…</button>
-            <button class="btn ghost" @onclick="() => ScriptsPopup.Show()" title="View, edit, upload and test-run custom .cs scenario files on the server">Scripts (.cs)</button>
+            @if (dirty)
+            {
+                <button class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
+            }
+            <button class="btn ghost small" @onclick="() => ScriptsPopup.Show()" title="View, edit, upload and test-run custom .cs scenario files">Scripts (.cs)</button>
+            <div class="dd">
+                <button type="button" class="btn ghost small" aria-haspopup="menu" aria-expanded="@Aria.Bool(actionsOpen)" disabled="@locked"
+                        @onclick="() => actionsOpen = !actionsOpen" title="Preset &amp; plan actions">
+                    Presets ▾
+                </button>
+                @if (actionsOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => actionsOpen = false"></div>
+                    <div class="dd-menu right" role="menu" aria-label="Preset actions">
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(!dirty)" @onclick="() => { actionsOpen = false; Save(); }">Save “@Sim.PresetName”</button>
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => { actionsOpen = false; OpenSaveAs(); }">Save as new preset…</button>
+                        @if (Sim.PresetNames.Count > 0)
+                        {
+                            <div class="dd-sep" role="separator"></div>
+                            <div class="dd-lbl">Load preset</div>
+                            @foreach (var p in Sim.PresetNames)
+                            {
+                                var preset = p;
+                                <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreset(preset)">@preset</button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
         </div>
     </section>
-    <p class="muted ed-hint">You are editing the loaded scenarios. A preset is loaded into them and saved from them.</p>
 
     @if (pendingLoad is not null)
     {
@@ -257,10 +277,17 @@
         if (int.TryParse(e.Value?.ToString(), out var v)) set(v);
         Edited();
     }
-    private bool addOpen, saveAsOpen, savedNote;
+    private bool addOpen, saveAsOpen, savedNote, actionsOpen;
     private string saveAsName = "";
     private string? pendingLoad;
     private bool disposed;
+
+    private void PickPreset(string name)
+    {
+        actionsOpen = false;
+        if (Sim.HasUnsavedChanges) pendingLoad = name;
+        else DoLoad(name);
+    }
 
     protected override void OnInitialized()
     {
