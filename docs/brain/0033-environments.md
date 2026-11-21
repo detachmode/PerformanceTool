@@ -1,6 +1,6 @@
 # 0033. Environments: run the same scenarios against different servers
 
-- **Status:** Accepted (content and usage decided; where they live and UI open)
+- **Status:** Accepted (UI open)
 - **Date:** 2026-11-21
 - **Related:** 0003 (scenarios in code), 0005 (presets), 0007 (generated editor)
 
@@ -17,8 +17,10 @@ Support **environment definitions**, so scenarios can run against different serv
   - **Placeholders** in parameter values, written `{{BaseUrl}}` (Bruno syntax, no leading dollar sign). The
     active environment fills them in when the run starts.
   - **In scenario code**, e.g. `env["BaseUrl"]`.
+- **One file per environment**, like Bruno: each environment is its own file in an environments folder (next to
+  the presets), so it can be shared or kept local file by file.
 - *Proposed (Claude, not decided):* like Bruno, let a value be marked **secret** so it is masked in the UI and kept
   out of shared files (stored locally only).
 
 ## Open (to decide with the user, one at a time)
-- How a scenario refers to it, and where environments are defined and chosen (plan, preset, editor, player bar).
+- Where the active environment is chosen and edited in the UI (editor, player bar).

@@ -70,5 +70,5 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0030](0030-compact-statistics.md) | Some statistics come back: compact inline, coloured good/bad, no boxes, clickable | Accepted (figures/placement Proposed) |
 | [0031](0031-touch-gestures-on-popup-chart.md) | Touch on the popup chart: tap selects (no zoom), tap-and-hold magnifies and drags, pinch zooms the time range, sideways swipe pans the zoomed range | Accepted, implemented (incl. update 1) |
 | [0032](0032-group-bars-look-different.md) | Group bars: lighter fill with outline plus a small count badge; single actors stay solid | Accepted, implemented |
-| [0033](0033-environments.md) | Environments: arbitrary key-value pairs (credentials allowed), used as `{{Key}}` placeholders and in code, like Bruno | Accepted (where they live and UI open) |
+| [0033](0033-environments.md) | Environments: arbitrary key-value pairs (credentials allowed), used as `{{Key}}` placeholders and in code, like Bruno; one file per environment | Accepted (UI open) |
 | [0034](0034-scenario-bursts.md) | Bursts: a spawning pattern per scenario entry | Accepted (details open) |
