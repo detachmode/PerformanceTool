@@ -118,48 +118,63 @@
                         }
                     </div>
                 }
-                <button type="button" class="btn ghost small" @onclick="EnterEditMode" disabled="@locked"
+                <button type="button" class="btn primary small edit-mode-btn" @onclick="EnterEditMode" disabled="@locked"
                         title="@(locked ? "Stop the running test to edit scenarios" : "Edit scenarios, spawning and parameters")">
-                    Edit
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    <span>Edit</span>
                 </button>
             }
         </div>
     </section>
 
     <section class="settings plan-settings" aria-label="Plan settings">
-        <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
-            <label for="p-dur">Duration (s)</label>
-            <div class="slider with-input">
-                <input type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
-                       aria-label="Duration slider" disabled="@locked"
-                       @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
-                <input id="p-dur" class="slider-num" type="number" min="1" step="1" value="@plan.DurationSeconds"
-                       @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
-                       disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
+        <div class="plan-top-row">
+            <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
+                <label for="p-dur">Duration (s)</label>
+                <div class="slider with-input">
+                    <input type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
+                           aria-label="Duration slider" disabled="@locked"
+                           @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
+                    <input id="p-dur" class="slider-num" type="number" min="1" step="1" value="@plan.DurationSeconds"
+                           @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
+                           disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
+                </div>
             </div>
+            <button type="button" class="btn ghost small plan-more-btn @(planMoreOpen ? "on" : "")"
+                    aria-expanded="@Aria.Bool(planMoreOpen)"
+                    aria-label="@(planMoreOpen ? "Hide max in-flight and timeout" : "Show max in-flight and timeout")"
+                    title="@(planMoreOpen ? "Hide max in-flight & timeout" : "Max in-flight & timeout")"
+                    @onclick="() => planMoreOpen = !planMoreOpen">
+                ⋯
+            </button>
         </div>
-        <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
-            <label for="p-conc">Max in-flight</label>
-            <div class="slider with-input">
-                <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
-                       aria-label="Max in-flight slider" disabled="@locked"
-                       @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
-                <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
-                       @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
-                       disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
+        @if (planMoreOpen || planErr.ContainsKey("conc") || planErr.ContainsKey("to"))
+        {
+            <div class="plan-extra-row">
+                <div class="plan-ctrl @(planErr.ContainsKey("conc") ? "is-invalid" : "")">
+                    <label for="p-conc">Max in-flight</label>
+                    <div class="slider with-input">
+                        <input type="range" min="1" max="200" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 200)"
+                               aria-label="Max in-flight slider" disabled="@locked"
+                               @oninput="e => { SetPlanInt(e, v => plan.MaxConcurrency = v); Committed(); }" />
+                        <input id="p-conc" class="slider-num" type="number" min="1" step="1" value="@plan.MaxConcurrency"
+                               @oninput="e => SetPlanInt(e, v => plan.MaxConcurrency = v)" @onchange="Committed"
+                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("conc"))" />
+                    </div>
+                </div>
+                <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
+                    <label for="p-to">Timeout (s)</label>
+                    <div class="slider with-input">
+                        <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
+                               aria-label="Timeout slider" disabled="@locked"
+                               @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
+                        <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
+                               @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
+                               disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="plan-ctrl @(planErr.ContainsKey("to") ? "is-invalid" : "")">
-            <label for="p-to">Timeout (s)</label>
-            <div class="slider with-input">
-                <input type="range" min="1" max="120" step="1" value="@Math.Clamp(plan.TimeoutSeconds, 1, 120)"
-                       aria-label="Timeout slider" disabled="@locked"
-                       @oninput="e => { SetPlanInt(e, v => plan.TimeoutSeconds = v); Committed(); }" />
-                <input id="p-to" class="slider-num" type="number" min="1" step="1" value="@plan.TimeoutSeconds"
-                       @oninput="e => SetPlanInt(e, v => plan.TimeoutSeconds = v)" @onchange="Committed"
-                       disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("to"))" />
-            </div>
-        </div>
+        }
         @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
     </section>
 
@@ -373,6 +388,7 @@
 
     // Edit mode state
     private bool editMode;
+    private bool planMoreOpen;
     private bool wasRunning;
     private int selected = -1;
     private bool addOpen, saveAsOpen, savedNote, actionsOpen;
