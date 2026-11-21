@@ -39,3 +39,12 @@ calls and logs, zoom, step through failed and slow. Show more opens it full scre
 interactions. Proposed: a `show_bee_timeline` tool (run id plus a list of bee sequences, optional title or reason per
 bee) and a view item that holds the bee list; the client reuses the popup chart (`BeeBars`, `DockZoom`, the side list)
 for these bees instead of a scenario entry.
+
+## Update 2 (implemented, Proposed details)
+Card kinds as proposed (`logs`, `bees`, `bee`, `scenario`, `run`, `plan-changes`, `timeline`; `ViewKinds` in the contracts). How Show more works:
+- **logs**: the Logs popup pre-filtered (scenario entry, bee, failed or slow bees) when it can show the filter; with levels or search a full-screen log list (`AssistantLogsDialog`) that re-queries `/api/runs/{id}/logs`.
+- **bees, bee, scenario, timeline**: the scenario popup (`ScenarioDetailDialog`, `BeeBars`, `DockZoom`, the side list) fed with a **bee set** (`BeeSet`): a synthetic finished run with one entry that holds the bees, so the chart is not copied. The dialog got parameters for it
+  (`Selection`, `EnsureDetail`, `OpenLogs`, `InitialBee`, `Notes`). The card also draws a small `MiniBeeChart` with the same bar markup and colours.
+- **run**: the overview (the run is loaded first when it is another one); each entry row opens that entry's bees. **plan-changes**: the plan editor (`/?edit=...`).
+- Cards re-query through two new read-only endpoints, `GET /api/runs/{id}/summary` and `GET /api/runs/{id}/bees` (host, over `IRunHistoryPort`).
+

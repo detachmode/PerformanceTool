@@ -9,8 +9,10 @@
 @inject IEnvironmentSource Envs
 @inject ScriptApiClient ScriptApi
 @inject NavigationManager Nav
+@inject PerformanceTool.Client.Components.Assistant.AssistantState Asst
+@using PerformanceTool.Client.Components.Assistant
 
-<div class="shell">
+<div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
     <header class="top">
         <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseMenu">
             <svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
@@ -48,6 +50,10 @@
             </button>
             <EnvironmentPicker />
             <BuildStamp />
+            @if (Asst.Available)
+            {
+                <button type="button" class="icon-btn asst-toggle @(Asst.IsOpen ? "on" : "")" @onclick="Asst.Toggle" aria-label="Assistant" aria-pressed="@Aria.Bool(Asst.IsOpen)" title="Assistant"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.5-4.7A8 8 0 1 1 21 12z"/></svg></button>
+            }
             <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
         </div>
 
@@ -58,6 +64,10 @@
                 <i aria-hidden="true"></i>
                 <span>@(DataMode.IsFakeMode ? "Fake" : "Live")</span>
             </button>
+            @if (Asst.Available)
+            {
+                <button type="button" class="icon-btn asst-toggle @(Asst.IsOpen ? "on" : "")" @onclick="() => { menuOpen = false; Asst.Toggle(); }" aria-label="Assistant" aria-pressed="@Aria.Bool(Asst.IsOpen)" title="Assistant"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.5-4.7A8 8 0 1 1 21 12z"/></svg></button>
+            }
             <button type="button" class="icon-btn hamburger" @onclick="() => menuOpen = !menuOpen"
                     aria-label="Menu" aria-expanded="@Aria.Bool(menuOpen)" title="Menu">
                 @if (menuOpen)
@@ -102,7 +112,15 @@
 
     <main class="main">@Body</main>
     <PlayerBar />
+    <AssistantPanel />
 </div>
+
+<AssistantBeeSetHost />
+
+@if (Asst.FullLogs is { } fullLogs)
+{
+    <AssistantLogsDialog Request="fullLogs" @key="fullLogs" />
+}
 
 @if (Settings.IsOpen)
 {
@@ -141,6 +159,7 @@
         ScriptsPopup.Changed += OnChanged;
         DataMode.Changed += OnChanged;
         Envs.Changed += OnChanged;
+        Asst.Changed += OnChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -172,5 +191,6 @@
         ScriptsPopup.Changed -= OnChanged;
         DataMode.Changed -= OnChanged;
         Envs.Changed -= OnChanged;
+        Asst.Changed -= OnChanged;
     }
 }

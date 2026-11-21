@@ -45,7 +45,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
   - R2 (done): `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,
     tools (no approval, 0048), sessions, `AddBeesharpAi`/`MapBeesharpAi`); host adapters; tests with a fake `IChatClient`.
   - R2/R3 also: show tools and chat cards (0049): logs box with Show more full screen, bees, bee, scenario/run, plan changes, and picked bees together on one time line like the popup chart (0049 update 1).
-  - R3: chat side panel in the client (Live mode only, only when configured), screenshots against a local
+  - R3 (done): chat side panel in the client (Live mode only, only when configured), screenshots against a local
     OpenAI-compatible stub.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.

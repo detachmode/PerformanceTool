@@ -224,6 +224,7 @@ app.MapDelete("/api/environments/{name}", async (string name, EnvironmentStore s
     return Results.NoContent();
 });
 
+app.MapRunQueryEndpoints();
 app.MapBeesharpAi();
 
 // Unknown API routes are a real 404, not the client app.

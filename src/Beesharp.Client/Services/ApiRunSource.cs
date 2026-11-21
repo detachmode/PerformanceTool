@@ -143,18 +143,6 @@ public sealed class ApiRunSource : IRunSource
         string? PreflightError = null,
         List<LiveRunningBeeDto>? RunningBees = null);
 
-    private sealed record ServerBeeDetailDto(
-        string RunId,
-        int Sequence,
-        int Entry,
-        double StartedAt,
-        double DurationMs,
-        int? StatusCode,
-        long Bytes,
-        string? Error,
-        List<RecordedCall> Calls,
-        List<RecordedLog> Logs);
-
     public ApiRunSource(HttpClient http, ScenarioCatalog catalog, ApiEnvironmentSource environments)
     {
         this.http = http;
@@ -318,6 +306,13 @@ public sealed class ApiRunSource : IRunSource
         catch (OperationCanceledException) { }
     }
 
+    /// <summary>Asks the server for plan changes right now (after the assistant changed something) instead of waiting for the next tick.</summary>
+    public async Task SyncPlanNowAsync()
+    {
+        try { await PullPlanAsync(CancellationToken.None); }
+        catch { }
+    }
+
     private async Task PushPlanAsync(CancellationToken ct)
     {
         var sent = Plan.Clone();
@@ -415,38 +410,7 @@ public sealed class ApiRunSource : IRunSource
             var detail = await http.GetFromJsonAsync<ServerBeeDetailDto>(
                 $"api/runs/{Uri.EscapeDataString(activeRunId)}/bees/{sequence}", JsonOpts, ct);
             if (detail is null) return;
-
-            var calls = new List<FakeCall>(detail.Calls.Count);
-            for (var i = 0; i < detail.Calls.Count; i++)
-            {
-                var c = detail.Calls[i];
-                var slow = c.Error is null && c.DurationMs >= 1500;
-                calls.Add(new FakeCall(i, c.Name, c.OffsetMs, c.DurationMs, c.StatusCode,
-                    activeStore.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: activeStore.Errors));
-            }
-            if (calls.Count == 0)
-                calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,
-                    activeStore.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: detail.Error is null && detail.DurationMs >= 1500, TypicalMs: null, Errors: activeStore.Errors));
-
-            var scope = new Dictionary<string, string> { ["Bee"] = $"B{sequence + 1}" };
-            var startedUtc = activeStartedUtc;
-            var beeLogs = detail.Logs;
-            var beeDetail = new BeeDetail(
-                sequence,
-                detail.Entry,
-                calls,
-                () => beeLogs.Select(l => new FakeLogEntry(
-                    l.AtSeconds,
-                    startedUtc.AddSeconds(l.AtSeconds),
-                    l.Level,
-                    l.Message,
-                    activeStore.Errors.Intern(l.Exception),
-                    activeStore.Errors,
-                    detail.Entry,
-                    sequence,
-                    scope,
-                    l.CallIndex)).ToList());
-
+            var beeDetail = RemoteBeeDetail.Build(detail, activeStore, activeStartedUtc, detail.Entry);
             activeStore.ReplaceDetail(beeDetail);
             loadedDetails.Add(sequence);
             Changed?.Invoke();

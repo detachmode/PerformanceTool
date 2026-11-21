@@ -465,6 +465,9 @@ public sealed class AssistantTests : IDisposable
             Assert.False(string.IsNullOrWhiteSpace(tool.Description), tool.Name);
         }
         Assert.Contains(tools, t => t.Name == "start_run");
+        // Optional arguments must not be required in the schema, or a model that leaves them out fails the call.
+        foreach (var name in new[] { "start_run", "list_runs", "get_run", "stop_run", "get_run_status", "show_run" })
+            Assert.False(tools.Single(t => t.Name == name).JsonSchema.TryGetProperty("required", out var req) && req.GetArrayLength() > 0, name);
         Assert.DoesNotContain(tools, t => t.GetType().Name.Contains("Approval"));
     }
 }

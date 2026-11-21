@@ -49,7 +49,7 @@ public sealed partial class AssistantToolbox
 
     [AssistantTool("start_run")]
     [Description("Starts a run of the current plan, optionally against an environment (its {{Key}} values fill the scenario parameters). Fails when a run is already going or the plan has no scenario entries. Check get_plan problems first.")]
-    public async Task<object> StartRun([Description("Name of the environment to run against; leave out for none")] string? environmentName, CancellationToken ct)
+    public async Task<object> StartRun([Description("Name of the environment to run against; leave out for none")] string? environmentName = null, CancellationToken ct = default)
     {
         var state = await run.StartAsync(string.IsNullOrWhiteSpace(environmentName) ? null : environmentName.Trim(), ct);
         rec.Change(ChangedAreas.Run, $"Started a run with {state.Entries.Count} scenario entries" + (environmentName is { Length: > 0 } ? $" on {environmentName.Trim()}" : ""), RunLink(state.RunId));
@@ -67,7 +67,7 @@ public sealed partial class AssistantToolbox
 
     [AssistantTool("list_runs")]
     [Description("Lists past and current runs, newest first: id, state, duration, number of bees, how many failed, number of log lines.")]
-    public async Task<object> ListRuns([Description("How many runs, 1 to 100 (default 20)")] int? limit, CancellationToken ct)
+    public async Task<object> ListRuns([Description("How many runs, 1 to 100 (default 20)")] int? limit = null, CancellationToken ct = default)
     {
         var runs = await history.ListRunsAsync(Bounds.Limit(limit), ct);
         rec.Read($"Looked at {runs.Count} runs");
@@ -80,7 +80,7 @@ public sealed partial class AssistantToolbox
 
     [AssistantTool("get_run")]
     [Description("Reads one run with the figures of each scenario entry. Without a run id: the current run, or the newest stored one.")]
-    public async Task<object> GetRun([Description("Run id from list_runs")] string? runId, CancellationToken ct)
+    public async Task<object> GetRun([Description("Run id from list_runs")] string? runId = null, CancellationToken ct = default)
     {
         var id = await RunIdAsync(runId, ct);
         var info = await history.GetRunAsync(id, ct) ?? throw new KeyNotFoundException($"There is no run '{id}'. Use list_runs.");
