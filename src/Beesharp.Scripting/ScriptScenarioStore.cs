@@ -2,14 +2,8 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
-using Microsoft.Extensions.Logging;
 using Beesharp.Services.Environments;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios;
@@ -30,14 +24,30 @@ public sealed class ScenarioScriptGlobals
 /// </summary>
 public sealed class ScriptScenarioStore
 {
-    private readonly string directory;
+    private readonly ScriptFolder folder;
     private readonly ScenarioCatalog catalog;
     private readonly EnvironmentStore? environments;
     private readonly Func<HttpMessageHandler>? innerHandlerFactory;
     private readonly Lock sync = new();
     private readonly Dictionary<string, StoredScript> scripts = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly ScriptOptions DefaultOptions = CreateScriptOptions();
+    /// <summary>References and imports of scenario scripts, on top of the common ones.</summary>
+    private static readonly ScriptOptions ScenarioOptions = ScriptCompiler.CreateOptions(
+        extraReferences:
+        [
+            typeof(DescriptionAttribute).Assembly,
+            typeof(RangeAttribute).Assembly,
+            typeof(ConcurrentDictionary<,>).Assembly,
+            typeof(IScenario).Assembly,
+        ],
+        extraImports:
+        [
+            "System.Collections.Concurrent",
+            "System.ComponentModel",
+            "System.ComponentModel.DataAnnotations",
+            "Beesharp.Services.Scenarios",
+            "Beesharp.Services.Scenarios.Spec",
+        ]);
 
     private sealed record StoredScript(
         string ScriptId,
@@ -46,30 +56,14 @@ public sealed class ScriptScenarioStore
         IScenario Scenario,
         DateTimeOffset UpdatedUtc);
 
-    public ScriptScenarioStore(
-        IConfiguration configuration,
-        IWebHostEnvironment env,
-        ScenarioCatalog catalog,
-        EnvironmentStore environments,
-        Func<HttpMessageHandler>? innerHandlerFactory = null)
-    {
-        var configured = configuration["Scripts:Directory"];
-        directory = string.IsNullOrWhiteSpace(configured)
-            ? Path.Combine(env.ContentRootPath, "scripts")
-            : Path.IsPathRooted(configured) ? configured : Path.Combine(env.ContentRootPath, configured);
-        this.catalog = catalog;
-        this.environments = environments;
-        this.innerHandlerFactory = innerHandlerFactory;
-    }
-
-    /// <summary>Convenience constructor for unit tests.</summary>
+    /// <param name="directory">The scripts folder (<c>scripts</c>); preflights and shutdown programs have their own sub folders.</param>
     public ScriptScenarioStore(
         string directory,
         ScenarioCatalog catalog,
         EnvironmentStore? environments = null,
         Func<HttpMessageHandler>? innerHandlerFactory = null)
     {
-        this.directory = directory;
+        folder = new ScriptFolder(directory, includeLegacyCsx: true);
         this.catalog = catalog;
         this.environments = environments;
         this.innerHandlerFactory = innerHandlerFactory;
@@ -77,13 +71,8 @@ public sealed class ScriptScenarioStore
 
     public async Task LoadAllFromDiskAsync(CancellationToken ct = default)
     {
-        if (!Directory.Exists(directory)) return;
-        foreach (var file in Directory.EnumerateFiles(directory, "*.csx").Concat(Directory.EnumerateFiles(directory, "*.cs")).OrderBy(f => f))
-        {
-            var id = Path.GetFileNameWithoutExtension(file);
-            var code = await File.ReadAllTextAsync(file, ct);
-            await CompileAndRegisterAsync(id, Path.GetFileName(file), code, persist: false, ct);
-        }
+        foreach (var file in await folder.ReadAllAsync(ct))
+            await CompileAndRegisterAsync(file.Id, file.FileName, file.Code, persist: false, ct);
     }
 
     public IReadOnlyList<ScriptScenarioSummary> List()
@@ -117,21 +106,10 @@ public sealed class ScriptScenarioStore
         if (string.IsNullOrWhiteSpace(code))
             return new ScriptCompileResult(false, null, [], "Script code cannot be empty.");
 
-        var debugFile = string.IsNullOrWhiteSpace(fileName)
-            ? (string.IsNullOrWhiteSpace(scriptId) ? "script.cs" : $"{scriptId}.cs")
-            : Path.GetFileName(fileName.Trim());
-        var opts = DefaultOptions
-            .WithEmitDebugInformation(true)
-            .WithFilePath(debugFile)
-            .WithFileEncoding(System.Text.Encoding.UTF8);
-        var script = CSharpScript.Create(LegacyScriptNamespaces.Upgrade(code), opts, typeof(ScenarioScriptGlobals));
-        var diagnostics = script.Compile(ct);
-        var mapped = diagnostics
-            .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
-            .Select(ToDiagnosticDto)
-            .ToList();
+        var (script, mapped) = ScriptCompiler.Compile(
+            code, ScriptNames.FileName(fileName, scriptId, "script.cs", allowCsx: true), ScenarioOptions, typeof(ScenarioScriptGlobals), ct);
 
-        if (mapped.Any(d => d.Severity == "Error"))
+        if (script is null)
             return new ScriptCompileResult(false, null, mapped, "Compilation failed.");
 
         var host = new ScenarioScriptHost();
@@ -158,10 +136,8 @@ public sealed class ScriptScenarioStore
             return new ScriptCompileResult(false, null, mapped, "Script did not register any scenario. Call Scenario.Define<TParams>(\"Name\", async (p, ctx) => ...).");
 
         var scenario = built[0];
-        var id = SanitizeId(string.IsNullOrWhiteSpace(scriptId) ? scenario.Id : scriptId);
-        var cleanFileName = string.IsNullOrWhiteSpace(fileName) ? $"{id}.cs" : Path.GetFileName(fileName.Trim());
-        if (!cleanFileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !cleanFileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase))
-            cleanFileName += ".cs";
+        var id = ScriptNames.SanitizeId(string.IsNullOrWhiteSpace(scriptId) ? scenario.Id : scriptId);
+        var cleanFileName = ScriptNames.FileName(fileName, id, $"{id}.cs", allowCsx: true);
 
         StoredScript? previous;
         lock (sync) scripts.TryGetValue(id, out previous);
@@ -179,13 +155,7 @@ public sealed class ScriptScenarioStore
 
         var updated = DateTimeOffset.UtcNow;
         if (persist)
-        {
-            Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, $"{id}.cs");
-            await File.WriteAllTextAsync(path, code, ct);
-            var legacyCsx = Path.Combine(directory, $"{id}.csx");
-            if (File.Exists(legacyCsx)) File.Delete(legacyCsx);
-        }
+            await folder.SaveAsync(id, code, ct);
 
         var stored = new StoredScript(id, cleanFileName, code, scenario, updated);
         lock (sync) scripts[id] = stored;
@@ -201,12 +171,7 @@ public sealed class ScriptScenarioStore
             if (!scripts.Remove(scriptId, out existing)) return false;
         }
         catalog.UnregisterCustom(existing.Scenario.Id);
-        var safeId = SanitizeId(scriptId);
-        foreach (var ext in new[] { ".cs", ".csx" })
-        {
-            var path = Path.Combine(directory, $"{safeId}{ext}");
-            if (File.Exists(path)) File.Delete(path);
-        }
+        folder.Delete(ScriptNames.SanitizeId(scriptId));
         return true;
     }
 
@@ -368,63 +333,6 @@ public sealed class ScriptScenarioStore
         s.Code,
         s.UpdatedUtc,
         s.Scenario.Spec.ToJsonSchema());
-
-    private static ScriptDiagnosticDto ToDiagnosticDto(Diagnostic d)
-    {
-        var span = d.Location.GetLineSpan();
-        return new ScriptDiagnosticDto(
-            d.Id,
-            d.Severity.ToString(),
-            span.StartLinePosition.Line + 1,
-            span.StartLinePosition.Character + 1,
-            d.GetMessage());
-    }
-
-    private static string SanitizeId(string raw)
-    {
-        var clean = new string(raw.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()).Trim('-');
-        return clean.Length == 0 ? $"script-{Guid.NewGuid():N}"[..15] : clean;
-    }
-
-    private static ScriptOptions CreateScriptOptions()
-    {
-        var references = new[]
-        {
-            typeof(object).Assembly,
-            typeof(Enumerable).Assembly,
-            typeof(HttpClient).Assembly,
-            typeof(AuthenticationHeaderValue).Assembly,
-            typeof(HttpClientJsonExtensions).Assembly,
-            typeof(DescriptionAttribute).Assembly,
-            typeof(RangeAttribute).Assembly,
-            typeof(JsonSerializer).Assembly,
-            typeof(ConcurrentDictionary<,>).Assembly,
-            typeof(ILogger).Assembly,
-            typeof(IScenario).Assembly,
-        }.Distinct();
-
-        return ScriptOptions.Default
-            .AddReferences(references)
-            .AddImports(
-                "System",
-                "System.Collections.Concurrent",
-                "System.Collections.Generic",
-                "System.ComponentModel",
-                "System.ComponentModel.DataAnnotations",
-                "System.Linq",
-                "System.Net.Http",
-                "System.Net.Http.Headers",
-                "System.Net.Http.Json",
-                "System.Text",
-                "System.Text.Json",
-                "System.Text.Json.Nodes",
-                "System.Threading",
-                "System.Threading.Tasks",
-                "Microsoft.Extensions.Logging",
-                "Beesharp.Services.Scenarios",
-                "Beesharp.Services.Scenarios.Spec",
-                "Beesharp.Services.Environments");
-    }
 
     private sealed class RecordingHttpHandler(HttpMessageHandler inner, ConcurrentQueue<ScriptRecordedCall> calls) : DelegatingHandler(inner)
     {

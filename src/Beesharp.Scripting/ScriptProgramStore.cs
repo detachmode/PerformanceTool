@@ -1,10 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text.Json;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.Extensions.Logging;
 using Beesharp.Services.Environments;
@@ -26,23 +21,31 @@ public sealed class PreflightGlobals
     public required Func<string, string, Task<int>> RunProcessAsync { get; init; }
 }
 
+/// <summary>The two kinds of program that run around the scenarios (brain 0052): the preflight before them, the shutdown program after them.</summary>
+public enum ScriptProgramKind { Preflight, Shutdown }
+
 /// <summary>
-/// Compiles, persists (<c>scripts/preflight/*.cs</c>) and runs preflight C# scripts that execute before a load test
-/// starts. Only if the preflight completes without throwing / failing will the load scenarios begin.
-/// <see cref="ShutdownStore"/> is the same machinery for the shutdown program (brain 0052), stored in <c>scripts/shutdown/</c>.
+/// Compiles, persists (<c>scripts/preflight/*.cs</c>, <c>scripts/shutdown/*.cs</c>) and runs C# programs that execute around a load test:
+/// the preflight before the scenarios start (they only begin if it completes without throwing or failing) and the shutdown program at the end of the run.
+/// <see cref="PreflightStore"/> and <see cref="ShutdownStore"/> only choose the kind; compiling, ids and files are shared with the scenario scripts
+/// (<see cref="ScriptCompiler"/>, <see cref="ScriptNames"/>, <see cref="ScriptFolder"/>).
 /// </summary>
-public class PreflightStore
+public abstract class ScriptProgramStore
 {
-    private readonly string directory;
+    private readonly ScriptFolder folder;
+    private readonly ScriptProgramKind kind;
     private readonly string label;
     private readonly DataWriterKind writerKind;
     private readonly EnvironmentStore? environments;
     private readonly Lock sync = new();
-    private readonly Dictionary<string, StoredPreflight> scripts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, StoredProgram> scripts = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly ScriptOptions DefaultOptions = CreateScriptOptions();
+    /// <summary>References and imports of preflights and shutdown programs, on top of the common ones.</summary>
+    private static readonly ScriptOptions ProgramOptions = ScriptCompiler.CreateOptions(
+        extraReferences: [typeof(Process).Assembly],
+        extraImports: ["System.Diagnostics", "System.IO", "Beesharp.Services.Runtime"]);
 
-    private sealed record StoredPreflight(
+    private sealed record StoredProgram(
         string ScriptId,
         string FileName,
         string Name,
@@ -50,47 +53,19 @@ public class PreflightStore
         Script<object> Compiled,
         DateTimeOffset UpdatedUtc);
 
-    public PreflightStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments)
-        : this(configuration, env, environments, "preflight")
+    /// <param name="directory">The folder of this kind's <c>.cs</c> files (e.g. <c>scripts/preflight</c>).</param>
+    protected ScriptProgramStore(string directory, EnvironmentStore? environments, ScriptProgramKind kind)
     {
-    }
-
-    protected PreflightStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments, string kind)
-    {
-        (label, writerKind) = KindInfo(kind);
-        var configured = configuration["Scripts:Directory"];
-        var root = string.IsNullOrWhiteSpace(configured)
-            ? Path.Combine(env.ContentRootPath, "scripts")
-            : Path.IsPathRooted(configured) ? configured : Path.Combine(env.ContentRootPath, configured);
-        directory = Path.Combine(root, kind);
+        this.kind = kind;
+        (label, writerKind) = kind == ScriptProgramKind.Shutdown ? ("Shutdown program", DataWriterKind.Shutdown) : ("Preflight", DataWriterKind.Preflight);
+        folder = new ScriptFolder(directory, includeLegacyCsx: false);
         this.environments = environments;
     }
-
-    /// <summary>Convenience constructor for unit tests.</summary>
-    public PreflightStore(string directory, EnvironmentStore? environments = null)
-        : this(directory, environments, "preflight")
-    {
-    }
-
-    protected PreflightStore(string directory, EnvironmentStore? environments, string kind)
-    {
-        (label, writerKind) = KindInfo(kind);
-        this.directory = directory;
-        this.environments = environments;
-    }
-
-    private static (string Label, DataWriterKind Writer) KindInfo(string kind) =>
-        kind == "shutdown" ? ("Shutdown program", DataWriterKind.Shutdown) : ("Preflight", DataWriterKind.Preflight);
 
     public async Task LoadAllFromDiskAsync(CancellationToken ct = default)
     {
-        if (!Directory.Exists(directory)) return;
-        foreach (var file in Directory.EnumerateFiles(directory, "*.cs").OrderBy(f => f))
-        {
-            var id = Path.GetFileNameWithoutExtension(file);
-            var code = await File.ReadAllTextAsync(file, ct);
-            await CompileAndSaveAsync(id, Path.GetFileName(file), code, persist: false, ct);
-        }
+        foreach (var file in await folder.ReadAllAsync(ct))
+            await CompileAndSaveAsync(file.Id, file.FileName, file.Code, persist: false, ct);
     }
 
     public IReadOnlyList<PreflightScriptSummary> List()
@@ -118,40 +93,21 @@ public class PreflightStore
         if (string.IsNullOrWhiteSpace(code))
             return new PreflightCompileResult(false, null, [], $"{label} script code cannot be empty.");
 
-        var debugFile = string.IsNullOrWhiteSpace(fileName)
-            ? (string.IsNullOrWhiteSpace(scriptId) ? "preflight.cs" : $"{scriptId}.cs")
-            : Path.GetFileName(fileName.Trim());
-        var opts = DefaultOptions
-            .WithEmitDebugInformation(true)
-            .WithFilePath(debugFile)
-            .WithFileEncoding(System.Text.Encoding.UTF8);
-        var script = CSharpScript.Create<object>(LegacyScriptNamespaces.Upgrade(code), opts, typeof(PreflightGlobals));
-        var diagnostics = script.Compile(ct);
-        var mapped = diagnostics
-            .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
-            .Select(ToDiagnosticDto)
-            .ToList();
+        var defaultName = kind == ScriptProgramKind.Shutdown ? "shutdown.cs" : "preflight.cs";
+        var baseName = ScriptNames.FileName(fileName, scriptId, defaultName, allowCsx: false);
+        var (script, mapped) = ScriptCompiler.Compile(code, baseName, ProgramOptions, typeof(PreflightGlobals), ct);
 
-        if (mapped.Any(d => d.Severity == "Error"))
+        if (script is null)
             return new PreflightCompileResult(false, null, mapped, "Compilation failed.");
 
-        var baseName = string.IsNullOrWhiteSpace(fileName)
-            ? (string.IsNullOrWhiteSpace(scriptId) ? (writerKind == DataWriterKind.Shutdown ? "shutdown.cs" : "preflight.cs") : $"{scriptId}.cs")
-            : Path.GetFileName(fileName.Trim());
-        if (!baseName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-            baseName += ".cs";
-
-        var id = SanitizeId(string.IsNullOrWhiteSpace(scriptId) ? Path.GetFileNameWithoutExtension(baseName) : scriptId);
+        var id = ScriptNames.SanitizeId(string.IsNullOrWhiteSpace(scriptId) ? Path.GetFileNameWithoutExtension(baseName) : scriptId);
         var displayName = Path.GetFileNameWithoutExtension(baseName).Replace('-', ' ').Replace('_', ' ');
         var updated = DateTimeOffset.UtcNow;
 
         if (persist)
-        {
-            Directory.CreateDirectory(directory);
-            await File.WriteAllTextAsync(Path.Combine(directory, $"{id}.cs"), code, ct);
-        }
+            await folder.SaveAsync(id, code, ct);
 
-        var stored = new StoredPreflight(id, baseName, displayName, code, script, updated);
+        var stored = new StoredProgram(id, baseName, displayName, code, script, updated);
         lock (sync) scripts[id] = stored;
 
         return new PreflightCompileResult(true, ToSummary(stored), mapped);
@@ -163,8 +119,7 @@ public class PreflightStore
         {
             if (!scripts.Remove(scriptId)) return false;
         }
-        var path = Path.Combine(directory, $"{SanitizeId(scriptId)}.cs");
-        if (File.Exists(path)) File.Delete(path);
+        folder.Delete(ScriptNames.SanitizeId(scriptId));
         return true;
     }
 
@@ -176,7 +131,7 @@ public class PreflightStore
         CancellationToken ct = default,
         RunData? runData = null)
     {
-        StoredPreflight? stored;
+        StoredProgram? stored;
         lock (sync) scripts.TryGetValue(scriptId, out stored);
         if (stored is null)
             throw new KeyNotFoundException($"{label} script '{scriptId}' was not found.");
@@ -197,7 +152,7 @@ public class PreflightStore
         }
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 300)) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd(writerKind == DataWriterKind.Shutdown ? "Beesharp-Shutdown/1.0" : "Beesharp-Preflight/1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(kind == ScriptProgramKind.Shutdown ? "Beesharp-Shutdown/1.0" : "Beesharp-Preflight/1.0");
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         runCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 600)));
 
@@ -286,61 +241,8 @@ public class PreflightStore
         }
     }
 
-    private static PreflightScriptSummary ToSummary(StoredPreflight s) =>
+    private static PreflightScriptSummary ToSummary(StoredProgram s) =>
         new(s.ScriptId, s.FileName, s.Name, s.Code, s.UpdatedUtc);
-
-    private static ScriptDiagnosticDto ToDiagnosticDto(Diagnostic d)
-    {
-        var span = d.Location.GetLineSpan();
-        return new ScriptDiagnosticDto(
-            d.Id,
-            d.Severity.ToString(),
-            span.StartLinePosition.Line + 1,
-            span.StartLinePosition.Character + 1,
-            d.GetMessage());
-    }
-
-    private static string SanitizeId(string raw)
-    {
-        var clean = new string(raw.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()).Trim('-');
-        return clean.Length == 0 ? $"script-{Guid.NewGuid():N}"[..18] : clean;
-    }
-
-    private static ScriptOptions CreateScriptOptions()
-    {
-        var references = new[]
-        {
-            typeof(object).Assembly,
-            typeof(Enumerable).Assembly,
-            typeof(HttpClient).Assembly,
-            typeof(AuthenticationHeaderValue).Assembly,
-            typeof(HttpClientJsonExtensions).Assembly,
-            typeof(JsonSerializer).Assembly,
-            typeof(Process).Assembly,
-            typeof(ILogger).Assembly,
-            typeof(EnvironmentValues).Assembly,
-        }.Distinct();
-
-        return ScriptOptions.Default
-            .AddReferences(references)
-            .AddImports(
-                "System",
-                "System.Collections.Generic",
-                "System.Diagnostics",
-                "System.IO",
-                "System.Linq",
-                "System.Net.Http",
-                "System.Net.Http.Headers",
-                "System.Net.Http.Json",
-                "System.Text",
-                "System.Text.Json",
-                "System.Text.Json.Nodes",
-                "System.Threading",
-                "System.Threading.Tasks",
-                "Microsoft.Extensions.Logging",
-                "Beesharp.Services.Environments",
-                "Beesharp.Services.Runtime");
-    }
 
     private sealed class CallbackLogger(Action<string, string> emit) : ILogger
     {
@@ -363,20 +265,10 @@ public class PreflightStore
     }
 }
 
-/// <summary>
-/// The shutdown program (brain 0052): the same kind of C# script as a preflight, stored in <c>scripts/shutdown/*.cs</c>. It always runs at the end of a run.
-/// A separate type only so it can be registered next to <see cref="PreflightStore"/>.
-/// </summary>
-public sealed class ShutdownStore : PreflightStore
-{
-    public ShutdownStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments)
-        : base(configuration, env, environments, "shutdown")
-    {
-    }
+/// <summary>The preflight (brain 0042): runs before the scenarios; they only start if it succeeds. Stored in <c>scripts/preflight/*.cs</c>.</summary>
+public sealed class PreflightStore(string directory, EnvironmentStore? environments = null)
+    : ScriptProgramStore(directory, environments, ScriptProgramKind.Preflight);
 
-    /// <summary>Convenience constructor for unit tests.</summary>
-    public ShutdownStore(string directory, EnvironmentStore? environments = null)
-        : base(directory, environments, "shutdown")
-    {
-    }
-}
+/// <summary>The shutdown program (brain 0052): the same kind of C# script, stored in <c>scripts/shutdown/*.cs</c>. It always runs at the end of a run.</summary>
+public sealed class ShutdownStore(string directory, EnvironmentStore? environments = null)
+    : ScriptProgramStore(directory, environments, ScriptProgramKind.Shutdown);
