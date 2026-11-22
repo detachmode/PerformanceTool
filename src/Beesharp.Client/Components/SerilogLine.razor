@@ -6,11 +6,11 @@
 <div class="sl-line sl-@css">
     @if (ts.Length > 0)
     {
-        <span class="sl-br">[</span><span class="sl-ts">@ts</span><text> </text><span class="sl-lvl @css">@tag</span><span class="sl-br">]</span><text> </text>
+        <span class="sl-head"><span class="sl-br">[</span><span class="sl-ts">@ts</span> <span class="sl-lvl @css">@tag</span><span class="sl-br">]</span></span>
     }
     @if (!string.IsNullOrEmpty(bee))
     {
-        <span class="sl-bee">[@bee]</span><text> </text>
+        <span class="sl-bee">[@bee]</span>
     }
     <span class="sl-msg">@msg</span>
 </div>

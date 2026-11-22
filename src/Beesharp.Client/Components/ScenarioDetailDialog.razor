@@ -109,24 +109,43 @@
 
         <div class="pop-body">
         <div class="pop-main">
-        <p class="figures">
-            <button class="fig" @onclick="() => SetShow(BeeShow.All)" title="Show all bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">@Format.Plural(view.Finished, "bee", "bees")</button>
-            <button class="fig @(view.Failed > 0 ? "bad" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only the failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">@Format.Plural(view.Failed, "error", "errors")</button>
-            <button class="fig @(view.SlowCalls > 0 ? "warn" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only the slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">@Format.Plural(view.SlowCalls, "slow call", "slow calls")</button>
+        <div class="dlg-summary-grid" role="group" aria-label="Scenario summary">
+            <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
+                <small>Bees</small>
+                <b>@Format.Num(view.Finished)</b>
+            </button>
+            <button type="button" class="dlg-stat @(view.Failed > 0 ? "bad" : "") @(show == BeeShow.Failed ? "on" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">
+                <small>Errors @(stats.Count > 0 ? Pc(stats.ErrorRate) : "")</small>
+                <b>@Format.Num(view.Failed)</b>
+            </button>
+            <button type="button" class="dlg-stat @(view.SlowBees > 0 ? "warn" : "") @(show == BeeShow.Slow ? "on" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">
+                <small>Slow @(stats.Count > 0 ? Pc(stats.SlowRate) : "")</small>
+                <b>@Format.Num(view.SlowBees)</b>
+            </button>
+            <button type="button" class="dlg-stat" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median)">
+                <small>Typical</small>
+                <b>@(stats.Count > 0 ? Format.Ms(stats.Median) : "—")</b>
+            </button>
+            <button type="button" class="dlg-stat @(stats.TailIsSlow ? "warn" : "") @(tailMs is not null ? "on" : "")" disabled="@(stats.Count == 0)" @onclick="() => TailOnly(stats.P95)" title="Slowest 5%" aria-pressed="@Aria.Bool(tailMs is not null)">
+                <small>Slowest 5%</small>
+                <b>@(stats.Count > 0 ? Format.Ms(stats.P95) : "—")</b>
+            </button>
             @if (!Selection)
             {
-                <span>@Format.Rate(actual) / @Format.Rate(target) @Terms.PerMinuteShort@(shape.Length > 0 ? " · " + shape : "")</span>
+                var rateTitle = $"{Format.Rate(actual)} of {Format.Rate(target)} {Terms.PerMinuteShort}{(shape.Length > 0 ? " · " + shape : "")}";
+                <div class="dlg-stat static" title="@rateTitle">
+                    <small>Rate / @Format.Rate(target)</small>
+                    <b>@Format.Rate(actual)<span class="unit">/m</span></b>
+                </div>
             }
-            @if (stats.Count > 0)
+            else
             {
-                <span class="fig-sep" aria-hidden="true"></span>
-                <button class="fig" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median of @Format.Plural(stats.Count, "bee", "bees")): open the bee in the middle">typical <b>@Format.Ms(stats.Median)</b></button>
-                <button class="fig @(stats.TailIsSlow ? "warn" : "")" @onclick="() => TailOnly(stats.P95)" title="The slowest 5 % take at least @Format.Ms(stats.P95): list them" aria-pressed="@Aria.Bool(tailMs is not null)">slowest 5% <b>@Format.Ms(stats.P95)</b></button>
-                <button class="fig @(stats.LongestIsSlow ? "warn" : "")" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest bee">longest <b>@Format.Ms(stats.Longest)</b></button>
-                <button class="fig @(stats.Failed > 0 ? "bad" : "good")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(stats.Failed == 0)" title="Failed bees: @stats.Failed of @stats.Count">error rate <b>@Pc(stats.ErrorRate)</b></button>
-                <button class="fig @(stats.Slow > 0 ? "warn" : "good")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(stats.Slow == 0)" title="Slow bees: @stats.Slow of @stats.Count">slow rate <b>@Pc(stats.SlowRate)</b></button>
+                <button type="button" class="dlg-stat @(stats.LongestIsSlow ? "warn" : "")" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest bee">
+                    <small>Longest</small>
+                    <b>@(stats.Count > 0 ? Format.Ms(stats.Longest) : "—")</b>
+                </button>
             }
-        </p>
+        </div>
 
         @if (s.Running && !Selection)
         {
@@ -181,13 +200,33 @@
                 else if (!DataMode.IsFakeMode)
                 {
                     var recentLogs = OrderedLiveLogs(runningSet, view.Finished);
-                    if (recentLogs.Count == 0)
+                    var loggedRunning = recentLogs.Where(l => runningSet.ContainsKey(l.Sequence)).Select(l => l.Sequence).ToHashSet();
+                    var unloggedRunning = runningNow.Where(r => !loggedRunning.Contains(r.Sequence)).OrderByDescending(r => r.StartedAt).ToList();
+                    if (recentLogs.Count == 0 && unloggedRunning.Count == 0)
                     {
                         <div class="live-feed-empty">Waiting for bees to log output…</div>
                     }
                     else
                     {
                         <div class="live-feed-list">
+                            @foreach (var ur in unloggedRunning)
+                            {
+                                var rBee = ur;
+                                var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
+                                <button type="button" class="live-feed-row is-flying @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
+                                    <span class="bee-row-spin" aria-hidden="true">
+                                        <span class="bee-spin-ring"></span>
+                                        <b class="bee-row-spin-num">@CompactSec(sec)</b>
+                                    </span>
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
+                                            <span class="state run">Flying</span>
+                                        </span>
+                                        <span class="live-feed-row-log muted">Running…</span>
+                                    </span>
+                                </button>
+                            }
                             @foreach (var lg in recentLogs)
                             {
                                 var log = lg;
