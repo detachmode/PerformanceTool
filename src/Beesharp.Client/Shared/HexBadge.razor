@@ -1,0 +1,51 @@
+@* Honeycomb hexagonal spinner and status icon (ok / warn / bad).
+   Uses SVG pathLength="100" + stroke-dashoffset animation so the hexagon stays upright while a two-tone blue comet traces all 6 edges smoothly across all browsers. *@
+@using System.Globalization
+
+<span class="hex-badge @Kind @Class" style="--hex-sz:@(Size)px" aria-hidden="true">
+    <svg class="hex-svg" viewBox="0 0 100 100" width="@Size" height="@Size" fill="none">
+        @if (Kind == "spin")
+        {
+            <path class="hex-track" d="@HexPath" stroke-width="@Sw" />
+            <path class="hex-tail" d="@HexPath" pathLength="100" stroke-width="@Sw" stroke-linecap="round" />
+            <path class="hex-head" d="@HexPath" pathLength="100" stroke-width="@Sw" stroke-linecap="round" />
+        }
+        else
+        {
+            <path class="hex-fill" d="@HexPath" stroke-width="@Sw" />
+            @if (Kind == "bad")
+            {
+                <path class="hex-glyph" d="M 35 35 L 65 65 M 65 35 L 35 65" stroke-width="@GlyphSw" stroke-linecap="round" stroke-linejoin="round" />
+            }
+            else
+            {
+                <path class="hex-glyph" d="M 31 52 L 45 66 L 70 36" stroke-width="@GlyphSw" stroke-linecap="round" stroke-linejoin="round" />
+            }
+        }
+    </svg>
+    @if (ChildContent is not null)
+    {
+        <span class="hex-content">@ChildContent</span>
+    }
+</span>
+
+@code {
+    // Pointy-top regular hexagon centered at (50,50), radius 44, subtly rounded corners, clockwise from top.
+    private const string HexPath =
+        "M 53.9 8.25 L 84.2 25.75 Q 88.1 28 88.1 32.5 " +
+        "L 88.1 67.5 Q 88.1 72 84.2 74.25 " +
+        "L 53.9 91.75 Q 50 94 46.1 91.75 " +
+        "L 15.8 74.25 Q 11.9 72 11.9 67.5 " +
+        "L 11.9 32.5 Q 11.9 28 15.8 25.75 " +
+        "L 46.1 8.25 Q 50 6 53.9 8.25 Z";
+
+    /// <summary>"spin", "ok", "warn", or "bad".</summary>
+    [Parameter] public string Kind { get; set; } = "spin";
+    [Parameter] public int Size { get; set; } = 36;
+    [Parameter] public double StrokeWidth { get; set; } = 5.5;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Sw => StrokeWidth.ToString("0.##", CultureInfo.InvariantCulture);
+    private string GlyphSw => Math.Max(7.5, StrokeWidth + 2.2).ToString("0.##", CultureInfo.InvariantCulture);
+}

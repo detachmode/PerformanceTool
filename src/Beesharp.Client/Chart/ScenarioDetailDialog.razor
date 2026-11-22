@@ -118,7 +118,7 @@
                     <b class="active-val">
                         @if (activeLive)
                         {
-                            <i class="dlg-active-spin" aria-hidden="true"></i>
+                            <HexBadge Kind="spin" Size="18" StrokeWidth="9" />
                         }
                         <span>@Format.Num(view.InFlight)</span>
                     </b>
@@ -191,9 +191,7 @@
                                 var hasLog = latestLogByBee.TryGetValue(beeItem.Sequence, out var lastLog);
                                 var errText = LastErrorOf(beeItem, s.Store.Detail(beeItem.Sequence));
                                 <button type="button" class="live-feed-row has-icon @(selSeq == beeItem.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(beeItem.Sequence)">
-                                    <span class="bee-row-icon bad" aria-hidden="true">
-                                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
-                                    </span>
+                                    <HexBadge Kind="bad" Size="36" StrokeWidth="5.5" />
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
                                             <BeeChip Sequence="beeItem.Sequence" State="BeeState.Failed" />
@@ -245,25 +243,13 @@
                                     @if (isRun && rBee is not null)
                                     {
                                         var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
-                                        <span class="bee-row-spin" aria-hidden="true">
-                                            <span class="bee-spin-ring"></span>
+                                        <HexBadge Kind="spin" Size="36" StrokeWidth="6.5">
                                             <b class="bee-row-spin-num">@CompactSec(sec)</b>
-                                        </span>
+                                        </HexBadge>
                                     }
                                     else if (hasFin)
                                     {
-                                        if (fBee.Failed)
-                                        {
-                                            <span class="bee-row-icon bad" aria-hidden="true">
-                                                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
-                                            </span>
-                                        }
-                                        else
-                                        {
-                                            <span class="bee-row-icon @(fBee.SlowCalls > 0 ? "warn" : "good")" aria-hidden="true">
-                                                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>
-                                            </span>
-                                        }
+                                        <HexBadge Kind="@(fBee.Failed ? "bad" : fBee.SlowCalls > 0 ? "warn" : "ok")" Size="36" StrokeWidth="5.5" />
                                     }
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
@@ -309,10 +295,9 @@
                                 var elapsedMs = Math.Max(0, (s.Elapsed - rBee.StartedAt) * 1000);
                                 var lastCall = rBee.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs);
                                 <button type="button" class="live-feed-row has-icon @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
-                                    <span class="bee-row-spin" aria-hidden="true">
-                                        <span class="bee-spin-ring"></span>
+                                    <HexBadge Kind="spin" Size="36" StrokeWidth="6.5">
                                         <b class="bee-row-spin-num">@CompactSec(elapsedMs / 1000.0)</b>
-                                    </span>
+                                    </HexBadge>
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
                                             <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
@@ -329,18 +314,7 @@
                             {
                                 var fBee = bees[fi];
                                 <button type="button" class="live-feed-row has-icon @(selSeq == fBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(fBee.Sequence)">
-                                    @if (fBee.Failed)
-                                    {
-                                        <span class="bee-row-icon bad" aria-hidden="true">
-                                            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="bee-row-icon @(fBee.SlowCalls > 0 ? "warn" : "good")" aria-hidden="true">
-                                            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>
-                                        </span>
-                                    }
+                                    <HexBadge Kind="@(fBee.Failed ? "bad" : fBee.SlowCalls > 0 ? "warn" : "ok")" Size="36" StrokeWidth="5.5" />
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
                                             <BeeChip Sequence="fBee.Sequence" State="BeeOrder.StateOf(fBee.Outcome)" />
@@ -454,7 +428,7 @@
             <section class="bee-panel p-run" aria-label="@ra.Name">
                 <div class="bee-head">
                     <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
-                    <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Active</span>
+                    <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Active</span>
                     <span class="muted">@Format.Time(elapsedMs / 1000.0) (@Format.Ms(elapsedMs)) · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
                     <div class="seg" role="group" aria-label="Running bee inspection view">
@@ -517,11 +491,11 @@
                     <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
                     @if (bee.Failed)
                     {
-                        <span class="state bad">Failed</span>
+                        <span class="state bad bee-ok-state"><HexBadge Kind="bad" Size="16" StrokeWidth="7.5" />Failed</span>
                     }
                     else
                     {
-                        <span class="state @(bee.SlowCalls > 0 ? "warn" : "good") bee-ok-state"><svg class="bee-ok-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>@(bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                        <span class="state @(bee.SlowCalls > 0 ? "warn" : "good") bee-ok-state"><HexBadge Kind="@(bee.SlowCalls > 0 ? "warn" : "ok")" Size="16" StrokeWidth="7.5" />@(bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
                     }
                     @if (!bee.Failed && Format.OverTypical(bee.Ratio))
                     {

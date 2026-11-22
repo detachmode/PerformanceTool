@@ -46,10 +46,9 @@
             @if (IsLive || View.InFlight > 0)
             {
                 <span class="bento-cell bento-kpi-left is-live">
-                    <span class="bee-spin-wrap" aria-hidden="true">
-                        <span class="bee-spin-ring"></span>
+                    <HexBadge Kind="spin" Size="58" StrokeWidth="5.8" Class="card-hex-spin">
                         <b class="bee-spin-num">@View.InFlight</b>
-                    </span>
+                    </HexBadge>
                     <small class="bento-lbl bee-spin-time"><span class="bee-spin-tag">active</span> · @Format.Time(Elapsed)</small>
                 </span>
             }
