@@ -10,6 +10,8 @@
    - **Static values**: the key-value pairs of the **environment the user selected** (top-bar dropdown, 0033).
      They **never change during a run** (e.g. the base URL). Not loaded by presets (user correction).
    - **Runtime data**: dynamic data that **preflight programs and scenarios can read and write during the run**.
+   - **A finished run keeps its runtime data as it was at the end** (final values, not every change). A past
+     run's Environment tab shows those final values (user answer, 2026-11-22).
 3. **Shutdown program**: besides the preflight (runs before the scenarios), there is a shutdown program.
 
 ## Where the code stands (before this record)
@@ -21,7 +23,6 @@
 - There is no shutdown program.
 
 ## Open (ask the user, one at a time)
-- Is runtime data kept with the run, so a finished run's Environment tab still shows it (and how it changed)?
 - When does the shutdown program run: always after the scenarios (also after a stop or a failed preflight)?
 - Scope of runtime data: one bag for the whole run (preflight, every scenario entry, shutdown)?
 
