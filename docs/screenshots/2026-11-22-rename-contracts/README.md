@@ -31,3 +31,11 @@ Nothing should look different. Live mode: the server (Development) plus the clie
 
 10. Fake mode, editor with the generated parameter editor reachable (trimmed build); the red line is the missing server API of a static host.
 ![Fake editor](12-fake-editor-trimmed.png)
+
+After merging step T (canceled bees, brain 0053), Live mode:
+
+11. A run stopped after 9 s against a slow target: bees in flight at the stop are shown red like failed (24 failed of 37).
+![Stopped run popup](21-live-stop-popup.png)
+
+12. One canceled bee (B14) opened: "Canceled: run stopped", its call under Waterfall (1), its logs tab.
+![Canceled bee](23-live-canceled-bee-detail.png)
