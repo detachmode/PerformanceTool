@@ -31,6 +31,7 @@ Scenario.Define<SimulatedWorkParams>("Simulated Work (Delay + Logs)", async (p, 
     }
 
     ctx.Log($"[{p.WorkName}] Completed cleanly");
+    ctx.RunBag["lastWork"] = p.WorkName; // run bag: shared by the whole run, shown on the Environment tab
 })
 .WithDescription("Fake workload using Task.Delay and log statements to test live runs without hitting an external server.")
 .OnStartup(async (p, ctx) =>

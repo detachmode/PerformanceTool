@@ -1,3 +1,4 @@
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services;
 
 namespace PerformanceTool.Client.Services;
@@ -122,6 +123,18 @@ public sealed record RunningBee(int Sequence, int Entry, double StartedAt, IRead
     public string Name => $"B{Sequence + 1}";
 }
 
+/// <summary>
+/// A program of a run, the preflight (before the scenarios) or the shutdown program (always at the end, brain 0052). <see cref="State"/> is "Pending"
+/// (not started yet), "Running", "Succeeded" or "Failed". A shutdown failure shows on its own and does not change the scenarios' results.
+/// <see cref="Logs"/> are the program's output lines, <see cref="Error"/> the failure text.
+/// </summary>
+public sealed record ProgramRun(string State, string Name, string? Error, IReadOnlyList<string> Logs)
+{
+    public bool IsRunning => State == "Running";
+    public bool IsFailed => State == "Failed";
+    public bool IsDone => State is "Succeeded" or "Failed";
+}
+
 /// <summary>Immutable view of the run for the pages. Arrays are small; the bulk data sits in <see cref="Store"/> and is read up to the counts here.</summary>
 public sealed record RunSnapshot(
     FakeRunState State,
@@ -131,7 +144,9 @@ public sealed record RunSnapshot(
     ScenarioView[] Scenarios,
     RunStore Store,
     IReadOnlyList<RunningBee>[]? BeesInFlight = null,
-    RuntimeDataSnapshot? Runtime = null)
+    RuntimeDataSnapshot? Runtime = null,
+    ProgramRun? Shutdown = null,
+    ProgramRun? Preflight = null)
 {
     /// <summary>True while a run is active (running or paused).</summary>
     public bool Running => State is FakeRunState.Running or FakeRunState.Paused;

@@ -132,6 +132,10 @@
         var activePf = hasPreflight
             ? preflights.FirstOrDefault(p => string.Equals(p.ScriptId, plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase))
             : null;
+        var hasShutdown = !string.IsNullOrWhiteSpace(plan.ShutdownScriptId);
+        var activeSd = hasShutdown
+            ? shutdowns.FirstOrDefault(p => string.Equals(p.ScriptId, plan.ShutdownScriptId, StringComparison.OrdinalIgnoreCase))
+            : null;
     }
     @if (viewingHistory)
     {
@@ -174,31 +178,33 @@
 
         @if (preflightPickerOpen)
         {
+            var forShutdown = pickerIsShutdown;
+            var pickList = forShutdown ? shutdowns : preflights;
             <div class="run-pf-picker">
                 <div class="run-pf-picker-head">
-                    <b>Preflight script</b>
+                    <b>@(forShutdown ? "Shutdown program" : "Preflight script")</b>
                     <span class="spacer"></span>
-                    @if (hasPreflight)
+                    @if (forShutdown ? hasShutdown : hasPreflight)
                     {
                         <button type="button" class="btn ghost danger small" disabled="@locked" @onclick="RemovePreflight">Remove</button>
                     }
                     <button type="button" class="icon-btn" @onclick="() => preflightPickerOpen = false" aria-label="Close">✕</button>
                 </div>
-                <ul class="add-menu inline" aria-label="Available preflight scripts">
-                    @foreach (var pf in preflights)
+                <ul class="add-menu inline" aria-label="@(forShutdown ? "Available shutdown programs" : "Available preflight scripts")">
+                    @foreach (var pf in pickList)
                     {
                         var chosen = pf;
                         <li>
                             <button type="button" @onclick="() => PickPreflight(chosen.ScriptId)">
                                 <b>@chosen.FileName</b>
-                                <span>Runs once before scenarios start</span>
+                                <span>@(forShutdown ? "Always runs at the end of the run" : "Runs once before scenarios start")</span>
                             </button>
                         </li>
                     }
                     <li>
-                        <button type="button" @onclick='() => Nav.NavigateTo("editor?preflight=new")'>
-                            <b>+ Create new preflight .cs…</b>
-                            <span>Open the C# Script Editor with a preflight template</span>
+                        <button type="button" @onclick='() => Nav.NavigateTo(forShutdown ? "editor?shutdown=new" : "editor?preflight=new")'>
+                            <b>@(forShutdown ? "+ Create new shutdown .cs…" : "+ Create new preflight .cs…")</b>
+                            <span>Open the C# Script Editor with @(forShutdown ? "a shutdown" : "a preflight") template</span>
                         </button>
                     </li>
                 </ul>
@@ -257,6 +263,31 @@
                     }
                 }
             </div>
+            @if (editMode && (hasShutdown || !DataMode.IsFakeMode))
+            {
+                <div class="run-pf-row">
+                    @if (hasShutdown)
+                    {
+                        <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Change shutdown program">
+                            <span class="run-pf-text">
+                                <b class="mono">@(activeSd?.FileName ?? $"{plan.ShutdownScriptId}.cs")</b>
+                                <small class="muted">Shutdown · always runs at the end · tap to change</small>
+                            </span>
+                        </button>
+                        <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemoveShutdown" aria-label="Remove shutdown program" title="Remove shutdown program">✕</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="run-pf-trigger muted-trigger" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Attach a shutdown program">
+                            <span class="run-pf-plus-inline">+</span>
+                            <span class="run-pf-text">
+                                <span>Add shutdown</span>
+                                <small class="muted">Optional program that always runs at the end</small>
+                            </span>
+                        </button>
+                    }
+                </div>
+            }
         }
     </section>
     }
@@ -503,6 +534,7 @@
     }
     else
     {
+        <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
         <div class="grid" aria-label="Scenarios">
             @for (var i = 0; i < s.Count; i++)
             {
@@ -535,6 +567,8 @@
     private DetailFilter openFilter;
     private bool viewMenuOpen;
     private List<ClientPreflightSummary> preflights = [];
+    private List<ClientPreflightSummary> shutdowns = [];
+    private bool pickerIsShutdown;
 
     // Edit mode state
     private bool editMode;
@@ -580,18 +614,29 @@
     private async Task LoadPreflightsAsync()
     {
         preflights = await ScriptApi.ListPreflightsAsync();
+        shutdowns = await ScriptApi.ListPreflightsAsync(kind: ScriptApiClient.Shutdowns);
         if (!disposed) await InvokeAsync(StateHasChanged);
     }
 
     private async Task OpenPreflightPickerAsync()
     {
+        pickerIsShutdown = false;
         preflightPickerOpen = true;
         await LoadPreflightsAsync();
     }
 
+    private async Task OpenShutdownPickerAsync()
+    {
+        pickerIsShutdown = true;
+        preflightPickerOpen = true;
+        await LoadPreflightsAsync();
+    }
+
+    // The picker serves both programs (brain 0052): pickerIsShutdown says which one it is choosing.
     private void PickPreflight(string scriptId)
     {
-        Sim.Plan.PreflightScriptId = scriptId;
+        if (pickerIsShutdown) Sim.Plan.ShutdownScriptId = scriptId;
+        else Sim.Plan.PreflightScriptId = scriptId;
         preflightPickerOpen = false;
         Committed();
         Edited();
@@ -599,8 +644,16 @@
 
     private void RemovePreflight()
     {
-        Sim.Plan.PreflightScriptId = null;
+        if (pickerIsShutdown) Sim.Plan.ShutdownScriptId = null;
+        else Sim.Plan.PreflightScriptId = null;
         preflightPickerOpen = false;
+        Committed();
+        Edited();
+    }
+
+    private void RemoveShutdown()
+    {
+        Sim.Plan.ShutdownScriptId = null;
         Committed();
         Edited();
     }

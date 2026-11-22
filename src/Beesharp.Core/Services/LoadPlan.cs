@@ -20,6 +20,8 @@ public sealed class LoadPlan
     public int TimeoutSeconds { get; set; } = 30;
     /// <summary>Optional preflight script ID that must complete successfully before scenarios start.</summary>
     public string? PreflightScriptId { get; set; }
+    /// <summary>Optional shutdown program script ID. It always runs at the end of the run (brain 0052): after a normal finish, after a stop, and after a failed preflight.</summary>
+    public string? ShutdownScriptId { get; set; }
 
     public LoadPlan Clone() => new()
     {
@@ -28,6 +30,7 @@ public sealed class LoadPlan
         MaxConcurrency = MaxConcurrency,
         TimeoutSeconds = TimeoutSeconds,
         PreflightScriptId = PreflightScriptId,
+        ShutdownScriptId = ShutdownScriptId,
     };
 
     public List<string> Validate(ScenarioCatalog catalog)

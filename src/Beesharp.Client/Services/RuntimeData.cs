@@ -1,34 +1,10 @@
 using System.Text.Json.Nodes;
+using PerformanceTool.Services.Runtime;
 
 namespace PerformanceTool.Client.Services;
 
-// Runtime data (brain 0052): key-value data that the preflight, scenarios and (later) the shutdown program write during a run.
-// Two scopes: one run bag shared by the whole run, and one entry bag per scenario entry (its startup, bees and teardown).
-// A run keeps only the final value of each key (no history). Static values (the selected environment) are not part of this.
-
-/// <summary>Who wrote a runtime value last.</summary>
-public enum DataWriterKind { Preflight, Startup, Bee, Teardown, Shutdown }
-
-/// <summary>The writer of a value: the kind, and for entry-level writers the scenario entry (and for a bee its sequence).</summary>
-public readonly record struct DataWriter(DataWriterKind Kind, int Entry = -1, int Bee = -1);
-
-/// <summary>One key of a bag with its final value (so far), the last writer and the run time of that write.</summary>
-public sealed record RuntimeValue(string Key, JsonNode? Value, DataWriter Writer, double AtSeconds);
-
-/// <summary>The values of one bag. <see cref="Entry"/> is -1 for the run bag, else the scenario entry index.</summary>
-public sealed record RuntimeBag(int Entry, IReadOnlyList<RuntimeValue> Values)
-{
-    public bool IsRunBag => Entry < 0;
-}
-
-/// <summary>Immutable copy of all bags at one moment: what a <see cref="RunSnapshot"/> carries.</summary>
-public sealed record RuntimeDataSnapshot(RuntimeBag Run, IReadOnlyList<RuntimeBag> Entries)
-{
-    public static RuntimeDataSnapshot Empty(int entries) =>
-        new(new RuntimeBag(-1, []), Enumerable.Range(0, entries).Select(i => new RuntimeBag(i, [])).ToList());
-
-    public int TotalValues => Run.Values.Count + Entries.Sum(e => e.Values.Count);
-}
+// The simulated runtime data (brain 0052) behind the fake run. The model types (DataWriter, RuntimeValue, RuntimeBag, RuntimeDataSnapshot) live in
+// PerformanceTool.Services.Runtime (Core): the server sends the same shapes.
 
 /// <summary>The mutable bags of a run. Single threaded (WebAssembly); <see cref="Snapshot"/> copies for the pages.</summary>
 public sealed class RuntimeData
@@ -114,6 +90,39 @@ public sealed class FakeRuntimeScript
     {
         for (var i = 0; i < entries; i++)
             data.Set(i, "cleanedUp", JsonValue.Create(true), new DataWriter(DataWriterKind.Teardown, i), at);
+    }
+
+    /// <summary>The preflight ran before the scenarios (it wrote the run bag in <see cref="Begin"/>). Returns what the pages show about it.</summary>
+    public ProgramRun RunPreflight(string name)
+    {
+        string Line(double t, string level, string message) => $"[{t,6:0.00}s] [{level}] {message}";
+        return new ProgramRun("Succeeded", name, null,
+        [
+            Line(0, "INF", $"Starting preflight '{name}'…"),
+            Line(0.12, "INF", "Checking system readiness"),
+            Line(0.35, "INF", "Signed in as the load-test user, token stored in the run bag (authToken)"),
+            Line(0.61, "INF", "Seeded 6 users and the catalog (1200 products)"),
+            Line(0.74, "INF", "Preflight finished successfully in 740 ms."),
+        ]);
+    }
+
+    /// <summary>The shutdown program ran: it writes the run bag (what it cleaned up) and logs what it did. Returns what the pages show about it.</summary>
+    public ProgramRun RunShutdown(string name, double at)
+    {
+        var w = new DataWriter(DataWriterKind.Shutdown);
+        var carts = data.Get(0, "cartIds") is JsonArray list ? list.Count : 0;
+        var deleted = 40 + carts + rng.Next(0, 12);
+        data.Set(-1, "deletedCarts", JsonValue.Create(deleted), w, at);
+        data.Set(-1, "cleanedUp", JsonValue.Create(true), w, at);
+        data.Set(-1, "tenantId", JsonValue.Create("released"), w, at);
+        string Line(double t, string level, string message) => $"[{t,6:0.00}s] [{level}] {message}";
+        return new ProgramRun("Succeeded", name, null,
+        [
+            Line(0, "INF", $"Starting shutdown program '{name}'…"),
+            Line(0.08, "INF", $"Deleting the {deleted} carts created by this run"),
+            Line(0.31, "INF", "Releasing tenant acme-load-7f3"),
+            Line(0.42, "INF", $"Shutdown program finished successfully in {0.42 * 1000:0.#} ms."),
+        ]);
     }
 
     private void AddToList(int entry, string key, string item, DataWriter w, double at)

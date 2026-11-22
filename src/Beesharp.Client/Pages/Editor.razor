@@ -1,5 +1,5 @@
 @* Minimalist full-screen C# Script Editor (/editor):
-   Full-viewport syntax-highlighted code editor with a single compact menu bar (file picker for scenario & preflight .cs files, Wrap, Save, Try, actions). *@
+   Full-viewport syntax-highlighted code editor with a single compact menu bar (file picker for scenario, preflight & shutdown .cs files, Wrap, Save, Try, actions). *@
 @page "/editor"
 @page "/scripts"
 @layout MainLayout
@@ -24,7 +24,7 @@
                     @onclick="() => { filesOpen = !filesOpen; moreOpen = false; }" title="Switch, create, or upload .cs scripts">
                 @if (isPreflight)
                 {
-                    <span class="pf-tag">PRE</span>
+                    <span class="pf-tag">@(isShutdown ? "END" : "PRE")</span>
                 }
                 <span class="mono">@fileName</span>
                 <span class="caret">▾</span>
@@ -56,14 +56,29 @@
                     @foreach (var pf in preflights)
                     {
                         var item = pf;
-                        var isCur = isPreflight && selectedId == item.ScriptId;
+                        var isCur = isPreflight && !isShutdown && selectedId == item.ScriptId;
                         <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreflightFile(item)">
+                            <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                        </button>
+                    }
+                    <div class="dd-sep" role="separator"></div>
+                    <div class="dd-lbl">Shutdown programs (@shutdowns.Count)</div>
+                    @if (shutdowns.Count == 0)
+                    {
+                        <div class="muted" style="padding:.3rem .55rem">No shutdown programs yet.</div>
+                    }
+                    @foreach (var sd in shutdowns)
+                    {
+                        var item = sd;
+                        var isCur = isShutdown && selectedId == item.ScriptId;
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickShutdownFile(item)">
                             <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
                         </button>
                     }
                     <div class="dd-sep" role="separator"></div>
                     <button type="button" class="dd-item" role="menuitem" @onclick="NewScenarioScript">+ New scenario .cs</button>
                     <button type="button" class="dd-item" role="menuitem" @onclick="NewPreflightScript">+ New preflight .cs</button>
+                    <button type="button" class="dd-item" role="menuitem" @onclick="NewShutdownScript">+ New shutdown .cs</button>
                     <label class="dd-item" role="menuitem" style="cursor:pointer">
                         Upload .cs…
                         <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
@@ -90,7 +105,7 @@
         </button>
 
         <button type="button" class="btn ghost small" @onclick="OpenTryDialog" disabled="@(busy || !canTry)"
-                title="@(!canTry ? "Save the script first to try it out" : isPreflight ? "Run this preflight script once and view its log output" : "Configure parameters and run a single test execution")">
+                title="@(!canTry ? "Save the script first to try it out" : isPreflight ? $"Run this {ProgramName} once and view its log output" : "Configure parameters and run a single test execution")">
             ▶ Try
         </button>
 
@@ -110,7 +125,7 @@
                     }
                     else
                     {
-                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedPreflight is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; UseAsPreflight(); }">Use as plan preflight</button>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedPreflight is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; UseAsPreflight(); }">Use as plan @ProgramName</button>
                     }
                     <div class="dd-sep" role="separator"></div>
                     <button type="button" class="dd-item bad" role="menuitem" disabled="@(busy || !canTry)" @onclick="() => { moreOpen = false; _ = DeleteCurrent(); }">Delete script</button>
@@ -123,7 +138,7 @@
     {
         <form class="script-rename-bar" @onsubmit="() => renameOpen = false" @onsubmit:preventDefault="true">
             <label for="script-filename" class="muted">File name:</label>
-            <input id="script-filename" class="env-name-input" value="@fileName" placeholder="@(isPreflight ? "check-readiness.cs" : "order-stress.cs")" autocomplete="off"
+            <input id="script-filename" class="env-name-input" value="@fileName" placeholder="@(isShutdown ? "cleanup.cs" : isPreflight ? "check-readiness.cs" : "order-stress.cs")" autocomplete="off"
                    @oninput="e => fileName = e.Value?.ToString() ?? string.Empty" />
             <button type="submit" class="btn primary small">OK</button>
         </form>
@@ -220,13 +235,13 @@
                 {
                     @if (preflightResult is null)
                     {
-                        <p class="muted" style="margin:0">Click <b>▶ Run once</b> to execute this preflight script and inspect its log output.</p>
+                        <p class="muted" style="margin:0">Click <b>▶ Run once</b> to execute this @ProgramName and inspect its log output.</p>
                     }
                     else
                     {
                         <div class="test-result @(preflightResult.Success ? "ok" : "bad")">
                             <div class="test-result-head">
-                                <b>@(preflightResult.Success ? "Preflight succeeded" : "Preflight failed")</b>
+                                <b>@(preflightResult.Success ? $"{ProgramTitle} succeeded" : $"{ProgramTitle} failed")</b>
                                 <span class="muted">@preflightResult.DurationMs.ToString("0.#") ms</span>
                                 <span class="spacer"></span>
                                 <WrapToggleButton @bind-Wrapped="tryWrap" />
@@ -259,9 +274,18 @@
     [SupplyParameterFromQuery(Name = "preflight")]
     public string? RequestedPreflight { get; set; }
 
+    [SupplyParameterFromQuery(Name = "shutdown")]
+    public string? RequestedShutdown { get; set; }
+
     private List<ClientScriptSummary> scripts = [];
     private List<ClientPreflightSummary> preflights = [];
+    private List<ClientPreflightSummary> shutdowns = [];
+    // isPreflight means "a program script" (preflight or shutdown, brain 0052); isShutdown says which of the two.
     private bool isPreflight;
+    private bool isShutdown;
+    private string ProgramName => isShutdown ? "shutdown program" : "preflight script";
+    private string ProgramTitle => isShutdown ? "Shutdown program" : "Preflight";
+    private string ProgramKind => isShutdown ? ScriptApiClient.Shutdowns : ScriptApiClient.Preflights;
     private string? selectedId;
     private ClientScriptSummary? selectedSummary;
     private ClientPreflightSummary? selectedPreflight;
@@ -320,6 +344,21 @@
         Log("Preflight checks passed!");
         """;
 
+    private const string ShutdownTemplate = """
+        // Shutdown program: always runs at the end of a run (also after Stop, and after a failed preflight).
+        // Use it to clean up what the run created. `Data` is the run bag: read what the preflight and the
+        // scenarios stored there (context.RunBag in a scenario), and write results for the Environment tab.
+        // A failure here shows as failed but does not change the scenarios' results.
+
+        Log("Cleaning up...");
+        if (Data.TryGetValue("tenantId", out var tenant))
+            Log($"Releasing tenant {tenant}");
+        await Task.Delay(300, CancellationToken);
+
+        Data["cleanedUp"] = true;
+        Log("Done.");
+        """;
+
     protected override async Task OnInitializedAsync()
     {
         DataMode.Changed += OnStateChanged;
@@ -339,6 +378,22 @@
         {
             scripts = await Api.ListScriptsAsync();
             preflights = await Api.ListPreflightsAsync();
+            shutdowns = await Api.ListPreflightsAsync(kind: ScriptApiClient.Shutdowns);
+
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedShutdown))
+            {
+                if (RequestedShutdown.Equals("new", StringComparison.OrdinalIgnoreCase))
+                {
+                    NewShutdownScript();
+                    return;
+                }
+                if (shutdowns.FirstOrDefault(p => string.Equals(p.ScriptId, RequestedShutdown, StringComparison.OrdinalIgnoreCase)
+                                               || string.Equals(p.FileName, RequestedShutdown, StringComparison.OrdinalIgnoreCase)) is { } reqSd)
+                {
+                    SelectShutdown(reqSd);
+                    return;
+                }
+            }
 
             if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedPreflight))
             {
@@ -364,7 +419,9 @@
                 return;
             }
 
-            if (isPreflight && selectedId is not null && preflights.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundPf)
+            if (isShutdown && selectedId is not null && shutdowns.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundSd)
+                SelectShutdown(foundSd);
+            else if (isPreflight && !isShutdown && selectedId is not null && preflights.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundPf)
                 SelectPreflight(foundPf);
             else if (!isPreflight && selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } foundSc)
                 SelectScenario(foundSc);
@@ -382,10 +439,12 @@
 
     private void PickScenarioFile(ClientScriptSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
     private void PickPreflightFile(ClientPreflightSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
+    private void PickShutdownFile(ClientPreflightSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
 
     private void SelectScenario(ClientScriptSummary s)
     {
         isPreflight = false;
+        isShutdown = false;
         selectedId = s.ScriptId;
         selectedSummary = s;
         selectedPreflight = null;
@@ -400,9 +459,16 @@
         statusIsError = false;
     }
 
+    private void SelectShutdown(ClientPreflightSummary p)
+    {
+        SelectPreflight(p);
+        isShutdown = true;
+    }
+
     private void SelectPreflight(ClientPreflightSummary p)
     {
         isPreflight = true;
+        isShutdown = false;
         selectedId = p.ScriptId;
         selectedSummary = null;
         selectedPreflight = p;
@@ -420,6 +486,7 @@
     {
         filesOpen = false;
         isPreflight = false;
+        isShutdown = false;
         selectedId = null;
         selectedSummary = null;
         selectedPreflight = null;
@@ -435,10 +502,19 @@
         renameOpen = true;
     }
 
+    private void NewShutdownScript()
+    {
+        NewPreflightScript();
+        isShutdown = true;
+        fileName = "cleanup.cs";
+        scriptCode = ShutdownTemplate;
+    }
+
     private void NewPreflightScript()
     {
         filesOpen = false;
         isPreflight = true;
+        isShutdown = false;
         selectedId = null;
         selectedSummary = null;
         selectedPreflight = null;
@@ -485,12 +561,13 @@
         {
             if (isPreflight)
             {
-                var res = await Api.SavePreflightAsync(selectedId, fileName, scriptCode);
+                var res = await Api.SavePreflightAsync(selectedId, fileName, scriptCode, kind: ProgramKind);
                 diagnostics = res.Diagnostics.ToList();
                 if (res.Success && res.Script is { } saved)
                 {
+                    var wasShutdown = isShutdown;
                     await ReloadAllAsync();
-                    SelectPreflight(saved);
+                    if (wasShutdown) SelectShutdown(saved); else SelectPreflight(saved);
                     statusMessage = "Saved ✓";
                     statusIsError = false;
                 }
@@ -543,7 +620,7 @@
         try
         {
             if (isPreflight)
-                preflightResult = await Api.TestRunPreflightAsync(selectedPreflight!.ScriptId, Envs.ActiveName);
+                preflightResult = await Api.TestRunPreflightAsync(selectedPreflight!.ScriptId, Envs.ActiveName, kind: ProgramKind);
             else
                 testResult = await Api.TestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
         }
@@ -568,8 +645,9 @@
     private void UseAsPreflight()
     {
         if (selectedPreflight is null) return;
-        Sim.Plan.PreflightScriptId = selectedPreflight.ScriptId;
-        statusMessage = $"Set as preflight ✓";
+        if (isShutdown) Sim.Plan.ShutdownScriptId = selectedPreflight.ScriptId;
+        else Sim.Plan.PreflightScriptId = selectedPreflight.ScriptId;
+        statusMessage = $"Set as plan {ProgramName} ✓";
         statusIsError = false;
     }
 
@@ -579,10 +657,13 @@
         {
             if (isPreflight && selectedPreflight is not null)
             {
-                if (string.Equals(Sim.Plan.PreflightScriptId, selectedPreflight.ScriptId, StringComparison.OrdinalIgnoreCase))
+                var wasShutdown = isShutdown;
+                if (!wasShutdown && string.Equals(Sim.Plan.PreflightScriptId, selectedPreflight.ScriptId, StringComparison.OrdinalIgnoreCase))
                     Sim.Plan.PreflightScriptId = null;
-                await Api.DeletePreflightAsync(selectedPreflight.ScriptId);
-                NewPreflightScript();
+                if (wasShutdown && string.Equals(Sim.Plan.ShutdownScriptId, selectedPreflight.ScriptId, StringComparison.OrdinalIgnoreCase))
+                    Sim.Plan.ShutdownScriptId = null;
+                await Api.DeletePreflightAsync(selectedPreflight.ScriptId, kind: ProgramKind);
+                if (wasShutdown) NewShutdownScript(); else NewPreflightScript();
             }
             else if (!isPreflight && selectedSummary is not null)
             {

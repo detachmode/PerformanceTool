@@ -69,6 +69,8 @@ public sealed class FakeRunSource : IRunSource
     private RunStore store = new(0);
     private CallTypicals typicals = new();
     private RuntimeData runtime = new(0);
+    private ProgramRun? shutdown;
+    private ProgramRun? preflight;
     private FakeRuntimeScript script = new(new RuntimeData(0));
     private int[] starts = [], inFlight = [], failed = [], slowBees = [], slowCalls = [];
     private double[] nextFire = [];
@@ -253,6 +255,8 @@ public sealed class FakeRunSource : IRunSource
         runtime = new RuntimeData(n);
         script = new FakeRuntimeScript(runtime);
         script.Begin(n);
+        shutdown = null;
+        preflight = script.RunPreflight("check-readiness.cs");
         starts = new int[n]; inFlight = new int[n]; failed = new int[n]; slowBees = new int[n]; slowCalls = new int[n];
         // First fire at a random offset inside the first interval, like independent arrival streams.
         nextFire = runPlan.Scenarios.Select(s => rng.NextDouble() * FireInterval(s)).ToArray();
@@ -452,6 +456,9 @@ public sealed class FakeRunSource : IRunSource
         Array.Clear(inFlight);
         elapsed = at;
         script.End(runPlan.Scenarios.Count, at);
+        // The shutdown program always runs at the end, also when the run was stopped (brain 0052).
+        if (!string.IsNullOrWhiteSpace(runPlan.ShutdownScriptId))
+            shutdown = script.RunShutdown(runPlan.ShutdownScriptId + ".cs", at);
         state = FakeRunState.Finished;
     }
 
@@ -465,7 +472,7 @@ public sealed class FakeRunSource : IRunSource
         var running = new IReadOnlyList<RunningBee>[n];
         for (var i = 0; i < n; i++)
             running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningBee(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot());
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot(), shutdown, preflight);
     }
 
     // ---------- the fake plan ----------
@@ -516,7 +523,7 @@ public sealed class FakeRunSource : IRunSource
     private void LoadBlackFriday()
     {
         // Short on purpose: the demo run is 30 s, so bees are a few seconds long and rates are generous.
-        Plan = new LoadPlan { DurationSeconds = 30, MaxConcurrency = 40, TimeoutSeconds = 60 };
+        Plan = new LoadPlan { DurationSeconds = 30, MaxConcurrency = 40, TimeoutSeconds = 60, ShutdownScriptId = "cleanup" };
         Profiles = [];
         void Add(ScenarioRunConfig c, FakeProfile p) { Plan.Scenarios.Add(c); Profiles.Add(p); }
 

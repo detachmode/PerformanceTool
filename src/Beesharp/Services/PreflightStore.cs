@@ -8,15 +8,18 @@ using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.Extensions.Logging;
 using PerformanceTool.Services.Environments;
+using PerformanceTool.Services.Runtime;
 
 namespace PerformanceTool.Services;
 
-/// <summary>Globals injected into every C# preflight script.</summary>
+/// <summary>Globals injected into every C# preflight and shutdown script.</summary>
 public sealed class PreflightGlobals
 {
     public required HttpClient Http { get; init; }
     public required ILogger Logger { get; init; }
     public required EnvironmentValues Env { get; init; }
+    /// <summary>The run bag (brain 0052): runtime data shared by the whole run. The program reads and writes it; the Environment tab shows it.</summary>
+    public required BagAccess Data { get; init; }
     public required CancellationToken CancellationToken { get; init; }
     public required Action<string> Log { get; init; }
     public required Action<string> Fail { get; init; }
@@ -45,10 +48,13 @@ public sealed record PreflightRunResult(
 /// <summary>
 /// Compiles, persists (<c>scripts/preflight/*.cs</c>) and runs preflight C# scripts that execute before a load test
 /// starts. Only if the preflight completes without throwing / failing will the load scenarios begin.
+/// <see cref="ShutdownStore"/> is the same machinery for the shutdown program (brain 0052), stored in <c>scripts/shutdown/</c>.
 /// </summary>
-public sealed class PreflightStore
+public class PreflightStore
 {
     private readonly string directory;
+    private readonly string label;
+    private readonly DataWriterKind writerKind;
     private readonly EnvironmentStore? environments;
     private readonly Lock sync = new();
     private readonly Dictionary<string, StoredPreflight> scripts = new(StringComparer.OrdinalIgnoreCase);
@@ -64,21 +70,36 @@ public sealed class PreflightStore
         DateTimeOffset UpdatedUtc);
 
     public PreflightStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments)
+        : this(configuration, env, environments, "preflight")
     {
+    }
+
+    protected PreflightStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments, string kind)
+    {
+        (label, writerKind) = KindInfo(kind);
         var configured = configuration["Scripts:Directory"];
         var root = string.IsNullOrWhiteSpace(configured)
             ? Path.Combine(env.ContentRootPath, "scripts")
             : Path.IsPathRooted(configured) ? configured : Path.Combine(env.ContentRootPath, configured);
-        directory = Path.Combine(root, "preflight");
+        directory = Path.Combine(root, kind);
         this.environments = environments;
     }
 
     /// <summary>Convenience constructor for unit tests.</summary>
     public PreflightStore(string directory, EnvironmentStore? environments = null)
+        : this(directory, environments, "preflight")
     {
+    }
+
+    protected PreflightStore(string directory, EnvironmentStore? environments, string kind)
+    {
+        (label, writerKind) = KindInfo(kind);
         this.directory = directory;
         this.environments = environments;
     }
+
+    private static (string Label, DataWriterKind Writer) KindInfo(string kind) =>
+        kind == "shutdown" ? ("Shutdown program", DataWriterKind.Shutdown) : ("Preflight", DataWriterKind.Preflight);
 
     public async Task LoadAllFromDiskAsync(CancellationToken ct = default)
     {
@@ -114,7 +135,7 @@ public sealed class PreflightStore
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(code))
-            return new PreflightCompileResult(false, null, [], "Preflight script code cannot be empty.");
+            return new PreflightCompileResult(false, null, [], $"{label} script code cannot be empty.");
 
         var debugFile = string.IsNullOrWhiteSpace(fileName)
             ? (string.IsNullOrWhiteSpace(scriptId) ? "preflight.cs" : $"{scriptId}.cs")
@@ -134,7 +155,7 @@ public sealed class PreflightStore
             return new PreflightCompileResult(false, null, mapped, "Compilation failed.");
 
         var baseName = string.IsNullOrWhiteSpace(fileName)
-            ? (string.IsNullOrWhiteSpace(scriptId) ? "preflight.cs" : $"{scriptId}.cs")
+            ? (string.IsNullOrWhiteSpace(scriptId) ? (writerKind == DataWriterKind.Shutdown ? "shutdown.cs" : "preflight.cs") : $"{scriptId}.cs")
             : Path.GetFileName(fileName.Trim());
         if (!baseName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             baseName += ".cs";
@@ -171,12 +192,13 @@ public sealed class PreflightStore
         string? environmentName,
         Action<string>? onLog = null,
         int timeoutSeconds = 120,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        RunData? runData = null)
     {
         StoredPreflight? stored;
         lock (sync) scripts.TryGetValue(scriptId, out stored);
         if (stored is null)
-            throw new KeyNotFoundException($"Preflight script '{scriptId}' was not found.");
+            throw new KeyNotFoundException($"{label} script '{scriptId}' was not found.");
 
         EnvironmentDefinition? envDef = null;
         if (environments is not null && !string.IsNullOrWhiteSpace(environmentName))
@@ -194,7 +216,7 @@ public sealed class PreflightStore
         }
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 300)) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp-Preflight/1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(writerKind == DataWriterKind.Shutdown ? "Beesharp-Shutdown/1.0" : "Beesharp-Preflight/1.0");
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         runCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 600)));
 
@@ -204,30 +226,31 @@ public sealed class PreflightStore
             Http = http,
             Logger = logger,
             Env = envValues,
+            Data = (runData ?? new RunData(0)).RunBagFor(new DataWriter(writerKind)),
             CancellationToken = runCts.Token,
             Log = msg => Emit("INF", msg),
-            Fail = reason => throw new InvalidOperationException(string.IsNullOrWhiteSpace(reason) ? "Preflight failed." : reason),
+            Fail = reason => throw new InvalidOperationException(string.IsNullOrWhiteSpace(reason) ? $"{label} failed." : reason),
             RunProcessAsync = (file, args) => RunExternalProcessAsync(file, args, Emit, runCts.Token),
         };
 
-        Emit("INF", $"Starting preflight '{stored.FileName}'…");
+        Emit("INF", $"Starting {label.ToLowerInvariant()} '{stored.FileName}'…");
         try
         {
             await stored.Compiled.RunAsync(globals, runCts.Token);
             sw.Stop();
-            Emit("INF", $"Preflight finished successfully in {sw.Elapsed.TotalMilliseconds:0.#} ms.");
+            Emit("INF", $"{label} finished successfully in {sw.Elapsed.TotalMilliseconds:0.#} ms.");
             return new PreflightRunResult(true, sw.Elapsed.TotalMilliseconds, null, logs.ToArray());
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             sw.Stop();
-            Emit("WRN", "Preflight was cancelled.");
-            return new PreflightRunResult(false, sw.Elapsed.TotalMilliseconds, "Preflight was cancelled.", logs.ToArray());
+            Emit("WRN", $"{label} was cancelled.");
+            return new PreflightRunResult(false, sw.Elapsed.TotalMilliseconds, $"{label} was cancelled.", logs.ToArray());
         }
         catch (OperationCanceledException)
         {
             sw.Stop();
-            var msg = $"Preflight timed out after {timeoutSeconds}s.";
+            var msg = $"{label} timed out after {timeoutSeconds}s.";
             Emit("ERR", msg);
             return new PreflightRunResult(false, sw.Elapsed.TotalMilliseconds, msg, logs.ToArray());
         }
@@ -299,7 +322,7 @@ public sealed class PreflightStore
     private static string SanitizeId(string raw)
     {
         var clean = new string(raw.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()).Trim('-');
-        return clean.Length == 0 ? $"preflight-{Guid.NewGuid():N}"[..18] : clean;
+        return clean.Length == 0 ? $"script-{Guid.NewGuid():N}"[..18] : clean;
     }
 
     private static ScriptOptions CreateScriptOptions()
@@ -334,7 +357,8 @@ public sealed class PreflightStore
                 "System.Threading",
                 "System.Threading.Tasks",
                 "Microsoft.Extensions.Logging",
-                "PerformanceTool.Services.Environments");
+                "PerformanceTool.Services.Environments",
+                "PerformanceTool.Services.Runtime");
     }
 
     private sealed class CallbackLogger(Action<string, string> emit) : ILogger
@@ -355,5 +379,23 @@ public sealed class PreflightStore
             if (exception is not null) msg = $"{msg} — {exception.Message}";
             emit(lvl, msg);
         }
+    }
+}
+
+/// <summary>
+/// The shutdown program (brain 0052): the same kind of C# script as a preflight, stored in <c>scripts/shutdown/*.cs</c>. It always runs at the end of a run.
+/// A separate type only so it can be registered next to <see cref="PreflightStore"/>.
+/// </summary>
+public sealed class ShutdownStore : PreflightStore
+{
+    public ShutdownStore(IConfiguration configuration, IWebHostEnvironment env, EnvironmentStore environments)
+        : base(configuration, env, environments, "shutdown")
+    {
+    }
+
+    /// <summary>Convenience constructor for unit tests.</summary>
+    public ShutdownStore(string directory, EnvironmentStore? environments = null)
+        : base(directory, environments, "shutdown")
+    {
     }
 }

@@ -21,8 +21,10 @@
     var slow = views.Sum(v => v.SlowBees);
     var target = s.Plan.Scenarios.Sum(x => x.EffectiveRatePerMinute());
     var actual = s.Elapsed >= 3 ? views.Sum(v => v.Starts) / (s.Elapsed / 60) : 0;
+    var shuttingDown = s.Shutdown is { IsRunning: true };
     var (stateText, stateCss) = s.State switch
     {
+        FakeRunState.Running when shuttingDown => ("Shutting down", "run"),
         FakeRunState.Running => ("Running", "run"),
         FakeRunState.Paused => ("Paused", "paused"),
         FakeRunState.Finished => ("Finished", "done"),
@@ -35,7 +37,7 @@
 {
 <section class="player @(open ? "open" : "")" aria-label="Run player">
     <div class="pl-main">
-        <button class="play @stateCss" @onclick="Toggle" aria-label="@playLabel" title="@playLabel (space)">
+ <button class="play @stateCss" @onclick="Toggle" disabled="@shuttingDown" aria-label="@playLabel" title="@playLabel (space)">
             <span class="disc">
                 @if (s.State == FakeRunState.Running)
                 {
@@ -48,7 +50,7 @@
             </span>
             <span class="play-label" aria-hidden="true">@playShort</span>
         </button>
-        <button class="stop-btn" @onclick="Sim.Stop" disabled="@(!active)" aria-label="Stop run" title="Stop run">
+ <button class="stop-btn" @onclick="Sim.Stop" disabled="@(!active || shuttingDown)" aria-label="Stop run" title="Stop run">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.2" fill="currentColor"/></svg>
         </button>
         <div class="state-lamp @stateCss" title="Run state: @stateText"><i aria-hidden="true"></i><span>@stateText</span></div>

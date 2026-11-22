@@ -23,6 +23,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         public double ElapsedSeconds { get; set; }
         public string? Error { get; set; }
         public int FailedBees { get; set; }
+        public string? RuntimeJson { get; set; }
         public Dictionary<int, StoredBeeDetail> Bees { get; } = [];
         public List<StoredLogRow> Logs { get; } = [];
     }
@@ -75,6 +76,19 @@ public sealed class InMemoryRunStorage : IRunStorage
             bucket.ElapsedSeconds = elapsedSeconds;
             bucket.Error = error;
         }
+    }
+
+    public Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default)
+    {
+        lock (sync)
+            if (runs.FirstOrDefault(x => x.RunId == runId) is { } bucket) bucket.RuntimeJson = json;
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default)
+    {
+        lock (sync)
+            return Task.FromResult(runs.FirstOrDefault(x => x.RunId == runId)?.RuntimeJson);
     }
 
     public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
