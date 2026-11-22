@@ -31,10 +31,11 @@ Alternative (result types): a typed chain where each step returns a result that 
 `.Step("Log in", ...).Then("Search", token => ...)`, a failed result stops the bee at that step. More ceremony;
 kept as an option for the user to choose.
 
-**C# 15 unions** (ship with .NET 11, the `union` keyword, exhaustive `switch`) fit the step result and the bee's
-progress, e.g. `union StepResult(Passed, Failed, Skipped)`. Our agent environment only has the .NET 10 SDK, and the
-feature's preview/stable status in .NET 11 must be checked first, so the first version would use a closed record
-hierarchy with the same shape and switch to `union` later.
+**C# 15 unions** (.NET 11 and C# 15 shipped on 2026-11-10; the `union` keyword, exhaustive `switch`) fit the step
+result and the bee's progress, e.g. `union StepResult(Passed, Failed, Skipped)`. CI builds with .NET 11, so we can use
+them. Limits: the cloud agent environment has only the .NET 10 SDK (its network blocks `builds.dotnet.microsoft.com`,
+apt has no .NET 11 yet), so agents cannot compile `union` code until that host is allowed; and confirm in the official
+release notes that unions left preview (no `LangVersion=preview` in a released tool).
 
 **UI (draft, fake data):** a vertical stepper like Android's "Free up space" screen: numbered circles joined by a
 line; a done step gets a check, the current step a spinner, a failed step red, steps not reached greyed out.
