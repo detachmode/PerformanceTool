@@ -69,10 +69,11 @@
                     var (sMin, sMax, sStep) = SliderBounds(field, cur);
                     var clamped = Math.Clamp(cur ?? sMin, sMin, sMax);
                     <div class="slider with-input">
-                        <input type="range" min="@Inv(sMin)" max="@Inv(sMax)" step="@Inv(sStep)" value="@Inv(clamped)"
+                        <input id="@id" type="range" min="@Inv(sMin)" max="@Inv(sMax)" step="@Inv(sStep)" value="@Inv(clamped)"
                                aria-label="@field.Label slider" disabled="@Disabled"
                                @oninput="e => { SetNumber(field, e); Committed.InvokeAsync(); }" />
-                        <input id="@id" class="slider-num" type="number" step="1" min="@Inv(field.Min)" max="@Inv(field.Max)"
+                        <input id="@($"{id}-num")" class="slider-num" type="number" inputmode="numeric" step="1" min="@Inv(field.Min)" max="@Inv(field.Max)"
+                               aria-label="@field.Label value"
                                value="@NumStr(field)" placeholder="@field.Placeholder" disabled="@Disabled"
                                @oninput="e => SetNumber(field, e)" @onchange="Committed" />
                     </div>

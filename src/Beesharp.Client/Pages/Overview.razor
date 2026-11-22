@@ -159,12 +159,13 @@
     {
     <section class="run-launch-card" aria-label="Run and preflight controls">
         <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
-            <label for="p-dur">Duration (s)</label>
+            <label for="p-dur-range">Duration (s)</label>
             <div class="slider with-input">
-                <input type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
+                <input id="p-dur-range" type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
                        aria-label="Duration slider" disabled="@locked"
                        @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
-                <input id="p-dur" class="slider-num" type="number" min="1" step="1" value="@plan.DurationSeconds"
+                <input id="p-dur" class="slider-num" type="number" inputmode="numeric" min="1" step="1" value="@plan.DurationSeconds"
+                       aria-label="Duration in seconds"
                        @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
                        disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
             </div>
@@ -310,7 +311,7 @@
                                             <label for="entry-label">Label</label>
                                             <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
                                         </div>
-                                        <div class="ed-spawn-row">
+                                        <div class="ed-spawn-sliders">
                                             <div class="field pattern">
                                                 <label id="pattern-label">Spawning</label>
                                                 <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: bees start evenly. Bursts: several bees start at once, now and then.">
@@ -320,27 +321,50 @@
                                             </div>
                                             @if (c.Pattern == SpawningPattern.Bursts)
                                             {
-                                                <div class="ed-burst-pair">
-                                                    <div class="field rate @(cfgErr!.Burst is null ? "" : "is-invalid")">
-                                                        <label for="entry-burst-size">Bees / burst</label>
-                                                        <input id="entry-burst-size" type="number" min="1" step="1" value="@c.BeesPerBurst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
+                                                <div class="field wide compact-slider @(cfgErr!.Burst is null ? "" : "is-invalid")">
+                                                    <label for="entry-burst-size-range">Bees / burst</label>
+                                                    <div class="slider with-input">
+                                                        <input id="entry-burst-size-range" type="range" min="1" max="100" step="1" value="@Math.Clamp(c.BeesPerBurst, 1, 100)"
+                                                               aria-label="Bees per burst slider" disabled="@locked"
+                                                               @oninput="e => { SetBurstSize(e); Committed(); }" />
+                                                        <input id="entry-burst-size" class="slider-num" type="number" inputmode="numeric" min="1" step="1" value="@c.BeesPerBurst"
+                                                               aria-label="Bees per burst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
                                                     </div>
-                                                    <div class="field rate @(cfgErr.BurstRate is null ? "" : "is-invalid")">
-                                                        <label for="entry-burst-rate">Bursts / min</label>
-                                                        <input id="entry-burst-rate" type="number" min="0.1" step="any" value="@c.BurstsPerMinute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
+                                                </div>
+                                                <div class="field wide compact-slider @(cfgErr.BurstRate is null ? "" : "is-invalid")">
+                                                    <label for="entry-burst-rate-range">Bursts / min</label>
+                                                    <div class="slider with-input">
+                                                        <input id="entry-burst-rate-range" type="range" min="1" max="60" step="1" value="@Math.Clamp(c.BurstsPerMinute, 1, 60).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                               aria-label="Bursts per minute slider" disabled="@locked"
+                                                               @oninput="e => { SetBurstRate(e); Committed(); }" />
+                                                        <input id="entry-burst-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.BurstsPerMinute"
+                                                               aria-label="Bursts per minute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
                                                     </div>
                                                 </div>
                                             }
                                             else
                                             {
-                                                <div class="field rate @(cfgErr!.Rate is null ? "" : "is-invalid")">
-                                                    <label for="entry-rate">Bees / min</label>
-                                                    <input id="entry-rate" type="number" min="0.1" step="any" value="@c.RatePerMinute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
+                                                <div class="field wide compact-slider @(cfgErr!.Rate is null ? "" : "is-invalid")">
+                                                    <label for="entry-rate-range">Bees / min</label>
+                                                    <div class="slider with-input">
+                                                        <input id="entry-rate-range" type="range" min="1" max="300" step="1" value="@Math.Clamp(c.RatePerMinute, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                               aria-label="Bees per minute slider" disabled="@locked"
+                                                               @oninput="e => { SetRate(e); Committed(); }" />
+                                                        <input id="entry-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.RatePerMinute"
+                                                               aria-label="Bees per minute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
+                                                    </div>
                                                 </div>
                                             }
-                                            <div class="field rate @(cfgErr!.MaxInFlight is null ? "" : "is-invalid")">
-                                                <label for="entry-max-inflight">Max in-flight</label>
-                                                <input id="entry-max-inflight" type="number" min="1" max="1000" step="1" value="@(c.MaxInFlight ?? plan.MaxConcurrency)" @oninput="SetMaxInFlight" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.MaxInFlight is not null)" />
+                                            @{ var maxInf = c.MaxInFlight ?? plan.MaxConcurrency; }
+                                            <div class="field wide compact-slider @(cfgErr!.MaxInFlight is null ? "" : "is-invalid")">
+                                                <label for="entry-max-inflight-range">Max in-flight</label>
+                                                <div class="slider with-input">
+                                                    <input id="entry-max-inflight-range" type="range" min="1" max="200" step="1" value="@Math.Clamp(maxInf, 1, 200)"
+                                                           aria-label="Max in-flight slider" disabled="@locked"
+                                                           @oninput="e => { SetMaxInFlight(e); Committed(); }" />
+                                                    <input id="entry-max-inflight" class="slider-num" type="number" inputmode="numeric" min="1" max="1000" step="1" value="@maxInf"
+                                                           aria-label="Max in-flight" @oninput="SetMaxInFlight" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.MaxInFlight is not null)" />
+                                                </div>
                                             </div>
                                         </div>
                                         @if (c.Pattern == SpawningPattern.Bursts && (cfgErr!.Burst is not null || cfgErr.BurstRate is not null))

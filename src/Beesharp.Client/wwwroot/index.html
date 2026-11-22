@@ -26,6 +26,54 @@
             <div class="boot-sub">Loading…</div>
         </div>
     </div>
+    <script>
+        (() => {
+            // 1. Blur text/number inputs when touching a range slider so the mobile keyboard stays closed.
+            document.addEventListener('pointerdown', e => {
+                if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'range') {
+                    const a = document.activeElement;
+                    if (a && a !== e.target && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) a.blur();
+                }
+            }, { passive: true, capture: true });
+
+            // 2. Prevent accidental slider changes when starting a vertical scroll on a range slider on touch devices.
+            let activeRange = null;
+            document.addEventListener('touchstart', e => {
+                const t = e.target;
+                if (!t || t.tagName !== 'INPUT' || t.type !== 'range' || e.touches.length !== 1) { activeRange = null; return; }
+                const touch = e.touches[0];
+                activeRange = { el: t, startVal: t.value, x: touch.clientX, y: touch.clientY, decided: false, scrolling: false };
+            }, { passive: true, capture: true });
+
+            document.addEventListener('touchmove', e => {
+                if (!activeRange || e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                const dx = Math.abs(touch.clientX - activeRange.x);
+                const dy = Math.abs(touch.clientY - activeRange.y);
+                if (!activeRange.decided && (dx > 6 || dy > 6)) {
+                    activeRange.decided = true;
+                    if (dy > dx) activeRange.scrolling = true;
+                }
+                if (activeRange.scrolling && activeRange.el.value !== activeRange.startVal) {
+                    activeRange.el.value = activeRange.startVal;
+                    activeRange.el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }, { passive: true, capture: true });
+
+            const finishTouch = () => {
+                if (!activeRange) return;
+                const r = activeRange;
+                activeRange = null;
+                if (r.scrolling && r.el.value !== r.startVal) {
+                    r.el.value = r.startVal;
+                    r.el.dispatchEvent(new Event('input', { bubbles: true }));
+                    r.el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            };
+            document.addEventListener('touchend', finishTouch, { passive: true, capture: true });
+            document.addEventListener('touchcancel', finishTouch, { passive: true, capture: true });
+        })();
+    </script>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 </body>
 
