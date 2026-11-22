@@ -75,3 +75,6 @@ Fake data and client only; status stays Proposed. Screenshots: `docs/screenshots
 - **UI:** `Chart/StepList.razor` (vertical stepper, calls folded by default), steps strip in the scenario popup (folded by default, opens with a filter; counts only when above 0; clicking filters the chart, list and live feed; chip in the side head), one quiet "Most failed at X (n)" line on the overview card, "Step N of M" for bees in flight.
 - **Repetitions (user feedback):** a step that runs several times shows once with a quiet "x5"; its repetitions fold out like its calls; "Step 3 of 5 - Open product (2 of 5)" for a bee in flight, "failed at Open product, 3rd time" for a failed one. The popup counts bees, not repetitions. **Repetitions are consecutive only in this draft**; whether a bee may loop back to an earlier step is an open question for the user. The repeat count (5) is a constant of the fake profile here (the real one would come from a scenario parameter).
 - Colour stays failed = red, slow = amber (a step with a slow call has an amber time), active = blue, done = neutral grey check.
+
+## Backend
+UI draft merged (PR #28). What the server still needs, and the decisions that come first: `docs/steps-backend.md` (Proposed).
