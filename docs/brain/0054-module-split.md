@@ -46,6 +46,8 @@ tests/                   one test project per project
 - **CI runner = a command-line tool**, a separate small program (no web server), e.g.
   `beesharp run --preset "Black Friday" --env Staging`: runs the preset, prints a summary, saves the run, and exits
   with an error code when bees failed.
+- **Exit code: any failed bee fails the pipeline** (canceled bees count as failed, 0053). Also an error code when
+  the run can't run (e.g. the preflight failed).
 - **Rename to Beesharp**: all namespaces become `Beesharp.*`; AGENTS.md and the docs describe the real folders.
   Existing user scripts with `using PerformanceTool...` keep working (compatibility) or need a one-line change.
 - **Drop SQLite storage**: keep DuckDB (default) and in-memory (tests, quick tries). Partly supersedes 0045
