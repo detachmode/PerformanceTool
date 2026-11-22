@@ -160,6 +160,15 @@
         </aside>
     }
 
+    @if (!DataMode.IsFakeMode && !ApiRun.IsServerReachable)
+    {
+        <div class="offline-banner" role="alert">
+            <span class="offline-dot" aria-hidden="true"></span>
+            <span>Server not reachable · reconnecting…</span>
+            <button type="button" class="btn ghost small" @onclick="ApiRun.RefreshAsync">Retry</button>
+        </div>
+    }
+
     <main class="main">@Body</main>
     <PlayerBar />
     <AssistantPanel />
@@ -214,7 +223,7 @@
         finally { runsLoading = false; }
     }
 
-    private string ModeBtnCss() => DataMode.IsFakeMode ? "fake" : ApiRun.IsViewingHistory ? "history" : "live";
+    private string ModeBtnCss() => DataMode.IsFakeMode ? "fake" : !ApiRun.IsServerReachable ? "offline" : ApiRun.IsViewingHistory ? "history" : "live";
 
     private string ModeBtnLabel(bool compact)
     {

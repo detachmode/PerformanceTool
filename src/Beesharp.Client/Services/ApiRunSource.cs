@@ -88,7 +88,15 @@ public sealed class ApiRunSource : IRunSource
     public DateTimeOffset CurrentStartedUtc => activeStartedUtc;
     public DateTimeOffset? ActiveStartedUtc => string.IsNullOrEmpty(activeRunId) ? null : activeStartedUtc;
     public bool IsViewingHistory { get; private set; }
+    public bool IsServerReachable { get; private set; } = true;
     public long TotalServerLogs { get; private set; }
+
+    private void SetReachable(bool ok)
+    {
+        if (IsServerReachable == ok) return;
+        IsServerReachable = ok;
+        Changed?.Invoke();
+    }
     public string StorageProvider { get; private set; } = "DuckDb";
     public string? PreflightState { get; private set; }
     public string? PreflightScriptName { get; private set; }
@@ -272,6 +280,7 @@ public sealed class ApiRunSource : IRunSource
                 try
                 {
                     var state = await http.GetFromJsonAsync<PlanStateDto>("api/plan", JsonOpts, ct);
+                    SetReachable(true);
                     if (state is not null)
                     {
                         if (Plan.Scenarios.Count == 0 || Fingerprint(Plan) == savedFingerprint) AdoptState(state, replacePlan: true);
@@ -280,7 +289,7 @@ public sealed class ApiRunSource : IRunSource
                     }
                 }
                 catch (OperationCanceledException) { return; }
-                catch { await Task.Delay(1500, ct); }
+                catch { SetReachable(false); await Task.Delay(1500, ct); }
             }
 
             while (!ct.IsCancellationRequested)
@@ -302,7 +311,7 @@ public sealed class ApiRunSource : IRunSource
                     }
                 }
                 catch (OperationCanceledException) { return; }
-                catch { /* offline or restarting: try again on the next tick */ }
+                catch { SetReachable(false); /* offline or restarting: try again on the next tick */ }
             }
         }
         catch (OperationCanceledException) { }
@@ -319,6 +328,7 @@ public sealed class ApiRunSource : IRunSource
     {
         var sent = Plan.Clone();
         var resp = await http.PutAsJsonAsync("api/plan", sent, JsonOpts, ct);
+        SetReachable(true);
         if (!resp.IsSuccessStatusCode) return;
         var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
         if (state is null) return;
@@ -330,6 +340,7 @@ public sealed class ApiRunSource : IRunSource
     private async Task PullPlanAsync(CancellationToken ct)
     {
         var resp = await http.GetAsync($"api/plan?knownVersion={serverVersion}", ct);
+        SetReachable(true);
         if (resp.StatusCode == System.Net.HttpStatusCode.NoContent || !resp.IsSuccessStatusCode) return;
         var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
         if (state is null || state.Version == serverVersion) return;
@@ -366,13 +377,14 @@ public sealed class ApiRunSource : IRunSource
         try
         {
             var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts);
+            SetReachable(true);
             if (dto is not null && dto.Plan.Scenarios.Count > 0)
             {
                 ApplyStatus(dto);
                 if (dto.State is "Running" or "Preflight") StartPolling();
             }
         }
-        catch { }
+        catch { SetReachable(false); }
     }
 
     public async Task<List<ClientLiveLogDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default, int? sequence = null, int? entry = null)

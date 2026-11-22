@@ -193,6 +193,11 @@ label { font-size: .72rem; color: var(--muted); }
 .mode-dot.fake { background: var(--accent); }
 .mode-btn.history { border-color: rgba(91, 155, 240, 0.45); color: #bfdbfe; background: rgba(91, 155, 240, 0.1); }
 .mode-btn.history i { background: var(--running); box-shadow: 0 0 6px var(--running); }
+.mode-btn.offline { border-color: rgba(240, 82, 82, 0.5); color: #fca5a5; background: rgba(240, 82, 82, 0.12); }
+.mode-btn.offline i { background: var(--failed); box-shadow: 0 0 6px var(--failed); }
+.offline-banner { position: fixed; top: var(--top-h); left: 0; right: 0; z-index: 68; display: flex; align-items: center; justify-content: center; gap: .6rem; padding: .42rem .9rem; background: rgba(69, 18, 22, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid rgba(240, 82, 82, 0.45); color: #fecaca; font-size: .82rem; font-weight: 500; }
+.offline-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 8px var(--failed); flex: none; }
+.shell:has(.offline-banner) .main { padding-top: calc(var(--top-h) + 3.2rem); }
 .mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
 .bento-pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: .16rem .68rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--muted); }
 .bento-pill.bad { color: #f87171; border-color: rgba(240, 82, 82, 0.42); background: rgba(240, 82, 82, 0.08); }
