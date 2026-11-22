@@ -419,6 +419,7 @@
                     </div>
                     @if (!showWaterfall)
                     {
+                        <CopyButton GetText="@(() => FormatRunningLogsText())" Disabled="@(runningLogs.Count == 0)" />
                         <WrapToggleButton @bind-Wrapped="beeLogWrap" />
                     }
                     <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Full logs</button>
@@ -489,6 +490,7 @@
                         </div>
                         @if (!showWaterfall)
                         {
+                            <CopyButton GetText="@(() => FormatBeeLogsText(detail.Logs))" Disabled="@(detail.Logs.Count == 0)" />
                             <WrapToggleButton @bind-Wrapped="beeLogWrap" />
                         }
                     }
@@ -657,6 +659,19 @@
     {
         var s = Math.Max(0, (int)Math.Floor(sec));
         return s < 60 ? $"{s}s" : $"{s / 60}m";
+    }
+
+    private string FormatRunningLogsText() =>
+        string.Join("\n", runningLogs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception)));
+
+    private static string FormatBeeLogsText(IReadOnlyList<FakeLogEntry> logs) =>
+        string.Join("\n", logs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception)));
+
+    private static string FormatPlainLog(DateTimeOffset ts, string level, string message, string? exception)
+    {
+        var tag = level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        var body = string.IsNullOrEmpty(exception) ? message : $"{message}\n{exception}";
+        return $"[{ts.ToLocalTime():HH:mm:ss.fff} {tag}] {body}";
     }
 
     private static string Pc(double v) => v == 0 ? "0%" : v < 10 ? v.ToString("0.0", CultureInfo.InvariantCulture) + "%" : v.ToString("0", CultureInfo.InvariantCulture) + "%";

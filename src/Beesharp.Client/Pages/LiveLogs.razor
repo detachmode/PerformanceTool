@@ -21,6 +21,7 @@
         <input class="sl-search" type="search" placeholder="Filter…" value="@search" @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
         <span class="spacer"></span>
         <span class="muted mono" style="font-size:.74rem">@VisibleCount</span>
+        <CopyButton GetText="@CopyVisibleLogs" Disabled="@(VisibleCount == 0)" />
         <WrapToggleButton @bind-Wrapped="wrap" />
         <button type="button" class="btn ghost small" @onclick="Clear">Clear</button>
     </div>
@@ -143,6 +144,14 @@
     }
 
     private void Clear() => lines.Clear();
+
+    private string CopyVisibleLogs() => string.Join("\n", VisibleLines().Select(l =>
+    {
+        var tag = l.Level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        var bee = string.IsNullOrEmpty(l.BeeName) ? "" : $"[{l.BeeName}] ";
+        var body = string.IsNullOrEmpty(l.Exception) ? l.Message : $"{l.Message}\n{l.Exception}";
+        return $"[{l.Timestamp.ToLocalTime():HH:mm:ss.fff} {tag}] {bee}{body}";
+    }));
 
     private void OnSimChanged()
     {

@@ -904,6 +904,7 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .script-diag-dock { flex: none; max-height: 150px; overflow-y: auto; border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; }
 .script-try-body { display: flex; flex-direction: column; gap: .8rem; }
 .btn.wrap-on { border-color: var(--accent2); color: var(--title); background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); }
+.btn.copy-ok { border-color: var(--good); color: var(--good); background: rgba(52, 211, 153, 0.12); }
 .btn.icon-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; flex: none; }
 
 .cs-ed { display: flex; position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }

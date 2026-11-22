@@ -437,6 +437,7 @@
                 <span class="pf-badge @(pfFailed ? "bad" : "run")">@(pfFailed ? "Preflight failed" : "Running preflight…")</span>
                 <b class="mono">@(ApiRun.PreflightScriptName ?? plan.PreflightScriptId ?? "preflight.cs")</b>
                 <span class="spacer"></span>
+                <CopyButton GetText="@(() => string.Join("\n", ApiRun.PreflightLogs))" Disabled="@(ApiRun.PreflightLogs.Count == 0)" />
                 <WrapToggleButton @bind-Wrapped="preflightWrap" />
                 @if (pfFailed)
                 {

@@ -1,15 +1,18 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using PerformanceTool.Services.Scenarios;
 
 namespace PerformanceTool.Services;
 
 /// <summary>
 /// Formats an exception thrown by a scenario or preflight script so the stack trace only shows frames
-/// from that scenario's own assembly (custom script or DLL), hiding Beesharp runner and runtime plumbing.
+/// from that scenario's own custom code (Roslyn script or scenario DLL), hiding Beesharp host/runner plumbing.
 /// </summary>
 public static class ScenarioExceptionFormatter
 {
+    private static readonly Assembly CoreAssembly = typeof(IScenario).Assembly;
+
     public static string Format(Exception ex, Assembly? scenarioAssembly)
     {
         var sb = new StringBuilder();
@@ -50,41 +53,73 @@ public static class ScenarioExceptionFormatter
         var all = st.GetFrames();
         var filtered = new List<string>();
 
-        if (scenarioAssembly is not null)
+        // 1. If the scenario lives in its own external DLL (not Beesharp.Core's DelegateScenario wrapper),
+        //    match only frames from that DLL (excluding any Beesharp host types).
+        var isDelegateWrapper = scenarioAssembly is null || scenarioAssembly == CoreAssembly;
+        if (!isDelegateWrapper)
         {
             foreach (var f in all)
             {
                 var m = f.GetMethod();
-                var asm = m?.DeclaringType?.Assembly;
-                if (asm == scenarioAssembly)
-                    filtered.Add(FormatFrame(f, m!));
+                if (m is null || IsHostOrPlumbing(m)) continue;
+                if (m.DeclaringType?.Assembly == scenarioAssembly)
+                    filtered.Add(FormatFrame(f, m));
+            }
+        }
+        else
+        {
+            // Roslyn script: match frames from dynamically compiled script assemblies (Submission#* / ℛ* / custom script types)
+            foreach (var f in all)
+            {
+                var m = f.GetMethod();
+                if (m is null || IsHostOrPlumbing(m)) continue;
+                var asm = m.DeclaringType?.Assembly;
+                if (asm is null) continue;
+                var asmName = asm.GetName().Name ?? "";
+                var typeName = m.DeclaringType?.FullName ?? "";
+                if (asm.IsDynamic
+                    || asmName.StartsWith("ℛ", StringComparison.Ordinal)
+                    || typeName.StartsWith("Submission#", StringComparison.Ordinal)
+                    || (!asmName.StartsWith("System", StringComparison.Ordinal)
+                        && !asmName.StartsWith("Microsoft", StringComparison.Ordinal)
+                        && !asmName.StartsWith("Beesharp", StringComparison.Ordinal)
+                        && !asmName.StartsWith("PerformanceTool", StringComparison.Ordinal)))
+                {
+                    filtered.Add(FormatFrame(f, m));
+                }
             }
         }
 
         if (filtered.Count > 0)
             return filtered;
 
-        // Fallback if the exception originated inside a BCL call without user frames on this exception:
-        // exclude Beesharp host/runner plumbing and async state-machine internals.
+        // 2. Fallback: exclude Beesharp host/runner plumbing and async runtime internals.
         foreach (var f in all)
         {
             var m = f.GetMethod();
-            var ns = m?.DeclaringType?.Namespace ?? "";
-            var full = m?.DeclaringType?.FullName ?? "";
-            if (full.StartsWith("PerformanceTool.Services.LoadRunner", StringComparison.Ordinal)
-                || full.StartsWith("PerformanceTool.Services.ScriptScenarioStore", StringComparison.Ordinal)
-                || full.StartsWith("PerformanceTool.Services.PreflightStore", StringComparison.Ordinal)
-                || full.StartsWith("PerformanceTool.Services.Scenarios.Scenario`", StringComparison.Ordinal)
-                || ns.StartsWith("System.Runtime.CompilerServices", StringComparison.Ordinal)
-                || ns.StartsWith("System.Runtime.ExceptionServices", StringComparison.Ordinal)
-                || ns.StartsWith("System.Threading.Tasks", StringComparison.Ordinal))
-                continue;
-
-            if (m is not null)
-                filtered.Add(FormatFrame(f, m));
+            if (m is null || IsHostOrPlumbing(m)) continue;
+            filtered.Add(FormatFrame(f, m));
         }
 
         return filtered;
+    }
+
+    private static bool IsHostOrPlumbing(MethodBase method)
+    {
+        var ns = method.DeclaringType?.Namespace ?? "";
+        var full = method.DeclaringType?.FullName ?? "";
+        var asmName = method.DeclaringType?.Assembly.GetName().Name ?? "";
+
+        if (full.StartsWith("PerformanceTool.Services.", StringComparison.Ordinal)
+            || full.StartsWith("PerformanceTool.Client.", StringComparison.Ordinal)
+            || asmName.Equals("Beesharp", StringComparison.Ordinal)
+            || asmName.Equals("Beesharp.Core", StringComparison.Ordinal)
+            || ns.StartsWith("System.Runtime.CompilerServices", StringComparison.Ordinal)
+            || ns.StartsWith("System.Runtime.ExceptionServices", StringComparison.Ordinal)
+            || ns.StartsWith("System.Threading.Tasks", StringComparison.Ordinal))
+            return true;
+
+        return false;
     }
 
     private static string FormatFrame(StackFrame frame, MethodBase method)
@@ -103,6 +138,12 @@ public static class ScenarioExceptionFormatter
                 methodName = type.Name[1..close];
             }
         }
+
+        // Clean up Roslyn Submission#0 wrapper prefix
+        if (typeName.StartsWith("Submission#0+", StringComparison.Ordinal))
+            typeName = typeName["Submission#0+".Length..];
+        else if (typeName == "Submission#0")
+            typeName = "Script";
 
         var sb = new StringBuilder();
         if (typeName.Length > 0)
