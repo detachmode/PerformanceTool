@@ -241,11 +241,11 @@ export function attach(el, ref, options) {
     // ---- hover card: dot, #id, duration, secondary line; tail points at the bar. Built once, filled per hovered bar.
     let card = null, cardKey = '';
     if (tip) {
-        card = { dot: mk('dz-dot', 'i'), id: mk('dz-id', 'b'), meta: mk('dz-meta'), sub: mk('dz-sub'), counts: mk('dz-counts') };
+        card = { dot: mk('dz-dot', 'i'), id: mk('dz-id', 'b'), meta: mk('dz-meta'), sub: mk('dz-sub'), err: mk('dz-err'), counts: mk('dz-counts') };
         card.cnt = ['bad', 'warn', 'good', 'run'].map(c => { const e = mk(c); e.append(mk('', 'i'), mk('', 'b'), mk('', 'em')); card.counts.append(e); return e; });
         card.cnt[0].lastChild.textContent = ' failed'; card.cnt[1].lastChild.textContent = ' slow'; card.cnt[2].lastChild.textContent = ' ok'; card.cnt[3].lastChild.textContent = ' running';
         const row = mk('dz-row'); row.append(card.dot, card.id, card.meta);
-        const body = mk('dz-body'); body.append(row, card.sub, card.counts);
+        const body = mk('dz-body'); body.append(row, card.sub, card.err, card.counts);
         tip.replaceChildren(body, mk('dz-tail'));
     }
     // ---- neighbour labels (pooled, fixed slots) and axis parts
@@ -452,7 +452,7 @@ export function attach(el, ref, options) {
         if (!it || !d.l1) return null;
         const bar = it.querySelector('.bar-stack, .bar');
         if (!bar) return null;
-        const key = [d.l1, d.l2, d.l3, d.s, d.bad, d.slow, d.ok, d.runn].join('|');
+        const key = [d.l1, d.l2, d.l3, d.err, d.s, d.bad, d.slow, d.ok, d.runn].join('|');
         if (key !== cardKey) {
             cardKey = key;
             const bk = d.bucket !== undefined;
@@ -465,6 +465,7 @@ export function attach(el, ref, options) {
                 e.style.display = k === 3 && n === 0 ? 'none' : '';
             });
             card.sub.textContent = d.l3 || ''; card.sub.style.display = d.l3 ? '' : 'none';
+            card.err.textContent = d.err || ''; card.err.style.display = d.err ? '' : 'none';
         }
         const br = bar.getBoundingClientRect(), er = el.getBoundingClientRect(), sc = el.parentElement;
         const vis = sc && sc.scrollWidth > sc.clientWidth ? [sc.scrollLeft, sc.scrollLeft + sc.clientWidth] : [0, el.clientWidth];

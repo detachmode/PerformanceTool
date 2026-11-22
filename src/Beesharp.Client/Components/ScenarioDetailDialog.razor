@@ -67,6 +67,17 @@
     var ovMarks = OverviewMarks(bees, view.Finished, s.Elapsed);
     unfoldedSlots = burstSpans.Count == 0 ? [] : burstSpans.ToDictionary(b => b.Slot, b => b.GroupSize);
     var bucketed = width > 0;
+    Dictionary<int, string>? failedErrors = null;
+    if (view.Failed > 0)
+    {
+        for (var i = 0; i < view.Finished; i++)
+        {
+            var fb = bees[i];
+            if (!fb.Failed) continue;
+            var msg = LastErrorOf(fb, s.Store.Detail(fb.Sequence));
+            if (msg is not null) (failedErrors ??= [])[fb.Sequence] = msg;
+        }
+    }
     var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
     var stats = StatsFor(bees, view.Finished, from, to);
@@ -165,7 +176,7 @@
                         {
                             var on = bar.IsBurstGroup ? groupSel is { } gsel && gsel.Slot == bar.Slot && gsel.Lo == bar.GroupLo && gsel.Hi == bar.GroupHi : bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
                             var key = bar.IsBurstGroup ? $"g{T(bar.Slot)}:{bar.GroupLo}:{bar.GroupHi}" : bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningBee ? "r" : "a") + bar.Sequence;
-                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-k="@(bar.InBurst ? K(bar.Cover) : null)" style="@(bar.InBurst ? "--k:" + K(bar.Cover) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? BeeBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningBee ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-k="@(bar.InBurst ? K(bar.Cover) : null)" style="@(bar.InBurst ? "--k:" + K(bar.Cover) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-err="@(!bar.IsBucket && bar.Failed > 0 && failedErrors is not null && failedErrors.TryGetValue(bar.Sequence, out var berr) ? berr : null)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? BeeBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningBee ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
                                 @if (bar.IsRunningBee)
                                 {
                                     <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
@@ -739,6 +750,40 @@
         else if (Format.OverTypical(b.Ratio)) text += $", the slowest {Format.Times(b.Ratio)} typical";
         if (b.Running > 0) text += $", {b.Running} running";
         return text;
+    }
+
+    private static string? LastErrorOf(BeeRecord bee, BeeDetail? detail)
+    {
+        string? raw = null;
+        if (detail is not null)
+        {
+            for (var i = detail.Logs.Count - 1; i >= 0; i--)
+            {
+                var log = detail.Logs[i];
+                if (log.Level is "Error" or "Critical" or "Fatal")
+                {
+                    raw = !string.IsNullOrWhiteSpace(log.Message) ? log.Message : log.Exception;
+                    if (!string.IsNullOrWhiteSpace(raw)) break;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                for (var i = detail.Calls.Count - 1; i >= 0; i--)
+                {
+                    if (!string.IsNullOrWhiteSpace(detail.Calls[i].Error))
+                    {
+                        raw = detail.Calls[i].Error;
+                        break;
+                    }
+                }
+            }
+        }
+        if (string.IsNullOrWhiteSpace(raw)) raw = bee.Error;
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var line = raw.Trim();
+        var nl = line.IndexOfAny(['\r', '\n']);
+        if (nl >= 0) line = line[..nl].Trim();
+        return line.Length > 84 ? line[..83] + "…" : line;
     }
 
     private static string CallStatus(FakeCall c) =>

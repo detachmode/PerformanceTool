@@ -247,6 +247,7 @@ label { font-size: .72rem; color: var(--muted); }
 .dz-id { font-family: var(--mono); font-size: .82rem; font-weight: 700; color: var(--title); letter-spacing: .01em; }
 .dz-meta { margin-left: auto; padding-left: .5rem; font-family: var(--mono); font-size: .74rem; color: var(--text); }
 .dz-sub { display: block; margin-top: .08rem; font-size: .68rem; color: var(--muted); line-height: 1.2; }
+.dz-err { display: block; margin-top: .16rem; font-family: var(--mono); font-size: .67rem; color: #fca5a5; line-height: 1.25; max-width: 270px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dz-tail { position: absolute; top: 100%; left: var(--tx, 50%); width: 9px; height: 9px; margin: -5px 0 0 -4.5px; transform: rotate(45deg); background: #14110d; border-right: 1px solid #3d3529; border-bottom: 1px solid #3d3529; }
 .dz-label.inside .dz-tail { display: none; }
 .dz-label.inside .dz-body { background: #14110dd8; }
