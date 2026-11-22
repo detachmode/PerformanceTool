@@ -149,8 +149,8 @@ app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) 
     storage.ListRunsAsync(limit ?? 50, ct));
 app.MapGet("/api/runs/current", (int? afterSeq, int? maxBees, RunManager runs) =>
     runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000));
-app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, RunManager runs) =>
-    runs.GetLiveLogs(afterId ?? 0, limit ?? 500));
+app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, int? sequence, RunManager runs) =>
+    runs.GetLiveLogs(afterId ?? 0, limit ?? 500, sequence));
 app.MapPlanEndpoints();
 app.MapPost("/api/runs/start", async (StartRunRequest? body, RunManager runs, PlanWorkspace workspace, CancellationToken ct) =>
 {

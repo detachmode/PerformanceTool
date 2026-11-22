@@ -33,16 +33,18 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             throw new InvalidOperationException(
                 $"{(env.Name.Length == 0 ? "No environment is active" : $"Environment '{env.Name}' has no value")} for: {string.Join(", ", unknown.Select(k => "{{" + k + "}}"))}.");
 
+        var entryLimits = plan.Scenarios.Select(e => Math.Max(1, e.MaxInFlight ?? plan.MaxConcurrency)).ToArray();
+        var maxConnections = Math.Clamp(Math.Max(plan.MaxConcurrency, entryLimits.Sum()), 1, 2000);
         using var handler = new SocketsHttpHandler
         {
-            MaxConnectionsPerServer = plan.MaxConcurrency,
+            MaxConnectionsPerServer = maxConnections,
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
         };
         // Per-execution timeouts are enforced with a CancellationToken so multi-step scenarios are bounded as a whole.
         using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
-        using var gate = new SemaphoreSlim(plan.MaxConcurrency, plan.MaxConcurrency);
+        var entryGates = entryLimits.Select(limit => new SemaphoreSlim(limit, limit)).ToArray();
         var inFlight = new List<Task>();
         var inFlightByEntry = new int[plan.Scenarios.Count]; // executions running right now, per entry (brain 0008)
         var inFlightTotal = 0;
@@ -104,6 +106,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                         catch (OperationCanceledException) { return; }
                     }
 
+                    var gate = entryGates[entry];
                     for (var k = 0; k < perTick; k++)
                     {
                         if (!gate.Wait(0))
@@ -225,6 +228,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             for (var i = 0; i < backgrounds.Length; i++)
                 if (backgrounds[i] is { } bg && !startedEntries.Contains(i))
                     await bg.DisposeAsync();
+            foreach (var g in entryGates) g.Dispose();
         }
     }
 }

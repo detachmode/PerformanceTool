@@ -163,7 +163,11 @@ label { font-size: .72rem; color: var(--muted); }
 .spark i.bad, .bar.bad, .call.bad i { background: var(--failed); opacity: 1; }
 .spark i.warn, .bar.warn, .call.warn i { background: var(--slow); opacity: 1; }
 .spark em { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: .75rem; font-style: normal; }
-.bento-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.5rem; }
+.bento-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.5rem; padding: .15rem .2rem 0; }
+.mode-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mode-dot.live { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.mode-dot.fake { background: var(--accent); }
+.mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
 .bento-pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: .16rem .68rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--muted); }
 .bento-pill.bad { color: #f87171; border-color: rgba(240, 82, 82, 0.42); background: rgba(240, 82, 82, 0.08); }
 .bento-pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.42); background: rgba(251, 191, 36, 0.08); }
@@ -980,6 +984,8 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .shell.asst-open .top, .shell.asst-open .player { right: 0; }
     .shell.asst-open .drawer-backdrop { z-index: 134; }
     .shell.asst-open .top-drawer { z-index: 135; }
+    .shell.asst-open .dd-backdrop { z-index: 136; }
+    .shell.asst-open .dd-menu { z-index: 137; }
     .shell.asst-open .overlay, .shell.asst-open ~ .overlay { z-index: 130; padding-bottom: 0; }
     .shell.asst-open .overlay.logs, .shell.asst-open ~ .overlay.logs { z-index: 140; padding-bottom: 0; }
 }

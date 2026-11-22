@@ -166,14 +166,14 @@ public sealed class FakeRunSource : IRunSource
 
     public bool IsEntryChanged(ScenarioRunConfig entry) => !savedEntries.Contains(EntryFingerprint(entry));
 
-    private static string EntryFingerprint(ScenarioRunConfig s) => $"{s.ScenarioId}|{s.Label}|{s.RatePerMinute}|{s.Pattern}|{s.BeesPerBurst}|{s.BurstsPerMinute}|{s.Parameters.ToJsonString()}";
+    private static string EntryFingerprint(ScenarioRunConfig s) => $"{s.ScenarioId}|{s.Label}|{s.RatePerMinute}|{s.Pattern}|{s.BeesPerBurst}|{s.BurstsPerMinute}|{s.MaxInFlight}|{s.Parameters.ToJsonString()}";
 
     /// <summary>A string that changes whenever anything the editor can change changes.</summary>
     private static string Fingerprint(LoadPlan plan)
     {
         var sb = new StringBuilder().Append(plan.DurationSeconds).Append('|').Append(plan.MaxConcurrency).Append('|').Append(plan.TimeoutSeconds);
         foreach (var s in plan.Scenarios)
-            sb.Append('\n').Append(s.ScenarioId).Append('|').Append(s.Label).Append('|').Append(s.RatePerMinute).Append('|').Append(s.Pattern).Append('|').Append(s.BeesPerBurst).Append('|').Append(s.BurstsPerMinute).Append('|').Append(s.Parameters.ToJsonString());
+            sb.Append('\n').Append(s.ScenarioId).Append('|').Append(s.Label).Append('|').Append(s.RatePerMinute).Append('|').Append(s.Pattern).Append('|').Append(s.BeesPerBurst).Append('|').Append(s.BurstsPerMinute).Append('|').Append(s.MaxInFlight).Append('|').Append(s.Parameters.ToJsonString());
         return sb.ToString();
     }
 
@@ -298,7 +298,8 @@ public sealed class FakeRunSource : IRunSource
 
     private void Fire(int entry, double at)
     {
-        if (inFlight.Sum() >= runPlan.MaxConcurrency) return;
+        var limit = runPlan.Scenarios[entry].MaxInFlight ?? runPlan.MaxConcurrency;
+        if (inFlight[entry] >= limit) return;
         var profile = runProfiles[entry];
 
         // Decide the shape of the story first: how many calls it has, whether (and where) it fails, which call is slow.

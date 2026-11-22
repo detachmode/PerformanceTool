@@ -6,6 +6,8 @@
 @inject EnvironmentsPopupState EnvPopup
 @inject CustomScriptsPopupState ScriptsPopup
 @inject DataModeState DataMode
+@inject ApiRunSource ApiRun
+@inject IRunSource Sim
 @inject IEnvironmentSource Envs
 @inject ScriptApiClient ScriptApi
 @inject NavigationManager Nav
@@ -42,11 +44,12 @@
         </nav>
 
         <div class="top-desktop">
-            <button type="button" class="mode-btn @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="DataMode.Toggle"
-                    aria-pressed="@Aria.Bool(DataMode.IsFakeMode)"
-                    title="@(DataMode.IsFakeMode ? "Fake mode (in-browser simulation). Click to switch to Live server mode." : "Live mode (real server API & runner). Click to switch to Fake mode.")">
+            <button type="button" class="mode-btn @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="ToggleModeMenuAsync"
+                    aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
+                    title="Switch Live/Fake mode or load a stored run">
                 <i aria-hidden="true"></i>
-                <span>@(DataMode.IsFakeMode ? "Fake mode" : "Live mode")</span>
+                <span>@(DataMode.IsFakeMode ? "Fake" : "Live")</span>
+                <span class="caret" aria-hidden="true">▾</span>
             </button>
             <EnvironmentPicker />
             <BuildStamp />
@@ -58,11 +61,12 @@
         </div>
 
         <div class="top-mobile">
-            <button type="button" class="mode-btn compact @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="DataMode.Toggle"
-                    aria-pressed="@Aria.Bool(DataMode.IsFakeMode)"
-                    title="@(DataMode.IsFakeMode ? "Fake mode. Tap for Live mode." : "Live mode. Tap for Fake mode.")">
+            <button type="button" class="mode-btn compact @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="ToggleModeMenuAsync"
+                    aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
+                    title="Switch Live/Fake mode or load a stored run">
                 <i aria-hidden="true"></i>
                 <span>@(DataMode.IsFakeMode ? "Fake" : "Live")</span>
+                <span class="caret" aria-hidden="true">▾</span>
             </button>
             @if (Asst.Available)
             {
@@ -81,6 +85,51 @@
             </button>
         </div>
     </header>
+
+    @if (modeMenuOpen)
+    {
+        <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
+        <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">
+            <div class="dd-lbl">Data mode</div>
+            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
+                <span class="mode-dot live" aria-hidden="true"></span>
+                <span>@(!DataMode.IsFakeMode ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
+            </button>
+            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
+                <span class="mode-dot fake" aria-hidden="true"></span>
+                <span>@(DataMode.IsFakeMode ? "✓ " : "")<b>Fake mode</b> <span class="muted">· simulation</span></span>
+            </button>
+            @if (!DataMode.IsFakeMode)
+            {
+                <div class="dd-sep" role="separator"></div>
+                <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
+                @if (Sim.IsRunning)
+                {
+                    <div class="muted" style="padding:.4rem .55rem">Stop the active run to open a past run.</div>
+                }
+                else if (runsLoading)
+                {
+                    <div class="muted" style="padding:.4rem .55rem">Loading…</div>
+                }
+                else if (storedRuns.Count == 0)
+                {
+                    <div class="muted" style="padding:.4rem .55rem">No stored runs yet.</div>
+                }
+                else
+                {
+                    @foreach (var r in storedRuns)
+                    {
+                        var item = r;
+                        var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickRunAsync(item.RunId)" style="flex-direction:column;align-items:flex-start;gap:.1rem">
+                            <span>@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
+                            <span class="muted" style="font-size:.74rem">@Format.Num(item.TotalBees) bees · @(item.FailedBees > 0 ? $"{item.FailedBees} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
+                        </button>
+                    }
+                }
+            }
+        </div>
+    }
 
     @if (menuOpen)
     {
@@ -150,6 +199,34 @@
 
 @code {
     private bool menuOpen;
+    private bool modeMenuOpen;
+    private bool runsLoading;
+    private List<ServerRunSummaryDto> storedRuns = [];
+
+    private async Task ToggleModeMenuAsync()
+    {
+        menuOpen = false;
+        modeMenuOpen = !modeMenuOpen;
+        if (!modeMenuOpen || DataMode.IsFakeMode || Sim.IsRunning) return;
+        runsLoading = true;
+        try { storedRuns = await ApiRun.ListRunsAsync(30); }
+        finally { runsLoading = false; }
+    }
+
+    private async Task SetModeAsync(bool fake)
+    {
+        if (DataMode.IsFakeMode != fake) DataMode.Toggle();
+        modeMenuOpen = false;
+        if (!fake && !Sim.IsRunning)
+            storedRuns = await ApiRun.ListRunsAsync(30);
+    }
+
+    private async Task PickRunAsync(string runId)
+    {
+        modeMenuOpen = false;
+        await Asst.CloseIfMobileAsync();
+        await ApiRun.LoadStoredRunAsync(runId);
+    }
 
     protected override void OnInitialized()
     {
@@ -172,8 +249,8 @@
         }
     }
 
-    private void CloseMenu() => menuOpen = false;
-    private async Task CloseNavAsync() { menuOpen = false; await Asst.CloseIfMobileAsync(); }
+    private void CloseMenu() { menuOpen = false; modeMenuOpen = false; }
+    private async Task CloseNavAsync() { menuOpen = false; modeMenuOpen = false; await Asst.CloseIfMobileAsync(); }
     private void OpenEnvsFromMenu() { menuOpen = false; EnvPopup.Show(); }
     private async Task OpenScriptsFromMenu() { menuOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("editor"); }
     private void OpenSettingsFromMenu() { menuOpen = false; Settings.Open(); }

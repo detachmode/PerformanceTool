@@ -55,6 +55,8 @@ public sealed class LoadPlan
             }
             else if (entry.RatePerMinute is <= 0 or > MaxRatePerMinute || double.IsNaN(entry.RatePerMinute))
                 errors.Add($"{label}: bees per minute must be between 0 and {MaxRatePerMinute:N0}.");
+            if (entry.MaxInFlight is < 1 or > 1000)
+                errors.Add($"{label}: max in-flight must be between 1 and 1000.");
             foreach (var err in scenario.Spec.Validate(entry.Parameters))
                 errors.Add($"{label}: {err}");
         }
@@ -83,6 +85,8 @@ public sealed class ScenarioRunConfig
     public int BeesPerBurst { get; set; } = 10;
     /// <summary>Bursts only: how many bursts per minute.</summary>
     public double BurstsPerMinute { get; set; } = 4;
+    /// <summary>Maximum concurrent bees allowed in flight for this scenario (null = fall back to plan default).</summary>
+    public int? MaxInFlight { get; set; }
 
     /// <summary>Bees per minute the entry aims at: <see cref="RatePerMinute"/> for linear, bees per burst × bursts per minute for bursts.</summary>
     public double EffectiveRatePerMinute() => Pattern == SpawningPattern.Bursts ? BeesPerBurst * BurstsPerMinute : RatePerMinute;
@@ -97,6 +101,7 @@ public sealed class ScenarioRunConfig
         Pattern = Pattern,
         BeesPerBurst = BeesPerBurst,
         BurstsPerMinute = BurstsPerMinute,
+        MaxInFlight = MaxInFlight,
         Parameters = (JsonObject)Parameters.DeepClone(),
     };
 

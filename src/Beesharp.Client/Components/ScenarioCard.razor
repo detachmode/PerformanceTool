@@ -57,8 +57,8 @@
                 <small class="bento-lbl">bees<br />flying</small>
             </span>
             <span class="bento-cell bento-kpi-right">
-                <b class="bento-num">@Format.Rate(actual)</b>
-                <small class="bento-lbl mono-sub">/ @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
+                <b class="bento-num">@Format.Num(View.Finished)</b>
+                <small class="bento-lbl mono-sub">finished · @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
             </span>
         </span>
 
@@ -76,44 +76,31 @@
         }
     }
 
-    <span class="bento-cell bento-spark-cell">
-        <DockZoom Tag="span" Magnify="false" class="spark" aria-hidden="true" data-elapsed="@((Elapsed * 1000).ToString("0", CultureInfo.InvariantCulture))" data-scale="@max.ToString("0", CultureInfo.InvariantCulture)">
-            @foreach (var a in recent)
+    @if (!Idle || Edited)
+    {
+        <span class="bento-foot">
+            @if (reason.Length > 0)
             {
-                <i class="@(a.Failed ? "bad" : BeeOrder.Good(a.Tint))" style="height:@(Pct(a.DurationMs / max))%"></i>
+                <span class="bento-pill @(View.Failed > 0 ? "bad" : "warn")">@reason</span>
             }
-            @foreach (var r in runNow)
+            else if (Edited)
             {
-                <i class="run" data-start="@((r.StartedAt * 1000).ToString("0", CultureInfo.InvariantCulture))"></i>
+                <span class="bento-pill edited">Changed</span>
             }
-            @if (recent.Length == 0 && runNow.Count == 0) { <em>@(Idle ? "Not run yet" : "No bees started yet")</em> }
-        </DockZoom>
-        @if (!Idle || Edited)
-        {
-            <span class="bento-foot">
-                @if (reason.Length > 0)
-                {
-                    <span class="bento-pill @(View.Failed > 0 ? "bad" : "warn")">@reason</span>
-                }
-                else if (Edited)
-                {
-                    <span class="bento-pill edited">Changed</span>
-                }
-                else if (View.Finished > 0)
-                {
-                    <span class="bento-pill ok">0 errors</span>
-                }
-                else
-                {
-                    <span></span>
-                }
-                @if (!Idle && View.Finished > 0)
-                {
-                    <span class="bento-meta">@Format.Num(View.Finished) finished</span>
-                }
-            </span>
-        }
-    </span>
+            else if (View.Finished > 0)
+            {
+                <span class="bento-pill ok">0 errors</span>
+            }
+            else
+            {
+                <span></span>
+            }
+            @if (!Idle && actual > 0)
+            {
+                <span class="bento-meta">@Format.Rate(actual) @Terms.PerMinuteShort</span>
+            }
+        </span>
+    }
 </button>
 
 @code {

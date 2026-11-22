@@ -8,6 +8,7 @@
 @inject CustomScriptsPopupState ScriptsPopup
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
+@inject IJSRuntime JS
 
 @{
     var s = Snapshot;
@@ -222,23 +223,54 @@
                     <span class="state run">Flying</span>
                     <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
-                    <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Open logs for this bee</button>
-                    <button class="icon-btn" @onclick="() => selRunning = null" aria-label="Deselect bee">✕</button>
-                </div>
-                <ol class="calls" aria-label="Calls of @ra.Name so far">
-                    @foreach (var call in ra.Calls.Where(c => !c.Skipped && c.OffsetMs <= elapsedMs))
+                    <div class="seg" role="group" aria-label="Running bee inspection view">
+                        <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@runningLogs.Count)</button>
+                        <button type="button" class="@(showWaterfall ? "on" : "")" @onclick="() => showWaterfall = true">Waterfall (@ra.Calls.Count)</button>
+                    </div>
+                    @if (!showWaterfall)
                     {
-                        var done = call.OffsetMs + call.DurationMs <= elapsedMs;
-                        var cls = !done ? "run" : call.Failed ? "bad" : "good";
-                        var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
-                        <li class="call @cls">
-                            <span class="call-name" title="@call.Name">@call.Name</span>
-                            <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
-                            <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
-                            <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? "timeout") : call.Status?.ToString() ?? "")</span>
-                        </li>
+                        <WrapToggleButton @bind-Wrapped="beeLogWrap" />
                     }
-                </ol>
+                    <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Full logs</button>
+                    <button class="icon-btn" @onclick="() => { selRunning = null; SyncRunningLogPoll(); }" aria-label="Deselect bee">✕</button>
+                </div>
+                @if (!showWaterfall)
+                {
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" @ref="runningLogEl" role="log" aria-live="polite" aria-label="Live logs of @ra.Name">
+                        @if (DataMode.IsFakeMode)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">Live streaming logs are shown in Live mode.</div>
+                        }
+                        else if (runningLogs.Count == 0)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">Waiting for logs from @ra.Name…</div>
+                        }
+                        else
+                        {
+                            @foreach (var log in runningLogs)
+                            {
+                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                            }
+                        }
+                    </div>
+                }
+                else
+                {
+                    <ol class="calls" aria-label="Calls of @ra.Name so far">
+                        @foreach (var call in ra.Calls.Where(c => !c.Skipped && c.OffsetMs <= elapsedMs))
+                        {
+                            var done = call.OffsetMs + call.DurationMs <= elapsedMs;
+                            var cls = !done ? "run" : call.Failed ? "bad" : "good";
+                            var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
+                            <li class="call @cls">
+                                <span class="call-name" title="@call.Name">@call.Name</span>
+                                <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
+                                <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
+                                <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? "timeout") : call.Status?.ToString() ?? "")</span>
+                            </li>
+                        }
+                    </ol>
+                }
             </section>
         }
 
@@ -383,6 +415,15 @@
     private int? selRunning;
     private bool showWaterfall;
     private bool beeLogWrap = true;
+    private ElementReference runningLogEl;
+    private readonly List<ClientLiveLogDto> runningLogs = [];
+    private int? runningLogSeq;
+    private long runningLogAfterId;
+    private CancellationTokenSource? runningLogCts;
+    private IJSObjectReference? logScrollMod;
+    private IJSObjectReference? logScrollHandle;
+    private bool runningConsoleAttached;
+    private bool disposed;
     private double? bucketValue;
     /// <summary>The selected time bucket; any change clears the selected burst group (brain 0043), which the pick that sets it assigns afterwards.</summary>
     private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
@@ -482,13 +523,60 @@
     // A selected running bee turns into its finished record in place once it completes.
     protected override void OnParametersSet()
     {
-        if (selRunning is not { } seq) return;
-        var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
-        if (running.Any(r => r.Sequence == seq)) return;
-        var bees = Snapshot.Store.Bees(Index);
-        for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
-            if (bees[i].Sequence == seq) { selected = bees[i]; break; }
-        selRunning = null;
+        if (selRunning is { } seq)
+        {
+            var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+            if (!running.Any(r => r.Sequence == seq))
+            {
+                var bees = Snapshot.Store.Bees(Index);
+                for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
+                    if (bees[i].Sequence == seq) { selected = bees[i]; break; }
+                selRunning = null;
+            }
+        }
+        SyncRunningLogPoll();
+    }
+
+    private void SyncRunningLogPoll()
+    {
+        var target = !DataMode.IsFakeMode ? selRunning : null;
+        if (target == runningLogSeq) return;
+        runningLogCts?.Cancel();
+        runningLogCts?.Dispose();
+        runningLogCts = null;
+        runningLogSeq = target;
+        runningLogs.Clear();
+        runningLogAfterId = 0;
+        if (target is { } seq)
+        {
+            runningLogCts = new CancellationTokenSource();
+            _ = PollRunningLogsAsync(seq, runningLogCts.Token);
+        }
+    }
+
+    private async Task PollRunningLogsAsync(int seq, CancellationToken ct)
+    {
+        await FetchRunningLogsOnceAsync(seq, ct);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(350));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await FetchRunningLogsOnceAsync(seq, ct);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task FetchRunningLogsOnceAsync(int seq, CancellationToken ct)
+    {
+        var batch = await ApiRun.FetchLiveLogsAsync(runningLogAfterId, 500, ct, sequence: seq);
+        if (ct.IsCancellationRequested || disposed || runningLogSeq != seq || batch.Count == 0) return;
+        foreach (var item in batch)
+        {
+            runningLogs.Add(item);
+            if (item.Id > runningLogAfterId) runningLogAfterId = item.Id;
+        }
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     // When the Logs popup (which sits on top of this one) closes, take the keyboard focus back so Esc keeps working.
@@ -499,6 +587,32 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        SyncRunningLogPoll();
+        var showLiveConsole = selRunning is not null && !showWaterfall;
+        if (showLiveConsole && !runningConsoleAttached)
+        {
+            try
+            {
+                logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js");
+                logScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("attach", runningLogEl);
+                runningConsoleAttached = true;
+            }
+            catch { }
+        }
+        else if (!showLiveConsole && runningConsoleAttached)
+        {
+            runningConsoleAttached = false;
+            if (logScrollHandle is not null)
+            {
+                try { await logScrollHandle.InvokeVoidAsync("dispose"); await logScrollHandle.DisposeAsync(); } catch { }
+                logScrollHandle = null;
+            }
+        }
+        else if (showLiveConsole && logScrollHandle is not null)
+        {
+            try { await logScrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
+
         if (!refocus || Logs.IsOpen) return;
         refocus = false;
         try { await root.FocusAsync(); } catch (Exception) { }
@@ -789,5 +903,12 @@
     private static string CallStatus(FakeCall c) =>
         c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? "timeout") : c.Slow ? "slow" : c.Status?.ToString() ?? "";
 
-    public void Dispose() { Logs.Changed -= OnLogsChanged; Settings.Changed -= OnSettingsChanged; }
+    public void Dispose()
+    {
+        disposed = true;
+        runningLogCts?.Cancel();
+        runningLogCts?.Dispose();
+        Logs.Changed -= OnLogsChanged;
+        Settings.Changed -= OnSettingsChanged;
+    }
 }

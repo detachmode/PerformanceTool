@@ -94,7 +94,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private string? preflightError;
 
     /// <summary>Returns live log lines emitted by currently flying bees (and preflight) with <c>Id &gt; afterId</c>.</summary>
-    public IReadOnlyList<LiveLogEntryDto> GetLiveLogs(long afterId = 0, int limit = 500)
+    public IReadOnlyList<LiveLogEntryDto> GetLiveLogs(long afterId = 0, int limit = 500, int? sequence = null)
     {
         limit = Math.Clamp(limit, 1, 2000);
         lock (sync)
@@ -104,6 +104,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             foreach (var item in liveLogs)
             {
                 if (item.Id <= afterId) continue;
+                if (sequence is { } seq && item.Sequence != seq) continue;
                 result.Add(item);
                 if (result.Count >= limit) break;
             }
