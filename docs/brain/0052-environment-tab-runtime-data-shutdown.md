@@ -13,6 +13,8 @@
    - **A finished run keeps its runtime data as it was at the end** (final values, not every change). A past
      run's Environment tab shows those final values (user answer, 2026-11-22).
 3. **Shutdown program**: besides the preflight (runs before the scenarios), there is a shutdown program.
+   It **always runs at the end of a run**: after a normal finish, after the user stops the run, and also after a
+   failed preflight (so it can clean up what the preflight created) (user answer, 2026-11-22).
 
 ## Where the code stands (before this record)
 - The active environment is picked in the top-bar dropdown and is **not** part of a preset (0033).
@@ -23,7 +25,6 @@
 - There is no shutdown program.
 
 ## Open (ask the user, one at a time)
-- When does the shutdown program run: always after the scenarios (also after a stop or a failed preflight)?
 - Scope of runtime data: one bag for the whole run (preflight, every scenario entry, shutdown)?
 
 ## Consequences
