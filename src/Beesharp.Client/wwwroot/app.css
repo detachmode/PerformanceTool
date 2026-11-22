@@ -146,6 +146,14 @@ label { font-size: .72rem; color: var(--muted); }
 @keyframes ado-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .bee-spin-ring, .ado-mini-spin { animation: none; } }
 .bento-num { font-family: var(--mono); font-size: 1.65rem; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--title); }
+.bento-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: .45rem; flex-wrap: wrap; }
+.bento-kpi-badges { display: inline-flex; align-items: center; gap: .32rem; flex-wrap: wrap; }
+.kpi-badge { display: inline-flex; align-items: baseline; gap: .2rem; font-family: var(--mono); font-size: .78rem; font-weight: 700; font-variant-numeric: tabular-nums; padding: .16rem .48rem; border-radius: 999px; line-height: 1.15; border: 1px solid transparent; transition: background-color .12s, border-color .12s; }
+.kpi-badge small { font-size: .66rem; font-weight: 500; opacity: .88; }
+.kpi-badge.bad { color: var(--failed); background: rgba(240, 82, 82, 0.13); border-color: rgba(240, 82, 82, 0.35); }
+.kpi-badge.warn { color: var(--slow); background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.35); }
+.kpi-badge.zero { opacity: .42; }
+.kpi-badge:hover { opacity: 1; }
 .bento-lbl { color: var(--muted); font-size: .76rem; line-height: 1.3; }
 .bento-lbl.mono-sub { font-family: var(--mono); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bento-idle-cell { gap: .25rem; }

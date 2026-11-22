@@ -4,17 +4,12 @@
 @{
     var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
     var actual = Elapsed > 0 ? View.Starts / (Elapsed / 60) : 0;
-    var runNow = Running is { Count: > 0 } ? Running.Skip(Math.Max(0, Running.Count - 12)).ToList() : [];
-    var take = Math.Min(View.Finished, MaxBars - runNow.Count);
-    var recent = new BeeRecord[take];
-    for (var i = 0; i < take; i++) recent[i] = Bees[View.Finished - take + i];
-    var max = recent.Length == 0 ? 5000 : Math.Max(1, recent.Max(a => a.DurationMs));
     var reason = View.Failed > 0
         ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow", "slow") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
     var (titleMain, titleSub) = SplitLabel(Label);
     var aria = Label + ": "
-        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees flying, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
+        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees flying, " + Format.Num(View.Finished) + " finished, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
@@ -70,55 +65,46 @@
                 </span>
             }
             <span class="bento-cell bento-kpi-right">
-                <b class="bento-num">@Format.Num(View.Finished)</b>
-                <small class="bento-lbl mono-sub">finished · @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
+                <span class="bento-kpi-top">
+                    <b class="bento-num">@Format.Num(View.Finished)</b>
+                    <span class="bento-kpi-badges">
+                        <span class="kpi-badge bad @(View.Failed == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true" title="@Format.Plural(View.Failed, "error", "errors")">@Format.Num(View.Failed) <small>err</small></span>
+                        <span class="kpi-badge warn @(View.SlowBees == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true" title="@Format.Plural(View.SlowBees, "slow bee", "slow bees")">@Format.Num(View.SlowBees) <small>slow</small></span>
+                    </span>
+                </span>
+                <small class="bento-lbl mono-sub">finished</small>
             </span>
         </span>
 
         @if (stats.HasData)
         {
-            var fin = Math.Max(1, View.Finished);
-            var errPct = 100.0 * View.Failed / fin;
-            var slowPct = 100.0 * View.SlowBees / fin;
-            <span class="bento-cell bento-stats" title="Typical duration, slowest 5 %, errors and slow bees of finished bees. Click to open details.">
+            <span class="bento-cell bento-stats" title="Typical duration and slowest 5 % of finished bees. Click to open details.">
                 <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
                 <span class="st right @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
-                <span class="st @(View.Failed > 0 ? "bad" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true"><small>errors</small> <b>@Pc(errPct)</b></span>
-                <span class="st right @(View.SlowBees > 0 ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"><small>slow</small> <b>@Pc(slowPct)</b></span>
             </span>
         }
     }
 
-    @if (!Idle || Edited)
+    @if (Edited || (!Idle && (actual > 0 || Target > 0)))
     {
         <span class="bento-foot">
-            @if (reason.Length > 0)
-            {
-                <span class="bento-pill @(View.Failed > 0 ? "bad" : "warn")">@reason</span>
-            }
-            else if (Edited)
+            @if (Edited)
             {
                 <span class="bento-pill edited">Changed</span>
-            }
-            else if (View.Finished > 0)
-            {
-                <span class="bento-pill ok">0 errors</span>
             }
             else
             {
                 <span></span>
             }
-            @if (!Idle && actual > 0)
+            @if (!Idle)
             {
-                <span class="bento-meta">@Format.Rate(actual) @Terms.PerMinuteShort</span>
+                <span class="bento-meta">@Format.Rate(actual) / @Format.Rate(Target) @Terms.PerMinuteShort</span>
             }
         </span>
     }
 </button>
 
 @code {
-    private const int MaxBars = 28;
-
     [Parameter, EditorRequired] public int Index { get; set; }
     [Parameter, EditorRequired] public string Label { get; set; } = "";
     [Parameter, EditorRequired] public ScenarioView View { get; set; } = default!;
@@ -154,8 +140,4 @@
             return (label[..open], label[(open + 1)..]);
         return (label, "");
     }
-
-    private static string Pc(double p) => p <= 0 ? "0%" : p < 10 ? p.ToString("0.0", CultureInfo.InvariantCulture) + "%" : p.ToString("0", CultureInfo.InvariantCulture) + "%";
-
-    private static string Pct(double f) => Math.Clamp(f * 100, 12, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 }
