@@ -509,7 +509,12 @@ public sealed class ApiRunSource : IRunSource
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts);
-                if (dto is not null) ApplyStatus(dto);
+                if (dto is not null)
+                {
+                    ApplyStatus(dto);
+                    // The shutdown program still runs after a stop (brain 0052): keep watching until it is done.
+                    if (IsActiveState(dto.State)) StartPolling();
+                }
             }
         }
         catch { }

@@ -41,7 +41,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0043). Debug URL `?burst=100`.
 - **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
 - **Done (S1, user request):** Environment tab UI draft with fake data (0052): static values of the selected environment, run bag and entry bags, live updates while running, final values for finished runs.
-- **Next (S2, user request):** shutdown program that always runs at the end (0052), and runtime data (run bag) in the server runner.
+- **Done (S2, user request):** shutdown program that always runs at the end (0052) and runtime data (run bag, entry bags, writer tracking, final values in run storage) in the server runner; Environment tab works in Live mode. Follow-up: assistant tools for runtime data (with secret masking), persisting preflight/shutdown logs with the run.
 - **Done (R, user request):** AI assistant (0047-0051), in three steps:
   - R1 (done): the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
   - R2 (done): `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,

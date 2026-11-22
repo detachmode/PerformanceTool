@@ -570,7 +570,13 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
         if (toAwait is not null)
         {
-            try { await toAwait.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+            // Wait until the scenarios are down. The shutdown program may still be running then (it runs after a stop too); callers see state "Shutdown" and keep polling.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline && !toAwait.IsCompleted)
+            {
+                lock (sync) if (state is not ("Running" or "Preflight")) break;
+                await Task.Delay(20);
+            }
         }
         await storage.FlushAsync();
         return GetCurrent();
