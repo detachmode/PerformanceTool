@@ -127,23 +127,45 @@ public static class ScenarioExceptionFormatter
         var type = method.DeclaringType;
         var typeName = type?.FullName ?? "";
         var methodName = method.Name;
+        var isCompilerGeneratedLambda = false;
 
-        // Clean up compiler-generated async state machine names like "MyScenario+<ExecuteAsync>d__4.MoveNext"
+        // Clean up compiler-generated async state machine names like:
+        //   "MyScenario+<ExecuteAsync>d__4.MoveNext"
+        //   "Submission#0+<>c+<<<Initialize>>b__0_0>d.MoveNext"
         if (methodName == "MoveNext" && type is not null && type.Name.StartsWith('<'))
         {
-            var close = type.Name.IndexOf('>');
-            if (close > 1 && type.DeclaringType is { } outer)
+            var outer = type.DeclaringType;
+            if (outer is not null)
             {
                 typeName = outer.FullName ?? outer.Name;
-                methodName = type.Name[1..close];
+                // Extract the inner method name between '<' and '>'
+                var inner = type.Name;
+                if (inner.Contains("<<Initialize>>", StringComparison.Ordinal) || inner.Contains(">b__", StringComparison.Ordinal))
+                {
+                    isCompilerGeneratedLambda = true;
+                    methodName = "Execute";
+                }
+                else
+                {
+                    var close = inner.IndexOf('>');
+                    if (close > 1) methodName = inner[1..close];
+                }
             }
         }
+        else if (methodName.StartsWith('<') && methodName.Contains(">b__", StringComparison.Ordinal))
+        {
+            isCompilerGeneratedLambda = true;
+            methodName = "Execute";
+        }
 
-        // Clean up Roslyn Submission#0 wrapper prefix
-        if (typeName.StartsWith("Submission#0+", StringComparison.Ordinal))
-            typeName = typeName["Submission#0+".Length..];
-        else if (typeName == "Submission#0")
+        // Clean up Roslyn Submission#0 and <>c closure display class names
+        typeName = typeName
+            .Replace("Submission#0+<>c", "Script", StringComparison.Ordinal)
+            .Replace("Submission#0+", "", StringComparison.Ordinal);
+        if (typeName is "Submission#0" or "<>c")
             typeName = "Script";
+        else if (typeName.EndsWith("+<>c", StringComparison.Ordinal))
+            typeName = typeName[..^4];
 
         var sb = new StringBuilder();
         if (typeName.Length > 0)
@@ -153,7 +175,7 @@ public static class ScenarioExceptionFormatter
         }
         sb.Append(methodName);
         sb.Append('(');
-        if (methodName == method.Name)
+        if (!isCompilerGeneratedLambda && methodName == method.Name)
         {
             var ps = method.GetParameters();
             for (var i = 0; i < ps.Length; i++)

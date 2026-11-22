@@ -116,7 +116,14 @@ public sealed class PreflightStore
         if (string.IsNullOrWhiteSpace(code))
             return new PreflightCompileResult(false, null, [], "Preflight script code cannot be empty.");
 
-        var script = CSharpScript.Create<object>(code, DefaultOptions, typeof(PreflightGlobals));
+        var debugFile = string.IsNullOrWhiteSpace(fileName)
+            ? (string.IsNullOrWhiteSpace(scriptId) ? "preflight.cs" : $"{scriptId}.cs")
+            : Path.GetFileName(fileName.Trim());
+        var opts = DefaultOptions
+            .WithEmitDebugInformation(true)
+            .WithFilePath(debugFile)
+            .WithFileEncoding(System.Text.Encoding.UTF8);
+        var script = CSharpScript.Create<object>(code, opts, typeof(PreflightGlobals));
         var diagnostics = script.Compile(ct);
         var mapped = diagnostics
             .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)

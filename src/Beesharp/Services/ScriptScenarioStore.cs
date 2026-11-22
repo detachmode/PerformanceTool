@@ -149,7 +149,14 @@ public sealed class ScriptScenarioStore
         if (string.IsNullOrWhiteSpace(code))
             return new ScriptCompileResult(false, null, [], "Script code cannot be empty.");
 
-        var script = CSharpScript.Create(code, DefaultOptions, typeof(ScenarioScriptGlobals));
+        var debugFile = string.IsNullOrWhiteSpace(fileName)
+            ? (string.IsNullOrWhiteSpace(scriptId) ? "script.cs" : $"{scriptId}.cs")
+            : Path.GetFileName(fileName.Trim());
+        var opts = DefaultOptions
+            .WithEmitDebugInformation(true)
+            .WithFilePath(debugFile)
+            .WithFileEncoding(System.Text.Encoding.UTF8);
+        var script = CSharpScript.Create(code, opts, typeof(ScenarioScriptGlobals));
         var diagnostics = script.Compile(ct);
         var mapped = diagnostics
             .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
