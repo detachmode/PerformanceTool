@@ -53,5 +53,11 @@ tests/                   one test project per project
 - **Drop SQLite storage**: keep DuckDB (default) and in-memory (tests, quick tries). Partly supersedes 0045
   (SQLite storage) and the "Sqlite remains available" note in 0046.
 
-## Open (ask the user, one at a time)
-- More details; answers get recorded above.
+- **Steps** (user agreed the order), each with green tests and a screenshot check:
+  - **U1** rename to Beesharp + shared `Beesharp.Contracts` (removes the duplicated wire types).
+  - **U2** `Engine`, `Scripting` and `Storage` out of the host; SQLite dropped.
+  - **U3** the command-line tool.
+  - **U4** client folders by topic; one test project per project.
+
+## Open
+- Whether `Beesharp.Scenarios` (what scenario code compiles against) is split from Core: Proposed, decide in U2.
