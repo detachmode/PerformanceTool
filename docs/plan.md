@@ -54,7 +54,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 - **Done as draft, awaiting user review (V, user request):** scenario steps UI draft (incl. a step that repeats; screenshots in `docs/screenshots/2026-11-22-scenario-steps/`) with fake data (0056): stepper in the bee detail, "step N of M" for bees in flight, failed step, bees failed per step in the scenario popup. Screenshots for the user before merging.
 
-- **Next (W, waiting for user decisions):** scenario steps in the backend: spec in `docs/steps-backend.md` (Proposed). Blocked on the code style decision (enum + `ctx.Step` vs union step machine), going back, repeat counts, failure rule.
+- **Next (W, waiting for user decisions):** scenario steps in the backend: spec in `docs/steps-backend.md` (Proposed). Code style decided: union step machine. Still open: going back, repeat counts, failure rule.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

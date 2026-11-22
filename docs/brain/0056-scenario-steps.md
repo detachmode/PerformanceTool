@@ -1,6 +1,6 @@
 # 0056. Scenario steps: known up front, shown as a stepper
 
-- Status: Proposed (user request: steps known before the run; flying bee shows "step N of M"; a failed bee shows the step it failed at; all bees that failed at one step). Code API and UI details are Claude's proposal.
+- Status: Proposed; **code style Accepted (user, 2026-11-22): union step machine** (see "Alternative (union of steps)"). User request: steps known before the run; flying bee shows "step N of M"; a failed bee shows the step it failed at; all bees that failed at one step). Code API and UI details are Claude's proposal.
 - Date: 2026-11-22
 
 ## What
@@ -78,3 +78,6 @@ Fake data and client only; status stays Proposed. Screenshots: `docs/screenshots
 
 ## Backend
 UI draft merged (PR #28). What the server still needs, and the decisions that come first: `docs/steps-backend.md` (Proposed).
+
+## Decision (user, 2026-11-22)
+Steps are written as a **C# 15 union of step records, run as a step machine** (`RunStepAsync(step)` returns the next step or null). Not the enum + `ctx.Step` style, not the typed chain. Still open: going back to earlier steps, repeat counts up front, failure rule outside a step, unions stable in .NET 11 and the .NET 11 SDK for agents.

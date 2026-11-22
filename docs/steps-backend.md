@@ -6,7 +6,7 @@ on the server yet. In Live mode the client shows no steps today.
 ## A. Decisions for the user first
 These change the shape of the code, so they come before any implementation.
 
-1. **How steps are written in code.** (a) `enum` + `ctx.Step(...)`, linear code with local variables, or
+1. **How steps are written in code.** **Decided (user): (b) union step machine.** Was: (a) `enum` + `ctx.Step(...)`, linear code with local variables, or
    (b) C# 15 `union` of step records as a step machine (`RunStepAsync(step) => next step`), or (c) a typed chain.
    Scripts need the same choice (`Scenario.Define(...).Steps(...)`).
 2. **Going back.** Repeat a step only in a row (*Open product* ×5), or also go back to an earlier step
