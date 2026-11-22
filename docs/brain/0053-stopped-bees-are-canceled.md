@@ -9,9 +9,10 @@ When the user stops a run, the bees still in flight get the status **canceled** 
 got**. Today they are dropped without a trace (server `LoadRunner.ExecuteOne` returns without a result; the fake
 `FakeRunSource.Finish` clears them).
 
+- **Look and count like failed** (user answer, 2026-11-22): red, counted in the errors, ordered with the failed bees,
+  with the error text "Canceled: run stopped" (so the error dictionary groups them).
+
 ## Open (ask the user, one at a time)
-- How canceled bees look (colour, ordering next to failed / slow / ok, brain 0018 and 0028) and whether they count
-  in the error / slow figures.
 - Whether calls already made (and a call cut off mid-way) are kept like the logs.
 
 ## Consequences
