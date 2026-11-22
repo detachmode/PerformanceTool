@@ -1,7 +1,7 @@
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>
 /// Collects what happens during one turn: the assistant's text, one activity chip per tool call and the view cards the show tools add.

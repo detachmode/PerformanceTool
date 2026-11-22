@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios.BuiltIn;
+namespace Beesharp.Services.Scenarios.BuiltIn;
 
 public sealed class UserJourneyParameters
 {

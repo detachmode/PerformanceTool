@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Text.RegularExpressions;
 
-namespace PerformanceTool.Services.Environments;
+namespace Beesharp.Services.Environments;
 
 /// <summary>One key-value pair of an environment. Values may be credentials: what goes in is up to the user (brain 0033).</summary>
 public sealed class EnvironmentVariable

@@ -1,0 +1,1332 @@
+@* Scenario popup (brain 0020, 0017, 0021): inspect the run of one scenario. One bounded bee chart (a bar per bee, or per time bucket when
+   there are many), a quick Show: All / Failed / Slow switch with stepping, and the calls of the selected bee. Logs are one click away. *@
+@using System.Globalization
+@implements IDisposable
+@inject LogsPopupState Logs
+@inject ViewSettings Settings
+@inject ScenarioCatalog Catalog
+@inject CustomScriptsPopupState ScriptsPopup
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
+@inject IJSRuntime JS
+
+@{
+    var s = Snapshot;
+    var view = s.Scenarios[Index];
+    var bees = s.Store.Bees(Index);
+    var label = s.Labels[Index];
+    var actual = s.Elapsed > 0 ? view.Starts / (s.Elapsed / 60) : 0;
+    var target = s.Plan.Scenarios[Index].EffectiveRatePerMinute();
+    var shape = Format.Shape(s.Plan.Scenarios[Index]);
+    var runningAll = s.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+    // The brushed time window (brain 0023, update 3): bees that started in [from, to). A window that reaches the live edge follows it (to = open).
+    // The view [vf, vt]: a following window keeps its width and slides with the live edge.
+    double vf = 0, vt = 0;
+    if (win is { } w0) { var sp0 = w0.To - w0.From; if (w0.Follow) { vt = s.Elapsed; vf = Math.Max(0, vt - sp0); } else { vf = w0.From; vt = w0.To; } }
+    var from = win is null ? double.NegativeInfinity : vf;
+    var to = win is { Follow: false } ? vt : double.PositiveInfinity;
+    IReadOnlyList<RunningBee> runningNow = win is null ? runningAll : runningAll.Where(r => r.StartedAt >= from && r.StartedAt < to).ToList();
+    // While the user aims at the chart (brain 0026) the bars of the moment of aiming are shown again; running bars still grow with the clock,
+    // and bees that were running at that moment get their final colour in place once they finish.
+    ChartData cd;
+    if (aiming && fz is not null)
+    {
+        var resolved = show == BeeShow.All ? BeeBars.ResolveFinished(fz.Bars, fz.Running, bees, fz.Finished, view.Finished, fz.Width, fz.GridFrom) : fz.Bars;
+        cd = ReferenceEquals(resolved, fz.Bars) ? fz : fz with { Bars = resolved };
+    }
+    else
+    {
+        List<BeeBar> b0; int total0; double width0; double? gridFrom = null; IReadOnlyList<RunningBee> runningBars = runningNow;
+        if (win is not null)
+        {
+            // zoomed: bars on the stable time grid, buffered beyond both edges of the view (the script slides them while panning)
+            grid.Ensure(vf, vt, s.Elapsed, Settings.MaxBars);
+            width0 = grid.Width; gridFrom = grid.From;
+            b0 = BeeBars.BuildGrid(bees, view.Finished, show, width0, grid.First, grid.LastNow(s.Elapsed), vf, vt, out total0);
+            var gTo = grid.To;
+            runningBars = runningAll.Where(r => r.StartedAt >= gridFrom && r.StartedAt < gTo).ToList();
+        }
+        else b0 = BeeBars.Build(bees, view.Finished, show, out total0, out width0, from, to, Settings.MaxBars);
+        var scale0 = b0.Count == 0 ? 1 : Math.Max(1, b0.Where(b => b.Running == 0).Select(b => b.MaxMs).DefaultIfEmpty(0).Max());
+        if (show == BeeShow.All) b0 = BeeBars.WithRunning(b0, runningBars, width0, s.Elapsed, gridFrom);
+        if (b0.Count > 0 && scale0 <= 1) scale0 = Math.Max(1, b0.Max(b => b.MaxMs));
+        cd = new(b0, scale0, width0, total0, s.Elapsed * 1000, view.Starts, view.Finished, runningBars, gridFrom);
+        lastChart = cd;
+        if (aiming) fz = cd;
+    }
+    var bars = cd.Bars; var scale = cd.Scale; var width = cd.Width; var total = cd.Total;
+    // As soon as there is room, bursts unfold into single-bee bars (brain 0038, rule of brain 0040: pixels per bee, with hysteresis); the grid stays
+    // the one the script knows (cd.Bars), only this list changes, and the unfolded bars share the empty slots they borrow, so x stays linear in time.
+    List<BurstSpan> burstSpans = [];
+    if (win is null) unfoldPlay.Reset();
+    else if (cd.GridFrom is { } gridStart && width > 0)
+    {
+        var room = UnfoldRoom.For(chartPx, vt - vf, unfoldPlay.Update(vt - vf), width, Settings.MaxBars);
+        bars = BeeBars.Unfold(bars, bees, cd.Finished, show, cd.Running, width, BeeBars.SlotIndex(gridStart, width), cd.ElapsedMs / 1000, (vf + vt) / 2,
+            BeeBars.UnfoldPerBurst(Settings.MaxBars), BeeBars.UnfoldBudget(Settings.MaxBars), room, out burstSpans);
+    }
+    var ovMarks = OverviewMarks(bees, view.Finished, s.Elapsed);
+    unfoldedSlots = burstSpans.Count == 0 ? [] : burstSpans.ToDictionary(b => b.Slot, b => b.GroupSize);
+    var bucketed = width > 0;
+    Dictionary<int, string>? failedErrors = null;
+    if (view.Failed > 0)
+    {
+        for (var i = 0; i < view.Finished; i++)
+        {
+            var fb = bees[i];
+            if (!fb.Failed) continue;
+            var msg = LastErrorOf(fb, s.Store.Detail(fb.Sequence));
+            if (msg is not null) (failedErrors ??= [])[fb.Sequence] = msg;
+        }
+    }
+    var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
+    var selSeq = selected?.Sequence ?? selRunning;
+    var stats = StatsFor(bees, view.Finished, from, to);
+    var activeBucket = bucketed ? bucket : null;
+    var sideRows = SideRows(bees, view.Finished, runningNow, show, from, to, activeBucket, width);
+    // The selected bee stays selected when it is folded into a time bucket: that bucket shows as selected.
+    double? selStart = selected?.StartedAt ?? (selRunning is { } rs0 ? runningNow.FirstOrDefault(r => r.Sequence == rs0)?.StartedAt : null);
+    var selectedBucket = selStart is { } sa0 && bucketed ? BeeBars.BucketOf(sa0, width) : bucket;
+    if (selected is { } lazyBee)
+    {
+        if (EnsureDetail is not null) _ = EnsureDetail(lazyBee.Sequence);
+        else if (!DataMode.IsFakeMode) _ = ApiRun.EnsureBeeDetailLoadedAsync(lazyBee.Sequence);
+    }
+}
+
+<div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">
+    <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
+        <div class="dlg-head">
+            <h2 id="scn-title">@label</h2>
+            <span class="spacer"></span>
+            @if (Index < s.Plan.Scenarios.Count && Catalog.IsCustom(s.Plan.Scenarios[Index].ScenarioId))
+            {
+                <button class="btn ghost small" @onclick="() => ScriptsPopup.Show(s.Plan.Scenarios[Index].ScenarioId)" title="View and edit this scenario's .cs file on the server">Edit .cs</button>
+            }
+            <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">⚙</button>
+            <button class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
+        </div>
+
+        <div class="pop-body">
+        <div class="pop-main">
+        <div class="dlg-summary-grid" role="group" aria-label="Scenario summary">
+            <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
+                <small>Bees</small>
+                <b>@Format.Num(view.Finished)</b>
+            </button>
+            <button type="button" class="dlg-stat @(view.Failed > 0 ? "bad" : "") @(show == BeeShow.Failed ? "on" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">
+                <small>Errors @(stats.Count > 0 ? Pc(stats.ErrorRate) : "")</small>
+                <b>@Format.Num(view.Failed)</b>
+            </button>
+            <button type="button" class="dlg-stat @(view.SlowBees > 0 ? "warn" : "") @(show == BeeShow.Slow ? "on" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">
+                <small>Slow @(stats.Count > 0 ? Pc(stats.SlowRate) : "")</small>
+                <b>@Format.Num(view.SlowBees)</b>
+            </button>
+            <button type="button" class="dlg-stat" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median)">
+                <small>Typical</small>
+                <b>@(stats.Count > 0 ? Format.Ms(stats.Median) : "—")</b>
+            </button>
+            <button type="button" class="dlg-stat @(stats.TailIsSlow ? "warn" : "") @(tailMs is not null ? "on" : "")" disabled="@(stats.Count == 0)" @onclick="() => TailOnly(stats.P95)" title="Slowest 5%" aria-pressed="@Aria.Bool(tailMs is not null)">
+                <small>Slowest 5%</small>
+                <b>@(stats.Count > 0 ? Format.Ms(stats.P95) : "—")</b>
+            </button>
+            @if (!Selection)
+            {
+                var rateTitle = $"{Format.Rate(actual)} of {Format.Rate(target)} {Terms.PerMinuteShort}{(shape.Length > 0 ? " · " + shape : "")}";
+                <div class="dlg-stat static" title="@rateTitle">
+                    <small>Rate / @Format.Rate(target)</small>
+                    <b>@Format.Rate(actual)<span class="unit">/m</span></b>
+                </div>
+            }
+            else
+            {
+                <button type="button" class="dlg-stat @(stats.LongestIsSlow ? "warn" : "")" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest bee">
+                    <small>Longest</small>
+                    <b>@(stats.Count > 0 ? Format.Ms(stats.Longest) : "—")</b>
+                </button>
+            }
+        </div>
+
+        @if (s.Running && !Selection)
+        {
+            var runningSet = runningNow.ToDictionary(r => r.Sequence);
+            var finishedMap = new Dictionary<int, BeeRecord>(view.Finished);
+            for (var fi = 0; fi < view.Finished; fi++) finishedMap[bees[fi].Sequence] = bees[fi];
+            <div class="bees-bar">
+                <div class="seg" role="group" aria-label="Live bees view">
+                    <button type="button" class="@(!liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(!liveShowFailed)" @onclick="() => liveShowFailed = false">Recent logs <span class="n">@Format.Num(latestLogByBee.Count)</span></button>
+                    <button type="button" class="@(liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(liveShowFailed)" @onclick="() => liveShowFailed = true">Failed <span class="n">@Format.Num(view.Failed)</span></button>
+                </div>
+            </div>
+            <div class="live-feed" role="region" aria-label="@(liveShowFailed ? "Failed bees" : "Most recently logged bees")">
+                @if (liveShowFailed)
+                {
+                    var failedList = new List<BeeRecord>();
+                    for (var fi = view.Finished - 1; fi >= 0; fi--)
+                        if (bees[fi].Failed) failedList.Add(bees[fi]);
+                    if (failedList.Count == 0)
+                    {
+                        <div class="live-feed-empty">No failed bees so far.</div>
+                    }
+                    else
+                    {
+                        <div class="live-feed-list">
+                            @foreach (var fb in failedList.Take(100))
+                            {
+                                var beeItem = fb;
+                                var hasLog = latestLogByBee.TryGetValue(beeItem.Sequence, out var lastLog);
+                                var errText = LastErrorOf(beeItem, s.Store.Detail(beeItem.Sequence));
+                                <button type="button" class="live-feed-row @(selSeq == beeItem.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(beeItem.Sequence)">
+                                    <span class="live-feed-row-head">
+                                        <BeeChip Sequence="beeItem.Sequence" State="BeeState.Failed" />
+                                        <span class="state bad">Failed</span>
+                                        <span class="muted">@Format.Ms(beeItem.DurationMs) · started @Format.Time(beeItem.StartedAt)</span>
+                                    </span>
+                                    <span class="live-feed-row-log">
+                                        @if (hasLog && lastLog is not null)
+                                        {
+                                            <SerilogLine Timestamp="lastLog.Timestamp" Level="@lastLog.Level" Message="@lastLog.Message" Exception="@lastLog.Exception" />
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(errText))
+                                        {
+                                            <span class="bad">@errText</span>
+                                        }
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+                else if (!DataMode.IsFakeMode)
+                {
+                    var (displaySeqs, pendingNew) = BuildLiveFeedView(runningNow, runningSet, view.Finished);
+                    if (displaySeqs.Count == 0)
+                    {
+                        <div class="live-feed-empty">Waiting for bees to log output…</div>
+                    }
+                    else
+                    {
+                        <div class="live-feed-list" @ref="liveFeedEl">
+                            @if (liveFeedScrolledDown && pendingNew > 0)
+                            {
+                                <div class="live-feed-new-wrap">
+                                    <button type="button" class="live-feed-new-btn" @onclick="JumpLiveFeedToTopAsync" title="Scroll back to top and show new bees">
+                                        ↑ @Format.Plural(pendingNew, "new bee", "new bees") · back to top
+                                    </button>
+                                </div>
+                            }
+                            @foreach (var seq in displaySeqs)
+                            {
+                                var beeSeq = seq;
+                                var isRun = runningSet.TryGetValue(beeSeq, out var rBee);
+                                var hasFin = finishedMap.TryGetValue(beeSeq, out var fBee) && !isRun;
+                                var hasLog = latestLogByBee.TryGetValue(beeSeq, out var log);
+                                var chipState = isRun ? BeeState.Running : hasFin ? BeeOrder.StateOf(fBee.Outcome) : BeeState.Running;
+                                <button type="button" class="live-feed-row @(selSeq == beeSeq ? "on" : "") @(isRun ? "is-flying" : "")" @onclick="() => SelectLiveBee(beeSeq)">
+                                    @if (isRun && rBee is not null)
+                                    {
+                                        var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
+                                        <span class="bee-row-spin" aria-hidden="true">
+                                            <span class="bee-spin-ring"></span>
+                                            <b class="bee-row-spin-num">@CompactSec(sec)</b>
+                                        </span>
+                                    }
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="beeSeq" State="chipState" />
+                                            @if (isRun && rBee is not null)
+                                            {
+                                                <span class="state run">Flying</span>
+                                            }
+                                            else if (hasFin)
+                                            {
+                                                <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                                                <span class="muted">@Format.Ms(fBee.DurationMs)</span>
+                                            }
+                                        </span>
+                                        <span class="live-feed-row-log">
+                                            @if (hasLog && log is not null)
+                                            {
+                                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                                            }
+                                            else if (isRun)
+                                            {
+                                                <span class="muted">Running…</span>
+                                            }
+                                        </span>
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    if (runningNow.Count == 0 && view.Finished == 0)
+                    {
+                        <div class="live-feed-empty">No bees started yet.</div>
+                    }
+                    else
+                    {
+                        <div class="live-feed-list">
+                            @foreach (var rb in runningNow.OrderByDescending(r => r.StartedAt).Take(40))
+                            {
+                                var rBee = rb;
+                                var elapsedMs = Math.Max(0, (s.Elapsed - rBee.StartedAt) * 1000);
+                                var lastCall = rBee.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs);
+                                <button type="button" class="live-feed-row is-flying @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
+                                    <span class="bee-row-spin" aria-hidden="true">
+                                        <span class="bee-spin-ring"></span>
+                                        <b class="bee-row-spin-num">@CompactSec(elapsedMs / 1000.0)</b>
+                                    </span>
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
+                                            <span class="state run">Flying</span>
+                                        </span>
+                                        @if (lastCall is not null)
+                                        {
+                                            <span class="live-feed-row-log muted">@lastCall.Name</span>
+                                        }
+                                    </span>
+                                </button>
+                            }
+                            @for (var fi = view.Finished - 1; fi >= Math.Max(0, view.Finished - 30); fi--)
+                            {
+                                var fBee = bees[fi];
+                                <button type="button" class="live-feed-row @(selSeq == fBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(fBee.Sequence)">
+                                    <span class="live-feed-row-head">
+                                        <BeeChip Sequence="fBee.Sequence" State="BeeOrder.StateOf(fBee.Outcome)" />
+                                        <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                                        <span class="muted">@Format.Ms(fBee.DurationMs)</span>
+                                    </span>
+                                    @if (!string.IsNullOrWhiteSpace(fBee.Error))
+                                    {
+                                        <span class="live-feed-row-log bad">@fBee.Error</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+        <div class="bees-bar">
+            <div class="seg" role="group" aria-label="Show bees">
+                <button class="@(show == BeeShow.All ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.All)" @onclick="() => SetShow(BeeShow.All)">All</button>
+                <button class="@(show == BeeShow.Failed ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.Failed)" @onclick="() => SetShow(BeeShow.Failed)">Failed <span class="n">@Format.Num(view.Failed)</span></button>
+                <button class="@(show == BeeShow.Slow ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.Slow)" @onclick="() => SetShow(BeeShow.Slow)">Slow <span class="n">@Format.Num(view.SlowBees)</span></button>
+            </div>
+            <div class="step" role="group" aria-label="Step through @StepWord bees">
+                <button class="btn ghost small" @onclick="() => StepTo(-1)" disabled="@(StepCount(view) == 0)" title="Previous @StepWord bee">‹ Previous @StepWord</button>
+                <button class="btn ghost small" @onclick="() => StepTo(1)" disabled="@(StepCount(view) == 0)" title="Next @StepWord bee">Next @StepWord ›</button>
+            </div>
+        </div>
+
+        @if (bars.Count == 0)
+        {
+            <div class="chart-empty muted">@(show == BeeShow.All ? "No bees have started yet." : $"No {StepWord} bees.")</div>
+        }
+        else
+        {
+            <div class="chart-wrap">
+            <div class="chart-status">
+                @if (win is { } wz)
+                {
+                    <span class="zoom-chip"><span class="muted">Zoomed to</span> <b>@Format.Time(wz.From)@(wz.Follow ? " → now" : $" – {Format.Time(wz.To)}")</b>@(wz.Follow ? " (follows live)" : "")<button class="link-btn" @onclick="ResetZoom" title="Back to the whole run (live)">Reset zoom</button></span>
+                }
+                @if (aiming && newCount >= 0 && win is not { Follow: false })
+                {
+                    <button class="live-paused" @onclick="Resume" title="Show the newest bees now">● Live paused · @(newCount == 0 ? "no new bees" : Format.Plural(newCount, "new bee", "new bees"))</button>
+                }
+            </div>
+            <div class="chart-scroll">
+                <DockZoom @ref="zoom" Select="true" OnPick="PickKey" OnAim="SetAiming" OnSize="SetChartSize" class="@(cd.GridFrom is not null ? "chart dense grid" : bars.Count > 60 ? "chart dense" : "chart")" style="@(cd.GridFrom is not null ? $"--p:{(width / Math.Max(1e-6, vt - vf) * 100).ToString("0.######", CultureInfo.InvariantCulture)}%" : bars.Count > 60 ? null : $"min-width:{bars.Count * 14}px")" data-grid="@(cd.GridFrom is not null ? T(width) : null)" data-buf="@(cd.GridFrom is { } gf ? T(gf) : null)" OnBrush="Brush" OnZoom="PinchZoom" data-zoom="@Settings.Zoom.ToString(CultureInfo.InvariantCulture)" data-zoomed="@(win is not null ? "1" : null)" data-win="@(win is not null ? $"{vf.ToString("R", CultureInfo.InvariantCulture)} {vt.ToString("R", CultureInfo.InvariantCulture)}" : null)" role="group" aria-label="Bees" data-ov="@ovMarks" data-elapsed="@Ms(cd.ElapsedMs)" data-scale="@Ms(scale)">
+                    <span class="chart-max">@Format.Ms(scale)</span>
+                    <span class="dz-label" aria-hidden="true"></span>
+                    <span class="dz-strip" aria-hidden="true"></span>
+                    <span class="dz-axis" aria-hidden="true"></span>
+                    <span class="dz-brush" aria-hidden="true"><span></span></span>
+                    <span class="dz-over" tabindex="@(win is not null ? "0" : null)" role="@(win is not null ? "slider" : null)" aria-label="@(win is not null ? "Part of the run in view" : null)" aria-valuemin="@(win is not null ? "0" : null)" aria-valuemax="@(win is not null ? Ms(s.Elapsed) : null)" aria-valuenow="@(win is not null ? Ms((vf + vt) / 2) : null)" aria-valuetext="@(win is not null ? $"{Format.Time(vf)} to {Format.Time(vt)} of {Format.Time(s.Elapsed)}" : null)" aria-hidden="@(win is null ? "true" : null)" title="@(win is not null ? "The whole run; the outlined window is in view. Drag it or tap the strip to move the view (arrow keys too)." : "The whole run: red and amber marks show where bees failed or were slow. Tap a spot to zoom in there.")"></span>
+                    <div class="dz-bars">
+                    @foreach (var b in bars)
+                    {
+                        var bar = b;
+                        @if (bar.Total == 0)
+                        {
+                            <span class="bar-hit empty" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.BucketStart + width)"></span>
+                        }
+                        else
+                        {
+                            var on = bar.IsBurstGroup ? groupSel is { } gsel && gsel.Slot == bar.Slot && gsel.Lo == bar.GroupLo && gsel.Hi == bar.GroupHi : bar.InBurst && bar.IsBucket ? bucket == bar.BucketStart : bar.IsBucket ? (selectedBucket is { } sb && sb == bar.BucketStart) : selSeq == bar.Sequence;
+                            var key = bar.IsBurstGroup ? $"g{T(bar.Slot)}:{bar.GroupLo}:{bar.GroupHi}" : bar.IsBucket ? "b" + T(bar.BucketStart) : (bar.IsRunningBee ? "r" : "a") + bar.Sequence;
+                            <button class="bar-hit @(on ? "on" : "") @(bar.InBurst && bucket == bar.Slot ? "inb" : "")" data-key="@key" data-ub="@(bar.InBurst ? T(bar.Slot) : null)" data-k="@(bar.InBurst ? K(bar.Cover) : null)" style="@(bar.InBurst ? "--k:" + K(bar.Cover) : null)" data-ts="@(bar.InBurst ? T(bar.Slot) : null)" data-te="@(bar.InBurst ? T(bar.Slot + width) : null)" data-l1="@LabelTop(bar, width)" data-l2="@LabelMeta(bar)" data-l3="@LabelSub(bar)" data-err="@(!bar.IsBucket && bar.Failed > 0 && failedErrors is not null && failedErrors.TryGetValue(bar.Sequence, out var berr) ? berr : null)" data-s="@Status(bar)" data-ns="@(bar.IsBucket ? null : Status(bar))" data-bad="@(bar.IsBucket ? bar.Failed : null)" data-slow="@(bar.IsBucket ? bar.Slow : null)" data-ok="@(bar.IsBucket ? Math.Max(0, bar.Count - bar.Failed - bar.Slow) : null)" data-runn="@(bar.IsBucket ? bar.Running : null)" data-st="@(IsGroup(bar) ? BeeBars.StripeData(bar) : null)" data-n1="@Near1(bar, width)" data-n2="@Near2(bar)" data-t0="@T(bar.BucketStart)" data-t1="@T(bar.IsBucket ? bar.BucketStart + width : bar.BucketStart + bar.MaxMs / 1000)" data-run="@(bar.IsRunningBee ? "1" : null)" data-bucket="@(bar.IsBucket ? "1" : null)" aria-pressed="@Aria.Bool(on)" title="@BarTitle(bar, width)" aria-label="@BarTitle(bar, width)" @onclick="() => PickBar(bar)">
+                                @if (bar.IsRunningBee)
+                                {
+                                    <i class="bar run" data-start="@Ms(bar.BucketStart * 1000)"></i>
+                                }
+                                else if (bar.Running > 0)
+                                {
+                                    <span class="bar-stack @(IsGroup(bar) ? "grp " + BarCls(bar) : null)" style="height:@Pct(bar.MaxMs / scale)%">
+                                        <i class="bar run" style="flex:@bar.Running"></i>
+                                        @if (bar.Count > 0) { <i class="bar @BarCls(bar) @(IsGroup(bar) ? "grp" : null)" style="flex:@bar.Count"></i> }
+                                        @if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <i class="bar @BarCls(bar) @(IsGroup(bar) ? "grp" : null)" style="height:@Pct(bar.MaxMs / scale)%">@if (IsGroup(bar)) { <b class="grp-n" aria-hidden="true">@Format.Num(bar.Total)</b> }</i>
+                                }
+                            </button>
+                        }
+                    }
+                    @foreach (var bs in burstSpans)
+                    {
+                        var burst = bs;
+                        <button class="burst-tag @(bucket == burst.Slot ? "on" : "")" data-ub="@T(burst.Slot)" title="Burst at @FT(burst.Slot, width): @Format.Plural(burst.Bees, "bee", "bees") started together@(burst.GroupSize > 1 ? ", shown in groups of " + burst.GroupSize : ""). Click to list them." aria-label="Burst at @FT(burst.Slot, width), @Format.Plural(burst.Bees, "bee", "bees"): select them as a group" @onclick="() => PickBar(new BeeBar(0, 0, 0, 0, -1, burst.Slot))">burst · @Format.Plural(burst.Bees, "bee", "bees")</button>
+                    }
+                    </div>
+                </DockZoom>
+            </div>
+            </div>
+            <p class="chart-note muted">
+                @if (bucketed) { <text>@Format.Plural(total, "bee", "bees") in time buckets of @FT(width, width); a bar is red or yellow if any bee in it failed or was slow. Click a bar to list its bees.</text> }
+                else { <text>One bar per bee, taller = slower. The axis shows the run time of the bees at that position. Click a bee to see its calls.</text> }
+                <text> Drag across the chart to zoom into a time frame (touch: swipe the time axis to magnify, swipe the bars to scroll, pinch or double tap to zoom).</text>
+            </p>
+        }
+        }
+
+        @if (selRunning is { } rseq && runningNow.FirstOrDefault(r => r.Sequence == rseq) is { } ra)
+        {
+            var elapsedMs = Math.Max(0, (s.Elapsed - ra.StartedAt) * 1000);
+            var denom = Math.Max(1, Math.Max(scale, elapsedMs));
+            <section class="bee-panel p-run" aria-label="@ra.Name">
+                <div class="bee-head">
+                    <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
+                    <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Flying</span>
+                    <span class="muted">@Format.Time(elapsedMs / 1000.0) (@Format.Ms(elapsedMs)) · started @Format.Time(ra.StartedAt)</span>
+                    <span class="spacer"></span>
+                    <div class="seg" role="group" aria-label="Running bee inspection view">
+                        <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@runningLogs.Count)</button>
+                        <button type="button" class="@(showWaterfall ? "on" : "")" @onclick="() => showWaterfall = true">Waterfall (@ra.Calls.Count)</button>
+                    </div>
+                    @if (!showWaterfall)
+                    {
+                        <CopyButton GetText="@(() => FormatRunningLogsText())" Disabled="@(runningLogs.Count == 0)" />
+                        <WrapToggleButton @bind-Wrapped="beeLogWrap" />
+                    }
+                    <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Full logs</button>
+                    <button class="icon-btn" @onclick="() => { selRunning = null; SyncRunningLogPoll(); }" aria-label="Deselect bee">✕</button>
+                </div>
+                @if (!showWaterfall)
+                {
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" @ref="runningLogEl" role="log" aria-live="polite" aria-label="Live logs of @ra.Name">
+                        @if (DataMode.IsFakeMode)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">Live streaming logs are shown in Live mode.</div>
+                        }
+                        else if (runningLogs.Count == 0)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">Waiting for logs from @ra.Name…</div>
+                        }
+                        else
+                        {
+                            @foreach (var log in runningLogs)
+                            {
+                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                            }
+                        }
+                    </div>
+                }
+                else
+                {
+                    <ol class="calls" aria-label="Calls of @ra.Name so far">
+                        @foreach (var call in ra.Calls.Where(c => !c.Skipped && c.OffsetMs <= elapsedMs))
+                        {
+                            var done = call.OffsetMs + call.DurationMs <= elapsedMs;
+                            var cls = !done ? "run" : call.Failed ? "bad" : "good";
+                            var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
+                            <li class="call @cls">
+                                <span class="call-name" title="@call.Name">@call.Name</span>
+                                <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
+                                <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
+                                <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? (ExecutionResult.IsCanceledError(call.Error) ? "canceled" : "timeout")) : call.Status?.ToString() ?? "")</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        }
+
+        @if (selected is { } bee)
+        {
+            var detail = s.Store.Detail(bee.Sequence);
+            <section class="bee-panel p-@Cls(bee.Outcome)" aria-label="@bee.Name">
+                <div class="bee-head">
+                    <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
+                    <span class="state @Cls(bee.Outcome)">@(bee.Failed ? "Failed" : bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                    @if (!bee.Failed && Format.OverTypical(bee.Ratio))
+                    {
+                        <button class="fig-ratio @BeeOrder.Good(bee.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(bee.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(bee.Ratio) typical</button>
+                    }
+                    <span class="muted">@Format.Ms(bee.DurationMs) · started @Format.Time(bee.StartedAt)</span>
+                    @if (Notes is not null && Notes.TryGetValue(bee.Sequence, out var beeNote) && !string.IsNullOrWhiteSpace(beeNote))
+                    {
+                        <span class="bee-note" title="Why the assistant picked this bee">@beeNote</span>
+                    }
+                    <span class="spacer"></span>
+                    @if (detail is not null)
+                    {
+                        <div class="seg" role="group" aria-label="Bee inspection view">
+                            <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@detail.Logs.Count)</button>
+                            <button type="button" class="@(showWaterfall ? "on" : "")" @onclick="() => showWaterfall = true">Waterfall (@detail.Calls.Count)</button>
+                        </div>
+                        @if (!showWaterfall)
+                        {
+                            <CopyButton GetText="@(() => FormatBeeLogsText(detail.Logs))" Disabled="@(detail.Logs.Count == 0)" />
+                            <WrapToggleButton @bind-Wrapped="beeLogWrap" />
+                        }
+                    }
+                    @if (!Selection || OpenLogs is not null)
+                    {
+                        <button class="btn ghost small" @onclick="() => OpenBeeLogs(bee.Sequence)" title="Open in full log viewer">Full logs</button>
+                    }
+                    <button class="icon-btn" @onclick="() => selected = null" aria-label="Deselect bee">✕</button>
+                </div>
+                @if (bee.Error is not null) { <p class="bee-error bad">@bee.Error</p> }
+                @if (detail is null)
+                {
+                    <p class="muted">The calls and logs of this bee are no longer kept (details of older successful bees are dropped first).</p>
+                }
+                else if (!showWaterfall)
+                {
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-label="Logs of @bee.Name">
+                        @if (detail.Logs.Count == 0)
+                        {
+                            <div class="sl-empty" style="padding:.35rem 0">No logs emitted by this bee.</div>
+                        }
+                        else
+                        {
+                            @foreach (var log in detail.Logs)
+                            {
+                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                            }
+                        }
+                    </div>
+                }
+                else
+                {
+                    <ol class="calls" aria-label="Calls of @bee.Name">
+                        @foreach (var c in detail.Calls)
+                        {
+                            var call = c;
+                            var callRatio = call.Skipped || call.Failed ? 1 : SlowCallRule.Ratio(call.DurationMs, call.TypicalMs);
+                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : BeeOrder.Good(SlowCallRule.Step(callRatio));
+                            <li class="call @cls @(call.Skipped ? "skipped" : "")">
+                                <span class="call-name" title="@call.Name">@call.Name</span>
+                                <span class="track"><i style="left:@Pct(call.OffsetMs / Math.Max(1, bee.DurationMs))%;width:@(Math.Max(0.8, call.DurationMs / Math.Max(1, bee.DurationMs) * 100).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
+                                <span class="call-dur">@(call.Skipped ? "" : Format.Ms(call.DurationMs))</span>
+                                <span class="call-status" title="@(call.TypicalMs is { } tyMs && !call.Skipped ? $"Typical for this call: {Format.Ms(tyMs)}" : call.Error)">@CallStatus(call)</span>
+                                @if (showTypicals && !call.Skipped && call.TypicalMs is { } typ)
+                                {
+                                    <span class="call-typ muted">typical @Format.Ms(typ)@(Format.OverTypical(callRatio) ? " · " + Format.Times(callRatio) : "")</span>
+                                }
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        }
+        </div>
+        <aside class="pop-side" aria-label="Bees in view" @onpointerenter="() => listHover = true" @onpointerleave="() => listHover = false">
+            <div class="side-head">
+                <h3>Bees in view <span class="n">@Format.Num(sideRows.Count)</span></h3>
+                <p class="side-scope muted">
+                    @(win is { } ws ? $"{Format.Time(ws.From)}{(ws.Follow ? " → now" : $" – {Format.Time(ws.To)}")}" : "whole run")
+                    @if (tailMs is { } tm)
+                    {
+                        <button class="chip" @onclick="() => tailMs = null" title="Show all bees of the time frame again">slowest 5% (≥ @Format.Ms(tm)) ✕</button>
+                    }
+                    @if (groupSel is { } gc)
+                    {
+                        <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">bees #@(gc.Lo + 1)–#@(gc.Hi + 1) ✕</button>
+                    }
+                    @if (activeBucket is { } ab)
+                    {
+                        <button class="chip" @onclick="() => bucket = null" title="Show the whole time frame again">bucket @Format.Time(ab)–@Format.Time(ab + width) ✕</button>
+                        <button class="link-btn" @onclick="() => ZoomTo(ab, ab + width)" title="Zoom the chart into this bucket">Zoom in</button>
+                    }
+                </p>
+                <p class="side-counts">
+                    <button class="cnt bad" @onclick="() => SetShow(BeeShow.Failed, true)" disabled="@(sideCounts[0] == 0)" title="Show only failed bees"><i></i>@Format.Num(sideCounts[0]) failed</button>
+                    <button class="cnt warn" @onclick="() => SetShow(BeeShow.Slow, true)" disabled="@(sideCounts[1] == 0)" title="Show only slow bees"><i></i>@Format.Num(sideCounts[1]) slow</button>
+                    <button class="cnt good" @onclick="() => SetShow(BeeShow.All, true)" title="Show all bees"><i></i>@Format.Num(sideCounts[3]) ok</button>
+                    @if (sideCounts[2] > 0) { <span class="cnt run"><i></i>@Format.Num(sideCounts[2]) running</span> }
+                </p>
+            </div>
+            <BeeSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" />
+        </aside>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int Index { get; set; }
+    [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Optional: what to list when the popup opens (the overview card figures lead here, brain 0029).</summary>
+    [Parameter] public DetailFilter InitialShow { get; set; }
+    /// <summary>A hand-picked set of bees (the assistant's timeline, brain 0049) instead of one scenario entry: hides the rate figures and the entry actions.</summary>
+    [Parameter] public bool Selection { get; set; }
+    /// <summary>Where the calls and logs of a bee come from when they are not the live run's (a bee set of another run). Null = the live run.</summary>
+    [Parameter] public Func<int, Task>? EnsureDetail { get; set; }
+    /// <summary>What "Full logs" does; null = open the Logs popup for the entry and bee (hidden for a bee set when null).</summary>
+    [Parameter] public Func<int, Task>? OpenLogs { get; set; }
+    /// <summary>The bee (sequence) to select when the popup opens.</summary>
+    [Parameter] public int? InitialBee { get; set; }
+    /// <summary>The assistant's short reason per picked bee (sequence to text), shown in the bee panel.</summary>
+    [Parameter] public IReadOnlyDictionary<int, string>? Notes { get; set; }
+
+    private void OpenBeeLogs(int sequence)
+    {
+        if (OpenLogs is not null) _ = OpenLogs(sequence);
+        else Logs.Show(Index, sequence);
+    }
+
+    private ElementReference root;
+    private BeeShow show = BeeShow.All;
+    private BeeRecord? selected;
+    private bool showTypicals;   // the bee panel names the typical time of every call (brain 0041, 0029)
+    private int? selRunning;
+    private bool showWaterfall;
+    private bool beeLogWrap = true;
+    private bool liveShowFailed;
+    private readonly Dictionary<int, LiveLogEntryDto> latestLogByBee = [];
+    private List<int> liveBeeOrder = [];
+    private List<int>? frozenFeedSeqs;
+    private bool liveFeedScrolledDown;
+    private ElementReference liveFeedEl;
+    private IJSObjectReference? liveFeedScrollHandle;
+    private DotNetObjectReference<ScenarioDetailDialog>? selfRef;
+    private bool liveFeedAttached;
+    private long liveOrderUpdatedAt;
+    private int liveOrderFinishedCount = -1;
+    private long entryLogAfterId;
+    private CancellationTokenSource? entryLogCts;
+    private bool entryLogPolling;
+    private ElementReference runningLogEl;
+    private readonly List<LiveLogEntryDto> runningLogs = [];
+    private int? runningLogSeq;
+    private long runningLogAfterId;
+    private CancellationTokenSource? runningLogCts;
+    private IJSObjectReference? logScrollMod;
+    private IJSObjectReference? logScrollHandle;
+    private bool runningConsoleAttached;
+    private bool disposed;
+    private double? bucketValue;
+    /// <summary>The selected time bucket; any change clears the selected burst group (brain 0043), which the pick that sets it assigns afterwards.</summary>
+    private double? bucket { get => bucketValue; set { bucketValue = value; groupSel = null; } }
+    /// <summary>The selected even group of an unfolded burst (brain 0043): the burst's slot and the lowest and highest bee sequence in the group.</summary>
+    private (double Slot, int Lo, int Hi)? groupSel;
+    private sealed record Win(double From, double To, bool Follow);
+    private Win? win;
+    private readonly ChartGrid grid = new();
+    private bool listHover;
+    private List<BeeRow> sideCache = [];
+    private int[] sideCounts = new int[4];
+    private (double, double, BeeShow, double?, (double, int, int)?) sideKey;
+    private (int, int) sideCountKey;
+    private long sideAt;
+    private string sideReset = "";
+    private double? tailMs;
+    private BeeStats statsCache = BeeStats.Empty;
+    private (double, double) statsKey;
+    private int statsCount = -1;
+    private long statsAt;
+
+    /// <summary>Statistics of the bees in the visible window (brain 0030), recomputed when the window changes and at most every 0.7 s otherwise.</summary>
+    private BeeStats StatsFor(IReadOnlyList<BeeRecord> bees, int count, double from, double to)
+    {
+        var key = (from, to);
+        if (key == statsKey && (count == statsCount || Environment.TickCount64 - statsAt < 700)) return statsCache;
+        statsCache = BeeStats.Compute(bees, count, from, to);
+        statsKey = key; statsCount = count; statsAt = Environment.TickCount64;
+        return statsCache;
+    }
+
+    private static string CompactSec(double sec)
+    {
+        var s = Math.Max(0, (int)Math.Floor(sec));
+        return s < 60 ? $"{s}s" : $"{s / 60}m";
+    }
+
+    private string FormatRunningLogsText() =>
+        string.Join("\n", runningLogs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception)));
+
+    private static string FormatBeeLogsText(IReadOnlyList<FakeLogEntry> logs) =>
+        string.Join("\n", logs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception)));
+
+    private static string FormatPlainLog(DateTimeOffset ts, string level, string message, string? exception)
+    {
+        var tag = level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        var body = string.IsNullOrEmpty(exception) ? message : $"{message}\n{exception}";
+        return $"[{ts.ToLocalTime():HH:mm:ss.fff} {tag}] {body}";
+    }
+
+    private static string Pc(double v) => v == 0 ? "0%" : v < 10 ? v.ToString("0.0", CultureInfo.InvariantCulture) + "%" : v.ToString("0", CultureInfo.InvariantCulture) + "%";
+
+    private void SelectIndex(int index)
+    {
+        var bees = Snapshot.Store.Bees(Index);
+        if (index >= 0 && index < bees.Count) { selRunning = null; selected = bees[index]; }
+    }
+
+    private void TailOnly(double ms) { tailMs = tailMs is null ? ms : null; show = BeeShow.All; bucket = null; }
+    private bool refocus = true;
+    private DockZoom? zoom;
+    // Freeze while aiming (brain 0026): the chart data of the last normal render, and the data held while the user aims.
+    private sealed record ChartData(List<BeeBar> Bars, double Scale, double Width, int Total, double ElapsedMs, int Starts, int Finished, IReadOnlyList<RunningBee> Running, double? GridFrom = null);
+    private ChartData? lastChart, fz;
+    private bool aiming;
+    private string ovCache = "";
+    private (int, int) ovKey = (-1, -1);
+    private long ovAt;
+    /// <summary>The overview strip's marks (brain 0035 update 1), recomputed when the finished count or the run's whole seconds changed and the last pass is over 0.7 s old.</summary>
+    private string OverviewMarks(IReadOnlyList<BeeRecord> bees, int count, double elapsed)
+    {
+        var key = (count, (int)elapsed);
+        if (key == ovKey || (Environment.TickCount64 - ovAt < 700 && ovCache.Length > 0)) return ovCache;
+        ovCache = BeeBars.OverviewMarks(bees, count, elapsed);
+        ovKey = key; ovAt = Environment.TickCount64;
+        return ovCache;
+    }
+    /// <summary>The chart's width in CSS pixels, reported by the script (0 until known): bursts unfold when their bees fit (brain 0040).</summary>
+    private double chartPx;
+    /// <summary>Hysteresis of unfolding (brain 0040): a burst folds again only when its bars are clearly narrower than where it unfolded.</summary>
+    private readonly UnfoldHysteresis unfoldPlay = new();
+    private void SetChartSize(double px) { if (Math.Abs(px - chartPx) >= 1) { chartPx = px; fz = null; } }
+    /// <summary>Grid slots (their start, run seconds) whose burst is unfolded in the chart at the last render (brain 0038), for stepping through failed bees.</summary>
+    private Dictionary<double, int> unfoldedSlots = [];     // slot -> size of the burst's even groups (brain 0043)
+
+    private string StepWord => show == BeeShow.Slow ? "slow" : "failed";
+    private BeeOutcome StepOutcome => show == BeeShow.Slow ? BeeOutcome.Slow : BeeOutcome.Failed;
+    private int StepCount(ScenarioView v) => show == BeeShow.Slow ? v.SlowBees : v.Failed;
+
+    protected override void OnInitialized()
+    {
+        Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged;
+        if (InitialBee is { } initialBee)
+        {
+            var all = Snapshot.Store.Bees(Index);
+            for (var i = 0; i < all.Count; i++) if (all[i].Sequence == initialBee) { selected = all[i]; break; }
+        }
+        switch (InitialShow)
+        {
+            case DetailFilter.Failed: show = BeeShow.Failed; liveShowFailed = true; break;
+            case DetailFilter.Slow: show = BeeShow.Slow; break;
+            case DetailFilter.Slowest5Pct:
+                var st = BeeStats.Compute(Snapshot.Store.Bees(Index), Snapshot.Scenarios[Index].Finished, double.NegativeInfinity, double.PositiveInfinity);
+                if (st.Count > 0) tailMs = st.P95;
+                break;
+        }
+    }
+
+    private void OnSettingsChanged()
+    {
+        fz = null;
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    // A selected running bee turns into its finished record in place once it completes.
+    protected override void OnParametersSet()
+    {
+        if (selRunning is { } seq)
+        {
+            var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+            if (!running.Any(r => r.Sequence == seq))
+            {
+                var bees = Snapshot.Store.Bees(Index);
+                for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
+                    if (bees[i].Sequence == seq) { selected = bees[i]; break; }
+                selRunning = null;
+            }
+        }
+        SyncRunningLogPoll();
+        SyncEntryLogPoll();
+    }
+
+    private void SelectLiveBee(int seq)
+    {
+        var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
+        if (running.Any(r => r.Sequence == seq))
+        {
+            selected = null;
+            selRunning = selRunning == seq ? null : seq;
+            SyncRunningLogPoll();
+            return;
+        }
+        var bees = Snapshot.Store.Bees(Index);
+        for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
+        {
+            if (bees[i].Sequence == seq)
+            {
+                selRunning = null;
+                selected = selected is { } cur && cur.Sequence == seq ? null : bees[i];
+                SyncRunningLogPoll();
+                return;
+            }
+        }
+    }
+
+    private void SyncEntryLogPoll()
+    {
+        var shouldPoll = Snapshot.Running && !Selection && !DataMode.IsFakeMode;
+        if (shouldPoll == entryLogPolling) return;
+        entryLogCts?.Cancel();
+        entryLogCts?.Dispose();
+        entryLogCts = null;
+        entryLogPolling = shouldPoll;
+        if (shouldPoll)
+        {
+            latestLogByBee.Clear();
+            liveBeeOrder.Clear();
+            frozenFeedSeqs = null;
+            liveFeedScrolledDown = false;
+            liveOrderUpdatedAt = 0;
+            liveOrderFinishedCount = -1;
+            entryLogAfterId = 0;
+            entryLogCts = new CancellationTokenSource();
+            _ = PollEntryLogsAsync(entryLogCts.Token);
+        }
+    }
+
+    [JSInvokable]
+    public void OnLiveFeedScroll(bool scrolledDown)
+    {
+        if (liveFeedScrolledDown == scrolledDown) return;
+        liveFeedScrolledDown = scrolledDown;
+        if (!scrolledDown)
+        {
+            frozenFeedSeqs = null;
+            liveOrderUpdatedAt = 0; // refresh order when returning to top
+        }
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task JumpLiveFeedToTopAsync()
+    {
+        liveFeedScrolledDown = false;
+        frozenFeedSeqs = null;
+        liveOrderUpdatedAt = 0;
+        if (liveFeedScrollHandle is not null)
+        {
+            try { await liveFeedScrollHandle.InvokeVoidAsync("scrollToTop"); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Builds the displayed bee sequence list for the live feed:
+    /// - When scrolled down, freezes the displayed sequence list (no new bees inserted) while still letting each
+    ///   visible row render its newest log line, and reports how many new bees have arrived since freezing.
+    /// - When at the top, keeps flying bees above finished bees and re-sorts on bee completion or every 10s.
+    /// </summary>
+    private (List<int> Seqs, int PendingNew) BuildLiveFeedView(IReadOnlyList<RunningBee> runningNow, Dictionary<int, RunningBee> runningSet, int finishedCount)
+    {
+        var orderedLogs = OrderedLiveLogs(runningSet, finishedCount);
+        var loggedRunning = orderedLogs.Where(l => runningSet.ContainsKey(l.Sequence)).Select(l => l.Sequence).ToHashSet();
+        var fresh = new List<int>(runningNow.Count + orderedLogs.Count);
+        foreach (var ur in runningNow.Where(r => !loggedRunning.Contains(r.Sequence)).OrderByDescending(r => r.StartedAt))
+            fresh.Add(ur.Sequence);
+        foreach (var lg in orderedLogs)
+            fresh.Add(lg.Sequence);
+
+        if (!liveFeedScrolledDown)
+        {
+            frozenFeedSeqs = fresh;
+            return (fresh, 0);
+        }
+
+        frozenFeedSeqs ??= fresh;
+        var shown = frozenFeedSeqs.ToHashSet();
+        var pending = 0;
+        foreach (var seq in fresh)
+            if (!shown.Contains(seq)) pending++;
+        return (frozenFeedSeqs, pending);
+    }
+
+    /// <summary>
+    /// Keeps flying bees always above finished bees and re-sorts whenever a bee finishes (or every 10 seconds),
+    /// while each row immediately reflects the newest log line from <see cref="latestLogByBee"/> on every poll.
+    /// </summary>
+    private List<LiveLogEntryDto> OrderedLiveLogs(Dictionary<int, RunningBee> runningSet, int finishedCount)
+    {
+        if (latestLogByBee.Count == 0) return [];
+        var now = Environment.TickCount64;
+        if (liveBeeOrder.Count == 0 || finishedCount != liveOrderFinishedCount || now - liveOrderUpdatedAt >= 10_000)
+        {
+            liveBeeOrder = latestLogByBee.Values
+                .OrderByDescending(l => runningSet.ContainsKey(l.Sequence))
+                .ThenByDescending(l => l.Id)
+                .Select(l => l.Sequence)
+                .Take(100)
+                .ToList();
+            liveOrderUpdatedAt = now;
+            liveOrderFinishedCount = finishedCount;
+        }
+        else if (liveBeeOrder.Count < 20)
+        {
+            var seen = liveBeeOrder.ToHashSet();
+            foreach (var item in latestLogByBee.Values
+                .OrderByDescending(l => runningSet.ContainsKey(l.Sequence))
+                .ThenByDescending(l => l.Id))
+            {
+                if (liveBeeOrder.Count >= 20) break;
+                if (seen.Add(item.Sequence)) liveBeeOrder.Add(item.Sequence);
+            }
+        }
+
+        // Always partition flying bees above finished bees even between re-sorts.
+        var flying = new List<LiveLogEntryDto>();
+        var done = new List<LiveLogEntryDto>();
+        foreach (var seq in liveBeeOrder)
+        {
+            if (!latestLogByBee.TryGetValue(seq, out var log)) continue;
+            if (runningSet.ContainsKey(seq)) flying.Add(log);
+            else done.Add(log);
+        }
+        flying.AddRange(done);
+        return flying;
+    }
+
+    private async Task PollEntryLogsAsync(CancellationToken ct)
+    {
+        await FetchEntryLogsOnceAsync(ct);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(400));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await FetchEntryLogsOnceAsync(ct);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task FetchEntryLogsOnceAsync(CancellationToken ct)
+    {
+        var batch = await ApiRun.FetchLiveLogsAsync(entryLogAfterId, 500, ct, entry: Index);
+        if (ct.IsCancellationRequested || disposed || batch.Count == 0) return;
+        foreach (var item in batch)
+        {
+            if (item.Sequence >= 0) latestLogByBee[item.Sequence] = item;
+            if (item.Id > entryLogAfterId) entryLogAfterId = item.Id;
+        }
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void SyncRunningLogPoll()
+    {
+        var target = !DataMode.IsFakeMode ? selRunning : null;
+        if (target == runningLogSeq) return;
+        runningLogCts?.Cancel();
+        runningLogCts?.Dispose();
+        runningLogCts = null;
+        runningLogSeq = target;
+        runningLogs.Clear();
+        runningLogAfterId = 0;
+        if (target is { } seq)
+        {
+            runningLogCts = new CancellationTokenSource();
+            _ = PollRunningLogsAsync(seq, runningLogCts.Token);
+        }
+    }
+
+    private async Task PollRunningLogsAsync(int seq, CancellationToken ct)
+    {
+        await FetchRunningLogsOnceAsync(seq, ct);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(350));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await FetchRunningLogsOnceAsync(seq, ct);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task FetchRunningLogsOnceAsync(int seq, CancellationToken ct)
+    {
+        var batch = await ApiRun.FetchLiveLogsAsync(runningLogAfterId, 500, ct, sequence: seq);
+        if (ct.IsCancellationRequested || disposed || runningLogSeq != seq || batch.Count == 0) return;
+        foreach (var item in batch)
+        {
+            runningLogs.Add(item);
+            if (item.Id > runningLogAfterId) runningLogAfterId = item.Id;
+        }
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    // When the Logs popup (which sits on top of this one) closes, take the keyboard focus back so Esc keeps working.
+    private void OnLogsChanged()
+    {
+        if (!Logs.IsOpen) { refocus = true; InvokeAsync(StateHasChanged); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        SyncRunningLogPoll();
+        var showLiveConsole = selRunning is not null && !showWaterfall;
+        if (showLiveConsole && !runningConsoleAttached)
+        {
+            try
+            {
+                logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js");
+                logScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("attach", runningLogEl);
+                runningConsoleAttached = true;
+            }
+            catch { }
+        }
+        else if (!showLiveConsole && runningConsoleAttached)
+        {
+            runningConsoleAttached = false;
+            if (logScrollHandle is not null)
+            {
+                try { await logScrollHandle.InvokeVoidAsync("dispose"); await logScrollHandle.DisposeAsync(); } catch { }
+                logScrollHandle = null;
+            }
+        }
+        else if (showLiveConsole && logScrollHandle is not null)
+        {
+            try { await logScrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
+
+        var showLiveFeed = Snapshot.Running && !Selection && !DataMode.IsFakeMode && !liveShowFailed && (latestLogByBee.Count > 0 || (Snapshot.BeesInFlight is { } rnf && Index < rnf.Length && rnf[Index].Count > 0));
+        if (showLiveFeed && !liveFeedAttached)
+        {
+            try
+            {
+                logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js");
+                selfRef ??= DotNetObjectReference.Create(this);
+                liveFeedScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("watchTop", liveFeedEl, selfRef);
+                liveFeedAttached = true;
+            }
+            catch { }
+        }
+        else if (!showLiveFeed && liveFeedAttached)
+        {
+            liveFeedAttached = false;
+            liveFeedScrolledDown = false;
+            frozenFeedSeqs = null;
+            if (liveFeedScrollHandle is not null)
+            {
+                try { await liveFeedScrollHandle.InvokeVoidAsync("dispose"); await liveFeedScrollHandle.DisposeAsync(); } catch { }
+                liveFeedScrollHandle = null;
+            }
+        }
+
+        if (!refocus || Logs.IsOpen) return;
+        refocus = false;
+        try { await root.FocusAsync(); } catch (Exception) { }
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") OnClose.InvokeAsync();
+    }
+
+    private void SetShow(BeeShow s, bool keepBucket = false) { show = s; tailMs = null; if (!keepBucket) bucket = null; fz = null; }
+
+    private void Brush(BrushRange r)
+    {
+        win = new Win(Math.Max(0, r.From), r.To, r.ToEnd);
+        bucket = null; fz = null; tailMs = null;
+    }
+    /// <summary>Pinch on the chart (brain 0031): the same window as the brush, clamped to the run. As wide as the run it means the whole run; reaching the newest end follows the live edge.</summary>
+    private void PinchZoom(BrushRange r)
+    {
+        var elapsed = Snapshot.Elapsed;
+        var span = r.To - r.From;
+        if (span >= elapsed * 0.98) { ResetZoom(); return; }
+        var from = r.From < 0 ? 0 : r.From;
+        var to = from + span;
+        // a pan (same span: swipe on the bars, edge pan, overview strip) keeps the bucket width, so a selected group stays selected (brain 0037)
+        var pan = win is { } ow && Math.Abs(ow.To - ow.From - span) <= 1e-6 * Math.Max(1, span);
+        if (to >= elapsed - 0.02 * span) win = new Win(Math.Max(0, elapsed - span), elapsed, true);
+        else win = new Win(from, to, false);
+        if (!pan) bucket = null;
+        fz = null; tailMs = null;
+    }
+    private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
+    private void ResetZoom() { win = null; bucket = null; fz = null; tailMs = null; }
+
+    private void SelectRow(BeeRow row)
+    {
+        if (row.IsRunning) { selected = null; selRunning = row.Sequence; return; }
+        var bees = Snapshot.Store.Bees(Index);
+        if (row.Index >= 0 && row.Index < bees.Count) { selRunning = null; selected = bees[row.Index]; }
+    }
+
+    /// <summary>
+    /// The side list rows (failed, slow, running, ok; each by time) for the visible time frame, narrowed to the selected bucket. Rebuilt when the frame or filter
+    /// changes, and at most every 0.7 s when bees finished; held still while the pointer is over the list (like brain 0026).
+    /// </summary>
+    private List<BeeRow> SideRows(IReadOnlyList<BeeRecord> bees, int count, IReadOnlyList<RunningBee> running, BeeShow sh, double from, double to, double? bucketStart, double width)
+    {
+        var lo = bucketStart is { } b ? Math.Max(from, b) : from;
+        var hi = bucketStart is { } b2 ? Math.Min(to, b2 + width) : to;
+        var key = (lo, hi, sh, tailMs, groupSel is { } gs0 ? ((double, int, int)?)(gs0.Slot, gs0.Lo, gs0.Hi) : null);
+        var countKey = (count, running.Count);
+        var stale = key != sideKey || (countKey != sideCountKey && !listHover && Environment.TickCount64 - sideAt > 700);
+        if (!stale) return sideCache;
+        sideCache = BeeOrder.Rows(bees, count, running, sh, lo, hi, tailMs ?? 0);
+        if (groupSel is { } gf) sideCache = sideCache.Where(r => r.Sequence >= gf.Lo && r.Sequence <= gf.Hi).ToList();
+        sideKey = key; sideCountKey = countKey; sideAt = Environment.TickCount64;
+        sideReset = $"{lo}|{hi}|{sh}|{tailMs}|{groupSel}";
+        sideCounts = new int[4];
+        foreach (var r in sideCache) sideCounts[(int)r.State]++;
+        return sideCache;
+    }
+
+    private void SetAiming(bool on)
+    {
+        aiming = on;
+        fz = on ? lastChart : null;
+    }
+
+    private async Task Resume()
+    {
+        aiming = false; fz = null;
+        if (zoom is not null) await zoom.ReleaseAsync();
+    }
+
+    /// <summary>A bar was picked (on pointer-down): "a12" bee, "r12" running bee, "bNN" time bucket. Bees are found by sequence, so the pick is right even if the bar has changed since (a running bee may have finished).</summary>
+    private void PickKey(string key)
+    {
+        if (key.Length < 2) return;
+        if (key[0] == 'b')
+        {
+            if (double.TryParse(key.AsSpan(1), NumberStyles.Float, CultureInfo.InvariantCulture, out var start)) PickBar(new BeeBar(0, 0, 0, 0, -1, start));
+        }
+        else if (key[0] == 'g')
+        {
+            var p = key.Substring(1).Split(':');
+            if (p.Length == 3 && double.TryParse(p[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var slot) && int.TryParse(p[1], out var glo) && int.TryParse(p[2], out var ghi))
+                PickBar(new BeeBar(0, 0, 0, 0, -1, slot, Slot: slot, GroupLo: glo, GroupHi: ghi));
+        }
+        else if (int.TryParse(key.AsSpan(1), out var seq))
+        {
+            var inFlight = Snapshot.BeesInFlight is { } rn && Index < rn.Length && rn[Index].Any(r => r.Sequence == seq);
+            PickBar(new BeeBar(inFlight ? 0 : 1, 0, 0, 0, seq, 0, inFlight ? 1 : 0));
+        }
+    }
+
+    private void PickBar(BeeBar bar)
+    {
+        if (bar.IsBurstGroup)
+        {
+            var same = groupSel is { } g0 && g0.Slot == bar.Slot && g0.Lo == bar.GroupLo && g0.Hi == bar.GroupHi;
+            bucket = null; selected = null; selRunning = null;
+            if (!same) groupSel = (bar.Slot, bar.GroupLo, bar.GroupHi);
+        }
+        else if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; }
+        else if (bar.IsRunningBee) { groupSel = null; selected = null; selRunning = selRunning == bar.Sequence ? null : bar.Sequence; }
+        else
+        {
+            var bees = Snapshot.Store.Bees(Index);
+            groupSel = null;
+            for (var i = 0; i < Snapshot.Scenarios[Index].Finished; i++)
+                if (bees[i].Sequence == bar.Sequence) { selRunning = null; selected = selected is { } s && s.Sequence == bar.Sequence ? null : bees[i]; break; }
+        }
+    }
+
+    /// <summary>
+    /// Previous / next failed (or slow) bee in time order, wrapping around. With grouped bars (brain 0032) it steps to the previous / next group that
+    /// holds one and selects the group; when zoomed in and the target is outside the view, the view moves to it (same span, brain 0036).
+    /// </summary>
+    private void StepTo(int direction)
+    {
+        var bees = Snapshot.Store.Bees(Index);
+        var count = Snapshot.Scenarios[Index].Finished;
+        var outcome = StepOutcome;
+        var list = new List<BeeRecord>();
+        for (var i = 0; i < count; i++) if (bees[i].Outcome == outcome) list.Add(bees[i]);
+        if (list.Count == 0) return;
+        list.Sort((x, y) => x.StartedAt != y.StartedAt ? x.StartedAt.CompareTo(y.StartedAt) : x.Sequence.CompareTo(y.Sequence));
+        var w = lastChart?.Width ?? 0;
+        var elapsed = Snapshot.Elapsed;
+        double vf = double.NegativeInfinity, vt = double.PositiveInfinity;
+        if (win is { } wv) { var sp = wv.To - wv.From; if (wv.Follow) { vt = elapsed; vf = Math.Max(0, vt - sp); } else { vf = wv.From; vt = wv.To; } }
+
+        BeeRecord? FromView() => direction > 0
+            ? list.Cast<BeeRecord?>().FirstOrDefault(a => a!.Value.StartedAt >= (double.IsNegativeInfinity(vf) ? 0 : vf))
+            : list.Cast<BeeRecord?>().LastOrDefault(a => a!.Value.StartedAt < (double.IsPositiveInfinity(vt) ? double.MaxValue : vt));
+        // the key of the current position: a group start (grouped bars) or a bee (start time, sequence)
+        // Unfolded bursts (brain 0038) step bee by bee: inside one the key is (slot, sequence + 1), a group bar or the whole burst is (slot, 0).
+        BeeRecord? tg = null;
+        // brain 0043: a burst in even groups steps group by group (the key is the group number), a burst of single bars bee by bee
+        var order = new Dictionary<double, List<int>>();
+        if (w > 0 && unfoldedSlots.Count > 0)
+        {
+            var tmp = new Dictionary<double, List<(double, int)>>();
+            void Note(double start, int seq) { var sl = BeeBars.BucketOf(start, w); if (!unfoldedSlots.ContainsKey(sl)) return; if (!tmp.TryGetValue(sl, out var l)) tmp[sl] = l = []; l.Add((start, seq)); }
+            for (var i = 0; i < count; i++) Note(bees[i].StartedAt, bees[i].Sequence);
+            if (Snapshot.BeesInFlight is { } rn && Index < rn.Length) foreach (var r in rn[Index]) Note(r.StartedAt, r.Sequence);
+            foreach (var (sl, l) in tmp) { l.Sort(); order[sl] = l.Select(x => x.Item2).ToList(); }
+        }
+        long Pos(double sl, int seq)
+        {
+            if (!order.TryGetValue(sl, out var l)) return 0;
+            var r = Math.Max(0, l.IndexOf(seq));
+            return unfoldedSlots[sl] > 1 ? r / unfoldedSlots[sl] + 1L : r + 1L;
+        }
+        (double, long) GKey(BeeRecord a) { var sl = BeeBars.BucketOf(a.StartedAt, w); return (sl, unfoldedSlots.ContainsKey(sl) ? Pos(sl, a.Sequence) : 0L); }
+        if (w > 0)
+        {
+            (double, long)? cur = bucket is { } bk ? (bk, 0L) : groupSel is { } gk ? (gk.Slot, Pos(gk.Slot, gk.Lo)) : selected is { } sa ? GKey(sa) : null;
+            if (cur is { } c)
+                tg = direction > 0 ? list.Cast<BeeRecord?>().FirstOrDefault(a => GKey(a!.Value).CompareTo(c) > 0) : list.Cast<BeeRecord?>().LastOrDefault(a => GKey(a!.Value).CompareTo(c) < 0);
+            else
+                tg = FromView();
+        }
+        else if (selected is { } cs)
+        {
+            tg = direction > 0 ? list.Cast<BeeRecord?>().FirstOrDefault(a => a!.Value.StartedAt > cs.StartedAt || (a.Value.StartedAt == cs.StartedAt && a.Value.Sequence > cs.Sequence))
+                : list.Cast<BeeRecord?>().LastOrDefault(a => a!.Value.StartedAt < cs.StartedAt || (a.Value.StartedAt == cs.StartedAt && a.Value.Sequence < cs.Sequence));
+        }
+        else tg = FromView();
+        var target = tg ?? (direction > 0 ? list[0] : list[^1]);     // wrap around
+
+        double t0 = target.StartedAt, t1 = target.StartedAt;
+        if (w > 0) { t0 = BeeBars.BucketOf(target.StartedAt, w); t1 = t0 + w; }
+        if (win is not null && (t0 < vf || t1 > vt) && vt - vf > 0)
+        {
+            var span = vt - vf;
+            var from = Math.Clamp((t0 + t1) / 2 - span / 2, 0, Math.Max(0, elapsed - span));
+            var to = from + span;
+            win = to >= elapsed - 0.02 * span ? new Win(Math.Max(0, elapsed - span), elapsed, true) : new Win(from, to, false);
+        }
+        tailMs = null; fz = null; selRunning = null;
+        if (w > 0 && unfoldedSlots.TryGetValue(t0, out var gsz) && gsz > 1 && order.TryGetValue(t0, out var ord))
+        {
+            var at = ord.IndexOf(target.Sequence) / gsz * gsz;
+            var part = ord.Skip(at).Take(gsz).ToList();
+            bucket = null; selected = null;
+            groupSel = (t0, part.Min(), part.Max());
+        }
+        else if (w > 0 && !unfoldedSlots.ContainsKey(t0) && !(win is not null && BeeBars.BucketBees(bees, count, show, t0, w).Count <= 1))
+        {
+            bucket = t0; selected = null;
+        }
+        else { bucket = null; selected = target; }
+    }
+
+    /// <summary>A bar that stands for several bees (brain 0032): lighter fill, outline and a count badge.</summary>
+    private static bool IsGroup(BeeBar b) => b.IsBucket && b.Total > 1;
+
+    private static string BarCls(BeeBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : BeeOrder.Good(b.Step);
+    private static string Cls(BeeOutcome o) => o switch { BeeOutcome.Failed => "bad", BeeOutcome.Slow => "warn", _ => "" };
+    private static string Ms(double v) => v.ToString("0", CultureInfo.InvariantCulture);
+    private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
+
+    /// <summary>Label inside the hovered bar (brain 0023): bee number or time range, then start time and duration or bee count. Times are run time (m:ss).</summary>
+    private static string LabelTop(BeeBar b, double width) => b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1}" : b.IsBucket ? $"{FT(b.BucketStart, width)}–{FT(b.BucketStart + width, width)}" : $"B{b.Sequence + 1}";
+
+    /// <summary>Run time m:ss, with decimals when the bucket width is below a second (zoomed in far).</summary>
+    private static string FT(double seconds, double width)
+    {
+        if (width >= 1) return Format.Time(seconds);
+        var d = width < 0.1 ? 2 : 1;
+        var whole = Math.Floor(seconds);
+        var frac = (int)Math.Floor((seconds - whole) * (d == 2 ? 100 : 10) + 1e-6);
+        return Format.Time(whole) + "." + frac.ToString(d == 2 ? "00" : "0", CultureInfo.InvariantCulture);
+    }
+
+    private static string T(double seconds) => seconds.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string K(double cover) => cover.ToString("0.######", CultureInfo.InvariantCulture);
+
+    /// <summary>Right-hand figure of the hover label: duration (with the outcome in words, brain 0018), or the bee count of a bucket.</summary>
+    private static string LabelMeta(BeeBar b)
+    {
+        if (b.IsBucket) return Format.Plural(b.Total, "bee", "bees");
+        if (b.IsRunningBee) return "flying";
+        return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : Format.OverTypical(b.Ratio) ? " · " + Format.Times(b.Ratio) : "");
+    }
+
+    private static string LabelSub(BeeBar b)
+    {
+        if (!b.IsBucket) return $"started {Format.Time(b.BucketStart)}";
+        return "";   // buckets show coloured counts instead (data-bad / data-slow / data-ok / data-runn, drawn by dock-magnify.js)
+    }
+
+    private static string Status(BeeBar b) => b.Failed > 0 ? "bad" : b.Slow > 0 ? "warn" : b.Running > 0 && b.Count == 0 ? "run" : BeeOrder.Good(b.Step);
+
+    /// <summary>Compact text for the faint labels of the neighbours of the hovered bar.</summary>
+    private static string Near1(BeeBar b, double width) => b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1}" : b.IsBucket ? FT(b.BucketStart, width) : $"B{b.Sequence + 1}";
+    private static string Near2(BeeBar b) => b.IsBucket ? Format.Num(b.Total) : b.IsRunningBee ? "…" : b.MaxMs < 1000 ? $"{b.MaxMs:0}ms" : b.MaxMs < 60_000 ? $"{b.MaxMs / 1000:0.0}s" : Format.Time(b.MaxMs / 1000);
+
+    private static string BarTitle(BeeBar b, double width)
+    {
+        if (b.IsRunningBee) return $"B{b.Sequence + 1}, flying, {Format.Ms(b.MaxMs)} so far";
+        if (!b.IsBucket) return $"B{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
+        var text = b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1} of the burst at {FT(b.Slot, width)}: {Format.Plural(b.Count, "bee", "bees")}"
+            : $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "bee", "bees")}";
+        if (b.Failed > 0) text += $", {b.Failed} failed";
+        if (b.Slow > 0) text += $", {b.Slow} slow";
+        else if (Format.OverTypical(b.Ratio)) text += $", the slowest {Format.Times(b.Ratio)} typical";
+        if (b.Running > 0) text += $", {b.Running} running";
+        return text;
+    }
+
+    private static string? LastErrorOf(BeeRecord bee, BeeDetail? detail)
+    {
+        string? raw = null;
+        if (detail is not null)
+        {
+            for (var i = detail.Logs.Count - 1; i >= 0; i--)
+            {
+                var log = detail.Logs[i];
+                if (log.Level is "Error" or "Critical" or "Fatal")
+                {
+                    raw = !string.IsNullOrWhiteSpace(log.Message) ? log.Message : log.Exception;
+                    if (!string.IsNullOrWhiteSpace(raw)) break;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                for (var i = detail.Calls.Count - 1; i >= 0; i--)
+                {
+                    if (!string.IsNullOrWhiteSpace(detail.Calls[i].Error))
+                    {
+                        raw = detail.Calls[i].Error;
+                        break;
+                    }
+                }
+            }
+        }
+        if (string.IsNullOrWhiteSpace(raw)) raw = bee.Error;
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var line = raw.Trim();
+        var nl = line.IndexOfAny(['\r', '\n']);
+        if (nl >= 0) line = line[..nl].Trim();
+        return line.Length > 84 ? line[..83] + "…" : line;
+    }
+
+    private static string CallStatus(FakeCall c) =>
+        c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? (ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "";
+
+    public void Dispose()
+    {
+        disposed = true;
+        runningLogCts?.Cancel();
+        runningLogCts?.Dispose();
+        entryLogCts?.Cancel();
+        entryLogCts?.Dispose();
+        selfRef?.Dispose();
+        Logs.Changed -= OnLogsChanged;
+        Settings.Changed -= OnSettingsChanged;
+    }
+}

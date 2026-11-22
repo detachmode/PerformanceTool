@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 // The ports (brain 0047/0051): what the assistant needs from the app. The host implements them as thin adapters over its own services,
 // the assistant never references the host. All indexes here are 0-based (entry index, bee sequence), like the app's own data;

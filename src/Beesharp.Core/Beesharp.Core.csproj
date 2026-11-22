@@ -6,11 +6,13 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool</RootNamespace>
+    <RootNamespace>Beesharp</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Only for AddScenario<T>() on IServiceCollection and ILogger on ScenarioContext. -->
+  <!-- Only for AddScenario<T>() on IServiceCollection and ILogger on ScenarioContext. From .NET 11 the SDK provides them
+       itself (NU1510 asks to drop the references); older SDKs (the .NET 10 agent copy) still need them. The condition avoids a
+       literal target name so the copy's net11.0 -> net10.0 rewrite keeps it working. -->
+  <ItemGroup Condition="$([MSBuild]::VersionLessThan($([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)')), '11.0'))">
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>

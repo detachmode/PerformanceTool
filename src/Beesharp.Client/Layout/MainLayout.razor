@@ -11,8 +11,7 @@
 @inject IEnvironmentSource Envs
 @inject ScriptApiClient ScriptApi
 @inject NavigationManager Nav
-@inject PerformanceTool.Client.Components.Assistant.AssistantState Asst
-@using PerformanceTool.Client.Components.Assistant
+@inject Beesharp.Client.Assistant.AssistantState Asst
 
 <div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
     <header class="top">
@@ -211,7 +210,7 @@
     private bool menuOpen;
     private bool modeMenuOpen;
     private bool runsLoading;
-    private List<ServerRunSummaryDto> storedRuns = [];
+    private List<StoredRunSummary> storedRuns = [];
 
     private async Task ToggleModeMenuAsync()
     {

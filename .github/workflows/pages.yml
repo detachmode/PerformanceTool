@@ -39,7 +39,7 @@ jobs:
           dotnet-version: 11.0.x
           dotnet-quality: preview
 
-      # Release publish = trimmed. PerformanceTool.Core is a TrimmerRootAssembly so the generated editor keeps its metadata.
+      # Release publish = trimmed. Beesharp.Core is a TrimmerRootAssembly so the generated editor keeps its metadata.
       # No wasm-tools workload needed (no AOT, no native relinking).
       # BuildSha / BuildTime end up in the UI's build info (brain 0025).
       - name: Publish client

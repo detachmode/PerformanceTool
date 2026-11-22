@@ -1,0 +1,64 @@
+@* Shown under a parameter value that contains {{Key}} placeholders (brain 0033, calm UI 0016): the placeholders are highlighted, and the resolved text from the
+   active environment appears on demand (hover or focus on the field, see .has-env in app.css). A placeholder the active environment doesn't have gets a
+   quiet note, and every placeholder opens the Configure popup (brain 0029). Values of keys that look like credentials are masked. *@
+@using Beesharp.Services.Environments
+@implements IDisposable
+@inject IEnvironmentSource Envs
+@inject EnvironmentsPopupState Popup
+
+@{
+    var env = Envs.Active;
+    var values = env?.ToValues();
+    var parts = Placeholders.Split(Text);
+    var unknown = parts.Where(p => p.IsPlaceholder && (values is null || !values.ContainsKey(p.Key!))).Select(p => p.Key!).Distinct().ToList();
+}
+<div class="env-hint">
+    <span class="env-raw">
+        @foreach (var p in parts)
+        {
+            if (p.IsPlaceholder)
+            {
+                var key = p.Key!;
+                var missing = unknown.Contains(key);
+                <button type="button" class="ph @(missing ? "unknown" : "")" title="@(missing ? $"No value for {key}: add it" : $"Edit {key} in the environment")"
+                        @onclick="() => Open(key, missing)">@p.Text</button>
+            }
+            else
+            {
+                <span>@p.Text</span>
+            }
+        }
+    </span>
+    @if (values is not null)
+    {
+        <span class="env-resolved" title="Resolved with environment “@env!.Name”"><span class="arrow" aria-hidden="true">→</span>@Resolved(parts, values)</span>
+    }
+    @if (unknown.Count > 0)
+    {
+        <span class="env-note">
+            @(env is null ? "No environment is selected, so placeholders stay as written." : $"“{env.Name}” has no value for {string.Join(", ", unknown.Select(k => "{{" + k + "}}"))}.")
+        </span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+
+    protected override void OnInitialized() => Envs.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose() => Envs.Changed -= OnChanged;
+
+    private void Open(string key, bool missing) =>
+        Popup.Show(select: Envs.ActiveName ?? Envs.Environments.FirstOrDefault()?.Name, addKey: missing && Envs.Active is not null ? key : null);
+
+    private static string Resolved(IReadOnlyList<PlaceholderPart> parts, EnvironmentValues values) =>
+        string.Concat(parts.Select(p => !p.IsPlaceholder ? p.Text
+            : !values.TryGetValue(p.Key!, out var v) ? p.Text
+            : EnvironmentDisplay.LooksLikeCredential(p.Key!) ? EnvironmentDisplay.Mask : v));
+}

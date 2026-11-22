@@ -1,0 +1,68 @@
+@* Full-screen log lines of an assistant card when the Logs popup cannot show its filter (levels, search; brain 0049). Re-queries the server and loads more on demand. *@
+@using Beesharp.Ai.Contracts
+@inject AssistantState Assistant
+@inject AssistantClient Client
+
+<div class="overlay logs" tabindex="-1" @onclick="Assistant.CloseFullLogs" @onkeydown="OnKey" role="presentation">
+    <div class="dialog logs-dialog" role="dialog" aria-modal="true" aria-label="@Request.Title" @onclick:stopPropagation="true">
+        <div class="dlg-head">
+            <h2>@Request.Title</h2>
+            <span class="muted">@(loaded ? Format.Plural((int)Math.Min(total, int.MaxValue), "line", "lines") : "loading…")</span>
+            <span class="spacer"></span>
+            <button class="icon-btn" @onclick="Assistant.CloseFullLogs" aria-label="Close">✕</button>
+        </div>
+        <p class="log-filters muted">
+            @if (Request.Query.Entry is { } e) { <span class="chip">entry @e</span> }
+            @if (Request.Query.Bee is { } b) { <span class="chip">B@(b)</span> }
+            @if (Request.Query.FailedBees is true) { <span class="chip bad">failed bees</span> }
+            @if (Request.Query.SlowBees is true) { <span class="chip warn">slow bees</span> }
+            @foreach (var l in Request.Query.Levels ?? []) { <span class="chip">@l</span> }
+            @if (!string.IsNullOrWhiteSpace(Request.Query.Search)) { <span class="chip">“@Request.Query.Search”</span> }
+        </p>
+        <div class="sl-console wrap asst-fulllogs" role="log">
+            @foreach (var row in rows)
+            {
+                var r = row;
+                <button type="button" class="asst-logrow" @onclick="() => OpenBee(r.Sequence)" title="Open bee B@(r.Sequence + 1)">
+                    <SerilogLine Raw="@Raw(r)" BeeName="@r.BeeName" />
+                </button>
+            }
+            @if (loaded && rows.Count == 0) { <p class="muted" style="padding:.8rem 0">No log lines match.</p> }
+        </div>
+        @if (rows.Count < total)
+        {
+            <button class="btn ghost small" @onclick="MoreAsync" disabled="@busy">Load more (@Format.Num(total - rows.Count) left)</button>
+        }
+    </div>
+</div>
+
+@code {
+    private const int Page = 200;
+    private readonly List<StoredLogRow> rows = [];
+    private long total;
+    private bool loaded, busy;
+
+    [Parameter, EditorRequired] public LogsFullRequest Request { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await MoreAsync();
+
+    private async Task MoreAsync()
+    {
+        busy = true;
+        var page = await Client.GetLogsAsync(Request.RunId, Request.Query, rows.Count, Page);
+        if (page is not null) { rows.AddRange(page.Items); total = page.TotalCount; }
+        loaded = true;
+        busy = false;
+    }
+
+    private static string Raw(StoredLogRow r)
+    {
+        var tag = r.Level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        return $"[{Format.Time(r.AtSeconds)} {tag}] {r.Message}" + (string.IsNullOrEmpty(r.Exception) ? "" : "\n" + r.Exception);
+    }
+
+    private void OpenBee(int sequence) =>
+        Assistant.OpenBees(new BeeSetRequest($"Bee B{sequence + 1}", Request.RunId, [sequence], null, null, sequence, null));
+
+    private void OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") Assistant.CloseFullLogs(); }
+}

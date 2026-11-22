@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using PerformanceTool.Services.Environments;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.Services.Scenarios.Spec;
+namespace Beesharp.Services.Scenarios.Spec;
 
 /// <summary>Renders a <c>string</c> parameter as a textarea.</summary>
 [AttributeUsage(AttributeTargets.Property)]

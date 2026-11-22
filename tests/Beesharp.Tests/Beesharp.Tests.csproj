@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
@@ -16,14 +16,17 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../../src/Beesharp/Beesharp.csproj" />
-    <ProjectReference Include="../../src/Beesharp.Client/Beesharp.Client.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Storage/Beesharp.Storage.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Engine/Beesharp.Engine.csproj" />
     <ProjectReference Include="../../src/Beesharp.Ai/Beesharp.Ai.csproj" />
     <ProjectReference Include="../../src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Beesharp.Contracts" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,38 @@
+$ beesharp run --preset Shop checkout --env Staging --progress 2
+beesharp run: preset "Shop checkout", environment Staging
+  3 scenario entries, 8.0 s, preflight warmup, shutdown program cleanup
+  root <root>, storage DuckDB
+Preflight warmup.cs...
+  preflight> [  0.00s] [INF] Starting preflight 'warmup.cs'…
+  preflight> [  0.00s] [INF] Warming up...
+  preflight> [  0.01s] [INF] Ready.
+  preflight> [  0.01s] [INF] Preflight finished successfully in 5 ms.
+Running scenarios...
+      2.0 s  16 bees finished, 2 failed, 0 flying
+      4.0 s  32 bees finished, 3 failed, 0 flying
+      6.0 s  48 bees finished, 5 failed, 0 flying
+Shutdown program cleanup.cs...
+  shutdown> [  0.00s] [INF] Starting shutdown program 'cleanup.cs'…
+  shutdown> [  0.00s] [INF] Cleaning up tenant demo
+  shutdown> [  0.00s] [INF] Shutdown program finished successfully in 1.1 ms.
+
+Summary
+  Run         run-20261122-115731-326
+  Preset      Shop checkout   Environment Staging
+  Run time    7.8 s
+  Preflight   succeeded (warmup.cs)
+  Shutdown    succeeded (cleanup.cs)
+
+  Entry             finished  failed   slow    typical  slowest 5%
+  #1 Browse shop          32       0      0      52 ms      402 ms
+  #2 Flaky payment        16       7      0       2 ms       50 ms
+  #3 Quick work           16       0      0      32 ms       42 ms
+  All                     64       7      0
+
+  Most common errors
+         7 x  HTTP 503
+
+  Saved to    <root>/data/beesharp.duckdb  (run run-20261122-115731-326)
+
+Result: 7 of 64 bees failed (exit code 1).
+exit code: 1

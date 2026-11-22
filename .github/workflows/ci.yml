@@ -51,10 +51,11 @@ jobs:
       - name: Build
         run: dotnet build Beesharp.slnx --no-restore -c Release
 
+      # One TRX file per test project (tests/Beesharp.*.Tests), all in TestResults/.
       - name: Test
         run: >
           dotnet test Beesharp.slnx --no-build -c Release
-          --logger "trx;LogFileName=test-results.trx"
+          --logger "trx;LogFilePrefix=results"
           --results-directory TestResults
 
       - name: Test summary

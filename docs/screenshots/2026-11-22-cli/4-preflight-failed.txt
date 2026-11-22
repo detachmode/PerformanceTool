@@ -1,0 +1,29 @@
+$ beesharp run --preset Bad preflight
+beesharp run: preset "Bad preflight"
+  1 scenario entry, 3.0 s, preflight broken-check, shutdown program cleanup
+  root <root>, storage DuckDB
+Preflight broken-check.cs...
+  preflight> [  0.00s] [INF] Starting preflight 'broken-check.cs'…
+  preflight> [  0.00s] [INF] Checking...
+  preflight> [  0.01s] [ERR] target is not ready
+Shutdown program cleanup.cs...
+  shutdown> [  0.00s] [INF] Starting shutdown program 'cleanup.cs'…
+  shutdown> [  0.00s] [INF] Cleaning up tenant none
+  shutdown> [  0.00s] [INF] Shutdown program finished successfully in 1.1 ms.
+
+Summary
+  Run         run-20261122-115747-924
+  Preset      Bad preflight
+  Run time    0.0 s
+  Preflight   failed (broken-check.cs): target is not ready
+  Shutdown    succeeded (cleanup.cs)
+  Run error   target is not ready
+
+  Entry          finished  failed   slow    typical  slowest 5%
+  #1 Quick work         0       0      0          -           -
+  All                   0       0      0
+
+  Not saved   (the run never started)
+
+Result: the run could not run (exit code 2).
+exit code: 2

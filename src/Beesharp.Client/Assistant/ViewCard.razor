@@ -1,0 +1,225 @@
+@* One card of the assistant in the chat (brain 0049, 0016, 0029): a small preview, and "Show more" opens the full data (the Logs popup, the popup chart, the editor, the overview).
+   The card holds a query, not a copy: whatever opens re-queries live data. Every figure is a button that opens what is behind it. Colour only means failed (red) or slow (amber). *@
+@using Beesharp.Ai.Contracts
+@inject AssistantState Assistant
+
+@{
+    var v = View;
+}
+
+<section class="asst-card k-@v.Kind" aria-label="@v.Title">
+    <header class="card-head">
+        <b class="card-title">@v.Title</b>
+        <span class="spacer"></span>
+        @switch (v.Kind)
+        {
+            case ViewKinds.Logs:
+                <button type="button" class="asst-fig" @onclick="ShowMore" title="Open all of these log lines">@Format.Plural((int)Math.Min(v.Total, int.MaxValue), "line", "lines")</button>
+                break;
+            case ViewKinds.Bees:
+                <button type="button" class="asst-fig" @onclick="ShowMore" title="Open these bees on the time line">@Format.Plural((int)Math.Min(v.Total, int.MaxValue), "bee", "bees")</button>
+                break;
+            case ViewKinds.Timeline:
+                <button type="button" class="asst-fig" @onclick="ShowMore" title="Open these bees on the time line">@Format.Plural(v.Bees?.Count ?? 0, "bee", "bees")</button>
+                @if (Count("failed") > 0) { <button type="button" class="asst-fig bad" @onclick='() => Open(show: "failed")' title="Open the failed bees of this set">@Count("failed") failed</button> }
+                @if (Count("slow") > 0) { <button type="button" class="asst-fig warn" @onclick='() => Open(show: "slow")' title="Open the slow bees of this set">@Count("slow") slow</button> }
+                break;
+            case ViewKinds.PlanChanges:
+                <button type="button" class="asst-fig" @onclick="ShowMore" title="Open the editor">@Format.Plural((int)v.Total, "change", "changes")</button>
+                break;
+        }
+        <button type="button" class="btn ghost small" @onclick="ShowMore" title="@MoreTitle">@(v.Kind == ViewKinds.PlanChanges ? "Open editor" : "Show more")</button>
+    </header>
+
+    @switch (v.Kind)
+    {
+        case ViewKinds.Logs:
+            @if (v.Logs is not { Count: > 0 })
+            {
+                <p class="muted card-empty">No log lines match.</p>
+            }
+            else
+            {
+                <div class="sl-console compact wrap" role="log">
+                    @foreach (var l in v.Logs)
+                    {
+                        var line = l;
+                        <button type="button" class="asst-logrow" @onclick="() => OpenBee(line.Bee)" title="Open bee B@(line.Bee)">
+                            <SerilogLine Raw="@Raw(line)" BeeName="@line.BeeName" />
+                        </button>
+                    }
+                </div>
+                @if (v.Total > v.Logs.Count)
+                {
+                    <p class="muted card-more">@Format.Num(v.Total - v.Logs.Count) more</p>
+                }
+            }
+            break;
+
+        case ViewKinds.Bees:
+            <div class="asst-chips">
+                @foreach (var b in v.Bees ?? [])
+                {
+                    var bee = b;
+                    <span class="asst-bee"><BeeChip Sequence="bee.Bee - 1" State="StateOf(bee)" OnClick="() => OpenBee(bee.Bee)" Title="@BeeTitle(bee)" /><span class="muted">@Format.Ms(bee.DurationMs)</span></span>
+                }
+            </div>
+            @if (v.Total > (v.Bees?.Count ?? 0))
+            {
+                <p class="muted card-more">@Format.Num(v.Total - (v.Bees?.Count ?? 0)) more</p>
+            }
+            break;
+
+        case ViewKinds.Bee when v.Bee is { } d:
+            <div class="asst-bee-head">
+                <BeeChip Sequence="d.Bee.Bee - 1" State="StateOf(d.Bee)" OnClick="() => OpenBee(d.Bee.Bee)" Title="Open this bee" />
+                <span class="state @BeeOrder.Css(StateOf(d.Bee))">@(d.Bee.Outcome == "ok" ? "Ok" : d.Bee.Outcome == "slow" ? "Slow" : "Failed")</span>
+                <span class="muted">@d.Bee.EntryLabel · @Format.Ms(d.Bee.DurationMs) · started @Format.Time(d.Bee.StartedAt)</span>
+            </div>
+            @if (d.Bee.Error is not null) { <p class="bee-error bad">@d.Bee.Error</p> }
+            <ol class="calls" aria-label="Calls of B@(d.Bee.Bee)">
+                @foreach (var c in d.Calls.Take(8))
+                {
+                    var failed = c.Error is not null;
+                    var slow = !failed && c.DurationMs >= 1500;
+                    var denom = Math.Max(1, d.Bee.DurationMs);
+                    <li class="call @(failed ? "bad" : slow ? "warn" : "good")">
+                        <span class="call-name" title="@c.Name">@c.Name</span>
+                        <span class="track"><i style="left:@Pct(c.OffsetMs / denom)%;width:@Math.Max(0.8, c.DurationMs / denom * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
+                        <span class="call-dur">@Format.Ms(c.DurationMs)</span>
+                        <span class="call-status">@(c.StatusCode?.ToString() ?? (failed ? "failed" : ""))</span>
+                    </li>
+                }
+            </ol>
+            @if (d.Calls.Count > 8) { <p class="muted card-more">@(d.Calls.Count - 8) more calls</p> }
+            break;
+
+        case ViewKinds.Scenario or ViewKinds.Run when v.Run is { } r:
+            <p class="asst-figs">
+                <button type="button" class="asst-fig" @onclick="() => OpenEntry(null, null)" title="Open the bees of this run">@Format.Plural(r.TotalBees, "bee", "bees")</button>
+                <button type="button" class="asst-fig @(r.FailedBees > 0 ? "bad" : "")" disabled="@(r.FailedBees == 0)" @onclick='() => OpenEntry(null, "failed")' title="Open the failed bees">@Format.Plural(r.FailedBees, "error", "errors")</button>
+                <button type="button" class="asst-fig @(r.SlowBees > 0 ? "warn" : "")" disabled="@(r.SlowBees == 0)" @onclick='() => OpenEntry(null, "slow")' title="Open the slow bees">@r.SlowBees slow</button>
+                <span class="muted">@r.State · @Format.Time(r.ElapsedSeconds)</span>
+            </p>
+            @if (v.Kind == ViewKinds.Run)
+            {
+                <ul class="asst-entries">
+                    @foreach (var e in r.Entries)
+                    {
+                        var entry = e;
+                        <li>
+                            <button type="button" class="asst-entry" @onclick="() => OpenEntry(entry.Entry, null)" title="Open the bees of @entry.Label">@entry.Label</button>
+                            <span class="muted">@Format.Rate(entry.BeesPerMinute) @Terms.PerMinuteShort</span>
+                            <button type="button" class="asst-fig" @onclick="() => OpenEntry(entry.Entry, null)" title="Open the bees of @entry.Label">@Format.Num(entry.Finished)</button>
+                            <button type="button" class="asst-fig @(entry.Failed > 0 ? "bad" : "")" disabled="@(entry.Failed == 0)" @onclick='() => OpenEntry(entry.Entry, "failed")' title="Open the failed bees of @entry.Label">@entry.Failed failed</button>
+                            <button type="button" class="asst-fig @(entry.SlowBees > 0 ? "warn" : "")" disabled="@(entry.SlowBees == 0)" @onclick='() => OpenEntry(entry.Entry, "slow")' title="Open the slow bees of @entry.Label">@entry.SlowBees slow</button>
+                        </li>
+                    }
+                </ul>
+            }
+            else if (v.Bees is { Count: > 0 })
+            {
+                <MiniBeeChart Bees="v.Bees" OnPick="PickBar" />
+            }
+            break;
+
+        case ViewKinds.PlanChanges:
+            @if (v.Changes is not { Count: > 0 })
+            {
+                <p class="muted card-empty">Nothing changed.</p>
+            }
+            else
+            {
+                <ul class="asst-changes">
+                    @foreach (var c in v.Changes)
+                    {
+                        <li>
+                            <button type="button" class="asst-entry" @onclick="ShowMore" title="Open the editor"><span class="what">@c.What</span> @c.Label</button>
+                            @foreach (var line in c.Details) { <span class="muted detail">@line</span> }
+                        </li>
+                    }
+                </ul>
+            }
+            break;
+
+        case ViewKinds.Timeline:
+            <MiniBeeChart Bees="v.Bees ?? []" OnPick="PickBar" />
+            <div class="asst-chips picked">
+                @foreach (var b in (v.Bees ?? []).OrderByDescending(b => b.Outcome == "failed").ThenByDescending(b => b.Outcome == "slow").Take(6))
+                {
+                    var bee = b;
+                    <span class="asst-bee"><BeeChip Sequence="bee.Bee - 1" State="StateOf(bee)" OnClick="() => OpenBee(bee.Bee)" Title="@BeeTitle(bee)" />@if (!string.IsNullOrWhiteSpace(bee.Note)) { <span class="muted">@bee.Note</span> }</span>
+                }
+            </div>
+            break;
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ViewItemDto View { get; set; } = default!;
+
+    private string MoreTitle => View.Kind switch
+    {
+        ViewKinds.Logs => "Open the Logs popup with this filter",
+        ViewKinds.PlanChanges => "Open the editor",
+        ViewKinds.Run => "Open the run on the overview",
+        _ => "Open the full chart, with its calls and logs",
+    };
+
+    private int Count(string outcome) => View.Bees?.Count(b => b.Outcome == outcome) ?? 0;
+
+    private static BeeState StateOf(ViewBeeDto b) => b.Outcome switch { "failed" => BeeState.Failed, "slow" => BeeState.Slow, _ => BeeState.Ok };
+
+    private static string BeeTitle(ViewBeeDto b) => $"B{b.Bee}, {b.Outcome}: {b.EntryLabel}, {Format.Ms(b.DurationMs)}" + (b.Error is null ? "" : $", {b.Error}") + (string.IsNullOrWhiteSpace(b.Note) ? "" : $" ({b.Note})");
+
+    private static string Pct(double f) => Math.Clamp(f * 100, 0, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Raw(ViewLogLineDto l)
+    {
+        var tag = l.Level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        return $"[{Format.Time(l.AtSeconds)} {tag}] {l.Message}" + (string.IsNullOrEmpty(l.Exception) ? "" : "\n" + l.Exception);
+    }
+
+    private Task ShowMore() => View.Kind switch
+    {
+        ViewKinds.Logs => Assistant.OpenLogsAsync(View.Title, View.Query),
+        ViewKinds.PlanChanges => Assistant.OpenLinkAsync(new ChipLinkDto("editor")),
+        ViewKinds.Run => Assistant.OpenLinkAsync(new ChipLinkDto("run", new ViewQueryDto(View.Query.RunId))),
+        _ => Open(),
+    };
+
+    private Task Open(string? show = null, int? initialBee = null)
+    {
+        var q = View.Query;
+        if (q.RunId is null) return Task.CompletedTask;
+        var notes = View.Bees?.Where(b => !string.IsNullOrWhiteSpace(b.Note)).ToDictionary(b => b.Bee - 1, b => b.Note!);
+        IReadOnlyList<int>? sequences = View.Kind switch
+        {
+            ViewKinds.Timeline => View.Bees?.Select(b => b.Bee - 1).ToList(),
+            ViewKinds.Bee => [(q.Bee ?? 1) - 1],
+            _ => null,
+        };
+        Assistant.OpenBees(new BeeSetRequest(View.Title, q.RunId, sequences, View.Kind is ViewKinds.Scenario or ViewKinds.Bees && q.Entry is { } e ? e - 1 : null,
+            View.Kind == ViewKinds.Bees ? q.Outcome : null, initialBee ?? (View.Kind == ViewKinds.Bee ? (q.Bee ?? 1) - 1 : null), notes, show));
+        return Task.CompletedTask;
+    }
+
+    private Task PickBar(int? bee) => Open(initialBee: bee is { } b ? b - 1 : null);
+
+    private Task OpenBee(int bee)
+    {
+        if (View.Query.RunId is not { } run) return Task.CompletedTask;
+        Assistant.OpenBees(new BeeSetRequest($"Bee B{bee}", run, [bee - 1], null, null, bee - 1, null));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A figure of a run or entry card: the bees behind it in the popup chart (entry 0-based; null = the whole run).</summary>
+    private Task OpenEntry(int? entry, string? outcome)
+    {
+        if (View.Query.RunId is not { } run) return Task.CompletedTask;
+        var index = entry is { } e ? e - 1 : View.Kind == ViewKinds.Scenario && View.Query.Entry is { } qe ? qe - 1 : (int?)null;
+        var title = entry is { } en && View.Run?.Entries.FirstOrDefault(x => x.Entry == en)?.Label is { } label ? label : View.Title;
+        Assistant.OpenBees(new BeeSetRequest(title, run, null, index, null, null, null, outcome));
+        return Task.CompletedTask;
+    }
+}

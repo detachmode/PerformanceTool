@@ -1,40 +1,40 @@
-using System.Text.Json.Nodes;
-using PerformanceTool.Ai;
-using PerformanceTool.AiAdapters;
-using PerformanceTool.Api;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Storage;
+using Beesharp.Ai;
+using Beesharp.AiAdapters;
+using Beesharp.Api;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Storage;
 
+// The host only wires (brain 0054): the modules are Beesharp.Engine (runner, Live plan), Beesharp.Scripting (script compiler and stores),
+// Beesharp.Storage(.DuckDb) (run storage, preset and environment files) and Beesharp.Ai (assistant). REST endpoints live in Api/.
 var builder = WebApplication.CreateBuilder(args);
+var config = builder.Configuration;
+var contentRoot = builder.Environment.ContentRootPath;
 
-builder.Services.AddSingleton<ScenarioCatalog>();
-builder.Services.AddSingleton<PresetStore>();
-builder.Services.AddSingleton<PlanWorkspace>();
-builder.Services.AddSingleton<EnvironmentStore>();
-builder.Services.AddSingleton<LoadRunner>();
-builder.Services.AddSingleton<ScriptScenarioStore>();
-builder.Services.AddSingleton<PreflightStore>();
-builder.Services.AddSingleton<ShutdownStore>();
-var storageProvider = builder.Configuration["Storage:Provider"] ?? "DuckDb";
-if (string.Equals(storageProvider, "Memory", StringComparison.OrdinalIgnoreCase))
-    builder.Services.AddSingleton<IRunStorage, InMemoryRunStorage>();
-else if (string.Equals(storageProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
-    builder.Services.AddSingleton<IRunStorage, SqliteRunStorage>();
-else
-    builder.Services.AddSingleton<IRunStorage, DuckDbRunStorage>();
-builder.Services.AddSingleton<RunManager>();
+builder.Services.AddBeesharpEngine(new BeesharpDirectories
+{
+    Root = contentRoot,
+    Presets = config["Presets:Directory"] ?? "presets",
+    Environments = config["Environments:Directory"] ?? "environments",
+    Scripts = config["Scripts:Directory"] ?? "scripts",
+});
+// "Storage:Provider" is DuckDb (default) or Memory; anything else (SQLite was dropped) fails here with a message naming the supported ones.
+builder.Services.AddBeesharpStorage(new StorageOptions
+{
+    Provider = config["Storage:Provider"] ?? StorageOptions.DuckDb,
+    DuckDbPath = config["Storage:DuckDbPath"],
+    Root = contentRoot,
+});
 
-// AI assistant (brain 0047): the module in src/Beesharp.Ai only knows its ports; these adapters connect them to the host's services.
+// AI assistant (brain 0047): the module in src/Beesharp.Ai only knows its ports; these adapters connect them to the engine's services.
 // Configure with AI__Model, AI__ApiKey, AI__Endpoint (see AGENTS.md). Without a model the assistant reports "not configured".
 builder.Services.AddSingleton<IPlanWorkspacePort, PlanWorkspaceAdapter>();
 builder.Services.AddSingleton<IRunPort, RunAdapter>();
 builder.Services.AddSingleton<IRunHistoryPort, RunHistoryAdapter>();
 builder.Services.AddSingleton<IEnvironmentPort, EnvironmentAdapter>();
 builder.Services.AddSingleton<IScriptPort, ScriptAdapter>();
-builder.Services.AddBeesharpAi(builder.Configuration);
+builder.Services.AddBeesharpAi(config);
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();
@@ -46,9 +46,7 @@ var app = builder.Build();
 
 // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
 app.Services.GetRequiredService<ScenarioCatalog>();
-await app.Services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync();
-await app.Services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync();
-await app.Services.GetRequiredService<ShutdownStore>().LoadAllFromDiskAsync();
+await app.Services.LoadBeesharpScriptsAsync();
 await app.Services.GetRequiredService<RunManager>().RestoreLatestAsync();
 // The restored run's plan is where the Live plan starts (the editor used to adopt it in the browser).
 app.Services.GetRequiredService<PlanWorkspace>().SeedIfEmpty(app.Services.GetRequiredService<RunManager>().GetCurrent().Plan);
@@ -60,198 +58,17 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseHttpsRedirection();
 
-// The Blazor WebAssembly client (src/PerformanceTool.Client): its _framework files and wwwroot come from the project reference
+// The Blazor WebAssembly client (src/Beesharp.Client): its _framework files and wwwroot come from the project reference
 // as static web assets, which MapStaticAssets serves (fingerprinted, pre-compressed). Brain 0015.
 app.MapStaticAssets();
 
-// Machine-readable scenario catalog (id, name, description, JSON Schema of the parameters) for the CLI, UI and coding harnesses.
-app.MapGet("/api/scenarios", (ScenarioCatalog catalog, ScriptScenarioStore scripts) => catalog.All.Select(s => new
-{
-    s.Id,
-    s.Name,
-    s.Description,
-    IsCustom = catalog.IsCustom(s.Id),
-    ScriptId = scripts.FindScriptIdForScenario(s.Id),
-    Parameters = s.Spec.ToJsonSchema(),
-}));
-
-// Custom C# script scenarios (brain 0040): upload/compile .csx/.cs scripts and test-run a single execution.
-app.MapGet("/api/scripts", (ScriptScenarioStore store) => store.List());
-app.MapGet("/api/scripts/{id}", (string id, ScriptScenarioStore store) =>
-    store.Get(id) is { } s ? Results.Ok(s) : Results.NotFound());
-app.MapPost("/api/scripts", async (HttpRequest request, ScriptScenarioStore store, CancellationToken ct) =>
-{
-    string? id = null;
-    string? fileName = null;
-    string code;
-
-    if (request.HasFormContentType)
-    {
-        var form = await request.ReadFormAsync(ct);
-        id = form["id"].FirstOrDefault();
-        var file = form.Files.FirstOrDefault();
-        if (file is null || file.Length == 0)
-            return Results.BadRequest(new { error = "Upload a non-empty .csx or .cs file." });
-        fileName = file.FileName;
-        using var reader = new StreamReader(file.OpenReadStream());
-        code = await reader.ReadToEndAsync(ct);
-    }
-    else
-    {
-        var body = await request.ReadFromJsonAsync<UploadScriptRequest>(ct);
-        if (body is null)
-            return Results.BadRequest(new { error = "Provide a JSON body with { fileName, code } or multipart/form-data file." });
-        id = body.Id;
-        fileName = body.FileName;
-        code = body.Code ?? "";
-    }
-
-    var result = await store.CompileAndRegisterAsync(id, fileName, code, persist: true, ct);
-    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
-});
-app.MapDelete("/api/scripts/{id}", (string id, ScriptScenarioStore store) =>
-    store.Delete(id) ? Results.NoContent() : Results.NotFound());
-app.MapPost("/api/scripts/{id}/test-run", async (string id, TestRunScriptRequest? body, ScriptScenarioStore store, CancellationToken ct) =>
-{
-    try
-    {
-        var result = await store.TestRunAsync(id, body?.Parameters, body?.EnvironmentName, body?.TimeoutSeconds ?? 30, ct);
-        return Results.Ok(result);
-    }
-    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
-
-// Preflight scripts: run before scenarios start; scenarios only begin if preflight succeeds.
-app.MapGet("/api/preflights", (PreflightStore store) => store.List());
-app.MapGet("/api/preflights/{id}", (string id, PreflightStore store) =>
-    store.Get(id) is { } p ? Results.Ok(p) : Results.NotFound());
-app.MapPost("/api/preflights", async (UploadScriptRequest body, PreflightStore store, CancellationToken ct) =>
-{
-    var result = await store.CompileAndSaveAsync(body.Id, body.FileName, body.Code ?? "", persist: true, ct);
-    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
-});
-app.MapDelete("/api/preflights/{id}", (string id, PreflightStore store) =>
-    store.Delete(id) ? Results.NoContent() : Results.NotFound());
-app.MapPost("/api/preflights/{id}/test-run", async (string id, TestRunPreflightRequest? body, PreflightStore store, CancellationToken ct) =>
-{
-    try
-    {
-        var result = await store.ExecuteAsync(id, body?.EnvironmentName, timeoutSeconds: body?.TimeoutSeconds ?? 60, ct: ct);
-        return Results.Ok(result);
-    }
-    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-});
-
-// Shutdown programs (brain 0052): same kind of script as a preflight, but it always runs at the end of a run (also after a stop or a failed preflight).
-app.MapGet("/api/shutdowns", (ShutdownStore store) => store.List());
-app.MapGet("/api/shutdowns/{id}", (string id, ShutdownStore store) =>
-    store.Get(id) is { } p ? Results.Ok(p) : Results.NotFound());
-app.MapPost("/api/shutdowns", async (UploadScriptRequest body, ShutdownStore store, CancellationToken ct) =>
-{
-    var result = await store.CompileAndSaveAsync(body.Id, body.FileName, body.Code ?? "", persist: true, ct);
-    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
-});
-app.MapDelete("/api/shutdowns/{id}", (string id, ShutdownStore store) =>
-    store.Delete(id) ? Results.NoContent() : Results.NotFound());
-app.MapPost("/api/shutdowns/{id}/test-run", async (string id, TestRunPreflightRequest? body, ShutdownStore store, CancellationToken ct) =>
-{
-    try
-    {
-        var result = await store.ExecuteAsync(id, body?.EnvironmentName, timeoutSeconds: body?.TimeoutSeconds ?? 60, ct: ct);
-        return Results.Ok(result);
-    }
-    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
-});
-
-// Live runs & persisted SQLite storage queries (brain 0045).
-app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) =>
-    storage.ListRunsAsync(limit ?? 50, ct));
-app.MapGet("/api/runs/current", (int? afterSeq, int? maxBees, RunManager runs) =>
-    runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000));
-// Runtime data (brain 0052): the run bag and the entry bags of the active run (live), or the final values of a stored run.
-app.MapGet("/api/runs/current/runtime", (RunManager runs) =>
-    runs.GetCurrentRuntime() is { } rt ? Results.Ok(rt) : Results.NoContent());
-app.MapGet("/api/runs/{runId}/runtime", async (string runId, RunManager runs, CancellationToken ct) =>
-    await runs.GetRuntimeAsync(runId, ct) is { } rt ? Results.Ok(rt) : Results.NotFound());
-app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, int? sequence, int? entry, RunManager runs) =>
-    runs.GetLiveLogs(afterId ?? 0, limit ?? 500, sequence, entry));
+app.MapScenarioEndpoints();
+app.MapScriptEndpoints();
+app.MapPreflightEndpoints();
+app.MapShutdownEndpoints();
+app.MapRunEndpoints();
 app.MapPlanEndpoints();
-app.MapPost("/api/runs/start", async (StartRunRequest? body, RunManager runs, PlanWorkspace workspace, CancellationToken ct) =>
-{
-    try
-    {
-        // No plan in the body = start the server's Live plan. A plan in the body becomes the Live plan.
-        if (body?.Plan is { } given) workspace.SetPlan(given);
-        return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), body?.EnvironmentName, ct));
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
-app.MapPost("/api/runs/stop", (RunManager runs) => runs.StopAsync());
-app.MapPost("/api/runs/{runId}/load", async (string runId, RunManager runs, CancellationToken ct) =>
-{
-    try
-    {
-        return await runs.LoadStoredRunAsync(runId, ct) is { } loaded ? Results.Ok(loaded) : Results.NotFound();
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
-app.MapGet("/api/runs/{runId}/bees/{sequence:int}", async (string runId, int sequence, IRunStorage storage, CancellationToken ct) =>
-    await storage.GetBeeDetailAsync(runId, sequence, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
-app.MapGet("/api/runs/{runId}/logs", (
-    string runId,
-    int? entry,
-    int? bee,
-    string? beeName,
-    int? outcome,
-    bool? failed,
-    bool? slow,
-    string? levels,
-    string? search,
-    int? offset,
-    int? limit,
-    IRunStorage storage,
-    CancellationToken ct) =>
-{
-    var levelList = string.IsNullOrWhiteSpace(levels)
-        ? null
-        : levels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    return storage.QueryLogsAsync(
-        runId,
-        new LogQuery(entry, bee, beeName, outcome, failed, slow, levelList, search, offset ?? 0, limit ?? 200),
-        ct);
-});
-app.MapGet("/api/runs/{runId}/export", async (string runId, string? format, IRunStorage storage, CancellationToken ct) =>
-{
-    var export = await storage.ExportRunAsync(runId, format ?? "parquet", ct);
-    return export is null ? Results.NotFound() : Results.File(export.Content, export.ContentType, export.FileName);
-});
-
-// Environments (brain 0033): one JSON file each. Minimal REST: list, get, save (create or replace), delete.
-app.MapGet("/api/environments", (EnvironmentStore store, CancellationToken ct) => store.ListAsync(ct));
-app.MapGet("/api/environments/{name}", async (string name, EnvironmentStore store, CancellationToken ct) =>
-    await store.GetAsync(name, ct) is { } e ? Results.Ok(e) : Results.NotFound());
-app.MapPut("/api/environments/{name}", async (string name, EnvironmentDefinition environment, EnvironmentStore store, CancellationToken ct) =>
-{
-    environment.Name = name;
-    try { await store.SaveAsync(environment, ct); return Results.NoContent(); }
-    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-app.MapDelete("/api/environments/{name}", async (string name, EnvironmentStore store, CancellationToken ct) =>
-{
-    await store.DeleteAsync(name, ct);
-    return Results.NoContent();
-});
-
+app.MapEnvironmentEndpoints();
 app.MapRunQueryEndpoints();
 app.MapBeesharpAi();
 
@@ -262,8 +79,3 @@ app.Map("/api/{**rest}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
 
 app.Run();
-
-public sealed record UploadScriptRequest(string? Id, string? FileName, string? Code);
-public sealed record TestRunScriptRequest(JsonObject? Parameters = null, string? EnvironmentName = null, int TimeoutSeconds = 30);
-public sealed record TestRunPreflightRequest(string? EnvironmentName = null, int TimeoutSeconds = 60);
-public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);

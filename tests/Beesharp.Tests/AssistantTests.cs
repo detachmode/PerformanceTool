@@ -1,16 +1,14 @@
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
-using PerformanceTool.Ai;
-using PerformanceTool.AiAdapters;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
+using Beesharp.Ai;
+using Beesharp.AiAdapters;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>A model that answers from a script: each step looks at the conversation so far and returns the next response.</summary>
 internal sealed class ScriptedChatClient(params Func<IReadOnlyList<ChatMessage>, ChatResponse>[] steps) : IChatClient
@@ -136,16 +134,6 @@ internal sealed class FakeScriptPort : IScriptPort
 
 public sealed class AssistantTests : IDisposable
 {
-    private sealed class FakeHost(string root) : IWebHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "t";
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string WebRootPath { get; set; } = root;
-        public string EnvironmentName { get; set; } = "Development";
-        public string ContentRootPath { get; set; } = root;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
-
     private readonly string root = Path.Combine(Path.GetTempPath(), "beesharp-ai-" + Guid.NewGuid().ToString("N"));
     private readonly ScenarioCatalog catalog = new([new HttpGetScenario()]);
     private readonly FakeRunPort runs = new();
@@ -157,7 +145,7 @@ public sealed class AssistantTests : IDisposable
     public AssistantTests()
     {
         Directory.CreateDirectory(root);
-        workspace = new PlanWorkspace(catalog, new PresetStore(new ConfigurationBuilder().Build(), new FakeHost(root), NullLogger<PresetStore>.Instance));
+        workspace = new PlanWorkspace(catalog, new PresetStore(Path.Combine(root, "presets"), NullLogger<PresetStore>.Instance));
     }
 
     public void Dispose()
@@ -176,46 +164,6 @@ public sealed class AssistantTests : IDisposable
     private static T Item<T>(AssistantTurnDto turn, Func<AssistantItemDto, T?> pick) where T : class => turn.Items.Select(pick).First(x => x is not null)!;
 
     // ---------- options and status ----------
-
-    [Fact]
-    public void Options_bind_from_environment_variable_names()
-    {
-        var names = new Dictionary<string, string>
-        {
-            ["AI__Provider"] = "OpenAI", ["AI__Endpoint"] = "http://localhost:11434/v1", ["AI__ApiKey"] = "secret", ["AI__Model"] = "llama3", ["AI__MaxToolCalls"] = "7", ["AI__SystemPrompt"] = "Be brief.",
-        };
-        try
-        {
-            foreach (var (k, v) in names) Environment.SetEnvironmentVariable(k, v);
-            var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-            var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-            services.AddBeesharpAi(config);
-            var options = (AssistantOptions)services.First(d => d.ServiceType == typeof(AssistantOptions)).ImplementationInstance!;
-            Assert.Equal("llama3", options.Model);
-            Assert.Equal("http://localhost:11434/v1", options.Endpoint);
-            Assert.Equal("secret", options.ApiKey);
-            Assert.Equal(7, options.MaxToolCalls);
-            Assert.Equal("Be brief.", options.SystemPrompt);
-            Assert.True(options.IsConfigured);
-        }
-        finally { foreach (var k in names.Keys) Environment.SetEnvironmentVariable(k, null); }
-    }
-
-    [Theory]
-    [InlineData(null, null, null, false)]
-    [InlineData("gpt", null, null, false)]
-    [InlineData("gpt", "key", null, true)]
-    [InlineData("llama", null, "http://localhost:11434/v1", true)]
-    public void Configured_needs_a_model_and_a_key_or_an_endpoint(string? model, string? key, string? endpoint, bool expected) =>
-        Assert.Equal(expected, new AssistantOptions { Model = model, ApiKey = key, Endpoint = endpoint }.IsConfigured);
-
-    [Fact]
-    public void Unknown_provider_is_not_configured()
-    {
-        var o = new AssistantOptions { Provider = "Other", Model = "m", ApiKey = "k" };
-        Assert.False(o.IsConfigured);
-        Assert.Contains("Other", o.NotConfiguredReason);
-    }
 
     [Fact]
     public async Task Not_configured_reports_status_and_refuses_to_chat()
@@ -417,7 +365,8 @@ public sealed class AssistantTests : IDisposable
         Assert.Equal(ViewKinds.Timeline, view.Kind);
         Assert.Equal("run-1", view.Query.RunId);
         Assert.Equal(["Search", "Checkout"], view.EntryLabels);
-        Assert.Equal([2, 3], view.Bees!.Select(b => b.Bee)); // sorted by start time
+        Assert.NotNull(view.Bees);
+        Assert.Equal([2, 3], view.Bees.Select(b => b.Bee)); // sorted by start time
         Assert.Equal(["slow", "failed"], view.Bees.Select(b => b.Outcome));
         Assert.Equal(["slowest search", "failed payment"], view.Bees.Select(b => b.Note));
         Assert.Equal(["Search", "Checkout"], view.Bees.Select(b => b.EntryLabel));

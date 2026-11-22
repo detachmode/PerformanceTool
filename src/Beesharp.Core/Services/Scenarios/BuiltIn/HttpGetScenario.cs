@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios.BuiltIn;
+namespace Beesharp.Services.Scenarios.BuiltIn;
 
 public sealed class HttpGetParameters
 {

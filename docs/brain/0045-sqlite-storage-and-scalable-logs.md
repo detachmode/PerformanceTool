@@ -1,6 +1,6 @@
 # 0045. SQLite WAL storage and scalable lazy-loaded logs
 
-- Status: Accepted, implemented
+- Status: Accepted, implemented; the SQLite provider was removed by 0054 (U2), the lazy-loaded logs and bee details remain
 - Date: 2026-11-21
 
 ## What

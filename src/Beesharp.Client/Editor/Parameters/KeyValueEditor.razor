@@ -1,0 +1,65 @@
+@using System.Text.Json.Nodes
+@using Beesharp.Services.Environments
+
+<div class="kv-editor">
+    @foreach (var row in rows)
+    {
+        var r = row;
+        <div class="kv-item" @key="r">
+        <div class="kv-row">
+            <input id="@(ReferenceEquals(r, rows[0]) ? Id : null)" placeholder="Name" value="@r.Key" disabled="@Disabled" aria-label="Name"
+                   @oninput="e => { r.Key = e.Value?.ToString() ?? string.Empty; Sync(); return OnEdited.InvokeAsync(); }" @onchange="OnCommit" />
+            <input placeholder="Value" value="@r.Value" disabled="@Disabled" aria-label="Value"
+                   @oninput="e => { r.Value = e.Value?.ToString() ?? string.Empty; Sync(); return OnEdited.InvokeAsync(); }" @onchange="OnCommit" />
+            <button type="button" class="icon-btn danger" title="Remove" aria-label="Remove" disabled="@Disabled"
+                    @onclick="() => { rows.Remove(r); Sync(); return OnCommit.InvokeAsync(); }">✕</button>
+        </div>
+        @if (Placeholders.HasPlaceholder(r.Value)) { <PlaceholderHint Text="@r.Value" /> }
+        </div>
+    }
+    @if (HasDuplicates)
+    {
+        <small class="help warn">Duplicate names: the last one wins.</small>
+    }
+    <button type="button" class="btn ghost small" disabled="@Disabled" @onclick="() => { rows.Add(new Row()); return OnCommit.InvokeAsync(); }">+ Add</button>
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    /// <summary>Edited in place. Rows with an empty name are kept in the editor but not stored.</summary>
+    [Parameter, EditorRequired] public JsonObject Values { get; set; } = default!;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnEdited { get; set; }
+    [Parameter] public EventCallback OnCommit { get; set; }
+
+    private sealed class Row
+    {
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    private List<Row> rows = [];
+    private JsonObject? bound;
+
+    private bool HasDuplicates => rows.Where(r => r.Key.Trim().Length > 0)
+        .GroupBy(r => r.Key.Trim(), StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1);
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(bound, Values)) return;
+        bound = Values;
+        rows = Values.Select(kv => new Row
+        {
+            Key = kv.Key,
+            Value = kv.Value is JsonValue v && v.TryGetValue<string>(out var s) ? s : kv.Value?.ToJsonString() ?? "",
+        }).ToList();
+    }
+
+    private void Sync()
+    {
+        Values.Clear();
+        foreach (var r in rows)
+            if (r.Key.Trim() is { Length: > 0 } key)
+                Values[key] = r.Value;
+    }
+}

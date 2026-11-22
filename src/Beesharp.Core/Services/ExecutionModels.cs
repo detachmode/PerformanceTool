@@ -1,4 +1,4 @@
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>One call recorded inside a bee's execution (HTTP or custom step).</summary>
 public sealed record RecordedCall(
@@ -27,9 +27,19 @@ public sealed record ExecutionResult(
     long Bytes,
     string? Error,
     IReadOnlyList<RecordedCall>? Calls = null,
-    IReadOnlyList<RecordedLog>? Logs = null)
+    IReadOnlyList<RecordedLog>? Logs = null,
+    bool Canceled = false)
 {
     public bool Success => Error is null;
+
+    /// <summary>
+    /// The error text of a bee that was in flight when the user stopped the run (brain 0053). Canceled bees look and count like failed
+    /// (they carry this error), but <see cref="Canceled"/> keeps them tellable apart. Storage keeps only the error, so
+    /// <see cref="IsCanceledError"/> recognises them again when read back.
+    /// </summary>
+    public const string CanceledError = "Canceled: run stopped";
+
+    public static bool IsCanceledError(string? error) => error == CanceledError;
 }
 
 /// <summary>

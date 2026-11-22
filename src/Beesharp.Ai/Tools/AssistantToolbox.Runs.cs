@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using PerformanceTool.Ai.Contracts;
+using Beesharp.Ai.Contracts;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 // Run control and run history (past and current runs, bees, calls, logs).
 public sealed partial class AssistantToolbox
@@ -89,7 +89,7 @@ public sealed partial class AssistantToolbox
     }
 
     [AssistantTool("list_bees")]
-    [Description("Lists the bees of a run (a bee is one play-through of a scenario), failed first, then slow, then ok. Bee numbers start at 1 and match the B-numbers of the UI. Paged.")]
+    [Description("Lists the bees of a run (a bee is one play-through of a scenario; a bee in flight when the user stopped the run counts as failed with the error Canceled: run stopped), failed first, then slow, then ok. Bee numbers start at 1 and match the B-numbers of the UI. Paged.")]
     public async Task<object> ListBees(
         [Description("Run id; leave out for the current or newest run")] string? runId = null,
         [Description("Only this scenario entry (number from 1)")] int? entry = null,

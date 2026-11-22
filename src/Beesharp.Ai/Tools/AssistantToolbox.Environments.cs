@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using PerformanceTool.Ai.Contracts;
+using Beesharp.Ai.Contracts;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 // Environments, custom scenario scripts and preflights.
 public sealed partial class AssistantToolbox

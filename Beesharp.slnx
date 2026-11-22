@@ -2,11 +2,25 @@
   <Folder Name="/src/">
     <Project Path="src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" />
     <Project Path="src/Beesharp.Ai/Beesharp.Ai.csproj" />
+    <Project Path="src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
+    <Project Path="src/Beesharp.Storage/Beesharp.Storage.csproj" />
+    <Project Path="src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
+    <Project Path="src/Beesharp.Scripting/Beesharp.Scripting.csproj" />
+    <Project Path="src/Beesharp.Engine/Beesharp.Engine.csproj" />
     <Project Path="src/Beesharp.Client/Beesharp.Client.csproj" />
     <Project Path="src/Beesharp.Core/Beesharp.Core.csproj" />
+    <Project Path="src/Beesharp.Cli/Beesharp.Cli.csproj" />
     <Project Path="src/Beesharp/Beesharp.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj" />
+    <Project Path="tests/Beesharp.Contracts.Tests/Beesharp.Contracts.Tests.csproj" />
+    <Project Path="tests/Beesharp.Storage.Tests/Beesharp.Storage.Tests.csproj" />
+    <Project Path="tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj" />
+    <Project Path="tests/Beesharp.Engine.Tests/Beesharp.Engine.Tests.csproj" />
+    <Project Path="tests/Beesharp.Client.Tests/Beesharp.Client.Tests.csproj" />
+    <Project Path="tests/Beesharp.Ai.Tests/Beesharp.Ai.Tests.csproj" />
+    <Project Path="tests/Beesharp.Cli.Tests/Beesharp.Cli.Tests.csproj" />
     <Project Path="tests/Beesharp.Tests/Beesharp.Tests.csproj" />
   </Folder>
 </Solution>

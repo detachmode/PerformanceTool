@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The runner (brain 0054): LoadRunner, RunManager (preflight, scenarios, shutdown program, live state, runtime data) and the Live plan.
+       No ASP.NET, so a command-line tool can use it without the web server. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Beesharp</RootNamespace>
+  </PropertyGroup>
+
+  <!-- ILogger and IServiceCollection: from .NET 11 the SDK provides them itself (see Beesharp.Core.csproj); older SDKs still need the packages. -->
+  <ItemGroup Condition="$([MSBuild]::VersionLessThan($([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)')), '11.0'))">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
+    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
+    <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
+  </ItemGroup>
+
+</Project>

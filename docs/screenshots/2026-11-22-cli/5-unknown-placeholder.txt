@@ -1,0 +1,3 @@
+$ beesharp run --preset Passing
+beesharp: No environment was given (--env) and the preset uses {{Greeting}}.
+exit code: 2

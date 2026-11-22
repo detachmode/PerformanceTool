@@ -429,7 +429,7 @@ FodyWeavers.xsd
 .claude/worktrees/
 
 # Uploaded runtime custom scenario scripts & DuckDB/SQLite run storage
-src/PerformanceTool/scripts/
-src/PerformanceTool/data/
+src/Beesharp/scripts/
+src/Beesharp/data/
 src/Beesharp/scripts/
 src/Beesharp/data/

@@ -3,10 +3,15 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
-using PerformanceTool.Client;
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
+using Beesharp.Client;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Client.Assistant;
+using Beesharp.Client.Data;
+using Beesharp.Client.Layout;
+using Beesharp.Client.Logs;
+using Beesharp.Client.Editor;
+using Beesharp.Client.Environments;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -19,8 +24,8 @@ builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
 builder.Services.AddSingleton<CustomScriptsPopupState>();
 builder.Services.AddSingleton<ScriptApiClient>();
-builder.Services.AddSingleton<PerformanceTool.Client.Components.Assistant.AssistantClient>();
-builder.Services.AddSingleton<PerformanceTool.Client.Components.Assistant.AssistantState>();
+builder.Services.AddSingleton<Beesharp.Client.Assistant.AssistantClient>();
+builder.Services.AddSingleton<Beesharp.Client.Assistant.AssistantState>();
 
 // Scenarios: add yours here (see docs/brain/0003-code-defined-scenarios.md).
 builder.Services.AddScenario<HttpGetScenario>();

@@ -2,7 +2,7 @@ using System.ClientModel;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>Creates the model client for the configured provider. Tests replace it with a scripted fake <see cref="IChatClient"/>.</summary>
 public interface IAssistantChatClientFactory

@@ -1,6 +1,6 @@
-using PerformanceTool.Ai;
+using Beesharp.Ai;
 
-namespace PerformanceTool.Api;
+namespace Beesharp.Api;
 
 /// <summary>
 /// Read-only run queries by run id (the assistant's cards re-query live data with them, brain 0049): the figures of a run and its compact bees.

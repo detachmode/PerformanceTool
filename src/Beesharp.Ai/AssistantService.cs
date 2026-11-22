@@ -1,10 +1,10 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 public sealed class AssistantNotConfiguredException(string reason) : Exception(reason);
 public sealed class AssistantBusyException() : Exception("The assistant is still working on the previous message of this conversation.");

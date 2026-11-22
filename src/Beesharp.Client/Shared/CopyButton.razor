@@ -1,0 +1,64 @@
+@* Compact icon-only clipboard copy button for log consoles. *@
+@inject IJSRuntime JS
+
+<button type="button"
+        class="btn ghost small icon-toggle @(copied ? "copy-ok" : "")"
+        disabled="@Disabled"
+        aria-label="@(copied ? "Copied to clipboard" : Title)"
+        title="@(copied ? "Copied!" : Title)"
+        @onclick="CopyAsync">
+    @if (copied)
+    {
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12" />
+        </svg>
+    }
+    else
+    {
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public Func<string> GetText { get; set; } = default!;
+    [Parameter] public string Title { get; set; } = "Copy logs to clipboard";
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool copied;
+    private CancellationTokenSource? resetCts;
+
+    private async Task CopyAsync()
+    {
+        var text = GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "(t => { const a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); })(" + System.Text.Json.JsonSerializer.Serialize(text) + ")");
+            }
+            catch { return; }
+        }
+
+        copied = true;
+        StateHasChanged();
+        resetCts?.Cancel();
+        resetCts?.Dispose();
+        resetCts = new CancellationTokenSource();
+        var ct = resetCts.Token;
+        try
+        {
+            await Task.Delay(1500, ct);
+            copied = false; // the click handler ends here, so Blazor renders by itself
+        }
+        catch (TaskCanceledException) { }
+    }
+}

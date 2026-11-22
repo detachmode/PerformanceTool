@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace PerformanceTool.Services.Scenarios.Spec;
+namespace Beesharp.Services.Scenarios.Spec;
 
 /// <summary>Human-friendly durations for the editor: "500ms", "2s", "1.5s", "1m 30s". Plain numbers are milliseconds.</summary>
 public static partial class DurationFormat

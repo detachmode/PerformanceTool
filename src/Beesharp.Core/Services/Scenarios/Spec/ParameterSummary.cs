@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 
-namespace PerformanceTool.Services.Scenarios.Spec;
+namespace Beesharp.Services.Scenarios.Spec;
 
 /// <summary>One read-only line of a parameter summary. <see cref="Depth"/> is the nesting level of a group.</summary>
 public sealed record SummaryLine(string Label, string Value, int Depth = 0, bool Heading = false);
