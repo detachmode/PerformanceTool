@@ -31,6 +31,15 @@ Alternative (result types): a typed chain where each step returns a result that 
 `.Step("Log in", ...).Then("Search", token => ...)`, a failed result stops the bee at that step. More ceremony;
 kept as an option for the user to choose.
 
+Alternative (union of steps, user question): each step is a record that carries its own data, and a C# 15 union
+lists them: `union CheckoutStep(LogIn, Search, OpenProduct, AddToCart, Pay)`. The union's cases are the declared
+steps (read once by reflection; to be verified on the generated type). The scenario is a step machine:
+`Task<CheckoutStep?> RunStepAsync(CheckoutStep step) => step switch { LogIn => ..., Search s => ..., OpenProduct o => ... }`
+returns the next step (or null at the end); the runner drives the loop and records each step. The compiler checks
+that every step is handled; repeats and going back to an earlier step come for free; the step's data can be shown in
+the UI ("Open product #3"). Costs: values shared between steps (token) travel in the step records or a per-bee
+object instead of local variables; "step N of M" means the declared position when the bee can loop.
+
 **C# 15 unions** (.NET 11 and C# 15 shipped on 2026-11-10; the `union` keyword, exhaustive `switch`) fit the step
 result and the bee's progress, e.g. `union StepResult(Passed, Failed, Skipped)`. CI builds with .NET 11, so we can use
 them. Limits: the cloud agent environment has only the .NET 10 SDK (its network blocks `builds.dotnet.microsoft.com`,
