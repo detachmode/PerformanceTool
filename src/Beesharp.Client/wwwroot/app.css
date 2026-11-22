@@ -184,6 +184,8 @@ label { font-size: .72rem; color: var(--muted); }
 .mode-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .mode-dot.live { background: var(--good); box-shadow: 0 0 6px var(--good); }
 .mode-dot.fake { background: var(--accent); }
+.mode-btn.history { border-color: rgba(91, 155, 240, 0.45); color: #bfdbfe; background: rgba(91, 155, 240, 0.1); }
+.mode-btn.history i { background: var(--running); box-shadow: 0 0 6px var(--running); }
 .mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
 .bento-pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: .16rem .68rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--muted); }
 .bento-pill.bad { color: #f87171; border-color: rgba(240, 82, 82, 0.42); background: rgba(240, 82, 82, 0.08); }
@@ -941,6 +943,17 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 
 /* ----- unified run & preflight bento card ----- */
 .run-launch-card { display: flex; flex-direction: column; gap: .65rem; margin-bottom: 1rem; padding: .85rem .95rem; background: var(--bee-shell-bg); border: 1px solid rgba(255, 232, 198, 0.09); border-radius: 22px; box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6); }
+.history-info-card { border-color: rgba(91, 155, 240, 0.25); }
+.history-info-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
+.history-info-title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; min-width: 0; }
+.history-info-title .mono { font-family: var(--mono); font-size: .86rem; color: var(--title); }
+.history-tag { font-size: .64rem; font-weight: 700; letter-spacing: .07em; padding: .14rem .45rem; border-radius: 999px; background: rgba(91, 155, 240, 0.16); color: var(--running); border: 1px solid rgba(91, 155, 240, 0.38); }
+.history-info-stats { display: flex; flex-wrap: wrap; gap: .45rem 1.05rem; padding: .6rem .8rem; background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.06); border-radius: 14px; font-size: .78rem; color: var(--muted); }
+.hi-stat { display: inline-flex; align-items: baseline; gap: .3rem; white-space: nowrap; }
+.hi-stat small { font-size: .72rem; color: var(--muted); }
+.hi-stat b { font-family: var(--mono); font-weight: 700; color: var(--title); font-variant-numeric: tabular-nums; }
+.hi-stat.bad b { color: var(--failed); }
+.hi-stat.warn b { color: var(--slow); }
 .run-pf-row { display: flex; align-items: stretch; gap: .5rem; }
 .run-pf-trigger { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: .7rem; padding: .62rem .85rem; background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.07); border-radius: 14px; color: var(--title); cursor: pointer; text-align: left; transition: background-color .15s, border-color .15s; }
 .run-pf-trigger:hover:not(:disabled) { background: #26211a; border-color: rgba(245, 183, 0, 0.35); }

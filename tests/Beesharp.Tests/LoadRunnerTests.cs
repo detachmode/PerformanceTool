@@ -223,6 +223,7 @@ public class LoadRunnerTests
         Assert.NotNull(errLog.Exception);
         Assert.Contains(nameof(InvalidOperationException), errLog.Exception!);
         Assert.Contains(nameof(ThrowingScenario), errLog.Exception!);
+        Assert.DoesNotContain("PerformanceTool.Services.LoadRunner", errLog.Exception!);
         Assert.Contains(liveLogs, l => l.Log.Level == "Error" && l.Log.Exception?.Contains(nameof(InvalidOperationException)) == true);
     }
 }

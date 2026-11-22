@@ -53,8 +53,8 @@
             }
             else
             {
-                <button type="button" class="btn ghost small" @onclick="EnterEditMode" disabled="@locked"
-                        title="@(locked ? "Stop the running test to edit scenarios" : "Edit scenarios, spawning and parameters")">
+                <button type="button" class="btn ghost small" @onclick="EnterEditMode" disabled="@(locked || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory))"
+                        title="@(locked ? "Stop the running test to edit scenarios" : (!DataMode.IsFakeMode && ApiRun.IsViewingHistory) ? "Return to Live mode to edit scenarios" : "Edit scenarios, spawning and parameters")">
                     Edit
                 </button>
             }
@@ -127,11 +127,36 @@
     }
 
     @{
+        var viewingHistory = !DataMode.IsFakeMode && ApiRun.IsViewingHistory;
         var hasPreflight = !DataMode.IsFakeMode && !string.IsNullOrWhiteSpace(plan.PreflightScriptId);
         var activePf = hasPreflight
             ? preflights.FirstOrDefault(p => string.Equals(p.ScriptId, plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase))
             : null;
     }
+    @if (viewingHistory)
+    {
+        var totalFinished = s.Scenarios.Sum(x => x.Finished);
+        var totalFailed = s.Scenarios.Sum(x => x.Failed);
+        var totalSlow = s.Scenarios.Sum(x => x.SlowBees);
+        <section class="run-launch-card history-info-card" aria-label="Stored run details">
+            <div class="history-info-head">
+                <div class="history-info-title">
+                    <span class="history-tag">HISTORY</span>
+                    <b class="mono">@(ApiRun.ActiveStartedUtc?.ToLocalTime().ToString("dd MMM yyyy · HH:mm:ss") ?? "Stored run")</b>
+                </div>
+                <button type="button" class="btn ghost small" @onclick="ApiRun.ReturnToLive" title="Switch back to Live mode to start a new run">Back to live</button>
+            </div>
+            <div class="history-info-stats">
+                <span class="hi-stat"><small>duration</small> <b>@Format.Time(s.Elapsed)</b></span>
+                <span class="hi-stat"><small>bees</small> <b>@Format.Num(totalFinished)</b></span>
+                <span class="hi-stat @(totalFailed > 0 ? "bad" : "")"><small>errors</small> <b>@Format.Num(totalFailed)</b></span>
+                <span class="hi-stat @(totalSlow > 0 ? "warn" : "")"><small>slow</small> <b>@Format.Num(totalSlow)</b></span>
+                <span class="hi-stat"><small>logs</small> <b>@Format.Num((int)Math.Min(int.MaxValue, ApiRun.TotalServerLogs))</b></span>
+            </div>
+        </section>
+    }
+    else
+    {
     <section class="run-launch-card" aria-label="Run and preflight controls">
         <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
             <label for="p-dur">Duration (s)</label>
@@ -233,6 +258,7 @@
             </div>
         }
     </section>
+    }
 
     @if (editMode)
     {

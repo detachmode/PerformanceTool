@@ -44,11 +44,11 @@
         </nav>
 
         <div class="top-desktop">
-            <button type="button" class="mode-btn @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="ToggleModeMenuAsync"
+            <button type="button" class="mode-btn @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
                     aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
                     title="Switch Live/Fake mode or load a stored run">
                 <i aria-hidden="true"></i>
-                <span>@(DataMode.IsFakeMode ? "Fake" : "Live")</span>
+                <span>@ModeBtnLabel(compact: false)</span>
                 <span class="caret" aria-hidden="true">▾</span>
             </button>
             <EnvironmentPicker />
@@ -61,11 +61,11 @@
         </div>
 
         <div class="top-mobile">
-            <button type="button" class="mode-btn compact @(DataMode.IsFakeMode ? "fake" : "live")" @onclick="ToggleModeMenuAsync"
+            <button type="button" class="mode-btn compact @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
                     aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
                     title="Switch Live/Fake mode or load a stored run">
                 <i aria-hidden="true"></i>
-                <span>@(DataMode.IsFakeMode ? "Fake" : "Live")</span>
+                <span>@ModeBtnLabel(compact: true)</span>
                 <span class="caret" aria-hidden="true">▾</span>
             </button>
             @if (Asst.Available)
@@ -93,7 +93,7 @@
             <div class="dd-lbl">Data mode</div>
             <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
                 <span class="mode-dot live" aria-hidden="true"></span>
-                <span>@(!DataMode.IsFakeMode ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
+                <span>@(!DataMode.IsFakeMode && !ApiRun.IsViewingHistory ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
             </button>
             <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
                 <span class="mode-dot fake" aria-hidden="true"></span>
@@ -213,9 +213,23 @@
         finally { runsLoading = false; }
     }
 
+    private string ModeBtnCss() => DataMode.IsFakeMode ? "fake" : ApiRun.IsViewingHistory ? "history" : "live";
+
+    private string ModeBtnLabel(bool compact)
+    {
+        if (DataMode.IsFakeMode) return "Fake";
+        if (ApiRun.IsViewingHistory && ApiRun.ActiveStartedUtc is { } dt)
+        {
+            var local = dt.ToLocalTime();
+            return compact ? local.ToString("dd.MM HH:mm") : local.ToString("dd MMM HH:mm:ss");
+        }
+        return "Live";
+    }
+
     private async Task SetModeAsync(bool fake)
     {
         if (DataMode.IsFakeMode != fake) DataMode.Toggle();
+        if (!fake) ApiRun.ReturnToLive();
         modeMenuOpen = false;
         if (!fake && !Sim.IsRunning)
             storedRuns = await ApiRun.ListRunsAsync(30);
@@ -235,6 +249,7 @@
         EnvPopup.Changed += OnChanged;
         ScriptsPopup.Changed += OnChanged;
         DataMode.Changed += OnChanged;
+        ApiRun.Changed += OnChanged;
         Envs.Changed += OnChanged;
         Asst.Changed += OnChanged;
     }
@@ -268,6 +283,7 @@
         EnvPopup.Changed -= OnChanged;
         ScriptsPopup.Changed -= OnChanged;
         DataMode.Changed -= OnChanged;
+        ApiRun.Changed -= OnChanged;
         Envs.Changed -= OnChanged;
         Asst.Changed -= OnChanged;
     }

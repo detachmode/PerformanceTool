@@ -337,7 +337,8 @@ public sealed class ScriptScenarioStore
             startupSw.Stop();
             execSw.Stop();
             var msg = ex.InnerException?.Message ?? ex.Message;
-            logs.Enqueue(FormatSerilog(new RecordedLog(execSw.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", ex.ToString())));
+            var formatted = ScenarioExceptionFormatter.Format(ex, scenario.GetType().Assembly);
+            logs.Enqueue(FormatSerilog(new RecordedLog(execSw.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", formatted)));
             outcome = ScenarioOutcome.Failed(msg);
         }
         finally
@@ -354,7 +355,8 @@ public sealed class ScriptScenarioStore
                 }
                 catch (Exception ex)
                 {
-                    logs.Enqueue(FormatSerilog(new RecordedLog(teardownSw.Elapsed.TotalSeconds, "Error", $"Teardown error: {ex.InnerException?.Message ?? ex.Message}", ex.ToString())));
+                    var formatted = ScenarioExceptionFormatter.Format(ex, scenario.GetType().Assembly);
+                    logs.Enqueue(FormatSerilog(new RecordedLog(teardownSw.Elapsed.TotalSeconds, "Error", $"Teardown error: {ex.InnerException?.Message ?? ex.Message}", formatted)));
                 }
                 teardownSw.Stop();
             }

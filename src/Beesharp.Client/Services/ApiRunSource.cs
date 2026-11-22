@@ -86,6 +86,8 @@ public sealed class ApiRunSource : IRunSource
 
     public string CurrentRunId => activeRunId;
     public DateTimeOffset CurrentStartedUtc => activeStartedUtc;
+    public DateTimeOffset? ActiveStartedUtc => string.IsNullOrEmpty(activeRunId) ? null : activeStartedUtc;
+    public bool IsViewingHistory { get; private set; }
     public long TotalServerLogs { get; private set; }
     public string StorageProvider { get; private set; } = "DuckDb";
     public string? PreflightState { get; private set; }
@@ -397,10 +399,22 @@ public sealed class ApiRunSource : IRunSource
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts, ct);
-                if (dto is not null) ApplyStatus(dto);
+                if (dto is not null)
+                {
+                    IsViewingHistory = true;
+                    ApplyStatus(dto);
+                }
             }
         }
         catch { }
+    }
+
+    /// <summary>Exits history inspection mode back to the live plan view so a new run can be configured and started.</summary>
+    public void ReturnToLive()
+    {
+        if (!IsViewingHistory) return;
+        IsViewingHistory = false;
+        Changed?.Invoke();
     }
 
     /// <summary>Lazily fetches one bee's full calls and logs from SQLite storage on demand.</summary>
