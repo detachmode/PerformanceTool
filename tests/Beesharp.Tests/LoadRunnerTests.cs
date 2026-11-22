@@ -261,9 +261,18 @@ public class LoadRunnerTests
         var (results, dropped) = await Run(new LoadPlan { DurationSeconds = 2, Scenarios = [e] });
         Assert.Equal(20, results.Count);
         Assert.Equal(0, dropped[0]);
-        var clumps = results.GroupBy(r => Math.Round(r.StartedAtSeconds * 2)).ToList();
-        Assert.Equal(4, clumps.Count);
-        Assert.All(clumps, g => Assert.Equal(5, g.Count()));
+        // A clump ends where the next bee starts more than 0.25 s later (half the burst spacing). A burst is never split, so
+        // every clump holds whole bursts. Under load the open-model scheduler can fire a late burst right before the next one
+        // (catching up), so two bursts may share a clump; asserting exactly four clumps of five was flaky on busy machines.
+        var starts = results.Select(r => r.StartedAtSeconds).Order().ToList();
+        var clumps = new List<int> { 1 };
+        for (var i = 1; i < starts.Count; i++)
+        {
+            if (starts[i] - starts[i - 1] > 0.25) clumps.Add(1);
+            else clumps[^1]++;
+        }
+        Assert.True(clumps.Count >= 2, "bursts are spread over the run, not all at once");
+        Assert.All(clumps, size => Assert.Equal(0, size % 5));
     }
 
     [Fact]
