@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Text.Json;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Storage;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Storage;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>Compact bee summary returned by incremental <c>/api/runs/current</c> polling (no calls/logs embedded).</summary>
 public sealed record LiveBeeDto(

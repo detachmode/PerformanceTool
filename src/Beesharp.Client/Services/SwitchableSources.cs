@@ -1,8 +1,8 @@
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Delegates <see cref="IRunSource"/> to <see cref="FakeRunSource"/> or <see cref="ApiRunSource"/> depending on

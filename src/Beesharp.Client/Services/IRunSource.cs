@@ -1,7 +1,7 @@
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Where the pages get their data (docs/brain/0015): the plan being edited, presets, run control and a snapshot of the

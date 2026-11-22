@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using PerformanceTool.Ai.Contracts;
+using Beesharp.Ai.Contracts;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>One bee the assistant picked for the timeline, with a short reason why ("slowest checkout").</summary>
 public sealed record BeeNote(

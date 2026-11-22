@@ -1,6 +1,6 @@
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Services.Storage;
+namespace Beesharp.Services.Storage;
 
 public sealed record StoredRunSummary(
     string RunId,

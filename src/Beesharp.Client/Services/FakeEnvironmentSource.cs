@@ -1,6 +1,6 @@
-using PerformanceTool.Services.Environments;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>In-browser environments for the demo (brain 0033): three environments, kept only until the page is reloaded.</summary>
 public sealed class FakeEnvironmentSource : IEnvironmentSource

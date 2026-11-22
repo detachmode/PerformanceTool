@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace PerformanceTool.Services.Environments;
+namespace Beesharp.Services.Environments;
 
 /// <summary>A piece of text: plain, or a <c>{{Key}}</c> placeholder (<see cref="Key"/> set).</summary>
 public readonly record struct PlaceholderPart(string Text, string? Key = null)

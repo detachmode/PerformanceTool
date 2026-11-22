@@ -2,9 +2,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Services.Storage;
+namespace Beesharp.Services.Storage;
 
 /// <summary>
 /// High-throughput SQLite run storage (brain 0045): WAL mode + a dedicated background writer draining a

@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Storage;
+using Beesharp.Services;
+using Beesharp.Services.Storage;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public sealed class DuckDbStorageTests
 {

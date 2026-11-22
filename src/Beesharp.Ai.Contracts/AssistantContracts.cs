@@ -1,4 +1,4 @@
-namespace PerformanceTool.Ai.Contracts;
+namespace Beesharp.Ai.Contracts;
 
 // Wire format of /api/assistant (brain 0047, 0048, 0049). Plain records, JSON with web defaults. Numbering for people is 1-based
 // (bee 12 = "B12" in the UI, entry 1 = the first scenario entry), exactly as the UI shows it.

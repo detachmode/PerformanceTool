@@ -2,9 +2,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.JSInterop;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Controls whether the UI runs against the in-browser fake simulator (<see cref="FakeRunSource"/>)

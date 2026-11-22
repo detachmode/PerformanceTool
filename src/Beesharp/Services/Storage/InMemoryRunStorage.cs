@@ -1,6 +1,6 @@
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Services.Storage;
+namespace Beesharp.Services.Storage;
 
 /// <summary>Bounded in-memory <see cref="IRunStorage"/> used when <c>Storage:Provider</c> is set to <c>"Memory"</c>.</summary>
 public sealed class InMemoryRunStorage : IRunStorage

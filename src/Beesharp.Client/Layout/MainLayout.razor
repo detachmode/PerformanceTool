@@ -11,8 +11,8 @@
 @inject IEnvironmentSource Envs
 @inject ScriptApiClient ScriptApi
 @inject NavigationManager Nav
-@inject PerformanceTool.Client.Components.Assistant.AssistantState Asst
-@using PerformanceTool.Client.Components.Assistant
+@inject Beesharp.Client.Components.Assistant.AssistantState Asst
+@using Beesharp.Client.Components.Assistant
 
 <div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
     <header class="top">

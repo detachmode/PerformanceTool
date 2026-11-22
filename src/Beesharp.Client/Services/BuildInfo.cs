@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Which build is running (brain 0025). Values are baked into the assembly at publish time

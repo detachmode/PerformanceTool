@@ -1,6 +1,6 @@
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Api;
+namespace Beesharp.Api;
 
 /// <summary>REST for the server-owned Live plan and the presets (brain 0047/0050).</summary>
 public static class PlanEndpoints

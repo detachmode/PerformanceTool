@@ -1,4 +1,4 @@
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>One call recorded inside a bee's execution (HTTP or custom step).</summary>
 public sealed record RecordedCall(

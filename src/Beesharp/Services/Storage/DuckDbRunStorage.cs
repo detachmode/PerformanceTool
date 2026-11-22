@@ -3,9 +3,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using DuckDB.NET.Data;
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Services.Storage;
+namespace Beesharp.Services.Storage;
 
 /// <summary>
 /// High-throughput DuckDB columnar run storage (brain 0046): drains a <see cref="Channel{T}"/> via a dedicated

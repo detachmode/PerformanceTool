@@ -1,7 +1,7 @@
 using System.Text.Json;
-using PerformanceTool.Services.Environments;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>
 /// Stores environments as one JSON file per environment in a directory (config key <c>Environments:Directory</c>, next to the presets), like

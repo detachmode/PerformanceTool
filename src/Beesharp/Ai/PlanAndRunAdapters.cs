@@ -1,8 +1,8 @@
-using PerformanceTool.Ai;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Ai;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.AiAdapters;
+namespace Beesharp.AiAdapters;
 
 // Adapters of the assistant's ports onto the host's own services (brain 0047/0051). They are thin: mapping and a few guard rails, no logic of their own.
 

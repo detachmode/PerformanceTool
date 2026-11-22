@@ -1,6 +1,6 @@
-using PerformanceTool.Client.Components;
+using Beesharp.Client.Components;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Whether the Logs popup is open and what it opens pre-filtered to (brain 0017). The popup itself lives in the layout, so it can

@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Compact statistics of one scenario's finished bees for the overview card (brain 0030). Incremental (brain 0021):

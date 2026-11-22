@@ -1,7 +1,7 @@
-using PerformanceTool.Client.Components;
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Components;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>The stable time grid of the zoomed popup chart (brain 0031 update 2).</summary>
 public class BeeGridTests

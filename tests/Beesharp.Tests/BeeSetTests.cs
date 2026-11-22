@@ -1,9 +1,9 @@
-using PerformanceTool.Client.Components;
-using PerformanceTool.Client.Components.Assistant;
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services;
+using Beesharp.Client.Components;
+using Beesharp.Client.Components.Assistant;
+using Beesharp.Client.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>The assistant's bee timeline (brain 0049) feeds the popup chart with a hand-picked set of bees shaped like one scenario entry.</summary>
 public class BeeSetTests

@@ -1,6 +1,6 @@
-using PerformanceTool.Services.Environments;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Where the pages get the environments (brain 0033): the list, the active one and edits. <see cref="FakeEnvironmentSource"/> keeps them in

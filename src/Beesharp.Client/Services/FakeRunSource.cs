@@ -1,9 +1,9 @@
-using PerformanceTool.Services;
+using Beesharp.Services;
 using System.Text;
 using System.Text.Json.Nodes;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 // Fake data source (brain 0015): the in-browser simulator behind IRunSource. Used by the GitHub Pages demo and while the real API does not exist yet.
 // It is built like the real thing has to be (brain 0021): counters are incremental, finished bees are tiny records, and calls and log
@@ -427,13 +427,13 @@ public sealed class FakeRunSource : IRunSource
                 Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c, intern: true);
                 Log(c.OffsetMs + c.DurationMs * 0.8, "Warning", "Retrying partner call (attempt 3)", call: c, intern: true);
                 Log(end, "Error", $"Timeout after {c.DurationMs:0} ms while calling https://partner.example.com/api/v1/orders/{seq + 90000}/shipping-options?country=DE&postcode=10115&weight=2.4&express=true. The partner did not answer within the configured limit.\nThe request will not be retried again; the bee stops here.",
-                    $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {profile.CallTimeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at PerformanceTool.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
+                    $"System.Threading.Tasks.TaskCanceledException: The request was canceled due to the configured HttpClient.Timeout of {profile.CallTimeoutMs / 1000:0} seconds elapsing.\n ---> System.TimeoutException: The operation was canceled.\n   at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)\n   at Beesharp.Scenarios.CustomRequestScenario.ExecuteAsync(Object parameters, ScenarioContext context, CancellationToken ct)", c);
             }
             else
             {
                 if (profile.Errors is { Count: > 1 } && c.Status == 500) Log(c.OffsetMs + c.DurationMs * 0.5, "Warning", "Retrying partner call (attempt 2)", call: c, intern: true);
                 Log(end, "Error", $"{c.Name} → {c.Status} in {c.DurationMs:0.#} ms",
-                    $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n   at PerformanceTool.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at PerformanceTool.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38", c);
+                    $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n   at Beesharp.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at Beesharp.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38", c);
             }
         }
         Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"B{seq + 1} finished" : $"B{seq + 1} finished with failure: {error}");

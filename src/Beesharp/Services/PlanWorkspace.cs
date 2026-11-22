@@ -1,7 +1,7 @@
 using System.Text.Json;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>
 /// The server's view of the Live plan: the plan being edited, the name of the loaded preset and the plan as last saved

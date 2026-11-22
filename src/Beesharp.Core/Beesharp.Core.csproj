@@ -6,7 +6,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool</RootNamespace>
+    <RootNamespace>Beesharp</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

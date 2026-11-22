@@ -1,10 +1,10 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Services.Runtime;
+using Beesharp.Services.Runtime;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 // The simulated runtime data (brain 0052) behind the fake run. The model types (DataWriter, RuntimeValue, RuntimeBag, RuntimeDataSnapshot) live in
-// PerformanceTool.Services.Runtime (Core): the server sends the same shapes.
+// Beesharp.Services.Runtime (Core): the server sends the same shapes.
 
 /// <summary>The mutable bags of a run. Single threaded (WebAssembly); <see cref="Snapshot"/> copies for the pages.</summary>
 public sealed class RuntimeData

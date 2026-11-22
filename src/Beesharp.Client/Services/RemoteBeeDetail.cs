@@ -1,6 +1,6 @@
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>One bee's calls and log lines as the server stores them (<c>GET /api/runs/{id}/bees/{sequence}</c>).</summary>
 public sealed record ServerBeeDetailDto(

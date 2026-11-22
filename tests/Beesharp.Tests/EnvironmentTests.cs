@@ -4,13 +4,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public class EnvironmentTests
 {

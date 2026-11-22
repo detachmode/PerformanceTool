@@ -1,6 +1,6 @@
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 public enum BeeShow { All, Failed, Slow }
 

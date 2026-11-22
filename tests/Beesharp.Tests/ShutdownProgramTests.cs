@@ -1,11 +1,11 @@
 using System.Text.Json;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Storage;
+using Beesharp.Services;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Storage;
 using Xunit;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>The shutdown program and the runtime data of the server runner (brain 0052).</summary>
 public sealed class ShutdownProgramTests : IDisposable

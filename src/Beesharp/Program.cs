@@ -1,12 +1,12 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Ai;
-using PerformanceTool.AiAdapters;
-using PerformanceTool.Api;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Storage;
+using Beesharp.Ai;
+using Beesharp.AiAdapters;
+using Beesharp.Api;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,7 +60,7 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseHttpsRedirection();
 
-// The Blazor WebAssembly client (src/PerformanceTool.Client): its _framework files and wwwroot come from the project reference
+// The Blazor WebAssembly client (src/Beesharp.Client): its _framework files and wwwroot come from the project reference
 // as static web assets, which MapStaticAssets serves (fingerprinted, pre-compressed). Brain 0015.
 app.MapStaticAssets();
 

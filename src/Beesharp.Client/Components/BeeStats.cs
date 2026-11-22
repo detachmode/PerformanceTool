@@ -1,6 +1,6 @@
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 /// <summary>
 /// The few statistics of the scenario popup (brain 0030) for the bees that started in a time window: typical duration (median), the slowest 5 %

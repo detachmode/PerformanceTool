@@ -1,4 +1,4 @@
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>The built-in system prompt. <c>AI__SystemPrompt</c> replaces it.</summary>
 public static class SystemPrompt

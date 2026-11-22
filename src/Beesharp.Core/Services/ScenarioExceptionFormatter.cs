@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>
 /// Formats an exception thrown by a scenario or preflight script so the stack trace only shows frames
@@ -82,8 +82,7 @@ public static class ScenarioExceptionFormatter
                     || typeName.StartsWith("Submission#", StringComparison.Ordinal)
                     || (!asmName.StartsWith("System", StringComparison.Ordinal)
                         && !asmName.StartsWith("Microsoft", StringComparison.Ordinal)
-                        && !asmName.StartsWith("Beesharp", StringComparison.Ordinal)
-                        && !asmName.StartsWith("PerformanceTool", StringComparison.Ordinal)))
+                        && !asmName.StartsWith("Beesharp", StringComparison.Ordinal)))
                 {
                     filtered.Add(FormatFrame(f, m));
                 }
@@ -110,8 +109,8 @@ public static class ScenarioExceptionFormatter
         var full = method.DeclaringType?.FullName ?? "";
         var asmName = method.DeclaringType?.Assembly.GetName().Name ?? "";
 
-        if (full.StartsWith("PerformanceTool.Services.", StringComparison.Ordinal)
-            || full.StartsWith("PerformanceTool.Client.", StringComparison.Ordinal)
+        if (full.StartsWith("Beesharp.Services.", StringComparison.Ordinal)
+            || full.StartsWith("Beesharp.Client.", StringComparison.Ordinal)
             || asmName.Equals("Beesharp", StringComparison.Ordinal)
             || asmName.Equals("Beesharp.Core", StringComparison.Ordinal)
             || ns.StartsWith("System.Runtime.CompilerServices", StringComparison.Ordinal)

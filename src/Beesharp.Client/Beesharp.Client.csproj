@@ -5,7 +5,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool.Client</RootNamespace>
+    <RootNamespace>Beesharp.Client</RootNamespace>
     <!-- Content-hashed asset URLs (brain 0025): index.html uses #[.{fingerprint}] placeholders and an importmap. -->
     <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
   </PropertyGroup>

@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using PerformanceTool.Ai.Contracts;
+using Beesharp.Ai.Contracts;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 // Run control and run history (past and current runs, bees, calls, logs).
 public sealed partial class AssistantToolbox

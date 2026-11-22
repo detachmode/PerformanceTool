@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios;
+namespace Beesharp.Services.Scenarios;
 
 /// <summary>Marker parameter type for parameterless custom scripts.</summary>
 public sealed class EmptyScenarioParameters;

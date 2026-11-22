@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Client.Services;
+using Beesharp.Ai.Contracts;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components.Assistant;
+namespace Beesharp.Client.Components.Assistant;
 
 /// <summary>Raised when the server refuses or fails a chat message; the message is meant for the user.</summary>
 public sealed class AssistantException(string message) : Exception(message);

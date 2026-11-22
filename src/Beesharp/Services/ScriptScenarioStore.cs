@@ -10,12 +10,12 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.Extensions.Logging;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>Globals object injected into every C# scenario script (brain 0040).</summary>
 public sealed class ScenarioScriptGlobals
@@ -157,7 +157,7 @@ public sealed class ScriptScenarioStore
             .WithEmitDebugInformation(true)
             .WithFilePath(debugFile)
             .WithFileEncoding(System.Text.Encoding.UTF8);
-        var script = CSharpScript.Create(code, opts, typeof(ScenarioScriptGlobals));
+        var script = CSharpScript.Create(LegacyScriptNamespaces.Upgrade(code), opts, typeof(ScenarioScriptGlobals));
         var diagnostics = script.Compile(ct);
         var mapped = diagnostics
             .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
@@ -454,9 +454,9 @@ public sealed class ScriptScenarioStore
                 "System.Threading",
                 "System.Threading.Tasks",
                 "Microsoft.Extensions.Logging",
-                "PerformanceTool.Services.Scenarios",
-                "PerformanceTool.Services.Scenarios.Spec",
-                "PerformanceTool.Services.Environments");
+                "Beesharp.Services.Scenarios",
+                "Beesharp.Services.Scenarios.Spec",
+                "Beesharp.Services.Environments");
     }
 
     private sealed class RecordingHttpHandler(HttpMessageHandler inner, ConcurrentQueue<ScriptRecordedCall> calls) : DelegatingHandler(inner)

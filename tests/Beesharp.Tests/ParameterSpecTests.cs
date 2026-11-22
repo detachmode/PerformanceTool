@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public class ParameterSpecTests
 {

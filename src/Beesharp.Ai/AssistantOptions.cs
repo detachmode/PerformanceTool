@@ -1,4 +1,4 @@
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>
 /// Settings of the assistant, bound from the configuration section <c>AI</c>: environment variables <c>AI__Provider</c>, <c>AI__Endpoint</c>,

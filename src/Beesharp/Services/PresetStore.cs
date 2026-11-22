@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 public sealed record Preset(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
 

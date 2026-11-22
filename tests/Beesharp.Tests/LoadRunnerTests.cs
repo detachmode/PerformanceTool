@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Concurrent;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public class LoadRunnerTests
 {
@@ -223,7 +223,7 @@ public class LoadRunnerTests
         Assert.NotNull(errLog.Exception);
         Assert.Contains(nameof(InvalidOperationException), errLog.Exception!);
         Assert.Contains(nameof(ThrowingScenario), errLog.Exception!);
-        Assert.DoesNotContain("PerformanceTool.Services.LoadRunner", errLog.Exception!);
+        Assert.DoesNotContain("Beesharp.Services.LoadRunner", errLog.Exception!);
         Assert.Contains(liveLogs, l => l.Log.Level == "Error" && l.Log.Exception?.Contains(nameof(InvalidOperationException)) == true);
     }
 }

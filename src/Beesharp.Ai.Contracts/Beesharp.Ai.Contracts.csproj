@@ -6,7 +6,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool.Ai.Contracts</RootNamespace>
+    <RootNamespace>Beesharp.Ai.Contracts</RootNamespace>
   </PropertyGroup>
 
 </Project>

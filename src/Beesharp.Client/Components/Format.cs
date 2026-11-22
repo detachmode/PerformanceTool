@@ -1,7 +1,7 @@
 using System.Globalization;
-using PerformanceTool.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 /// <summary>Small formatting helpers.</summary>
 public static class Format

@@ -1,9 +1,9 @@
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Storage;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Storage;
 using Xunit;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public sealed class PreflightTests : IDisposable
 {

@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
 using System.Text;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios.BuiltIn;
+namespace Beesharp.Services.Scenarios.BuiltIn;
 
 // Upper-case member names on purpose: they are the HTTP method names and are stored in presets.
 public enum HttpVerb { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS }

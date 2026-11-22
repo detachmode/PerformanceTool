@@ -1,10 +1,10 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
+using Beesharp.Client.Services;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>Runtime data of the fake run (brain 0052): run bag, entry bags, token refresh, final values of a finished run.</summary>
 public class RuntimeDataTests

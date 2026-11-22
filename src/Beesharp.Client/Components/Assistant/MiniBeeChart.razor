@@ -1,6 +1,6 @@
 @* The popup chart's bars in small (brain 0049): the same bars (BeeBars.Build), colours and time axis, without the zoom machinery. A bar is one bee,
    or a time bucket when there are many; clicking one opens the full chart (OnPick, with the bee when the bar is one bee). *@
-@using PerformanceTool.Ai.Contracts
+@using Beesharp.Ai.Contracts
 @{
     var bars = Bars();
 }
@@ -41,9 +41,9 @@ else
 
     private List<BeeBar> Bars()
     {
-        var errors = new PerformanceTool.Client.Services.ErrorDictionary();
+        var errors = new Beesharp.Client.Services.ErrorDictionary();
         var records = Bees.OrderBy(b => b.StartedAt).ThenBy(b => b.Bee)
-            .Select(b => new PerformanceTool.Client.Services.BeeRecord(b.Bee - 1, 0, b.StartedAt, b.DurationMs, b.Outcome == "slow" ? 1 : 0, b.Outcome == "failed" ? errors.Intern(b.Error ?? "failed") : 0, errors))
+            .Select(b => new Beesharp.Client.Services.BeeRecord(b.Bee - 1, 0, b.StartedAt, b.DurationMs, b.Outcome == "slow" ? 1 : 0, b.Outcome == "failed" ? errors.Intern(b.Error ?? "failed") : 0, errors))
             .ToList();
         var bars = BeeBars.Build(records, records.Count, BeeShow.All, out total, out bucketWidth, maxBars: 60);
         scale = bars.Count == 0 ? 1 : Math.Max(1, bars.Max(b => b.MaxMs));

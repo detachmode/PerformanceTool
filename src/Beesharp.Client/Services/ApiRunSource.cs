@@ -1,10 +1,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 public sealed record ServerLogRowDto(
     long Id,

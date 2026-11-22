@@ -1,6 +1,6 @@
-using PerformanceTool.Client.Components;
+using Beesharp.Client.Components;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>Stripes of a highlighted group bar (brain 0037).</summary>
 public class GroupStripeTests
