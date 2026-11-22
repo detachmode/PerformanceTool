@@ -564,6 +564,8 @@ public sealed class ApiRunSource : IRunSource
         pollCts = null;
     }
 
+    private readonly HashSet<int> seenSequences = [];
+
     private void ApplyStatus(LiveRunStatusDto dto)
     {
         var count = dto.Plan.Scenarios.Count;
@@ -573,6 +575,7 @@ public sealed class ApiRunSource : IRunSource
             activeStartedUtc = dto.StartedUtc;
             activeStore = new RunStore(count);
             lastSequence = -1;
+            seenSequences.Clear();
             loadedDetails.Clear();
             loadingDetails.Clear();
             PreflightDismissed = false;
@@ -591,6 +594,7 @@ public sealed class ApiRunSource : IRunSource
         foreach (var a in dto.NewBees)
         {
             if (a.Entry < 0 || a.Entry >= count) continue;
+            if (!seenSequences.Add(a.Sequence)) continue; // two overlapping polls can deliver the same bee twice
             var errId = activeStore.Errors.Intern(a.Error);
             var record = new BeeRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.SlowCalls, errId, activeStore.Errors);
             var placeholderCall = new FakeCall(0, "Loading…", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: a.SlowCalls > 0, TypicalMs: null, Errors: activeStore.Errors);

@@ -22,6 +22,7 @@ Three projects plus tests (brain 0015), all `net11.0`:
     plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
     parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Components/Parameters/`), never hand-written per scenario (brain 0007).
   - `Services/Runtime/RunData.cs`: runtime data (brain 0052): the **run bag** (`ScenarioContext.RunBag`, `Data` in preflight/shutdown scripts) and one **entry bag** per entry (`ScenarioContext.State`), with last writer and run time per key; `DataWriter`/`RuntimeValue`/`RuntimeDataSnapshot` are also the REST wire format.
+  - Stopped runs (brain 0053): `LoadRunner` reports bees in flight at the stop as canceled (`ExecutionResult.Canceled`, error `ExecutionResult.CanceledError`); they look and count like failed.
   - `Services/LoadPlan.cs` (the plan, also the preset format), `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
 - `src/PerformanceTool.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview), `/editor` and `/environment` (static values of the selected environment plus runtime data: run bag and entry bags, `RunSnapshot.Runtime`, fake data in `Services/RuntimeData.cs`, brain 0052).
   - `Services/IRunSource.cs` is the seam to the data: `FakeRunSource` (in-browser simulation, the default) and `ApiRunSource` (stub, throws until the REST API exists).

@@ -18,3 +18,12 @@ got**. Today they are dropped without a trace (server `LoadRunner.ExecuteOne` re
 ## Consequences
 - A third outcome next to success and failed: `ScenarioOutcome`, `ExecutionResult`, storage, wire format, the
   client's `BeeRecord`, filters and charts must know it.
+
+## Implementation notes (Proposed, Claude)
+- **Data model:** `ExecutionResult.Canceled` (flag, default false) with the error `ExecutionResult.CanceledError` = "Canceled: run stopped". `ScenarioOutcome` is unchanged: the runner builds the failed outcome itself. Storage and the wire format carry only the error text (the stored outcome stays 2 = failed); `ExecutionResult.IsCanceledError` and the client's `BeeRecord.Canceled` recognise a canceled bee again from that text, so no schema change and old runs stay readable. Proposed: if "canceled" should ever be filtered on its own, add a stored outcome 3 then.
+- **Server:** `LoadRunner.ExecuteOne` catches any exception while the run token is cancelled (also a wrapped `TaskCanceledException`), reports the bee as canceled with its logs and calls, then the activity end follows as before (every start has one end). Results are reported before `RunAsync` returns, so they are stored before the shutdown program and the run finish.
+- **Calls:** `ScenarioContext.MeasureCallAsync` records the cut-off call as failed with its duration so far; when the run (not the per-bee timeout) was stopped its error is "Canceled: run stopped" (`ScenarioContext` got a `runStopped` callback). The UI shows its status as "canceled" instead of "timeout". A bee that ignores its token keeps running until it finishes and then ends normally, as before.
+- **Fake mode:** `FakeRunSource.Finish` turns the pending bees into canceled bees (`Cancel`): calls up to the stop stay, the running call is failed at the stop, later calls are skipped, logs end with "B# canceled: run stopped".
+- **UI:** no new look; they are failed bees. The AI assistant reports them as outcome "failed" with the error text.
+- **Client fix found on the way:** `ApiRunSource.ApplyStatus` now ignores a bee sequence it already has (two overlapping polls delivered the first bees twice, which a stopped run made visible).
+- **Follow-up:** the client polls with `afterSeq` = highest sequence seen, but the server lists bees in finishing order, so a bee that finishes after a higher-numbered one in a later poll can be missed. Canceled bees all end within milliseconds, so it is rare here, but a cursor by list position would be safer.
