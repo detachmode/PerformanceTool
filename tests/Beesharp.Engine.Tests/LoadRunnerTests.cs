@@ -66,8 +66,11 @@ public class LoadRunnerTests
         // 10/s, each taking 400 ms, but only one may be in flight.
         var plan = new LoadPlan { DurationSeconds = 1, MaxConcurrency = 1, Scenarios = [Entry(600, delayMs: 400)] };
         var (results, dropped) = await Run(plan);
-        Assert.Equal(10, results.Count + dropped[0]);
-        Assert.InRange(results.Count, 2, 4);
+        Assert.Equal(10, results.Count + dropped[0]); // every slot either started a bee or was dropped
+        Assert.True(dropped[0] > 0, "slots that find the only place taken are dropped");
+        // Not queued: at most one bee per 400 ms fits. The lower bound is 1, not 2: on a busy machine (test projects run in
+        // parallel) the first bee's 400 ms can stretch past the run's end, which made an exact 2..4 range flaky.
+        Assert.InRange(results.Count, 1, 4);
     }
 
     [Fact]

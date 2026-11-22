@@ -222,7 +222,9 @@ public sealed class ShutdownProgramTests : IDisposable
             var manager = Manager(storage, null, sd);
             var started = await manager.StartAsync(Plan(shutdown: "cleanup"), null);
             await WaitFinishedAsync(manager);
-            await storage.FlushAsync();
+            // "Finished" shows before the final values are written to storage, so wait for the whole run task
+            // (scenarios, shutdown program, storage writes) before reading the past run back; polling the state alone was flaky.
+            await manager.WaitUntilFinishedAsync();
 
             // By run id, from storage, as the REST API does for a past run.
             var second = Manager(storage, null, sd);
