@@ -3,7 +3,7 @@ using Beesharp.Client.Components.Assistant;
 using Beesharp.Client.Services;
 using Beesharp.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>The assistant's bee timeline (brain 0049) feeds the popup chart with a hand-picked set of bees shaped like one scenario entry.</summary>
 public class BeeSetTests

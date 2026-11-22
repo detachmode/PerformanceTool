@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Beesharp.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Contracts.Tests;
 
 /// <summary>The REST wire types in Beesharp.Contracts survive System.Text.Json with the web defaults both sides use (brain 0054).</summary>
 public class ContractsRoundTripTests

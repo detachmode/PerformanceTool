@@ -1,7 +1,7 @@
 using Beesharp.Client.Components;
 using Beesharp.Client.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>Unfolding bursts into single-bee bars (brain 0038), with the pixel rule, borrowed room and hysteresis of brain 0040.</summary>
 public class BurstUnfoldTests

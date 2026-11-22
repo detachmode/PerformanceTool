@@ -1,6 +1,6 @@
 using Beesharp.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Core.Tests;
 
 public class LegacyScriptNamespaceTests
 {

@@ -5,7 +5,7 @@ using System.Text.Json;
 using Beesharp.Services;
 using Beesharp.Services.Storage;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Storage.Tests;
 
 public sealed class DuckDbStorageTests
 {

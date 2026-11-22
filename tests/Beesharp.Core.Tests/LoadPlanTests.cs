@@ -3,7 +3,7 @@ using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Core.Tests;
 
 public class LoadPlanTests
 {

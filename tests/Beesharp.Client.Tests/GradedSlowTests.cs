@@ -1,7 +1,7 @@
 using Beesharp.Client.Components;
 using Beesharp.Client.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>The graded slow colour (brain 0041): ratio to the typical time, colour step, compact storage, group bars.</summary>
 public class GradedSlowTests

@@ -3,7 +3,7 @@ using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Engine.Tests;
 
 public class PlanWorkspaceTests : IDisposable
 {

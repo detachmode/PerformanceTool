@@ -1,7 +1,7 @@
 using Beesharp.Client.Components;
 using Beesharp.Client.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>The overview strip's marks (brain 0035 update 1).</summary>
 public class OverviewMarksTests

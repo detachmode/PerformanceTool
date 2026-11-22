@@ -3,7 +3,7 @@ using Beesharp.Cli;
 using Beesharp.Services.Storage;
 using Xunit;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Cli.Tests;
 
 /// <summary>The command-line tool (brain 0054, U3): argument parsing, exit codes, placeholders, summary text and the Ctrl+C path. Real script scenarios in a temp root, in-memory storage.</summary>
 public sealed class CliTests : IDisposable

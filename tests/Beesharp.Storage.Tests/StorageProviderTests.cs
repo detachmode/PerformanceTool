@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Beesharp.Services.Storage;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Storage.Tests;
 
 /// <summary>Choosing the run storage (brain 0054: SQLite was dropped; DuckDb and Memory remain).</summary>
 public sealed class StorageProviderTests

@@ -1,7 +1,7 @@
 using Beesharp.Client.Components;
 using Beesharp.Client.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>The stable time grid of the zoomed popup chart (brain 0031 update 2).</summary>
 public class BeeGridTests

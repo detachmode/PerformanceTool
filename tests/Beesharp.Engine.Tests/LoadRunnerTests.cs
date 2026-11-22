@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Engine.Tests;
 
 public class LoadRunnerTests
 {

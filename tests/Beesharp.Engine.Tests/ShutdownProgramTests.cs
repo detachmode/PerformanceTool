@@ -5,7 +5,7 @@ using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
 using Xunit;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Engine.Tests;
 
 /// <summary>The shutdown program and the runtime data of the server runner (brain 0052).</summary>
 public sealed class ShutdownProgramTests : IDisposable

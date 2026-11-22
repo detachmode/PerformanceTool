@@ -1,6 +1,6 @@
 using Beesharp.Client.Services;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>Retention priority and the error dictionary of the client's RunStore (brain 0028).</summary>
 public class RunStoreTests

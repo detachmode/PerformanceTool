@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using Beesharp.Services.Scenarios.BuiltIn;
 using Beesharp.Services.Scenarios.Spec;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Core.Tests;
 
 public class ParameterSpecTests
 {

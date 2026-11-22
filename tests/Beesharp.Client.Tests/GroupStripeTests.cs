@@ -1,6 +1,6 @@
 using Beesharp.Client.Components;
 
-namespace Beesharp.Tests;
+namespace Beesharp.Client.Tests;
 
 /// <summary>Stripes of a highlighted group bar (brain 0037).</summary>
 public class GroupStripeTests
