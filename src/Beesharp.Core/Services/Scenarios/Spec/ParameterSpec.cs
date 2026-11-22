@@ -9,7 +9,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace PerformanceTool.Services.Scenarios.Spec;
+namespace Beesharp.Services.Scenarios.Spec;
 
 /// <summary>How a parameter is edited. Derived from the property's C# type and attributes, never set by hand.</summary>
 public enum FieldKind { Text, Multiline, Url, Secret, Toggle, Choice, Integer, Slider, Number, Duration, List, KeyValue, Group }

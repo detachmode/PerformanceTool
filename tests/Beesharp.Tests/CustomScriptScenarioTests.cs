@@ -3,12 +3,12 @@ using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public sealed class CustomScriptScenarioTests
 {

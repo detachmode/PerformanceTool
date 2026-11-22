@@ -1,7 +1,7 @@
 @* Shown under a parameter value that contains {{Key}} placeholders (brain 0033, calm UI 0016): the placeholders are highlighted, and the resolved text from the
    active environment appears on demand (hover or focus on the field, see .has-env in app.css). A placeholder the active environment doesn't have gets a
    quiet note, and every placeholder opens the Configure popup (brain 0029). Values of keys that look like credentials are masked. *@
-@using PerformanceTool.Services.Environments
+@using Beesharp.Services.Environments
 @implements IDisposable
 @inject IEnvironmentSource Envs
 @inject EnvironmentsPopupState Popup

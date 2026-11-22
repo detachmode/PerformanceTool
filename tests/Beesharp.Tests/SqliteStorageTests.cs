@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Storage;
+using Beesharp.Services;
+using Beesharp.Services.Storage;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public sealed class SqliteStorageTests
 {

@@ -1,7 +1,7 @@
-using PerformanceTool.Client.Components;
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Components;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>The overview strip's marks (brain 0035 update 1).</summary>
 public class OverviewMarksTests

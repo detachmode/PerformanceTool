@@ -1,13 +1,7 @@
 using System.Text.Json;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Services;
-
-/// <summary>
-/// The server's view of the Live plan: the plan being edited, the name of the loaded preset and the plan as last saved
-/// (for "unsaved changes" and per-entry "changed"). <see cref="Version"/> grows with every real change.
-/// </summary>
-public sealed record PlanWorkspaceState(LoadPlan Plan, string PresetName, LoadPlan SavedPlan, bool HasUnsavedChanges, long Version);
+namespace Beesharp.Services;
 
 /// <summary>
 /// Owns the editable plan and the presets in Live mode (brain 0047/0050), so the UI and the AI assistant share one source of truth.

@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Client.Services;
+using Beesharp.Ai.Contracts;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components.Assistant;
+namespace Beesharp.Client.Components.Assistant;
 
 /// <summary>Raised when the server refuses or fails a chat message; the message is meant for the user.</summary>
 public sealed class AssistantException(string message) : Exception(message);
@@ -78,14 +78,14 @@ public sealed class AssistantClient(HttpClient http)
         catch { return null; }
     }
 
-    public async Task<ServerBeeDetailDto?> GetBeeDetailAsync(string runId, int sequence, CancellationToken ct = default)
+    public async Task<StoredBeeDetail?> GetBeeDetailAsync(string runId, int sequence, CancellationToken ct = default)
     {
-        try { return await http.GetFromJsonAsync<ServerBeeDetailDto>($"api/runs/{Uri.EscapeDataString(runId)}/bees/{sequence}", JsonOpts, ct); }
+        try { return await http.GetFromJsonAsync<StoredBeeDetail>($"api/runs/{Uri.EscapeDataString(runId)}/bees/{sequence}", JsonOpts, ct); }
         catch { return null; }
     }
 
     /// <summary>One page of the log lines of a run with the same filters as the Logs popup (0-based entry and bee).</summary>
-    public async Task<ServerLogPageDto?> GetLogsAsync(string runId, ViewQueryDto q, int offset, int limit, CancellationToken ct = default)
+    public async Task<LogPageResult?> GetLogsAsync(string runId, ViewQueryDto q, int offset, int limit, CancellationToken ct = default)
     {
         var parts = new List<string> { $"offset={offset}", $"limit={limit}" };
         if (q.Entry is { } e) parts.Add($"entry={e - 1}");
@@ -94,7 +94,7 @@ public sealed class AssistantClient(HttpClient http)
         if (q.SlowBees is true) parts.Add("slow=true");
         if (q.Levels is { Count: > 0 } lv) parts.Add($"levels={Uri.EscapeDataString(string.Join(',', lv))}");
         if (!string.IsNullOrWhiteSpace(q.Search)) parts.Add($"search={Uri.EscapeDataString(q.Search)}");
-        try { return await http.GetFromJsonAsync<ServerLogPageDto>($"api/runs/{Uri.EscapeDataString(runId)}/logs?{string.Join('&', parts)}", JsonOpts, ct); }
+        try { return await http.GetFromJsonAsync<LogPageResult>($"api/runs/{Uri.EscapeDataString(runId)}/logs?{string.Join('&', parts)}", JsonOpts, ct); }
         catch { return null; }
     }
 }

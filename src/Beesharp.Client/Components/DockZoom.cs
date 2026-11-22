@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.JSInterop;
 
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 /// <summary>A brushed time frame in run seconds. <see cref="ToEnd"/> is true when the brush reached the newest bar (the live edge).</summary>
 public readonly record struct BrushRange(double From, double To, bool ToEnd);

@@ -16,21 +16,22 @@ trade-off, rejected alternative), add a record to `docs/brain/` using the templa
 to the index. Commit it in the same change as the code.
 
 ## Project
-Three projects plus tests (brain 0015), all `net11.0`:
-- `src/PerformanceTool.Core` — class library shared by client and server. Keep it free of ASP.NET and browser dependencies.
+Projects (brain 0015, 0054), all `net11.0`, solution `Beesharp.slnx`; namespaces are `Beesharp.*`. Old user scripts with `using PerformanceTool.*` still compile (`LegacyScriptNamespaces`):
+- `src/Beesharp.Core` — class library shared by client and server. Keep it free of ASP.NET and browser dependencies.
   - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios. A new scenario is a parameter class
     plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
     parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Components/Parameters/`), never hand-written per scenario (brain 0007).
   - `Services/Runtime/RunData.cs`: runtime data (brain 0052): the **run bag** (`ScenarioContext.RunBag`, `Data` in preflight/shutdown scripts) and one **entry bag** per entry (`ScenarioContext.State`), with last writer and run time per key; `DataWriter`/`RuntimeValue`/`RuntimeDataSnapshot` are also the REST wire format.
   - Stopped runs (brain 0053): `LoadRunner` reports bees in flight at the stop as canceled (`ExecutionResult.Canceled`, error `ExecutionResult.CanceledError`); they look and count like failed.
   - `Services/LoadPlan.cs` (the plan, also the preset format), `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
-- `src/PerformanceTool.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview), `/editor` and `/environment` (static values of the selected environment plus runtime data: run bag and entry bags, `RunSnapshot.Runtime`, fake data in `Services/RuntimeData.cs`, brain 0052).
+- `src/Beesharp.Contracts` — the **REST wire types** shared by server and client (run status, stored runs, bee detail, log pages, scripts, preflights, shutdowns, plan, presets, request bodies). **A REST type goes in Contracts, never duplicated** on the server or the client: add the record there, use it in the endpoint and in the client call. Property names are the JSON (web defaults); `ContractsRoundTripTests` guards them. It references only Core (`LoadPlan`, `RecordedCall`/`RecordedLog` are the shared model); the assistant's wire types stay in `Beesharp.Ai.Contracts`. Server and client csprojs import `Beesharp.Contracts` as a global using.
+- `src/Beesharp.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview), `/editor` and `/environment` (static values of the selected environment plus runtime data: run bag and entry bags, `RunSnapshot.Runtime`, fake data in `Services/RuntimeData.cs`, brain 0052).
   - `Services/IRunSource.cs` is the seam to the data: `FakeRunSource` (in-browser simulation, the default) and `ApiRunSource` (stub, throws until the REST API exists).
     Choose with `"DataSource": "Fake" | "Api"` in `wwwroot/appsettings.json`.
   - `Pages/`, `Layout/` (top bar and the bottom `PlayerBar` with play/pause, stop, run readouts and Logs, brain 0027), `Components/` (`ScenarioCard`, popups `ScenarioDetailDialog` and `LogsDialog`, `VirtualList`, `ActorBars`, `Parameters/`), `wwwroot/app.css` (dark tokens; flat, dark only; colour only means failed = red or slow = amber, brain 0018).
   - **Slow rule (placeholder):** `Services/SlowCallRule.cs` is the one place that defines "slow" and the graded colour from typical time to amber (`Ratio`, `Step`, brain 0041; an actor keeps its worst call's ratio in `ActorRecord.RatioCode`; CSS classes `t1..t3` shift the green). **Scale (brain 0021/0022):** `RunStore` keeps tiny actor records for the whole run and calls/logs for at most `RunStoreOptions.MaxDetailedActorsPerScenario` (1500) actors per scenario, dropping successful actors first, then slow, then failed (brain 0028); each distinct error text is stored once in `ErrorDictionary` (`store.Errors`; `ActorRecord`/`FakeCall`/`FakeLogEntry` hold ids, `Error`/`Message`/`Exception` resolve them; `store.HasDetail(seq)` tells whether detail is kept); long lists use `VirtualList`, charts are bounded (`ActorBars`). The popup chart's zoomed view unfolds bursts into single-actor bars as soon as they fit (`ActorBars.Unfold` with `UnfoldRoom`/`UnfoldHysteresis`; the burst borrows quiet time around it, so x stays linear in time; brain 0038, 0040) and its overview strip shows muted failed/slow marks (`ActorBars.OverviewMarks`, brain 0035) with an outlined view window (brain 0040). Gesture rules (a sideways swipe never zooms), the strip and the selection pill live in `wwwroot/dock-magnify.js` (brain 0040). The seeded finished run is 30 minutes (brain 0039). Debug: open the app with `?simulate=3h` to pre-generate a 3 hour run, `?burst=100` to make the seeded bursts that big. A burst that does not fit as single bars splits into even groups (`ActorBars.NiceGroupSize`, `ActorBar.GroupLo/GroupHi`, brain 0043).
-  - **Trimming:** Release publish trims. `PerformanceTool.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
-- `src/PerformanceTool` — ASP.NET Core host. Besides the preflight (`PreflightStore`, `scripts/preflight/`) there is the **shutdown program** (`ShutdownStore`, `scripts/shutdown/`, `LoadPlan.ShutdownScriptId`, `/api/shutdowns`): `RunManager` always runs it at the end of a run (also after Stop or a failed preflight). Runtime data: `GET /api/runs/current/runtime`, `/api/runs/{id}/runtime`; final values are stored per run (`IRunStorage.SaveRuntimeDataAsync`). `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
+  - **Trimming:** Release publish trims. `Beesharp.Core` is a `TrimmerRootAssembly` in the csproj so the reflection-based editor keeps its metadata. Always test the *published* build, not only `dotnet run`.
+- `src/Beesharp` — ASP.NET Core host. Besides the preflight (`PreflightStore`, `scripts/preflight/`) there is the **shutdown program** (`ShutdownStore`, `scripts/shutdown/`, `LoadPlan.ShutdownScriptId`, `/api/shutdowns`): `RunManager` always runs it at the end of a run (also after Stop or a failed preflight). Runtime data: `GET /api/runs/current/runtime`, `/api/runs/{id}/runtime`; final values are stored per run (`IRunStorage.SaveRuntimeDataAsync`). `LoadRunner` (open-model scheduler), `PresetStore` (JSON presets, `Presets:Directory`),
   `GET /api/scenarios`. It serves the client (project reference, static web assets via `MapStaticAssets`, `MapFallbackToFile("index.html")`). No Razor UI of its own.
 - `src/Beesharp.Ai.Contracts`, `src/Beesharp.Ai` — the **AI assistant** (brain 0047 to 0051). Contracts = wire DTOs (no dependencies; the client references only these, never Microsoft.Extensions.AI).
   `Beesharp.Ai` = the agent on Microsoft.Extensions.AI: `AddBeesharpAi(config)`, `MapBeesharpAi()` (`/api/assistant`: `GET status`, `POST chat`, `DELETE sessions/{id}`), `AssistantService` (own tool loop, sessions in memory),
@@ -40,15 +41,15 @@ Three projects plus tests (brain 0015), all `net11.0`:
   **Add a tool:** a public method with `[AssistantTool("snake_name")]` and `[Description]`s (tool language, entries and bees numbered from 1) in the toolbox file of its area; bound its output; call `rec.Read(...)`, `rec.Change(area, ...)` or `rec.Show(card)` with a one-line summary. No approval step (brain 0048). A new card kind: a `ViewKinds` constant, a builder in `AssistantToolbox.Show.cs`, a card in `Components/Assistant/`.
   The server owns the Live plan: `Services/PlanWorkspace.cs` + `Api/PlanEndpoints.cs` (`/api/plan`, `/api/presets`, brain 0050); `ApiRunSource` pushes editor edits and pulls server changes (400 ms loop).
   The chat panel is `Components/Assistant/` in the client (right side panel, Live mode only, only when `GET /api/assistant/status` says configured).
-- `tests/PerformanceTool.Tests` — references Core and the server.
+- `tests/Beesharp.Tests` — references Core and the server.
 
 ## Build, test and run
 ```bash
 dotnet test
 ```
-Client alone (fake data): `dotnet run --project src/PerformanceTool.Client`. Server plus client:
+Client alone (fake data): `dotnet run --project src/Beesharp.Client`. Server plus client:
 ```bash
-dotnet run --project src/PerformanceTool
+dotnet run --project src/Beesharp
 ```
 **Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too. .NET 11 (CI) reports more than the .NET 10 copy (e.g. Blazor BL0016: give every JS interop call its own try/catch; BL0012: no `StateHasChanged()` at the end of an event handler), so watch CI.
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.

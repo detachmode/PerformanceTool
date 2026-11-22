@@ -1,10 +1,10 @@
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Storage;
+using Beesharp.Client.Services;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Storage;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>Bees in flight when a run is stopped are kept as canceled, with their logs and calls (brain 0053).</summary>
 public sealed class CanceledBeesTests

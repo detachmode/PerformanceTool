@@ -1,9 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace PerformanceTool.Services;
-
-public sealed record Preset(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
+namespace Beesharp.Services;
 
 /// <summary>
 /// Stores presets as one JSON file per preset in a directory (config key <c>Presets:Directory</c>).

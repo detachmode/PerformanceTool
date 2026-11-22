@@ -1,6 +1,6 @@
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 /// <summary>What the scenario popup lists when it opens (e.g. from a figure on an overview card, brain 0029).</summary>
 public enum DetailFilter { All, Failed, Slow, Slowest5Pct }

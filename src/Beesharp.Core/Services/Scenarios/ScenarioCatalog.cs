@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace PerformanceTool.Services.Scenarios;
+namespace Beesharp.Services.Scenarios;
 
 /// <summary>
 /// All scenarios registered in DI plus any dynamically compiled C# script scenarios (brain 0040),

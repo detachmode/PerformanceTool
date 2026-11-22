@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Components;
+namespace Beesharp.Client.Components;
 
 /// <summary>The user-facing words of docs/context.md that appear in several places.</summary>
 public static class Terms

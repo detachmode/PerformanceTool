@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using PerformanceTool.Ai.Contracts;
+using Beesharp.Ai.Contracts;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>Registration and routes of the assistant (brain 0047).</summary>
 public static class AssistantExtensions

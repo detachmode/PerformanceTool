@@ -2,9 +2,9 @@
    compile them on the server, edit their generated parameter form, test-run a single execution, or add them to the plan. *@
 @using System.Text.Json.Nodes
 @using Microsoft.AspNetCore.Components.Forms
-@using PerformanceTool.Client.Components.Parameters
-@using PerformanceTool.Services.Scenarios
-@using PerformanceTool.Services.Scenarios.Spec
+@using Beesharp.Client.Components.Parameters
+@using Beesharp.Services.Scenarios
+@using Beesharp.Services.Scenarios.Spec
 @inject ScriptApiClient Api
 @inject ScenarioCatalog Catalog
 @inject IRunSource Sim
@@ -152,15 +152,15 @@
 
 @code {
     private ElementReference root;
-    private List<ClientScriptSummary> scripts = [];
+    private List<ScriptScenarioSummary> scripts = [];
     private string? selectedId;
-    private ClientScriptSummary? selectedSummary;
+    private ScriptScenarioSummary? selectedSummary;
     private ParameterSpec? compiledSpec;
     private JsonObject testParams = new();
     private string fileName = "order-api-stress.cs";
     private string scriptCode = StarterTemplate;
-    private List<ClientScriptDiagnostic> diagnostics = [];
-    private ClientTestRunResult? testResult;
+    private List<ScriptDiagnosticDto> diagnostics = [];
+    private ScriptTestRunResult? testResult;
     private string? statusMessage;
     private bool statusIsError;
     private bool compiling;
@@ -241,7 +241,7 @@
         }
     }
 
-    private void Select(ClientScriptSummary s)
+    private void Select(ScriptScenarioSummary s)
     {
         selectedId = s.ScriptId;
         selectedSummary = s;

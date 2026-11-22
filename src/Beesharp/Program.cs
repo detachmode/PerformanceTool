@@ -1,12 +1,12 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Ai;
-using PerformanceTool.AiAdapters;
-using PerformanceTool.Api;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
-using PerformanceTool.Services.Storage;
+using Beesharp.Ai;
+using Beesharp.AiAdapters;
+using Beesharp.Api;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
+using Beesharp.Services.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,20 +60,18 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseHttpsRedirection();
 
-// The Blazor WebAssembly client (src/PerformanceTool.Client): its _framework files and wwwroot come from the project reference
+// The Blazor WebAssembly client (src/Beesharp.Client): its _framework files and wwwroot come from the project reference
 // as static web assets, which MapStaticAssets serves (fingerprinted, pre-compressed). Brain 0015.
 app.MapStaticAssets();
 
 // Machine-readable scenario catalog (id, name, description, JSON Schema of the parameters) for the CLI, UI and coding harnesses.
-app.MapGet("/api/scenarios", (ScenarioCatalog catalog, ScriptScenarioStore scripts) => catalog.All.Select(s => new
-{
+app.MapGet("/api/scenarios", (ScenarioCatalog catalog, ScriptScenarioStore scripts) => catalog.All.Select(s => new ScenarioInfoDto(
     s.Id,
     s.Name,
     s.Description,
-    IsCustom = catalog.IsCustom(s.Id),
-    ScriptId = scripts.FindScriptIdForScenario(s.Id),
-    Parameters = s.Spec.ToJsonSchema(),
-}));
+    catalog.IsCustom(s.Id),
+    scripts.FindScriptIdForScenario(s.Id),
+    s.Spec.ToJsonSchema())));
 
 // Custom C# script scenarios (brain 0040): upload/compile .csx/.cs scripts and test-run a single execution.
 app.MapGet("/api/scripts", (ScriptScenarioStore store) => store.List());
@@ -263,7 +261,3 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 
-public sealed record UploadScriptRequest(string? Id, string? FileName, string? Code);
-public sealed record TestRunScriptRequest(JsonObject? Parameters = null, string? EnvironmentName = null, int TimeoutSeconds = 30);
-public sealed record TestRunPreflightRequest(string? EnvironmentName = null, int TimeoutSeconds = 60);
-public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);

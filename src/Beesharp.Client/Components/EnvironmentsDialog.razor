@@ -1,7 +1,7 @@
 @* Configure popup for environments (brain 0033): the environments on the left (add, pick), the selected one's name and key-value table on the right
    (rename, delete, add and remove rows, edit inline). Visible state (brain 0019): "Unsaved changes", Save only when something changed, "Saved ✓", and a
    confirm before closing over unsaved changes. Calm UI (0016): credential-like values are masked until shown. *@
-@using PerformanceTool.Services.Environments
+@using Beesharp.Services.Environments
 @implements IDisposable
 @inject IEnvironmentSource Envs
 @inject EnvironmentsPopupState Popup

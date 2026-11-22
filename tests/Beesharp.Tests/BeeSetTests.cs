@@ -1,9 +1,9 @@
-using PerformanceTool.Client.Components;
-using PerformanceTool.Client.Components.Assistant;
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services;
+using Beesharp.Client.Components;
+using Beesharp.Client.Components.Assistant;
+using Beesharp.Client.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>The assistant's bee timeline (brain 0049) feeds the popup chart with a hand-picked set of bees shaped like one scenario entry.</summary>
 public class BeeSetTests
@@ -43,7 +43,7 @@ public class BeeSetTests
         Assert.NotNull(placeholder);
         Assert.Single(placeholder!.Calls);
 
-        set.ApplyDetail(new ServerBeeDetailDto("run-1", 7, 0, 4.0, 2400, 200, 10, null,
+        set.ApplyDetail(new StoredBeeDetail("run-1", 7, 0, 4.0, 2400, 200, 10, null,
             [new RecordedCall("GET /a", 0, 1200, 200)], []));
         Assert.Equal("GET /a", set.Snapshot.Store.Detail(7)!.Calls[0].Name);
     }

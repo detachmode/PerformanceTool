@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>Limits of the <see cref="RunStore"/>. Settable at any time; the store reads the value whenever a bee is added (brain 0028).</summary>
 public sealed class RunStoreOptions

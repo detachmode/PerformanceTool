@@ -1,9 +1,9 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>Marks a method of <see cref="AssistantToolbox"/> as a tool the model can call. The name is what the model sees.</summary>
 [AttributeUsage(AttributeTargets.Method)]

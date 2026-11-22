@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" />
     <Project Path="src/Beesharp.Ai/Beesharp.Ai.csproj" />
+    <Project Path="src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <Project Path="src/Beesharp.Client/Beesharp.Client.csproj" />
     <Project Path="src/Beesharp.Core/Beesharp.Core.csproj" />
     <Project Path="src/Beesharp/Beesharp.csproj" />

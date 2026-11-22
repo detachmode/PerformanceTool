@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>One conversation, kept in memory. <see cref="Messages"/> is the history the model sees (without the system prompt).</summary>
 public sealed class ChatSession(string id)

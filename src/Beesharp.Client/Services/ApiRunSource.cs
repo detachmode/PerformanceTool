@@ -1,52 +1,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Client.Services;
-
-public sealed record ServerLogRowDto(
-    long Id,
-    int Sequence,
-    string BeeName,
-    int Entry,
-    double AtSeconds,
-    string Level,
-    string Message,
-    string? Exception,
-    int? CallIndex,
-    int BeeOutcome,
-    bool IsFailed,
-    bool IsSlow);
-
-public sealed record ServerLogPageDto(
-    long TotalCount,
-    int Offset,
-    int Limit,
-    List<ServerLogRowDto> Items);
-
-public sealed record ClientLiveLogDto(
-    long Id,
-    int Sequence,
-    string BeeName,
-    int Entry,
-    double AtSeconds,
-    DateTimeOffset Timestamp,
-    string Level,
-    string Message,
-    string? Exception);
-
-public sealed record ServerRunSummaryDto(
-    string RunId,
-    DateTimeOffset StartedUtc,
-    DateTimeOffset? FinishedUtc,
-    string State,
-    double ElapsedSeconds,
-    int TotalBees,
-    int FailedBees,
-    long TotalLogs,
-    string? Error);
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Scalable live data source talking to the ASP.NET Core server's REST API (<c>/api/runs/*</c>) backed by SQLite
@@ -122,50 +80,6 @@ public sealed class ApiRunSource : IRunSource
     public bool IsRunning => Current.Running;
     public event Action? Changed;
 
-    private sealed record LiveBeeDto(
-        int Sequence,
-        int Entry,
-        double StartedAt,
-        double DurationMs,
-        int? StatusCode,
-        long Bytes,
-        string? Error,
-        int SlowCalls);
-
-    private sealed record LiveScenarioViewDto(
-        int Starts,
-        int Finished,
-        int InFlight,
-        int Failed,
-        int SlowBees,
-        int SlowCalls,
-        int Dropped);
-
-    private sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
-
-    private sealed record LiveRunStatusDto(
-        string RunId,
-        string State,
-        double ElapsedSeconds,
-        DateTimeOffset StartedUtc,
-        LoadPlan Plan,
-        List<LiveScenarioViewDto> Scenarios,
-        List<LiveBeeDto> NewBees,
-        int LastSequence,
-        long TotalLogs,
-        string StorageProvider,
-        string? Error,
-        string? PreflightState = null,
-        string? PreflightScriptName = null,
-        List<string>? PreflightLogs = null,
-        string? PreflightError = null,
-        List<LiveRunningBeeDto>? RunningBees = null,
-        string? ShutdownState = null,
-        string? ShutdownScriptName = null,
-        List<string>? ShutdownLogs = null,
-        string? ShutdownError = null,
-        long RuntimeVersion = 0);
-
     public ApiRunSource(HttpClient http, ScenarioCatalog catalog, ApiEnvironmentSource environments)
     {
         this.http = http;
@@ -230,7 +144,7 @@ public sealed class ApiRunSource : IRunSource
         try
         {
             var resp = await http.PutAsJsonAsync($"api/presets/{Uri.EscapeDataString(name)}", plan, JsonOpts);
-            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts) is { } state)
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanWorkspaceState>(JsonOpts) is { } state)
                 AdoptState(state, replacePlan: false, syncedWith: plan);
             await LoadPresetsAsync();
         }
@@ -242,7 +156,7 @@ public sealed class ApiRunSource : IRunSource
         try
         {
             var resp = await http.PostAsync($"api/presets/{Uri.EscapeDataString(name)}/load", null);
-            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts) is { } state)
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanWorkspaceState>(JsonOpts) is { } state)
                 AdoptState(state, replacePlan: true);
         }
         catch { }
@@ -252,7 +166,7 @@ public sealed class ApiRunSource : IRunSource
     {
         try
         {
-            var list = await http.GetFromJsonAsync<List<PresetDto>>("api/presets", JsonOpts) ?? [];
+            var list = await http.GetFromJsonAsync<List<Preset>>("api/presets", JsonOpts) ?? [];
             presets.Clear();
             foreach (var p in list) presets[p.Name] = p.Plan;
             Changed?.Invoke();
@@ -261,9 +175,6 @@ public sealed class ApiRunSource : IRunSource
     }
 
     // ---------- plan sync with the server ----------
-
-    private sealed record PresetDto(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
-    private sealed record PlanStateDto(LoadPlan Plan, string PresetName, LoadPlan SavedPlan, bool HasUnsavedChanges, long Version);
 
     /// <summary>Starts loading and syncing the plan and presets with the server (Live mode). Safe to call again.</summary>
     public void StartSync()
@@ -292,7 +203,7 @@ public sealed class ApiRunSource : IRunSource
             {
                 try
                 {
-                    var state = await http.GetFromJsonAsync<PlanStateDto>("api/plan", JsonOpts, ct);
+                    var state = await http.GetFromJsonAsync<PlanWorkspaceState>("api/plan", JsonOpts, ct);
                     SetReachable(true);
                     if (state is not null)
                     {
@@ -343,7 +254,7 @@ public sealed class ApiRunSource : IRunSource
         var resp = await http.PutAsJsonAsync("api/plan", sent, JsonOpts, ct);
         SetReachable(true);
         if (!resp.IsSuccessStatusCode) return;
-        var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
+        var state = await resp.Content.ReadFromJsonAsync<PlanWorkspaceState>(JsonOpts, ct);
         if (state is null) return;
         serverVersion = state.Version;
         syncedFingerprint = Fingerprint(sent);
@@ -355,7 +266,7 @@ public sealed class ApiRunSource : IRunSource
         var resp = await http.GetAsync($"api/plan?knownVersion={serverVersion}", ct);
         SetReachable(true);
         if (resp.StatusCode == System.Net.HttpStatusCode.NoContent || !resp.IsSuccessStatusCode) return;
-        var state = await resp.Content.ReadFromJsonAsync<PlanStateDto>(JsonOpts, ct);
+        var state = await resp.Content.ReadFromJsonAsync<PlanWorkspaceState>(JsonOpts, ct);
         if (state is null || state.Version == serverVersion) return;
         // The user may have started editing while we waited: unpushed edits win (last writer wins, brain 0050).
         if (Fingerprint(Plan) != syncedFingerprint) return;
@@ -364,7 +275,7 @@ public sealed class ApiRunSource : IRunSource
     }
 
     /// <summary>Takes the server's state as the truth. With <paramref name="replacePlan"/> false only the bookkeeping (version, preset, saved plan) is taken.</summary>
-    private void AdoptState(PlanStateDto state, bool replacePlan, LoadPlan? syncedWith = null)
+    private void AdoptState(PlanWorkspaceState state, bool replacePlan, LoadPlan? syncedWith = null)
     {
         serverVersion = state.Version;
         if (replacePlan)
@@ -377,7 +288,7 @@ public sealed class ApiRunSource : IRunSource
         ApplyMeta(state);
     }
 
-    private void ApplyMeta(PlanStateDto state)
+    private void ApplyMeta(PlanWorkspaceState state)
     {
         PresetName = state.PresetName;
         savedFingerprint = Fingerprint(state.SavedPlan);
@@ -400,18 +311,18 @@ public sealed class ApiRunSource : IRunSource
         catch { SetReachable(false); }
     }
 
-    public async Task<List<ClientLiveLogDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default, int? sequence = null, int? entry = null)
+    public async Task<List<LiveLogEntryDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default, int? sequence = null, int? entry = null)
     {
         var url = $"api/runs/live-logs?afterId={afterId}&limit={limit}";
         if (sequence is { } seq) url += $"&sequence={seq}";
         if (entry is { } ent) url += $"&entry={ent}";
-        try { return await http.GetFromJsonAsync<List<ClientLiveLogDto>>(url, JsonOpts, ct) ?? []; }
+        try { return await http.GetFromJsonAsync<List<LiveLogEntryDto>>(url, JsonOpts, ct) ?? []; }
         catch { return []; }
     }
 
-    public async Task<List<ServerRunSummaryDto>> ListRunsAsync(int limit = 30, CancellationToken ct = default)
+    public async Task<List<StoredRunSummary>> ListRunsAsync(int limit = 30, CancellationToken ct = default)
     {
-        try { return await http.GetFromJsonAsync<List<ServerRunSummaryDto>>($"api/runs?limit={limit}", JsonOpts, ct) ?? []; }
+        try { return await http.GetFromJsonAsync<List<StoredRunSummary>>($"api/runs?limit={limit}", JsonOpts, ct) ?? []; }
         catch { return []; }
     }
 
@@ -449,7 +360,7 @@ public sealed class ApiRunSource : IRunSource
             return;
         try
         {
-            var detail = await http.GetFromJsonAsync<ServerBeeDetailDto>(
+            var detail = await http.GetFromJsonAsync<StoredBeeDetail>(
                 $"api/runs/{Uri.EscapeDataString(activeRunId)}/bees/{sequence}", JsonOpts, ct);
             if (detail is null) return;
             var beeDetail = RemoteBeeDetail.Build(detail, activeStore, activeStartedUtc, detail.Entry);
@@ -462,7 +373,7 @@ public sealed class ApiRunSource : IRunSource
     }
 
     /// <summary>Queries server-side indexed, filtered, paged logs from SQLite storage.</summary>
-    public async Task<ServerLogPageDto?> QueryLogsAsync(
+    public async Task<LogPageResult?> QueryLogsAsync(
         int? entry,
         int? bee,
         bool? failed,
@@ -473,7 +384,7 @@ public sealed class ApiRunSource : IRunSource
         int limit,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(activeRunId)) return new ServerLogPageDto(0, offset, limit, []);
+        if (string.IsNullOrEmpty(activeRunId)) return new LogPageResult(0, offset, limit, []);
         var parts = new List<string> { $"offset={offset}", $"limit={limit}" };
         if (entry is { } e) parts.Add($"entry={e}");
         if (bee is { } a) parts.Add($"bee={a}");
@@ -483,7 +394,7 @@ public sealed class ApiRunSource : IRunSource
         if (!string.IsNullOrWhiteSpace(search)) parts.Add($"search={Uri.EscapeDataString(search.Trim())}");
 
         var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs?{string.Join('&', parts)}";
-        return await http.GetFromJsonAsync<ServerLogPageDto>(url, JsonOpts, ct);
+        return await http.GetFromJsonAsync<LogPageResult>(url, JsonOpts, ct);
     }
 
     public void Start()

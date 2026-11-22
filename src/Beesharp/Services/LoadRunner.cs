@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>
 /// Runs a <see cref="LoadPlan"/> as an open workload: every entry fires at its own fixed rate, independent of

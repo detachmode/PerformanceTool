@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
-namespace PerformanceTool.Services.Runtime;
+namespace Beesharp.Services.Runtime;
 
 // Runtime data (brain 0052): key-value data that the preflight, scenarios and the shutdown program read and write during a run.
 // Two scopes: one run bag shared by the whole run, and one entry bag per scenario entry (its startup, bees and teardown).

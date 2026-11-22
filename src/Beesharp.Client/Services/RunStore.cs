@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// The bulk data of a run, shared by all snapshots (brain 0021, 0028). Bee records are tiny and kept for the whole run; calls and log

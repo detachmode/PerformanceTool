@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Extensions.AI;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Ai;
+namespace Beesharp.Ai;
 
 /// <summary>
 /// The tools of the assistant for one turn (brain 0047, 0048, 0049). Every public method marked <see cref="AssistantToolAttribute"/> becomes an

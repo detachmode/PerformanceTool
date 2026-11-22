@@ -2,11 +2,11 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios;
+namespace Beesharp.Services.Scenarios;
 
 /// <summary>
 /// A load-test scenario defined in code or C# script. One execution = one bar in the live chart.

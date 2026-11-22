@@ -1,8 +1,8 @@
-using PerformanceTool.Ai;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Storage;
+using Beesharp.Ai;
+using Beesharp.Services;
+using Beesharp.Services.Storage;
 
-namespace PerformanceTool.AiAdapters;
+namespace Beesharp.AiAdapters;
 
 /// <summary><see cref="IRunHistoryPort"/> over <see cref="RunManager"/> (the live run) and <see cref="IRunStorage"/> (stored runs, calls and logs).</summary>
 public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IRunHistoryPort

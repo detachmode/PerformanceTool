@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text;
-using PerformanceTool.Services.Scenarios.Spec;
+using Beesharp.Services.Scenarios.Spec;
 
-namespace PerformanceTool.Services.Scenarios.BuiltIn;
+namespace Beesharp.Services.Scenarios.BuiltIn;
 
 public sealed class HttpPostJsonParameters
 {

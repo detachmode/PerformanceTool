@@ -1,7 +1,7 @@
-using PerformanceTool.Client.Services;
-using PerformanceTool.Services;
+using Beesharp.Client.Services;
+using Beesharp.Services;
 
-namespace PerformanceTool.Client.Components.Assistant;
+namespace Beesharp.Client.Components.Assistant;
 
 /// <summary>
 /// A hand-picked set of bees (the assistant's timeline, brain 0049) shaped like one scenario entry of a finished run, so the popup chart
@@ -45,6 +45,6 @@ public sealed class BeeSet
     }
 
     /// <summary>Fills in the calls and logs of a bee from the server's detail.</summary>
-    public void ApplyDetail(ServerBeeDetailDto detail) =>
+    public void ApplyDetail(StoredBeeDetail detail) =>
         Snapshot.Store.ReplaceDetail(RemoteBeeDetail.Build(detail, Snapshot.Store, RunStartedUtc, 0));
 }

@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// Interning dictionary for error texts (brain 0028): every distinct text (error message, exception text, repeated long log message)

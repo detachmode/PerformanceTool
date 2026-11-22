@@ -6,7 +6,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool</RootNamespace>
+    <RootNamespace>Beesharp</RootNamespace>
   </PropertyGroup>
 
   <!-- Only for AddScenario<T>() on IServiceCollection and ILogger on ScenarioContext. From .NET 11 the SDK provides them

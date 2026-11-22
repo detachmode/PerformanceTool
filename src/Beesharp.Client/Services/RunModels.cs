@@ -1,7 +1,7 @@
-using PerformanceTool.Services.Runtime;
-using PerformanceTool.Services;
+using Beesharp.Services.Runtime;
+using Beesharp.Services;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 // What the pages read from an IRunSource. Everything is bounded (brain 0021): counters are kept incrementally, bee records are tiny,
 // and the heavy detail (calls, log lines) is only held for the most recent bees of each scenario.

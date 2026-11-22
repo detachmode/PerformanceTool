@@ -46,7 +46,7 @@
 </div>
 
 @code {
-    private readonly List<ClientLiveLogDto> lines = [];
+    private readonly List<LiveLogEntryDto> lines = [];
     private long lastId;
     private string? levelFilter;
     private string search = "";
@@ -59,7 +59,7 @@
 
     private int VisibleCount => VisibleLines().Count;
 
-    private List<ClientLiveLogDto> VisibleLines()
+    private List<LiveLogEntryDto> VisibleLines()
     {
         if (levelFilter is null && string.IsNullOrWhiteSpace(search)) return lines;
         var q = search.Trim();

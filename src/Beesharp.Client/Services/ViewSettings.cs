@@ -1,8 +1,8 @@
 using System.Globalization;
 using Microsoft.JSInterop;
-using PerformanceTool.Client.Components;
+using Beesharp.Client.Components;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// The user's view settings (brain 0023, update 3): zoom strength of the dock magnification and the number of bars before the popup chart

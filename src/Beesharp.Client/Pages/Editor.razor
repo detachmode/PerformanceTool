@@ -5,9 +5,9 @@
 @layout MainLayout
 @using System.Text.Json.Nodes
 @using Microsoft.AspNetCore.Components.Forms
-@using PerformanceTool.Client.Components.Parameters
-@using PerformanceTool.Services.Scenarios
-@using PerformanceTool.Services.Scenarios.Spec
+@using Beesharp.Client.Components.Parameters
+@using Beesharp.Services.Scenarios
+@using Beesharp.Services.Scenarios.Spec
 @implements IDisposable
 @inject ScriptApiClient Api
 @inject ScenarioCatalog Catalog
@@ -277,9 +277,9 @@
     [SupplyParameterFromQuery(Name = "shutdown")]
     public string? RequestedShutdown { get; set; }
 
-    private List<ClientScriptSummary> scripts = [];
-    private List<ClientPreflightSummary> preflights = [];
-    private List<ClientPreflightSummary> shutdowns = [];
+    private List<ScriptScenarioSummary> scripts = [];
+    private List<PreflightScriptSummary> preflights = [];
+    private List<PreflightScriptSummary> shutdowns = [];
     // isPreflight means "a program script" (preflight or shutdown, brain 0052); isShutdown says which of the two.
     private bool isPreflight;
     private bool isShutdown;
@@ -287,8 +287,8 @@
     private string ProgramTitle => isShutdown ? "Shutdown program" : "Preflight";
     private string ProgramKind => isShutdown ? ScriptApiClient.Shutdowns : ScriptApiClient.Preflights;
     private string? selectedId;
-    private ClientScriptSummary? selectedSummary;
-    private ClientPreflightSummary? selectedPreflight;
+    private ScriptScenarioSummary? selectedSummary;
+    private PreflightScriptSummary? selectedPreflight;
     private ParameterSpec? compiledSpec;
     private JsonObject testParams = new();
     private string fileName = "order-api-stress.cs";
@@ -299,9 +299,9 @@
     private bool moreOpen;
     private bool renameOpen;
     private bool tryOpen;
-    private List<ClientScriptDiagnostic> diagnostics = [];
-    private ClientTestRunResult? testResult;
-    private ClientPreflightRunResult? preflightResult;
+    private List<ScriptDiagnosticDto> diagnostics = [];
+    private ScriptTestRunResult? testResult;
+    private PreflightRunResult? preflightResult;
     private string? statusMessage;
     private bool statusIsError;
     private bool compiling;
@@ -437,11 +437,11 @@
         }
     }
 
-    private void PickScenarioFile(ClientScriptSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
-    private void PickPreflightFile(ClientPreflightSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
-    private void PickShutdownFile(ClientPreflightSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
+    private void PickScenarioFile(ScriptScenarioSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
+    private void PickPreflightFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
+    private void PickShutdownFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
 
-    private void SelectScenario(ClientScriptSummary s)
+    private void SelectScenario(ScriptScenarioSummary s)
     {
         isPreflight = false;
         isShutdown = false;
@@ -459,13 +459,13 @@
         statusIsError = false;
     }
 
-    private void SelectShutdown(ClientPreflightSummary p)
+    private void SelectShutdown(PreflightScriptSummary p)
     {
         SelectPreflight(p);
         isShutdown = true;
     }
 
-    private void SelectPreflight(ClientPreflightSummary p)
+    private void SelectPreflight(PreflightScriptSummary p)
     {
         isPreflight = true;
         isShutdown = false;

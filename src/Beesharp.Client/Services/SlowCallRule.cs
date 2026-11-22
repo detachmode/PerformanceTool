@@ -1,4 +1,4 @@
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>
 /// PLACEHOLDER rule for "slow" (brain 0018 leaves the real definition open). Change it here, nowhere else:

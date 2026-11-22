@@ -1,9 +1,9 @@
 using System.Text.Json.Nodes;
-using PerformanceTool.Ai;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Environments;
+using Beesharp.Ai;
+using Beesharp.Services;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.AiAdapters;
+namespace Beesharp.AiAdapters;
 
 /// <summary><see cref="IEnvironmentPort"/> over <see cref="EnvironmentStore"/>. Masking secret values is the tools' job, not the port's.</summary>
 public sealed class EnvironmentAdapter(EnvironmentStore store) : IEnvironmentPort

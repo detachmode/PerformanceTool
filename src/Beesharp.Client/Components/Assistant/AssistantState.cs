@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
-using PerformanceTool.Client.Components;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Client.Services;
+using Beesharp.Client.Components;
+using Beesharp.Ai.Contracts;
+using Beesharp.Client.Services;
 
-namespace PerformanceTool.Client.Components.Assistant;
+namespace Beesharp.Client.Components.Assistant;
 
 /// <summary>One entry of the transcript: a message of the user, or one answer (its text, chips and cards in order).</summary>
 public sealed record ChatEntry(bool FromUser, string? Text, IReadOnlyList<AssistantItemDto> Items, string? Error = null, IReadOnlyList<string>? Changed = null);

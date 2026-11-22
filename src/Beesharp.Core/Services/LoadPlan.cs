@@ -1,8 +1,8 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using PerformanceTool.Services.Scenarios;
+using Beesharp.Services.Scenarios;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>
 /// What to run: a mix of scenarios, each with its own parameters and target rate. This is also the shape

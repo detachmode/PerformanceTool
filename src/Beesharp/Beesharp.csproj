@@ -5,7 +5,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PerformanceTool</RootNamespace>
+    <RootNamespace>Beesharp</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,8 +19,13 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.13.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
     <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
   </ItemGroup>
 
 </Project>

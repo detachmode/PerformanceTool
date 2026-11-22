@@ -3,14 +3,14 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
-using PerformanceTool.Ai;
-using PerformanceTool.AiAdapters;
-using PerformanceTool.Ai.Contracts;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
+using Beesharp.Ai;
+using Beesharp.AiAdapters;
+using Beesharp.Ai.Contracts;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 /// <summary>A model that answers from a script: each step looks at the conversation so far and returns the next response.</summary>
 internal sealed class ScriptedChatClient(params Func<IReadOnlyList<ChatMessage>, ChatResponse>[] steps) : IChatClient

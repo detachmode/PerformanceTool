@@ -1,9 +1,9 @@
 using System.Text.Json;
-using PerformanceTool.Services;
-using PerformanceTool.Services.Scenarios;
-using PerformanceTool.Services.Scenarios.BuiltIn;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+using Beesharp.Services.Scenarios.BuiltIn;
 
-namespace PerformanceTool.Tests;
+namespace Beesharp.Tests;
 
 public class LoadPlanTests
 {

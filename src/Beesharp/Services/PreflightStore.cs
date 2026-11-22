@@ -7,10 +7,10 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.Extensions.Logging;
-using PerformanceTool.Services.Environments;
-using PerformanceTool.Services.Runtime;
+using Beesharp.Services.Environments;
+using Beesharp.Services.Runtime;
 
-namespace PerformanceTool.Services;
+namespace Beesharp.Services;
 
 /// <summary>Globals injected into every C# preflight and shutdown script.</summary>
 public sealed class PreflightGlobals
@@ -25,25 +25,6 @@ public sealed class PreflightGlobals
     public required Action<string> Fail { get; init; }
     public required Func<string, string, Task<int>> RunProcessAsync { get; init; }
 }
-
-public sealed record PreflightScriptSummary(
-    string ScriptId,
-    string FileName,
-    string Name,
-    string Code,
-    DateTimeOffset UpdatedUtc);
-
-public sealed record PreflightCompileResult(
-    bool Success,
-    PreflightScriptSummary? Script,
-    IReadOnlyList<ScriptDiagnosticDto> Diagnostics,
-    string? Error = null);
-
-public sealed record PreflightRunResult(
-    bool Success,
-    double DurationMs,
-    string? Error,
-    IReadOnlyList<string> Logs);
 
 /// <summary>
 /// Compiles, persists (<c>scripts/preflight/*.cs</c>) and runs preflight C# scripts that execute before a load test
@@ -144,7 +125,7 @@ public class PreflightStore
             .WithEmitDebugInformation(true)
             .WithFilePath(debugFile)
             .WithFileEncoding(System.Text.Encoding.UTF8);
-        var script = CSharpScript.Create<object>(code, opts, typeof(PreflightGlobals));
+        var script = CSharpScript.Create<object>(LegacyScriptNamespaces.Upgrade(code), opts, typeof(PreflightGlobals));
         var diagnostics = script.Compile(ct);
         var mapped = diagnostics
             .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
@@ -357,8 +338,8 @@ public class PreflightStore
                 "System.Threading",
                 "System.Threading.Tasks",
                 "Microsoft.Extensions.Logging",
-                "PerformanceTool.Services.Environments",
-                "PerformanceTool.Services.Runtime");
+                "Beesharp.Services.Environments",
+                "Beesharp.Services.Runtime");
     }
 
     private sealed class CallbackLogger(Action<string, string> emit) : ILogger

@@ -1,8 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using PerformanceTool.Services.Environments;
+using Beesharp.Services.Environments;
 
-namespace PerformanceTool.Client.Services;
+namespace Beesharp.Client.Services;
 
 /// <summary>Server-backed environments source talking to <c>/api/environments</c> (brain 0033, 0015).</summary>
 public sealed class ApiEnvironmentSource(HttpClient http) : IEnvironmentSource
