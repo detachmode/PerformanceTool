@@ -2,13 +2,13 @@
 
 - Status: Accepted (goal), details open
 - Date: 2026-11-22
-- Related: 0033 (environments), 0042 (lifecycle hooks), 0005 (presets), 0016 (calm UI), 0029 (every info drills down)
+- Related: 0033 (environments), 0042 (lifecycle hooks), 0016 (calm UI), 0029 (every info drills down)
 
 ## What (user decision)
 1. **Environment tab.** A tab (next to Overview, Editor, Logs) where the user **inspects the environment**.
 2. An environment has two parts, both shown in the tab:
-   - **Static values**: picked by the user, **loaded by presets**, and they **never change during a run**
-     (e.g. the base URL). These are today's environment key-value pairs (0033).
+   - **Static values**: the key-value pairs of the **environment the user selected** (top-bar dropdown, 0033).
+     They **never change during a run** (e.g. the base URL). Not loaded by presets (user correction).
    - **Runtime data**: dynamic data that **preflight programs and scenarios can read and write during the run**.
 3. **Shutdown program**: besides the preflight (runs before the scenarios), there is a shutdown program.
 
@@ -23,7 +23,6 @@
 ## Open (ask the user, one at a time)
 - Is runtime data kept with the run, so a finished run's Environment tab still shows it (and how it changed)?
 - When does the shutdown program run: always after the scenarios (also after a stop or a failed preflight)?
-- "Loaded by presets": does a preset name its environment, so loading the preset picks it?
 - Scope of runtime data: one bag for the whole run (preflight, every scenario entry, shutdown)?
 
 ## Consequences
