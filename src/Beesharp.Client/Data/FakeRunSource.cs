@@ -12,7 +12,8 @@ namespace Beesharp.Client.Data;
 
 /// <summary>One call of a story: its name and typical duration. Repeated calls (e.g. five product pages) get their own entry.</summary>
 /// <param name="Pause">Whether the user pauses (think time) before this call; false for calls a page fires together.</param>
-public sealed record CallSpec(string Name, double MedianMs, double Sigma = 0.15, bool Pause = true);
+/// <param name="Step">Index into the profile's declared <see cref="FakeProfile.Steps"/> (brain 0056); 0 when the scenario has no steps.</param>
+public sealed record CallSpec(string Name, double MedianMs, double Sigma = 0.15, bool Pause = true, int Step = 0, int Rep = 0);
 
 /// <summary>
 /// How a fake scenario (a whole user story, docs/context.md) behaves: its chained calls with their typical durations, think time
@@ -29,14 +30,20 @@ public sealed record FakeProfile(
     int? FailAtCall = null,
     int? ForceFailOn = null,
     double CallTimeoutMs = 10_000,
-    bool RandomFail = false)
+    bool RandomFail = false,
+    IReadOnlyList<string>? Steps = null,
+    IReadOnlyList<int>? StepTimes = null)
 {
+    /// <summary>The scenario's declared steps (brain 0056), known before the run; none for a scenario without steps.</summary>
+    public ScenarioSteps DeclaredSteps => Steps is { Count: > 0 } ? new ScenarioSteps(Steps, StepTimes) : ScenarioSteps.None;
+
     public static FakeProfile Generic => new(null, [new("GET /", 150)], 0, 0.02, 0.01,
         [new(500, "HTTP 500 Internal Server Error", 1)]);
 }
 
 /// <summary>A failure kind. <see cref="Status"/> null means no response (timeout).</summary>
-public sealed record FakeError(int? Status, string Message, double Weight);
+/// <param name="AtCall">The call (index in the story) this failure always happens at, so failures cluster at a step and repetition; null = the profile's rule.</param>
+public sealed record FakeError(int? Status, string Message, double Weight, int? AtCall = null);
 
 public sealed record FakePreset(string Name, LoadPlan Plan, List<FakeProfile> Profiles);
 
@@ -317,13 +324,15 @@ public sealed class FakeRunSource : IRunSource
         var count = profile.MinCalls > 0 && profile.MinCalls < spec.Count ? rng.Next(profile.MinCalls, spec.Count + 1) : spec.Count;
         int? status = 200;
         string? error = null;
+        int? pickedAt = null;
         if ((rng.NextDouble() < profile.ErrorRate || starts[entry] == profile.ForceFailOn) && profile.Errors is { Count: > 0 } errors)
         {
             var pick = Pick(errors);
             status = pick.Status;
             error = pick.Message;
+            pickedAt = pick.AtCall;
         }
-        var failAt = error is null ? -1 : profile.RandomFail ? rng.Next(count / 3, count) : Math.Min(profile.FailAtCall ?? count - 1, count - 1);
+        var failAt = error is null ? -1 : pickedAt is { } at0 ? Math.Min(at0, count - 1) : profile.RandomFail ? rng.Next(count / 3, count) : Math.Min(profile.FailAtCall ?? count - 1, count - 1);
         var ran = failAt >= 0 ? failAt + 1 : count;
         var slowAt = rng.NextDouble() < profile.TailChance ? rng.Next(ran) : -1;
 
@@ -333,7 +342,7 @@ public sealed class FakeRunSource : IRunSource
         var offset = 0.0;
         for (var i = 0; i < count; i++)
         {
-            if (i >= ran) { calls.Add(new(i, spec[i].Name, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors)); continue; }
+            if (i >= ran) { calls.Add(new(i, spec[i].Name, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep)); continue; }
             var gap = i > 0 && spec[i].Pause ? Math.Round(profile.ThinkMs * (0.6 + 0.8 * rng.NextDouble()), 1) : 0;
             offset += gap;
             var d = spec[i].MedianMs * Math.Exp(spec[i].Sigma * Gaussian());
@@ -341,7 +350,7 @@ public sealed class FakeRunSource : IRunSource
             var isFailed = i == failAt;
             if (isFailed && status is null) d = profile.CallTimeoutMs;
             d = Math.Round(Math.Clamp(d, 3, profile.CallTimeoutMs), 1);
-            calls.Add(new(i, spec[i].Name, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors));
+            calls.Add(new(i, spec[i].Name, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep));
             offset += d;
         }
         var ms = Math.Round(offset, 1);
@@ -381,7 +390,8 @@ public sealed class FakeRunSource : IRunSource
             worst = Math.Max(worst, SlowCallRule.Ratio(c.DurationMs, typical));
             calls.Add(c with { Slow = isSlow, TypicalMs = typical });
         }
-        var record = new BeeRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors, SlowCallRule.Encode(worst));
+        var record = new BeeRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors, SlowCallRule.Encode(worst),
+            p.Profile.Steps is { Count: > 0 } ? StepLogic.FailedStep(calls) : -1);
         script.BeeFinished(p.Entry, p.Sequence, p.EndAt, record.Failed, store.Bees(p.Entry).Count + 1);
         if (record.Failed) failed[p.Entry]++;
         else if (slow > 0) slowBees[p.Entry]++;
@@ -495,7 +505,8 @@ public sealed class FakeRunSource : IRunSource
         var running = new IReadOnlyList<RunningBee>[n];
         for (var i = 0; i < n; i++)
             running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningBee(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot(), shutdown, preflight);
+        var steps = runProfiles.Select(p => p.DeclaredSteps).ToArray();
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot(), shutdown, preflight, steps);
     }
 
     // ---------- the fake plan ----------
@@ -527,17 +538,19 @@ public sealed class FakeRunSource : IRunSource
     /// <summary>~24 calls: search, 5 product views (each with images, price and stock), 2 cart adds, the cart.</summary>
     private static List<CallSpec> SearchStory()
     {
-        var l = new List<CallSpec> { new("GET /search?q=…", 450, 0.2) };
+        var l = new List<CallSpec> { new("POST /login", 260), new("GET /search?q=…", 450, 0.2, Step: 1) };
         for (var n = 1; n <= 5; n++)
         {
-            l.Add(new($"GET /products/{{id}} · {n}", 240));
-            l.Add(new($"GET /products/{{id}}/images · {n}", 140, 0.25, Pause: false));
-            l.Add(new($"GET /products/{{id}}/price · {n}", 70, 0.15, Pause: false));
-            l.Add(new($"GET /products/{{id}}/availability · {n}", 110, 0.25, Pause: false));
+            // the step "Open product" runs 5 times in a row (brain 0056): repetition n-1
+            l.Add(new($"GET /products/{{id}} · {n}", 240, Step: 2, Rep: n - 1));
+            l.Add(new($"GET /products/{{id}}/images · {n}", 140, 0.25, Pause: false, Step: 2, Rep: n - 1));
+            l.Add(new($"GET /products/{{id}}/price · {n}", 70, 0.15, Pause: false, Step: 2, Rep: n - 1));
+            l.Add(new($"GET /products/{{id}}/availability · {n}", 110, 0.25, Pause: false, Step: 2, Rep: n - 1));
         }
-        l.Add(new("POST /cart/items · 1", 320));
-        l.Add(new("POST /cart/items · 2", 340));
-        l.Add(new("GET /cart", 200, 0.15, Pause: false));
+        l.Add(new("POST /cart/items · 1", 320, Step: 3));
+        l.Add(new("POST /cart/items · 2", 340, Step: 3));
+        l.Add(new("GET /cart", 200, 0.15, Pause: false, Step: 3));
+        l.Add(new("POST /payments", 700, 0.25, Step: 4));
         return l;
     }
 
@@ -551,20 +564,20 @@ public sealed class FakeRunSource : IRunSource
         void Add(ScenarioRunConfig c, FakeProfile p) { Plan.Scenarios.Add(c); Profiles.Add(p); }
 
         // Each entry is a whole user story; its calls are the requests of that story.
-        Add(Entry("user-journey", "Search & add to cart", 40, "",
+        Add(Entry("user-journey", "Checkout", 40, "",
                 urls("{{BaseUrl}}/search?q=running+shoes", "{{BaseUrl}}/search?q=running+shoes&page=2", "{{BaseUrl}}/products/1042",
                      "{{BaseUrl}}/products/1042/images", "{{BaseUrl}}/products/1042/price", "{{BaseUrl}}/cart")),
-            new("Search for a product, open 5 of the results (images, price, stock) and add 2 of them to the cart.",
+            new("Log in, search, open 5 of the results (images, price, stock) and add 2 of them to the cart and pay.",
                 SearchStory(), ThinkMs: 150, TailChance: 0.08, ErrorRate: 0.1,
-                Errors: [new(503, "HTTP 503 Service Unavailable on POST /cart/items", 2), new(500, "HTTP 500 Internal Server Error on GET /products/{id}/availability", 1)],
-                RandomFail: true, ForceFailOn: 2));
+                Errors: [new(503, "HTTP 503 Service Unavailable on GET /products/{id}", 3, AtCall: 10), new(500, "HTTP 500 Internal Server Error on GET /products/{id}/availability", 1, AtCall: 13), new(422, "HTTP 422 Payment declined", 2, AtCall: 25)],
+                ForceFailOn: 2, Steps: ["Log in", "Search", "Open product", "Add to cart", "Pay"], StepTimes: [1, 1, 5, 1, 1]));
         Add(Entry("http-post-json", "Guest checkout", 30, "{{BaseUrl}}/api/checkout",
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
             new("Check out as a guest: cart, address, shipping, payment, confirmation.",
-                [new("GET /cart", 220), new("POST /checkout/address", 380), new("POST /checkout/shipping", 310), new("POST /payments", 900, 0.25), new("GET /orders/{id}/confirmation", 260)],
+                [new("GET /cart", 220), new("POST /checkout/address", 380, Step: 1), new("POST /checkout/shipping", 310, Step: 2), new("POST /payments", 900, 0.25, Step: 3), new("GET /orders/{id}/confirmation", 260, Step: 4)],
                 ThinkMs: 300, TailChance: 0.05, ErrorRate: 0.12,
                 Errors: [new(422, "HTTP 422 Payment declined", 3), new(500, "HTTP 500 Internal Server Error on POST /payments", 2), new(null, "Payment provider timed out after 10 s", 1)],
-                FailAtCall: 3, ForceFailOn: 3));
+                FailAtCall: 3, ForceFailOn: 3, Steps: ["Cart", "Address", "Shipping", "Pay", "Confirmation"]));
         Add(Bursts(Entry("user-journey", "Browse categories", 90, "",
                 urls("{{BaseUrl}}/", "{{BaseUrl}}/categories/12", "{{BaseUrl}}/categories/7", "{{BaseUrl}}/categories/31",
                      "{{BaseUrl}}/categories/31?page=2", "{{BaseUrl}}/products/918", "{{BaseUrl}}/products/204")), 15, 6),
@@ -575,9 +588,10 @@ public sealed class FakeRunSource : IRunSource
         Add(Entry("http-custom", "Sign up & first order", 20, "{{BaseUrl}}/api/accounts",
                 j => j["auth"] = new JsonObject { ["scheme"] = "Bearer", ["token"] = "{{ApiToken}}", ["username"] = "", ["password"] = "" }),
             new("Create an account, log in, get recommendations and place a first order.",
-                [new("POST /accounts", 520), new("POST /login", 300), new("GET /recommendations", 700, 0.25), new("POST /cart/items", 320), new("POST /checkout", 1100, 0.2), new("GET /orders/{id}/confirmation", 280)],
-                ThinkMs: 250, TailChance: 0.0, ErrorRate: 0.0,
-                Errors: [new(500, "HTTP 500 Internal Server Error on POST /checkout", 2), new(422, "HTTP 422 Payment declined", 1)], FailAtCall: 4));
+                [new("POST /accounts", 520), new("POST /login", 300), new("GET /recommendations", 700, 0.25, Step: 1), new("POST /cart/items", 320, Step: 1), new("POST /checkout", 1100, 0.2, Step: 2), new("GET /orders/{id}/confirmation", 280, Step: 2)],
+                ThinkMs: 250, TailChance: 0.0, ErrorRate: 0.06,
+                Errors: [new(500, "HTTP 500 Internal Server Error on POST /checkout", 2), new(422, "HTTP 422 Payment declined", 1)], FailAtCall: 4,
+                Steps: ["Sign up and log in", "Browse and add", "Pay"]));
         Add(Entry("user-journey", "Order history & return", 20, "",
                 urls("{{BaseUrl}}/login", "{{BaseUrl}}/orders", "{{BaseUrl}}/orders/88231", "{{BaseUrl}}/orders/88231/items")),
             new("Log in, look up an old order and return one item.",

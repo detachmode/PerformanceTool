@@ -1278,3 +1278,66 @@ button.asst-open:hover { color: var(--accent); background: var(--panel2); }
     .nav-item { padding: 0 .3rem; font-size: .76rem; }
     .top { gap: .2rem; }
 }
+
+/* ----- scenario steps (brain 0056): the vertical stepper of a bee, the steps strip of the scenario popup, the quiet card line ----- */
+.stepper { list-style: none; margin: 0; padding: 0; display: grid; }
+.stp { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: .7rem; padding-bottom: .55rem; }
+.stp:last-child { padding-bottom: 0; }
+.stp::before { content: ""; position: absolute; left: 12px; top: 26px; bottom: 0; width: 2px; background: var(--border); }   /* the line joining the circles */
+.stp:last-child::before { display: none; }
+.stp.done::before { background: var(--faint); }
+.stp-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: .78rem; font-weight: 600; font-variant-numeric: tabular-nums; border: 2px solid var(--border); color: var(--faint); background: var(--panel); z-index: 1; }
+.stp.done .stp-dot { background: var(--muted); border-color: var(--muted); color: var(--bg); }
+.stp.failed .stp-dot { background: var(--failed); border-color: var(--failed); color: var(--bg); }
+.stp.current .stp-dot { border: 0; background: none; overflow: visible; }
+.stp-body { min-width: 0; padding-top: .12rem; }
+.stp-head { display: flex; align-items: baseline; gap: .55rem; width: 100%; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.stp-head:disabled { cursor: default; }
+.stp-head:hover:not(:disabled) .stp-name { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+.stp-name { font-weight: 600; font-size: .9rem; }
+.stp.pending .stp-name { color: var(--faint); font-weight: 500; }
+.stp.failed .stp-name { color: var(--bad); }
+.stp-word { font-size: .75rem; color: var(--faint); }
+.stp.failed .stp-word { color: var(--bad); }
+.stp.current .stp-word { color: var(--running); }
+.stp-time { margin-left: auto; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stp-time.warn { color: var(--warn); }
+.stp-word + .stp-chev { margin-left: auto; }
+.stp-chev { color: var(--faint); font-size: .75rem; }
+.stp-error { margin: .15rem 0 0; font-size: .8rem; }
+.stp-now { margin: .1rem 0 0; font-size: .78rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stp-calls { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; }
+.stp-call { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem 4rem; gap: .6rem; padding: .22rem 0; border-top: 1px solid var(--border); font-size: .8rem; }
+.stp-call.bad .call-name, .stp-call.bad .call-status { color: var(--bad); }
+.stp-call.warn .call-name, .stp-call.warn .call-status, .stp-call.warn .call-dur { color: var(--warn); }
+.step-now { font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* the steps strip of the scenario popup: one line per step, no boxes */
+.steps-strip { display: grid; gap: .25rem; }
+.steps-toggle { display: flex; align-items: baseline; gap: .6rem; background: none; border: 0; padding: .1rem 0; font: inherit; font-size: .82rem; color: var(--muted); cursor: pointer; text-align: left; }
+.steps-toggle:hover { color: var(--text); }
+.steps-toggle b { color: var(--text); font-weight: 600; }
+.steps-toggle .hint { color: var(--bad); font-size: .78rem; }
+.steps-list { list-style: none; margin: .1rem 0 0; padding: 0; display: grid; }
+.sps { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; column-gap: .6rem; padding: .18rem 0; }
+.sps::before { content: ""; position: absolute; left: 9px; top: 50%; bottom: -50%; width: 2px; background: var(--border); }
+.sps:last-child::before { display: none; }
+.sps-dot { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: .68rem; font-weight: 600; border: 2px solid var(--border); color: var(--faint); background: var(--panel); z-index: 1; font-variant-numeric: tabular-nums; }
+.sps.on .sps-dot { border-color: var(--accent2); color: var(--title); }
+.sps-name { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sps.on .sps-name { font-weight: 600; }
+.sps-counts { display: flex; gap: .2rem .9rem; font-size: .78rem; justify-content: flex-end; }
+.sps-counts .cnt.on { background: var(--selected); box-shadow: inset 0 0 0 1px var(--accent2); }
+
+/* the one quiet line on an overview card */
+.bento-stepline { display: block; margin-top: .35rem; padding: .1rem .15rem; font-size: .76rem; color: var(--muted); cursor: pointer; border-radius: 4px; text-align: left; }
+.bento-stepline b { color: var(--bad); font-weight: 600; }
+.bento-stepline:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
+@media (max-width: 640px) { .stp-call { grid-template-columns: minmax(0, 1fr) 3.6rem 3.4rem; } }
+button.step-now { background: none; border: 0; padding: 0; font: inherit; font-size: .75rem; cursor: pointer; }
+button.step-now.bad { color: var(--bad); }
+button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3px; }
+.stp-times { font-size: .75rem; color: var(--faint); font-variant-numeric: tabular-nums; margin-left: .3rem; font-weight: 500; }
+.stp-rep { list-style: none; margin-top: .2rem; font-size: .72rem; color: var(--faint); text-transform: none; font-variant-numeric: tabular-nums; }
+.stp-rep.bad { color: var(--bad); }
+.stp-call.in-rep { padding-left: .8rem; }

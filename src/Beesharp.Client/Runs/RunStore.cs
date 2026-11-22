@@ -23,6 +23,7 @@ public sealed class RunStore
     private int unindexedCompactAt = 2000;
     private readonly List<FakeLogEntry> lines = [];
     private readonly HashSet<int> evictedIndexed = [];
+    private readonly List<int>[] failedAtStep;
 
     public RunStore(int scenarios, RunStoreOptions? options = null)
     {
@@ -30,6 +31,7 @@ public sealed class RunStore
         bees = Enumerable.Range(0, scenarios).Select(_ => new List<BeeRecord>()).ToArray();
         detailQueues = Enumerable.Range(0, scenarios).Select(_ => new[] { new Queue<BeeDetail>(), new Queue<BeeDetail>(), new Queue<BeeDetail>() }).ToArray();
         detailCounts = new int[scenarios];
+        failedAtStep = Enumerable.Range(0, scenarios).Select(_ => new List<int>()).ToArray();
     }
 
     /// <summary>The limits in use. Settable at any time; applies from the next bee that finishes.</summary>
@@ -50,6 +52,9 @@ public sealed class RunStore
         : sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Step(SlowCallRule.Decode(ratios[sequence])) : 0;
     /// <summary>How many times its typical duration the worst call of a finished bee took (1 when unknown).</summary>
     public double RatioOf(int sequence) => sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Decode(ratios[sequence]) : 1;
+    /// <summary>How many bees of a scenario failed at each declared step (brain 0056), indexed by step; kept incrementally, so it costs nothing per render.</summary>
+    public IReadOnlyList<int> FailedPerStep(int entry) => failedAtStep[entry];
+
     public BeeDetail? Detail(int sequence) => details.GetValueOrDefault(sequence);
 
     /// <summary>Replaces a bee's detail once lazily fetched from server run storage (brain 0045).</summary>
@@ -61,6 +66,12 @@ public sealed class RunStore
     public void Complete(BeeRecord record, BeeDetail detail)
     {
         bees[record.Entry].Add(record);
+        if (record.Failed && record.FailedStep >= 0)
+        {
+            var perStep = failedAtStep[record.Entry];
+            while (perStep.Count <= record.FailedStep) perStep.Add(0);
+            perStep[record.FailedStep]++;
+        }
         if (record.Sequence >= outcomes.Length)
         {
             var size = Math.Max(outcomes.Length * 2, record.Sequence + 1);

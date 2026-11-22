@@ -542,8 +542,10 @@
                 var idx = i;
                 <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
                               Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" IsLive="s.Running && !s.Paused"
-                              OnOpen="i => { open = i; openFilter = DetailFilter.All; }"
-                              OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />
+                              OnOpen="i => { open = i; openFilter = DetailFilter.All; openStep = null; }"
+                              OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; openStep = null; }"
+                              MostFailedStep="StepLogic.MostFailed(s.Store.FailedPerStep(idx))" StepName="@(StepLogic.MostFailed(s.Store.FailedPerStep(idx)) is { } mfs ? s.StepsOf(idx).Name(mfs.Step) : null)"
+                              OnOpenStep="t => { open = t.Index; openFilter = DetailFilter.All; openStep = t.Step; }" />
             }
         </div>
     }
@@ -551,7 +553,7 @@
 
 @if (!editMode && open is { } o && o < s.Count)
 {
-    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" OnClose="() => open = null" />
+    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" InitialFailedStep="openStep" OnClose="() => { open = null; openStep = null; }" />
 }
 
 @code {
@@ -566,6 +568,7 @@
     // Overview state
     private int? open;
     private DetailFilter openFilter;
+    private int? openStep;
     private bool viewMenuOpen;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
