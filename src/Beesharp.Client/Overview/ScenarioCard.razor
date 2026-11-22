@@ -110,6 +110,12 @@
         }
     }
 
+    @if (!Idle && View.Failed > 0 && MostFailedStep is { } mf && !string.IsNullOrEmpty(StepName))
+    {
+        <span class="bento-stepline" role="button" tabindex="0" @onclick="() => OnOpenStep.InvokeAsync((Index, mf.Step))" @onclick:stopPropagation="true"
+              title="Open the bees that failed at the step @StepName">Most failed at <b>@StepName</b> (@Format.Num(mf.Count))</span>
+    }
+
     @if (Edited || (!Idle && (actual > 0 || Target > 0)))
     {
         <span class="bento-foot">
@@ -150,6 +156,11 @@
     [Parameter] public EventCallback<int> OnOpen { get; set; }
     /// <summary>A statistic of the card was clicked: open the popup pre-filtered (brain 0029).</summary>
     [Parameter] public EventCallback<(int Index, DetailFilter Filter)> OnOpenFiltered { get; set; }
+
+    /// <summary>The step most bees failed at and how many (brain 0056); null for a scenario without steps or without failures there. The card shows one quiet line for it.</summary>
+    [Parameter] public (int Step, int Count)? MostFailedStep { get; set; }
+    [Parameter] public string? StepName { get; set; }
+    [Parameter] public EventCallback<(int Index, int Step)> OnOpenStep { get; set; }
 
     private readonly ScenarioStats stats = new();
 

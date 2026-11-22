@@ -34,6 +34,8 @@
     [Parameter] public int? SelectedSequence { get; set; }
     [Parameter] public EventCallback<BeeRow> OnSelect { get; set; }
     [Parameter] public object? ResetKey { get; set; }
+    /// <summary>For a bee in flight of a scenario with steps: its step as "2/4", shown quietly next to "active" (brain 0056).</summary>
+    [Parameter] public Func<int, string?>? RunningStep { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No bees in this time frame.";
 
     protected override void OnParametersSet()
@@ -43,7 +45,7 @@
 
     private RenderFragment Row(BeeRow a) => @<button class="bee-row @(SelectedSequence == a.Sequence ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(SelectedSequence == a.Sequence)" @onclick="() => OnSelect.InvokeAsync(a)">
         <BeeChip Sequence="a.Sequence" State="a.State" Tint="a.Tint" />
-        <span class="dur">@(a.IsRunning ? "active" : Format.Ms(a.DurationMs))</span>
+        <span class="dur" title="@(a.IsRunning && RunningStep?.Invoke(a.Sequence) is { } rsTitle ? "Step " + rsTitle : null)">@(a.IsRunning ? "active" + (RunningStep?.Invoke(a.Sequence) is { } rs ? " · " + rs : "") : Format.Ms(a.DurationMs))</span>
         <span class="at">@Format.Time(a.StartedAt)</span>
         @if (a.State == BeeState.Ok)
         {

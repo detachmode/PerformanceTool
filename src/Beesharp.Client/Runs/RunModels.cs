@@ -16,6 +16,8 @@ public enum BeeOutcome : byte { Ok = 0, Slow = 1, Failed = 2 }
 /// One call inside a bee's playthrough (docs/context.md). Times are relative to the start of the bee. A skipped call never ran
 /// because an earlier call of the bee failed. <see cref="TypicalMs"/> is what <see cref="SlowCallRule"/> compared against.
 /// The error text is kept once in the run's <see cref="ErrorDictionary"/> (brain 0028); <see cref="Error"/> resolves it.
+/// <see cref="Rep"/> is which repetition of the step the call belongs to (0 based; 0 for a step that runs once).
+/// <see cref="Step"/> is the index of the scenario step the call belongs to (brain 0056); 0 for a scenario without steps.
 /// </summary>
 public sealed record FakeCall(
     int Index,
@@ -28,7 +30,9 @@ public sealed record FakeCall(
     double ThinkBeforeMs,
     bool Slow = false,
     double? TypicalMs = null,
-    ErrorDictionary? Errors = null)
+    ErrorDictionary? Errors = null,
+    int Step = 0,
+    int Rep = 0)
 {
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => !Skipped && ErrorId != ErrorDictionary.None;
@@ -88,8 +92,9 @@ public sealed class FakeLogEntry
 /// The small, permanent record of one finished bee. Cheap enough to keep for hours of run. The error text lives once in the
 /// run's <see cref="ErrorDictionary"/> (brain 0028); <see cref="Error"/> resolves it.
 /// </summary>
-public readonly record struct BeeRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors, byte RatioCode = 0)
+public readonly record struct BeeRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors, byte RatioCode = 0, int FailedStep = -1)
 {
+    /// <summary>The scenario step the bee failed at (brain 0056), -1 when it did not fail or its scenario has no steps.</summary>
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => ErrorId != ErrorDictionary.None;
     /// <summary>In flight when the user stopped the run (brain 0053). Looks and counts like failed; this tells it apart.</summary>
@@ -149,8 +154,12 @@ public sealed record RunSnapshot(
     IReadOnlyList<RunningBee>[]? BeesInFlight = null,
     RuntimeDataSnapshot? Runtime = null,
     ProgramRun? Shutdown = null,
-    ProgramRun? Preflight = null)
+    ProgramRun? Preflight = null,
+    IReadOnlyList<ScenarioSteps>? Steps = null)
 {
+    /// <summary>The declared steps of a scenario entry (brain 0056); <see cref="ScenarioSteps.None"/> when it has none.</summary>
+    public ScenarioSteps StepsOf(int entry) => Steps is not null && entry >= 0 && entry < Steps.Count ? Steps[entry] : ScenarioSteps.None;
+
     /// <summary>True while a run is active (running or paused).</summary>
     public bool Running => State is FakeRunState.Running or FakeRunState.Paused;
     public bool Paused => State == FakeRunState.Paused;
