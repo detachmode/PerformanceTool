@@ -1,0 +1,34 @@
+$ beesharp run --preset Failing bees --env Staging --progress 2
+beesharp run: preset "Failing bees", environment Staging
+  1 scenario entry, 3.0 s, preflight warmup, shutdown program cleanup
+  root <root>, storage DuckDB
+Preflight warmup.cs...
+  preflight> [  0.00s] [INF] Starting preflight 'warmup.cs'…
+  preflight> [  0.00s] [INF] Warming up...
+  preflight> [  0.00s] [INF] Ready.
+  preflight> [  0.00s] [INF] Preflight finished successfully in 4.8 ms.
+Running scenarios...
+      2.0 s  10 bees finished, 10 failed, 0 flying
+Shutdown program cleanup.cs...
+  shutdown> [  0.00s] [INF] Starting shutdown program 'cleanup.cs'…
+  shutdown> [  0.00s] [INF] Cleaning up tenant demo
+  shutdown> [  0.00s] [INF] Shutdown program finished successfully in 1.2 ms.
+
+Summary
+  Run         run-20261122-115741-965
+  Preset      Failing bees   Environment Staging
+  Run time    2.9 s
+  Preflight   succeeded (warmup.cs)
+  Shutdown    succeeded (cleanup.cs)
+
+  Entry          finished  failed   slow    typical  slowest 5%
+  #1 Quick work        15      15      0          -           -
+  All                  15      15      0
+
+  Most common errors
+        15 x  quick work failed on purpose
+
+  Saved to    <root>/data/beesharp.duckdb  (run run-20261122-115741-965)
+
+Result: 15 of 15 bees failed (exit code 1).
+exit code: 1

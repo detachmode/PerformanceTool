@@ -9,6 +9,7 @@
     <Project Path="src/Beesharp.Engine/Beesharp.Engine.csproj" />
     <Project Path="src/Beesharp.Client/Beesharp.Client.csproj" />
     <Project Path="src/Beesharp.Core/Beesharp.Core.csproj" />
+    <Project Path="src/Beesharp.Cli/Beesharp.Cli.csproj" />
     <Project Path="src/Beesharp/Beesharp.csproj" />
   </Folder>
   <Folder Name="/tests/">

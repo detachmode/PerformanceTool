@@ -1,0 +1,30 @@
+$ beesharp run --help
+beesharp run - run a preset, print a summary, save the run
+
+Usage:
+  beesharp run --preset <name or file> [--env <name>] [--root <folder>] [options]
+
+Options:
+  --preset <name|file>   The preset to run: its name, or the path of a preset .json file. Required.
+  --env <name>           The environment whose {{Key}} values are filled in. Needed when the preset uses placeholders.
+  --root <folder>        Folder with presets/, environments/, scripts/ (preflight/, shutdown/) and data/.
+                         Default: the current directory.
+  --storage <kind>       duckdb (default): save the run to <root>/data/beesharp.duckdb, so the server's UI shows it in the history.
+                         memory: save nothing.
+  --duration <seconds>   Run for this long instead of the preset's duration.
+  --json <file>          Also write the summary as JSON to this file.
+  --progress <seconds>   Print a progress line this often (default 5, 0 = none).
+  -h, --help             This text.
+
+The run starts with the preflight, then the scenario entries, then the shutdown program (as in the UI).
+Ctrl+C stops the run like Stop in the UI: bees in flight are canceled, the shutdown program still runs, the run is saved.
+
+Exit codes:
+  0  all bees succeeded
+  1  at least one bee failed or was canceled (also: stopped with Ctrl+C, shutdown program failed)
+  2  the run could not run: bad arguments, preset or environment not found, a script does not compile,
+     an unknown {{placeholder}}, the preflight failed
+
+Example:
+  beesharp run --preset "Black Friday" --env Staging --root ./load-tests
+exit code: 0

@@ -22,12 +22,14 @@ public static class EngineRegistration
 
     /// <summary>
     /// Compiles the scripts in the scripts folder and registers their scenarios, preflights and shutdown programs. Call it once at startup,
-    /// after the container is built and before the first run.
+    /// after the container is built and before the first run. Returns the files that did not compile (the host ignores them, the command-line tool reports them).
     /// </summary>
-    public static async Task LoadBeesharpScriptsAsync(this IServiceProvider services, CancellationToken ct = default)
+    public static async Task<IReadOnlyList<ScriptLoadProblem>> LoadBeesharpScriptsAsync(this IServiceProvider services, CancellationToken ct = default)
     {
-        await services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync(ct);
-        await services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync(ct);
-        await services.GetRequiredService<ShutdownStore>().LoadAllFromDiskAsync(ct);
+        var problems = new List<ScriptLoadProblem>();
+        problems.AddRange(await services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync(ct));
+        problems.AddRange(await services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync(ct));
+        problems.AddRange(await services.GetRequiredService<ShutdownStore>().LoadAllFromDiskAsync(ct));
+        return problems;
     }
 }

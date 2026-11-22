@@ -69,10 +69,16 @@ public sealed class ScriptScenarioStore
         this.innerHandlerFactory = innerHandlerFactory;
     }
 
-    public async Task LoadAllFromDiskAsync(CancellationToken ct = default)
+    /// <summary>Compiles every script file and registers the scenarios. Returns the files that did not compile or register (empty when all went well), so a caller can report them.</summary>
+    public async Task<IReadOnlyList<ScriptLoadProblem>> LoadAllFromDiskAsync(CancellationToken ct = default)
     {
+        var problems = new List<ScriptLoadProblem>();
         foreach (var file in await folder.ReadAllAsync(ct))
-            await CompileAndRegisterAsync(file.Id, file.FileName, file.Code, persist: false, ct);
+        {
+            var res = await CompileAndRegisterAsync(file.Id, file.FileName, file.Code, persist: false, ct);
+            if (!res.Success) problems.Add(ScriptLoadProblem.From("Scenario script", file.FileName, res.Diagnostics, res.Error));
+        }
+        return problems;
     }
 
     public IReadOnlyList<ScriptScenarioSummary> List()

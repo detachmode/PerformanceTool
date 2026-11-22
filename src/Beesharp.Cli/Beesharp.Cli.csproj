@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The command-line tool (brain 0054, U3): `beesharp run` (preset and environment as options) runs a preset without the web server and the UI, for CI pipelines.
+       References the runner (Engine), the scripts (Scripting) and the storage (Storage, Storage.DuckDb); not the host, ASP.NET, the client or the AI module. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The assembly may not be called "beesharp": it would clash with Beesharp.dll (the host) on case-insensitive file systems and in the compiler.
+         The command is "beesharp" when installed as a .NET tool (dotnet pack, dotnet tool install). -->
+    <AssemblyName>Beesharp.Cli</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>beesharp</ToolCommandName>
+    <RootNamespace>Beesharp.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The container implementation (ServiceCollection.BuildServiceProvider); the shared framework of a console app only has the abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
+    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
+    <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
+    <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
+    <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
+  </ItemGroup>
+
+</Project>

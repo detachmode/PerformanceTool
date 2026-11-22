@@ -62,10 +62,16 @@ public abstract class ScriptProgramStore
         this.environments = environments;
     }
 
-    public async Task LoadAllFromDiskAsync(CancellationToken ct = default)
+    /// <summary>Compiles every file of this kind. Returns the files that did not compile (empty when all went well), so a caller can report them.</summary>
+    public async Task<IReadOnlyList<ScriptLoadProblem>> LoadAllFromDiskAsync(CancellationToken ct = default)
     {
+        var problems = new List<ScriptLoadProblem>();
         foreach (var file in await folder.ReadAllAsync(ct))
-            await CompileAndSaveAsync(file.Id, file.FileName, file.Code, persist: false, ct);
+        {
+            var res = await CompileAndSaveAsync(file.Id, file.FileName, file.Code, persist: false, ct);
+            if (!res.Success) problems.Add(ScriptLoadProblem.From(label, file.FileName, res.Diagnostics, res.Error));
+        }
+        return problems;
     }
 
     public IReadOnlyList<PreflightScriptSummary> List()

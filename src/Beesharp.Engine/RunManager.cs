@@ -499,6 +499,15 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         return GetCurrent();
     }
 
+    /// <summary>Completes when the active run is completely done: scenarios, shutdown program and the last writes to storage queued. Returns at once when no run is active. For callers without polling (the command-line tool).</summary>
+    public async Task WaitUntilFinishedAsync()
+    {
+        Task? running;
+        lock (sync) running = runningTask;
+        if (running is not null) await running;
+        await storage.FlushAsync();
+    }
+
     public async Task<LiveRunStatusDto> StopAsync()
     {
         CancellationTokenSource? toCancel;

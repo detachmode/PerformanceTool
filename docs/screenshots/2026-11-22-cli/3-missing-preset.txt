@@ -1,0 +1,3 @@
+$ beesharp run --preset Nope --env Staging
+beesharp: Preset 'Nope' was not found in <root>/presets (available: "Bad preflight", "Failing bees", "Long", "Passing", "Shop checkout").
+exit code: 2
