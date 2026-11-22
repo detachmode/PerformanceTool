@@ -1,5 +1,5 @@
 @* Warm Beeswax Bento scenario card: outer shell (#161310, 28px radius) with nested bento cells (#201C16, 18px radius).
-   Colour carries meaning: emerald = good, amber = slow, coral red = failed, calm blue = flying. *@
+   Colour carries meaning: emerald = good, amber = slow, coral red = failed, calm blue = active. *@
 @using System.Globalization
 @{
     var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
@@ -9,7 +9,7 @@
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
     var (titleMain, titleSub) = SplitLabel(Label);
     var aria = Label + ": "
-        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " bees flying, " + Format.Num(View.Finished) + " finished, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
+        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " active bees, " + Format.Num(View.Finished) + " finished, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
@@ -25,10 +25,6 @@
             }
             @if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }
         </span>
-        @if (!Idle && (IsLive || View.InFlight > 0))
-        {
-            <span class="bento-live-pill" aria-label="Live"><i class="bento-live-dot" aria-hidden="true"></i>LIVE</span>
-        }
     </span>
 
     @if (Idle)
@@ -54,14 +50,14 @@
                         <span class="bee-spin-ring"></span>
                         <b class="bee-spin-num">@View.InFlight</b>
                     </span>
-                    <small class="bento-lbl bee-spin-time">@Format.Time(Elapsed)</small>
+                    <small class="bento-lbl bee-spin-time"><span class="bee-spin-tag">active</span> · @Format.Time(Elapsed)</small>
                 </span>
             }
             else
             {
                 <span class="bento-cell bento-kpi-left">
                     <b class="bento-num">@View.InFlight</b>
-                    <small class="bento-lbl">bees<br />flying</small>
+                    <small class="bento-lbl">active<br />bees</small>
                 </span>
             }
             <span class="bento-cell bento-kpi-right">

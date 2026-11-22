@@ -29,7 +29,7 @@ public static class BeeOrder
     /// <summary>Green, or a step towards amber (brain 0041): "good" at typical, "good t1".."good t3" above it. The step is set as <c>t</c> class that moves the colour.</summary>
     public static string Good(int tint) => tint > 0 && tint < SlowCallRule.MaxStep ? "good t" + tint : tint >= SlowCallRule.MaxStep ? "warn" : "good";
 
-    public static string Word(BeeState s) => s switch { BeeState.Failed => "failed", BeeState.Slow => "slow", BeeState.Running => "flying", _ => "ok" };
+    public static string Word(BeeState s) => s switch { BeeState.Failed => "failed", BeeState.Slow => "slow", BeeState.Running => "active", _ => "ok" };
 
     public static readonly Comparison<BeeRow> Comparer = (a, b) =>
     {

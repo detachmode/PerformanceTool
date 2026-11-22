@@ -109,9 +109,23 @@
 
         <div class="pop-body">
         <div class="pop-main">
-        <div class="dlg-summary-grid" role="group" aria-label="Scenario summary">
-            <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
-                <small>Bees</small>
+        <div class="dlg-summary-grid @(!Selection ? "cols-7" : "")" role="group" aria-label="Scenario summary">
+            @if (!Selection)
+            {
+                var activeLive = s.Running || view.InFlight > 0;
+                <div class="dlg-stat static active-tile @(activeLive ? "active-live" : "")" title="@Format.Plural(view.InFlight, "active bee", "active bees") currently running">
+                    <small>Active</small>
+                    <b class="active-val">
+                        @if (activeLive)
+                        {
+                            <i class="dlg-active-spin" aria-hidden="true"></i>
+                        }
+                        <span>@Format.Num(view.InFlight)</span>
+                    </b>
+                </div>
+            }
+            <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all finished bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
+                <small>Finished</small>
                 <b>@Format.Num(view.Finished)</b>
             </button>
             <button type="button" class="dlg-stat @(view.Failed > 0 ? "bad" : "") @(show == BeeShow.Failed ? "on" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">
@@ -176,21 +190,26 @@
                                 var beeItem = fb;
                                 var hasLog = latestLogByBee.TryGetValue(beeItem.Sequence, out var lastLog);
                                 var errText = LastErrorOf(beeItem, s.Store.Detail(beeItem.Sequence));
-                                <button type="button" class="live-feed-row @(selSeq == beeItem.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(beeItem.Sequence)">
-                                    <span class="live-feed-row-head">
-                                        <BeeChip Sequence="beeItem.Sequence" State="BeeState.Failed" />
-                                        <span class="state bad">Failed</span>
-                                        <span class="muted">@Format.Ms(beeItem.DurationMs) · started @Format.Time(beeItem.StartedAt)</span>
+                                <button type="button" class="live-feed-row has-icon @(selSeq == beeItem.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(beeItem.Sequence)">
+                                    <span class="bee-row-icon bad" aria-hidden="true">
+                                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
                                     </span>
-                                    <span class="live-feed-row-log">
-                                        @if (hasLog && lastLog is not null)
-                                        {
-                                            <SerilogLine Timestamp="lastLog.Timestamp" Level="@lastLog.Level" Message="@lastLog.Message" Exception="@lastLog.Exception" />
-                                        }
-                                        else if (!string.IsNullOrWhiteSpace(errText))
-                                        {
-                                            <span class="bad">@errText</span>
-                                        }
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="beeItem.Sequence" State="BeeState.Failed" />
+                                            <span class="state bad">Failed</span>
+                                            <span class="muted">@Format.Ms(beeItem.DurationMs) · started @Format.Time(beeItem.StartedAt)</span>
+                                        </span>
+                                        <span class="live-feed-row-log">
+                                            @if (hasLog && lastLog is not null)
+                                            {
+                                                <SerilogLine Timestamp="lastLog.Timestamp" Level="@lastLog.Level" Message="@lastLog.Message" Exception="@lastLog.Exception" />
+                                            }
+                                            else if (!string.IsNullOrWhiteSpace(errText))
+                                            {
+                                                <span class="bad">@errText</span>
+                                            }
+                                        </span>
                                     </span>
                                 </button>
                             }
@@ -222,7 +241,7 @@
                                 var hasFin = finishedMap.TryGetValue(beeSeq, out var fBee) && !isRun;
                                 var hasLog = latestLogByBee.TryGetValue(beeSeq, out var log);
                                 var chipState = isRun ? BeeState.Running : hasFin ? BeeOrder.StateOf(fBee.Outcome) : BeeState.Running;
-                                <button type="button" class="live-feed-row @(selSeq == beeSeq ? "on" : "") @(isRun ? "is-flying" : "")" @onclick="() => SelectLiveBee(beeSeq)">
+                                <button type="button" class="live-feed-row has-icon @(selSeq == beeSeq ? "on" : "")" @onclick="() => SelectLiveBee(beeSeq)">
                                     @if (isRun && rBee is not null)
                                     {
                                         var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
@@ -231,16 +250,31 @@
                                             <b class="bee-row-spin-num">@CompactSec(sec)</b>
                                         </span>
                                     }
+                                    else if (hasFin)
+                                    {
+                                        if (fBee.Failed)
+                                        {
+                                            <span class="bee-row-icon bad" aria-hidden="true">
+                                                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="bee-row-icon @(fBee.SlowCalls > 0 ? "warn" : "good")" aria-hidden="true">
+                                                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>
+                                            </span>
+                                        }
+                                    }
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
                                             <BeeChip Sequence="beeSeq" State="chipState" />
                                             @if (isRun && rBee is not null)
                                             {
-                                                <span class="state run">Flying</span>
+                                                <span class="state run">Active</span>
                                             }
                                             else if (hasFin)
                                             {
-                                                <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                                                <span class="state @(fBee.Failed ? "bad" : fBee.SlowCalls > 0 ? "warn" : "good")">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
                                                 <span class="muted">@Format.Ms(fBee.DurationMs)</span>
                                             }
                                         </span>
@@ -274,7 +308,7 @@
                                 var rBee = rb;
                                 var elapsedMs = Math.Max(0, (s.Elapsed - rBee.StartedAt) * 1000);
                                 var lastCall = rBee.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs);
-                                <button type="button" class="live-feed-row is-flying @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
+                                <button type="button" class="live-feed-row has-icon @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
                                     <span class="bee-row-spin" aria-hidden="true">
                                         <span class="bee-spin-ring"></span>
                                         <b class="bee-row-spin-num">@CompactSec(elapsedMs / 1000.0)</b>
@@ -282,7 +316,7 @@
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
                                             <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
-                                            <span class="state run">Flying</span>
+                                            <span class="state run">Active</span>
                                         </span>
                                         @if (lastCall is not null)
                                         {
@@ -294,16 +328,30 @@
                             @for (var fi = view.Finished - 1; fi >= Math.Max(0, view.Finished - 30); fi--)
                             {
                                 var fBee = bees[fi];
-                                <button type="button" class="live-feed-row @(selSeq == fBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(fBee.Sequence)">
-                                    <span class="live-feed-row-head">
-                                        <BeeChip Sequence="fBee.Sequence" State="BeeOrder.StateOf(fBee.Outcome)" />
-                                        <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
-                                        <span class="muted">@Format.Ms(fBee.DurationMs)</span>
-                                    </span>
-                                    @if (!string.IsNullOrWhiteSpace(fBee.Error))
+                                <button type="button" class="live-feed-row has-icon @(selSeq == fBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(fBee.Sequence)">
+                                    @if (fBee.Failed)
                                     {
-                                        <span class="live-feed-row-log bad">@fBee.Error</span>
+                                        <span class="bee-row-icon bad" aria-hidden="true">
+                                            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" /></svg>
+                                        </span>
                                     }
+                                    else
+                                    {
+                                        <span class="bee-row-icon @(fBee.SlowCalls > 0 ? "warn" : "good")" aria-hidden="true">
+                                            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>
+                                        </span>
+                                    }
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="fBee.Sequence" State="BeeOrder.StateOf(fBee.Outcome)" />
+                                            <span class="state @(fBee.Failed ? "bad" : fBee.SlowCalls > 0 ? "warn" : "good")">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                                            <span class="muted">@Format.Ms(fBee.DurationMs)</span>
+                                        </span>
+                                        @if (!string.IsNullOrWhiteSpace(fBee.Error))
+                                        {
+                                            <span class="live-feed-row-log bad">@fBee.Error</span>
+                                        }
+                                    </span>
                                 </button>
                             }
                         </div>
@@ -406,7 +454,7 @@
             <section class="bee-panel p-run" aria-label="@ra.Name">
                 <div class="bee-head">
                     <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
-                    <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Flying</span>
+                    <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Active</span>
                     <span class="muted">@Format.Time(elapsedMs / 1000.0) (@Format.Ms(elapsedMs)) · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
                     <div class="seg" role="group" aria-label="Running bee inspection view">
@@ -467,7 +515,14 @@
             <section class="bee-panel p-@Cls(bee.Outcome)" aria-label="@bee.Name">
                 <div class="bee-head">
                     <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
-                    <span class="state @Cls(bee.Outcome)">@(bee.Failed ? "Failed" : bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                    @if (bee.Failed)
+                    {
+                        <span class="state bad">Failed</span>
+                    }
+                    else
+                    {
+                        <span class="state @(bee.SlowCalls > 0 ? "warn" : "good") bee-ok-state"><svg class="bee-ok-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg>@(bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                    }
                     @if (!bee.Failed && Format.OverTypical(bee.Ratio))
                     {
                         <button class="fig-ratio @BeeOrder.Good(bee.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(bee.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(bee.Ratio) typical</button>
@@ -1252,7 +1307,7 @@
     private static string LabelMeta(BeeBar b)
     {
         if (b.IsBucket) return Format.Plural(b.Total, "bee", "bees");
-        if (b.IsRunningBee) return "flying";
+        if (b.IsRunningBee) return "active";
         return Format.Ms(b.MaxMs) + (b.Failed > 0 ? " · failed" : b.Slow > 0 ? " · slow" : Format.OverTypical(b.Ratio) ? " · " + Format.Times(b.Ratio) : "");
     }
 
@@ -1270,7 +1325,7 @@
 
     private static string BarTitle(BeeBar b, double width)
     {
-        if (b.IsRunningBee) return $"B{b.Sequence + 1}, flying, {Format.Ms(b.MaxMs)} so far";
+        if (b.IsRunningBee) return $"B{b.Sequence + 1}, active, {Format.Ms(b.MaxMs)} so far";
         if (!b.IsBucket) return $"B{b.Sequence + 1}, {Format.Ms(b.MaxMs)}" + (b.Failed > 0 ? ", failed" : b.Slow > 0 ? ", slow" : Format.OverTypical(b.Ratio) ? $", {Format.Times(b.Ratio)} typical" : "");
         var text = b.IsBurstGroup ? $"B{b.GroupLo + 1}–B{b.GroupHi + 1} of the burst at {FT(b.Slot, width)}: {Format.Plural(b.Count, "bee", "bees")}"
             : $"{FT(b.BucketStart, width)} to {FT(b.BucketStart + width, width)}: {Format.Plural(b.Count, "bee", "bees")}";

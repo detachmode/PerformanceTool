@@ -43,8 +43,15 @@
 
     private RenderFragment Row(BeeRow a) => @<button class="bee-row @(SelectedSequence == a.Sequence ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(SelectedSequence == a.Sequence)" @onclick="() => OnSelect.InvokeAsync(a)">
         <BeeChip Sequence="a.Sequence" State="a.State" Tint="a.Tint" />
-        <span class="dur">@(a.IsRunning ? "flying" : Format.Ms(a.DurationMs))</span>
+        <span class="dur">@(a.IsRunning ? "active" : Format.Ms(a.DurationMs))</span>
         <span class="at">@Format.Time(a.StartedAt)</span>
-        <span class="state @BeeOrder.Css(a.State)">@(a.State is BeeState.Failed or BeeState.Slow ? BeeOrder.Word(a.State) : "")</span>
+        @if (a.State == BeeState.Ok)
+        {
+            <span class="state good bee-ok-state" title="Ok" aria-label="Ok"><svg class="bee-ok-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8.4 6.5 11.7 12.8 4.8" /></svg></span>
+        }
+        else
+        {
+            <span class="state @BeeOrder.Css(a.State)">@(a.State is BeeState.Failed or BeeState.Slow ? BeeOrder.Word(a.State) : "")</span>
+        }
     </button>;
 }
