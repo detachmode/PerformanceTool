@@ -46,7 +46,7 @@ public sealed class ShutdownProgramTests : IDisposable
         return status;
     }
 
-    private static async Task Compile(PreflightStore store, string id, string code)
+    private static async Task Compile(ScriptProgramStore store, string id, string code)
     {
         var res = await store.CompileAndSaveAsync(id, id + ".cs", code);
         Assert.True(res.Success, string.Join("; ", res.Diagnostics.Select(d => d.Message)) + res.Error);
@@ -215,10 +215,9 @@ public sealed class ShutdownProgramTests : IDisposable
     {
         var sd = Shutdowns();
         await Compile(sd, "cleanup", """Data["final"] = 42;""");
-        var sqlite = new SqliteRunStorage(Path.Combine(tempDir, "runs.db"));
         var duck = new DuckDbRunStorage(Path.Combine(tempDir, "runs.duckdb"));
         var memory = new InMemoryRunStorage();
-        foreach (IRunStorage storage in new IRunStorage[] { memory, sqlite, duck })
+        foreach (IRunStorage storage in new IRunStorage[] { memory, duck })
         {
             var manager = Manager(storage, null, sd);
             var started = await manager.StartAsync(Plan(shutdown: "cleanup"), null);

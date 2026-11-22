@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
@@ -10,23 +7,12 @@ namespace Beesharp.Tests;
 
 public class PlanWorkspaceTests : IDisposable
 {
-    private sealed class FakeHost(string root) : IWebHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "t";
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string WebRootPath { get; set; } = root;
-        public string EnvironmentName { get; set; } = "Development";
-        public string ContentRootPath { get; set; } = root;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
-
     private readonly string root = Path.Combine(Path.GetTempPath(), "beesharp-plan-" + Guid.NewGuid().ToString("N"));
 
     private PlanWorkspace Create()
     {
         Directory.CreateDirectory(root);
-        var config = new ConfigurationBuilder().Build();
-        var presets = new PresetStore(config, new FakeHost(root), NullLogger<PresetStore>.Instance);
+        var presets = new PresetStore(Path.Combine(root, "presets"), NullLogger<PresetStore>.Instance);
         return new PlanWorkspace(new ScenarioCatalog([new HttpGetScenario()]), presets);
     }
 

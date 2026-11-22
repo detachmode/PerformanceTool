@@ -1,7 +1,5 @@
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Beesharp.Ai;
 using Beesharp.AiAdapters;
@@ -136,16 +134,6 @@ internal sealed class FakeScriptPort : IScriptPort
 
 public sealed class AssistantTests : IDisposable
 {
-    private sealed class FakeHost(string root) : IWebHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "t";
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string WebRootPath { get; set; } = root;
-        public string EnvironmentName { get; set; } = "Development";
-        public string ContentRootPath { get; set; } = root;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
-
     private readonly string root = Path.Combine(Path.GetTempPath(), "beesharp-ai-" + Guid.NewGuid().ToString("N"));
     private readonly ScenarioCatalog catalog = new([new HttpGetScenario()]);
     private readonly FakeRunPort runs = new();
@@ -157,7 +145,7 @@ public sealed class AssistantTests : IDisposable
     public AssistantTests()
     {
         Directory.CreateDirectory(root);
-        workspace = new PlanWorkspace(catalog, new PresetStore(new ConfigurationBuilder().Build(), new FakeHost(root), NullLogger<PresetStore>.Instance));
+        workspace = new PlanWorkspace(catalog, new PresetStore(Path.Combine(root, "presets"), NullLogger<PresetStore>.Instance));
     }
 
     public void Dispose()

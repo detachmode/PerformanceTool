@@ -1,8 +1,5 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Beesharp.Services;
 using Beesharp.Services.Environments;
@@ -232,24 +229,13 @@ public class EnvironmentTests
 
     // ---------- store ----------
 
-    private sealed class FakeHost(string root) : IWebHostEnvironment
-    {
-        public string ApplicationName { get; set; } = "t";
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string WebRootPath { get; set; } = root;
-        public string EnvironmentName { get; set; } = "Development";
-        public string ContentRootPath { get; set; } = root;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
-
     [Fact]
     public async Task The_store_keeps_one_json_file_per_environment()
     {
         var root = Path.Combine(Path.GetTempPath(), "pt-env-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Environments:Directory"] = "envs" }).Build();
-            var store = new EnvironmentStore(config, new FakeHost(root), NullLogger<EnvironmentStore>.Instance);
+            var store = new EnvironmentStore(Path.Combine(root, "envs"), NullLogger<EnvironmentStore>.Instance);
             Assert.Empty(await store.ListAsync());
 
             await store.SaveAsync(new EnvironmentDefinition { Name = "Staging", Variables = [new("BaseUrl", "https://s"), new("", ""), new("Token", "abc")] });
