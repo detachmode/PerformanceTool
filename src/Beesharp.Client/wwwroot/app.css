@@ -1039,6 +1039,10 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .preflight-head .mono { font-family: var(--mono); font-size: .86rem; }
 .pf-badge { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: .15rem .5rem; border-radius: 999px; }
 .pf-badge.run { background: #5b9bf026; color: var(--running); border: 1px solid #5b9bf066; }
+.pf-badge.ok { background: #7dd3a31a; color: var(--muted); border: 1px solid var(--border); }
+.preflight-view.done { border-left-color: var(--border); }
+.shutdown-strip { margin-bottom: .75rem; }
+.shutdown-console { flex: none; max-height: 14rem; }
 .pf-badge.bad { background: #f2737d26; color: var(--bad); border: 1px solid #f2737d66; }
 .preflight-err-banner { display: flex; flex-wrap: wrap; gap: .4rem; padding: .6rem .95rem; background: #f2737d18; border-bottom: 1px solid #f2737d44; color: #ffc2c7; font-size: .84rem; }
 .preflight-console { padding: .8rem .95rem; background: var(--input); font-family: var(--mono); font-size: .8rem; line-height: 1.5; min-height: 220px; max-height: 55vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }

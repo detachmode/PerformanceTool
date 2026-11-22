@@ -11,6 +11,7 @@ using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using Microsoft.Extensions.Logging;
 using PerformanceTool.Services.Environments;
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.Spec;
 
@@ -288,7 +289,10 @@ public sealed class ScriptScenarioStore
         using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
-        var state = new ConcurrentDictionary<string, object?>(StringComparer.Ordinal);
+        // A test run is one execution with its own private bags (the real run's bags are not touched).
+        var scratch = new RunData(1);
+        var state = scratch.EntryBagFor(0, new DataWriter(DataWriterKind.Bee, 0, 0));
+        var runBag = scratch.RunBagFor(new DataWriter(DataWriterKind.Bee, 0, 0));
         using var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         execCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 300)));
 
@@ -317,7 +321,7 @@ public sealed class ScriptScenarioStore
         try
         {
             var startupCtx = new ScenarioContext(http, envValues, execCts.Token, state, bgHost,
-                structuredLogSink: l => logs.Enqueue(FormatSerilog(l)));
+                structuredLogSink: l => logs.Enqueue(FormatSerilog(l)), runBag: runBag);
             await scenario.StartupAsync(bound, startupCtx, execCts.Token);
             startupSw.Stop();
             started = true;
@@ -329,7 +333,8 @@ public sealed class ScriptScenarioStore
                 execCts.Token,
                 state,
                 structuredLogSink: l => logs.Enqueue(FormatSerilog(l)),
-                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error)));
+                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error)),
+                runBag: runBag);
             outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
             execSw.Stop();
         }
@@ -357,7 +362,7 @@ public sealed class ScriptScenarioStore
                 try
                 {
                     var teardownCtx = new ScenarioContext(http, envValues, CancellationToken.None, state,
-                        structuredLogSink: l => logs.Enqueue(FormatSerilog(l)));
+                        structuredLogSink: l => logs.Enqueue(FormatSerilog(l)), runBag: runBag);
                     await scenario.TeardownAsync(bound, teardownCtx, CancellationToken.None);
                 }
                 catch (Exception ex)

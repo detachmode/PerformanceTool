@@ -95,6 +95,11 @@ public sealed class DuckDbRunStorage : IRunStorage
                     error VARCHAR
                 );
 
+                CREATE TABLE IF NOT EXISTS run_runtime (
+                    run_id VARCHAR PRIMARY KEY,
+                    json VARCHAR NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS bees (
                     run_id VARCHAR NOT NULL,
                     sequence INTEGER NOT NULL,
@@ -171,6 +176,30 @@ public sealed class DuckDbRunStorage : IRunStorage
 
     public void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error) =>
         queue.Writer.TryWrite(new FinishRunOp(runId, finishedUtc, state, elapsedSeconds, error));
+
+    public Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default)
+    {
+        lock (dbLock)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM run_runtime WHERE run_id = $1; INSERT INTO run_runtime(run_id, json) VALUES ($1, $2);";
+            cmd.Parameters.Add(new DuckDBParameter(runId));
+            cmd.Parameters.Add(new DuckDBParameter(json));
+            cmd.ExecuteNonQuery();
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default)
+    {
+        lock (dbLock)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT json FROM run_runtime WHERE run_id = $1;";
+            cmd.Parameters.Add(new DuckDBParameter(runId));
+            return Task.FromResult(cmd.ExecuteScalar() as string);
+        }
+    }
 
     public Task FlushAsync(CancellationToken ct = default)
     {

@@ -94,6 +94,15 @@ public interface IRunStorage : IAsyncDisposable
     void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls);
     void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error);
 
+    /// <summary>
+    /// Stores the final runtime data of a run (brain 0052) as JSON: the values as they were at the end, no history. Written once, after the shutdown program.
+    /// A second call for the same run replaces the first.
+    /// </summary>
+    Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default);
+
+    /// <summary>The final runtime data of a run as JSON, or null when the run kept none.</summary>
+    Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default);
+
     /// <summary>Waits until all currently queued writes are committed to storage.</summary>
     Task FlushAsync(CancellationToken ct = default);
 

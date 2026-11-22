@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using PerformanceTool.Services.Environments;
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services.Scenarios.Spec;
 
 namespace PerformanceTool.Services.Scenarios;
@@ -141,17 +142,19 @@ public sealed class ScenarioContext
         HttpClient http,
         EnvironmentValues? environment = null,
         CancellationToken cancellationToken = default,
-        ConcurrentDictionary<string, object?>? state = null,
+        BagAccess? state = null,
         ScenarioBackgroundHost? background = null,
         Action<string>? logSink = null,
         Action<RecordedCall>? callSink = null,
         Action<RecordedLog>? structuredLogSink = null,
-        Func<double>? runSeconds = null)
+        Func<double>? runSeconds = null,
+        BagAccess? runBag = null)
     {
         Http = http;
         Environment = environment ?? EnvironmentValues.None;
         CancellationToken = cancellationToken;
-        State = state ?? new(StringComparer.Ordinal);
+        State = state ?? new BagAccess(new DataBag(), new DataWriter(DataWriterKind.Bee));
+        RunBag = runBag ?? new BagAccess(new DataBag(), new DataWriter(DataWriterKind.Bee));
         this.background = background;
         this.callSink = callSink;
         this.runSeconds = runSeconds ?? (() => beeClock.Elapsed.TotalSeconds);
@@ -191,10 +194,16 @@ public sealed class ScenarioContext
     public CancellationToken CancellationToken { get; }
 
     /// <summary>
-    /// Thread-safe state bag shared across <c>StartupAsync</c>, all <c>ExecuteAsync</c> bees of this scenario entry,
-    /// and <c>TeardownAsync</c>. Ideal for sharing refreshed auth tokens or pre-fetched seed data.
+    /// The <b>entry bag</b> (brain 0052): thread-safe data shared across <c>StartupAsync</c>, all <c>ExecuteAsync</c> bees of this scenario entry,
+    /// and <c>TeardownAsync</c>. Ideal for sharing refreshed auth tokens or pre-fetched seed data. Private to this entry; the UI shows it on the Environment tab.
     /// </summary>
-    public ConcurrentDictionary<string, object?> State { get; }
+    public BagAccess State { get; }
+
+    /// <summary>
+    /// The <b>run bag</b> (brain 0052): thread-safe data shared by the whole run: the preflight program, every scenario entry (startup, bees, teardown)
+    /// and the shutdown program, all reading and writing. The last writer of each key is recorded and shown on the Environment tab.
+    /// </summary>
+    public BagAccess RunBag { get; }
 
     /// <summary>
     /// Per-bee <see cref="ILogger"/> (brain 0012): log lines are attached to this bee and shown in test runs,

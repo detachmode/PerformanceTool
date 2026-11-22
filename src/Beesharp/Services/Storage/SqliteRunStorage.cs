@@ -91,6 +91,11 @@ public sealed class SqliteRunStorage : IRunStorage
                 error TEXT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS run_runtime (
+                run_id TEXT PRIMARY KEY,
+                json TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS bees (
                 run_id TEXT NOT NULL,
                 sequence INTEGER NOT NULL,
@@ -175,6 +180,26 @@ public sealed class SqliteRunStorage : IRunStorage
 
     public void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error) =>
         queue.Writer.TryWrite(new FinishRunOp(runId, finishedUtc, state, elapsedSeconds, error));
+
+    public Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default)
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT OR REPLACE INTO run_runtime(run_id, json) VALUES ($id, $json);";
+        cmd.Parameters.AddWithValue("$id", runId);
+        cmd.Parameters.AddWithValue("$json", json);
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default)
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT json FROM run_runtime WHERE run_id = $id;";
+        cmd.Parameters.AddWithValue("$id", runId);
+        return Task.FromResult(cmd.ExecuteScalar() as string);
+    }
 
     public Task FlushAsync(CancellationToken ct = default)
     {

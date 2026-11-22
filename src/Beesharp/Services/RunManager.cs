@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Text.Json;
 using PerformanceTool.Services.Environments;
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services.Storage;
 
 namespace PerformanceTool.Services;
@@ -53,15 +55,22 @@ public sealed record LiveRunStatusDto(
     string? PreflightScriptName = null,
     IReadOnlyList<string>? PreflightLogs = null,
     string? PreflightError = null,
-    IReadOnlyList<LiveRunningBeeDto>? RunningBees = null);
+    IReadOnlyList<LiveRunningBeeDto>? RunningBees = null,
+    string? ShutdownState = null,
+    string? ShutdownScriptName = null,
+    IReadOnlyList<string>? ShutdownLogs = null,
+    string? ShutdownError = null,
+    long RuntimeVersion = 0);
 
 /// <summary>
 /// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run, persisting all bees,
 /// calls and logs into <see cref="IRunStorage"/> (DuckDB by default) without blocking bees, and serving
 /// lightweight incremental polls to the Blazor WebAssembly client (brain 0045).
 /// </summary>
-public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null)
+public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null, ShutdownStore? shutdowns = null)
 {
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+    private const int ShutdownTimeoutSeconds = 120;
     private const double SlowThresholdMs = 1500;
     private readonly Lock sync = new();
     private CancellationTokenSource? cts;
@@ -92,6 +101,34 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private string? preflightScriptName;
     private readonly List<string> preflightLogs = [];
     private string? preflightError;
+    // Shutdown program (brain 0052): "Pending" until the run ends, then "Running", "Succeeded" or "Failed"; null when the plan has none.
+    private string? shutdownState;
+    private string? shutdownScriptName;
+    private readonly List<string> shutdownLogs = [];
+    private string? shutdownError;
+    // Runtime data (brain 0052): live bags of the current run, or the final values of a stored run that was loaded.
+    private RunData? runData;
+    private RuntimeDataSnapshot? storedRuntime;
+
+    private bool IsActive => state is "Running" or "Preflight" or "Shutdown";
+
+    /// <summary>
+    /// The runtime data (run bag and entry bags) of the active run: live while it runs, the final values afterwards. Null when there is none (e.g. an old stored run).
+    /// </summary>
+    public RuntimeDataSnapshot? GetCurrentRuntime()
+    {
+        lock (sync) return runData?.Snapshot() ?? storedRuntime;
+    }
+
+    /// <summary>The runtime data of a run by id: the active run from memory, any other run from storage (its final values).</summary>
+    public async Task<RuntimeDataSnapshot?> GetRuntimeAsync(string targetRunId, CancellationToken ct = default)
+    {
+        lock (sync)
+            if (targetRunId == runId && (runData is not null || storedRuntime is not null))
+                return runData?.Snapshot() ?? storedRuntime;
+        var json = await storage.GetRuntimeDataAsync(targetRunId, ct);
+        return json is null ? null : JsonSerializer.Deserialize<RuntimeDataSnapshot>(json, JsonOpts);
+    }
 
     /// <summary>Returns live log lines emitted by currently flying bees (and preflight) with <c>Id &gt; afterId</c>.</summary>
     public IReadOnlyList<LiveLogEntryDto> GetLiveLogs(long afterId = 0, int limit = 500, int? sequence = null, int? entry = null)
@@ -113,12 +150,12 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
     }
 
-    private void AppendLiveLog(int sequence, int entry, double atSeconds, string level, string message, string? exception = null)
+    private void AppendLiveLog(int sequence, int entry, double atSeconds, string level, string message, string? exception = null, string? programName = null)
     {
         lock (sync)
         {
             var id = ++nextLiveLogId;
-            var name = sequence >= 0 ? $"B{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : "Preflight";
+            var name = sequence >= 0 ? $"B{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : programName ?? "Preflight";
             liveLogs.Enqueue(new LiveLogEntryDto(id, sequence, name, entry, atSeconds, DateTimeOffset.UtcNow, level, message, exception));
             while (liveLogs.Count > MaxLiveLogs)
                 liveLogs.Dequeue();
@@ -139,16 +176,22 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     {
         lock (sync)
         {
-            if (state == "Running")
+            if (IsActive)
                 throw new InvalidOperationException("Cannot switch runs while a live run is in progress. Stop it first.");
         }
 
         var data = await storage.GetRunAsync(targetRunId, ct);
         if (data is null) return null;
+        RuntimeDataSnapshot? loadedRuntime = null;
+        if (await storage.GetRuntimeDataAsync(targetRunId, ct) is { } runtimeJson)
+        {
+            try { loadedRuntime = JsonSerializer.Deserialize<RuntimeDataSnapshot>(runtimeJson, JsonOpts); }
+            catch (JsonException) { }
+        }
 
         lock (sync)
         {
-            if (state == "Running")
+            if (IsActive)
                 throw new InvalidOperationException("Cannot switch runs while a live run is in progress. Stop it first.");
 
             var count = data.Plan.Scenarios.Count;
@@ -175,6 +218,12 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             preflightScriptName = null;
             preflightLogs.Clear();
             preflightError = null;
+            shutdownState = null;
+            shutdownScriptName = null;
+            shutdownLogs.Clear();
+            shutdownError = null;
+            runData = null;
+            storedRuntime = loadedRuntime;
 
             foreach (var a in data.Bees)
             {
@@ -244,7 +293,12 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 preflightScriptName,
                 preflightLogs.Count > 0 ? preflightLogs.ToArray() : null,
                 preflightError,
-                activeBees.Count > 0 ? activeBees.Values.OrderBy(b => b.Sequence).ToArray() : null);
+                activeBees.Count > 0 ? activeBees.Values.OrderBy(b => b.Sequence).ToArray() : null,
+                shutdownState,
+                shutdownScriptName,
+                shutdownLogs.Count > 0 ? shutdownLogs.ToArray() : null,
+                shutdownError,
+                runData?.Version ?? (storedRuntime is null ? 0 : 1));
         }
     }
 
@@ -262,13 +316,22 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 ?? throw new ArgumentException($"Preflight script '{preflightId}' was not found.");
         }
 
+        var shutdownId = string.IsNullOrWhiteSpace(plan.ShutdownScriptId) ? null : plan.ShutdownScriptId.Trim();
+        PreflightScriptSummary? shutdownMeta = null;
+        if (shutdownId is not null)
+        {
+            shutdownMeta = shutdowns?.Get(shutdownId)
+                ?? throw new ArgumentException($"Shutdown script '{shutdownId}' was not found.");
+        }
+
         CancellationTokenSource runCts;
+        RunData data;
         LoadPlan cloned;
         string currentRunId;
         DateTimeOffset currentStartedUtc;
         lock (sync)
         {
-            if (state is "Running" or "Preflight")
+            if (IsActive)
                 throw new InvalidOperationException("A run is already in progress. Stop it before starting a new one.");
             if (plan.Scenarios.Count == 0)
                 throw new ArgumentException("The load plan has no scenarios.");
@@ -299,6 +362,13 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             preflightScriptName = preflightMeta?.FileName;
             preflightLogs.Clear();
             preflightError = null;
+            shutdownState = shutdownMeta is not null ? "Pending" : null;
+            shutdownScriptName = shutdownMeta?.FileName;
+            shutdownLogs.Clear();
+            shutdownError = null;
+            storedRuntime = null;
+            var runClock = clock;
+            data = runData = new RunData(cloned.Scenarios.Count, () => runClock.Elapsed.TotalSeconds);
             runCts = new CancellationTokenSource();
             cts = runCts;
         }
@@ -314,6 +384,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     var preRes = await preflights.ExecuteAsync(
                         preflightMeta.ScriptId,
                         environmentName,
+                        runData: data,
                         onLog: line =>
                         {
                             lock (sync) preflightLogs.Add(line);
@@ -408,7 +479,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         return ValueTask.CompletedTask;
                     },
                     environment: env,
-                    onLiveLog: ev => AppendLiveLog(ev.Sequence, ev.Entry, ev.Log.AtSeconds, ev.Log.Level, ev.Log.Message, ev.Log.Exception));
+                    onLiveLog: ev => AppendLiveLog(ev.Sequence, ev.Entry, ev.Log.AtSeconds, ev.Log.Level, ev.Log.Message, ev.Log.Exception),
+                    data: data);
             }
             catch (OperationCanceledException)
             {
@@ -429,10 +501,53 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
                     activeBees.Clear();
                     runError = err;
-                    state = "Finished";
+                    if (shutdownMeta is not null)
+                    {
+                        state = "Shutdown";
+                        shutdownState = "Running";
+                    }
+                    else state = "Finished";
                 }
+
+                // The shutdown program always runs at the end (brain 0052): after a normal finish, after a stop and after a failed preflight.
+                // It is not cancelled by the stop (the run token is already cancelled); a failure shows on its own and leaves the scenarios' results as they are.
+                if (shutdownMeta is not null && shutdowns is not null)
+                {
+                    string? shutdownErr = null;
+                    try
+                    {
+                        var res = await shutdowns.ExecuteAsync(
+                            shutdownMeta.ScriptId,
+                            environmentName,
+                            onLog: line =>
+                            {
+                                lock (sync) shutdownLogs.Add(line);
+                                var lvl = line.Contains("[ERR]") ? "Error" : line.Contains("[WRN]") ? "Warning" : "Information";
+                                AppendLiveLog(-1, -1, elapsed, lvl, line, programName: "Shutdown");
+                            },
+                            timeoutSeconds: ShutdownTimeoutSeconds,
+                            ct: CancellationToken.None,
+                            runData: data);
+                        if (!res.Success) shutdownErr = res.Error ?? "Shutdown program failed.";
+                    }
+                    catch (Exception ex)
+                    {
+                        shutdownErr = ex.InnerException?.Message ?? ex.Message;
+                    }
+                    lock (sync)
+                    {
+                        shutdownState = shutdownErr is null ? "Succeeded" : "Failed";
+                        shutdownError = shutdownErr;
+                        state = "Finished";
+                    }
+                }
+
                 if (runPersisted)
+                {
+                    try { await storage.SaveRuntimeDataAsync(currentRunId, JsonSerializer.Serialize(data.Snapshot(), JsonOpts)); }
+                    catch (Exception) { /* losing the final values must not lose the run itself */ }
                     storage.EnqueueRunFinished(currentRunId, DateTimeOffset.UtcNow, "Finished", elapsed, err);
+                }
                 runCts.Dispose();
             }
         }, CancellationToken.None);
@@ -455,7 +570,13 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
         if (toAwait is not null)
         {
-            try { await toAwait.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+            // Wait until the scenarios are down. The shutdown program may still be running then (it runs after a stop too); callers see state "Shutdown" and keep polling.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline && !toAwait.IsCompleted)
+            {
+                lock (sync) if (state is not ("Running" or "Preflight")) break;
+                await Task.Delay(20);
+            }
         }
         await storage.FlushAsync();
         return GetCurrent();

@@ -23,4 +23,4 @@ times `n × (1 min / rate)` from the run start, independent of how long earlier 
 - "Dropped > 0" means the tool (or target) is saturated at that in-flight limit; raise it or lower rates.
 - The per-execution timeout is a linked `CancellationToken` (not `HttpClient.Timeout`) so multi-step
   scenarios are bounded as a whole.
-- Stopping a run cancels in-flight executions; those are not reported.
+- Stopping a run cancels in-flight executions; those are not reported. *(Superseded by 0053: they are kept as canceled, with their logs.)*

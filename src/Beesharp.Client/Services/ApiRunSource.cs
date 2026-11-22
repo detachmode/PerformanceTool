@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using PerformanceTool.Services;
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services.Scenarios;
 
 namespace PerformanceTool.Client.Services;
@@ -110,6 +111,13 @@ public sealed class ApiRunSource : IRunSource
         Changed?.Invoke();
     }
 
+    // Runtime data (brain 0052): fetched from /api/runs/{id}/runtime whenever the status says the version changed.
+    private RuntimeDataSnapshot? runtime;
+    private long runtimeVersion = -1;
+    private bool runtimeFetching;
+
+    private static bool IsActiveState(string state) => state is "Running" or "Preflight" or "Shutdown";
+
     public RunSnapshot Current { get; private set; }
     public bool IsRunning => Current.Running;
     public event Action? Changed;
@@ -151,7 +159,12 @@ public sealed class ApiRunSource : IRunSource
         string? PreflightScriptName = null,
         List<string>? PreflightLogs = null,
         string? PreflightError = null,
-        List<LiveRunningBeeDto>? RunningBees = null);
+        List<LiveRunningBeeDto>? RunningBees = null,
+        string? ShutdownState = null,
+        string? ShutdownScriptName = null,
+        List<string>? ShutdownLogs = null,
+        string? ShutdownError = null,
+        long RuntimeVersion = 0);
 
     public ApiRunSource(HttpClient http, ScenarioCatalog catalog, ApiEnvironmentSource environments)
     {
@@ -381,7 +394,7 @@ public sealed class ApiRunSource : IRunSource
             if (dto is not null && dto.Plan.Scenarios.Count > 0)
             {
                 ApplyStatus(dto);
-                if (dto.State is "Running" or "Preflight") StartPolling();
+                if (IsActiveState(dto.State)) StartPolling();
             }
         }
         catch { SetReachable(false); }
@@ -508,7 +521,12 @@ public sealed class ApiRunSource : IRunSource
             if (resp.IsSuccessStatusCode)
             {
                 var dto = await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts);
-                if (dto is not null) ApplyStatus(dto);
+                if (dto is not null)
+                {
+                    ApplyStatus(dto);
+                    // The shutdown program still runs after a stop (brain 0052): keep watching until it is done.
+                    if (IsActiveState(dto.State)) StartPolling();
+                }
             }
         }
         catch { }
@@ -530,7 +548,7 @@ public sealed class ApiRunSource : IRunSource
                     if (dto is not null)
                     {
                         ApplyStatus(dto);
-                        if (dto.State is not ("Running" or "Preflight")) break;
+                        if (!IsActiveState(dto.State)) break;
                     }
                 }
                 catch (OperationCanceledException) { break; }
@@ -558,6 +576,8 @@ public sealed class ApiRunSource : IRunSource
             loadedDetails.Clear();
             loadingDetails.Clear();
             PreflightDismissed = false;
+            runtime = null;
+            runtimeVersion = -1;
         }
 
         TotalServerLogs = dto.TotalLogs;
@@ -591,7 +611,7 @@ public sealed class ApiRunSource : IRunSource
 
         var state = dto.State switch
         {
-            "Running" or "Preflight" => FakeRunState.Running,
+            "Running" or "Preflight" or "Shutdown" => FakeRunState.Running,
             "Finished" => FakeRunState.Finished,
             _ => FakeRunState.Idle,
         };
@@ -616,8 +636,33 @@ public sealed class ApiRunSource : IRunSource
             labels,
             views,
             activeStore,
-            beesInFlight);
+            beesInFlight,
+            runtime,
+            dto.ShutdownState is null ? null : new ProgramRun(dto.ShutdownState, dto.ShutdownScriptName ?? "shutdown.cs", dto.ShutdownError, dto.ShutdownLogs ?? []),
+            dto.PreflightState is null ? null : new ProgramRun(dto.PreflightState, dto.PreflightScriptName ?? "preflight.cs", dto.PreflightError, dto.PreflightLogs ?? []));
         Changed?.Invoke();
+        if (dto.RunId.Length > 0 && dto.RuntimeVersion != runtimeVersion && !runtimeFetching) _ = FetchRuntimeAsync(dto.RunId, dto.RuntimeVersion, count);
+    }
+
+    /// <summary>Loads the runtime data of a run (live values, or the final values of a past run) and puts it into <see cref="Current"/>.</summary>
+    private async Task FetchRuntimeAsync(string runId, long version, int entries)
+    {
+        runtimeFetching = true;
+        try
+        {
+            var resp = await http.GetAsync($"api/runs/{Uri.EscapeDataString(runId)}/runtime");
+            RuntimeDataSnapshot? loaded;
+            if (resp.IsSuccessStatusCode) loaded = await resp.Content.ReadFromJsonAsync<RuntimeDataSnapshot>(JsonOpts);
+            else if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) loaded = RuntimeDataSnapshot.Empty(entries); // an older run that kept none
+            else return;
+            if (loaded is null || !string.Equals(activeRunId, runId, StringComparison.Ordinal)) return;
+            runtime = loaded;
+            runtimeVersion = version;
+            Current = Current with { Runtime = loaded };
+            Changed?.Invoke();
+        }
+        catch { /* offline: the next poll tries again */ }
+        finally { runtimeFetching = false; }
     }
 
     private static RunSnapshot EmptySnapshot(LoadPlan plan)
