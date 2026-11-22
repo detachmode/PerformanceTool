@@ -136,7 +136,10 @@
     /// <summary>Reads the real heights of the rendered rows and corrects the offsets behind them. The rendered rows themselves do not move.</summary>
     private async Task Measure()
     {
-        var m = await module!.InvokeAsync<double[]>("measure", root);
+        double[] m;
+        try { m = await module!.InvokeAsync<double[]>("measure", root); }
+        catch (JSDisconnectedException) { return; }
+        catch (JSException) { return; }
         if (m.Length < 1 || n == 0) return;
         var scrollTop = m[0];
         var lowest = int.MaxValue;

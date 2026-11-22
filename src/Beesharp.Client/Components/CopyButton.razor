@@ -57,8 +57,7 @@
         try
         {
             await Task.Delay(1500, ct);
-            copied = false;
-            StateHasChanged();
+            copied = false; // the click handler ends here, so Blazor renders by itself
         }
         catch (TaskCanceledException) { }
     }
