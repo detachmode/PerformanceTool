@@ -34,7 +34,7 @@ Beesharp.Core            the tool's model: LoadPlan, ParameterSpec, Placeholders
 Beesharp.Contracts       REST wire types shared by server and client (like Ai.Contracts)
 Beesharp.Engine          LoadRunner, RunManager, preflight → scenarios → shutdown; no ASP.NET
 Beesharp.Scripting       one Roslyn compiler and store for scripts, preflights, shutdown programs
-Beesharp.Storage         IRunStorage + in-memory; providers DuckDb (and Sqlite?) beside it
+Beesharp.Storage         IRunStorage + in-memory; DuckDb provider beside it (SQLite dropped)
 Beesharp.Ai(.Contracts)  unchanged
 Beesharp (host)          wiring only; endpoints in Api/*; AI adapters
 Beesharp.Cli             runs a preset headless (CI)
@@ -48,6 +48,8 @@ tests/                   one test project per project
   with an error code when bees failed.
 - **Rename to Beesharp**: all namespaces become `Beesharp.*`; AGENTS.md and the docs describe the real folders.
   Existing user scripts with `using PerformanceTool...` keep working (compatibility) or need a one-line change.
+- **Drop SQLite storage**: keep DuckDB (default) and in-memory (tests, quick tries). Partly supersedes 0045
+  (SQLite storage) and the "Sqlite remains available" note in 0046.
 
 ## Open (ask the user, one at a time)
 - More details; answers get recorded above.
