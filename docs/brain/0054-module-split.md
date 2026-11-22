@@ -46,6 +46,8 @@ tests/                   one test project per project
 - **CI runner = a command-line tool**, a separate small program (no web server), e.g.
   `beesharp run --preset "Black Friday" --env Staging`: runs the preset, prints a summary, saves the run, and exits
   with an error code when bees failed.
+- **Rename to Beesharp**: all namespaces become `Beesharp.*`; AGENTS.md and the docs describe the real folders.
+  Existing user scripts with `using PerformanceTool...` keep working (compatibility) or need a one-line change.
 
 ## Open (ask the user, one at a time)
 - More details; answers get recorded above.
