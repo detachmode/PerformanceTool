@@ -160,8 +160,8 @@ public sealed class ScenarioContext
         RunBag = runBag ?? new BagAccess(new DataBag(), new DataWriter(DataWriterKind.Bee));
         this.background = background;
         this.callSink = callSink;
-        this.runSeconds = runSeconds ?? (() => beeClock.Elapsed.TotalSeconds);
         beeClock = Stopwatch.StartNew();
+        this.runSeconds = runSeconds ?? (() => beeClock.Elapsed.TotalSeconds);
 
         if (structuredLogSink is not null)
         {
