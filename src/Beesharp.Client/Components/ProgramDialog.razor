@@ -1,0 +1,68 @@
+@* The output of a preflight or shutdown program (brain 0052): what the writer link of a runtime value opens (brain 0029).
+   Shows the state, the failure text and the program's log lines. "Edit script" opens it in the script editor. *@
+@inject NavigationManager Nav
+
+<div class="overlay" tabindex="-1" @onclick="OnClose" role="presentation">
+    <div class="dialog" style="width:min(760px,100%)" role="dialog" aria-modal="true" aria-labelledby="prog-title" @onclick:stopPropagation="true">
+        <div class="dlg-head">
+            <h2 id="prog-title">@Title</h2>
+            @if (Run is not null)
+            {
+                <span class="pf-badge @BadgeCss">@StateText</span>
+                <b class="mono">@Run.Name</b>
+            }
+            <span class="spacer"></span>
+            <WrapToggleButton @bind-Wrapped="wrap" />
+            @if (!string.IsNullOrWhiteSpace(ScriptId))
+            {
+                <button type="button" class="btn ghost small" @onclick="Edit">Edit script</button>
+            }
+            <button type="button" class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
+        </div>
+
+        @if (Run is null)
+        {
+            <p class="muted" style="margin:0">No @Kind.ToLowerInvariant() output for this run.</p>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(Run.Error))
+            {
+                <div class="preflight-err-banner" role="alert"><span>@Run.Error</span></div>
+            }
+            <div class="sl-console compact @(wrap ? "wrap" : "nowrap")" role="log" style="max-height:60vh">
+                @if (Run.Logs.Count == 0)
+                {
+                    <div class="muted">@(Run.IsRunning ? "Waiting for output…" : "No output.")</div>
+                }
+                else
+                {
+                    @foreach (var line in Run.Logs)
+                    {
+                        <SerilogLine Raw="@line" />
+                    }
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Kind { get; set; } = "Shutdown program";
+    [Parameter] public ProgramRun? Run { get; set; }
+    /// <summary>The script's id (as in the plan), for "Edit script".</summary>
+    [Parameter] public string? ScriptId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool wrap = true;
+
+    private string Title => Kind;
+    private string StateText => Run?.State switch { "Running" => "Running", "Failed" => "Failed", "Succeeded" => "Finished", _ => "Waiting" };
+    private string BadgeCss => Run?.State switch { "Failed" => "bad", "Succeeded" => "ok", _ => "run" };
+
+    private void Edit()
+    {
+        var query = Kind.StartsWith("Shutdown", StringComparison.Ordinal) ? "shutdown" : "preflight";
+        Nav.NavigateTo($"editor?{query}={Uri.EscapeDataString(ScriptId!)}");
+    }
+}

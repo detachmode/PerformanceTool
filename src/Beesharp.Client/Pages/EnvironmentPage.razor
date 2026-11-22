@@ -176,7 +176,15 @@
     <ScenarioDetailDialog @key="(oe, openBee)" Index="oe" Snapshot="s" InitialBee="openBee" OnClose="CloseDialog" />
 }
 
+@if (openProgram is { } kind)
+{
+    var isShutdown = kind == DataWriterKind.Shutdown;
+    <ProgramDialog Kind="@(isShutdown ? "Shutdown program" : "Preflight")" Run="@(isShutdown ? s.Shutdown : s.Preflight)"
+                   ScriptId="@(isShutdown ? s.Plan.ShutdownScriptId : s.Plan.PreflightScriptId)" OnClose="() => openProgram = null" />
+}
+
 @code {
+    private DataWriterKind? openProgram;
     private string filter = "";
     private bool openStatic = true, openRuntime = true, openRun = true;
     private readonly HashSet<int> openEntries = [];
@@ -237,7 +245,7 @@
     };
 
     private string EmptyText(RunSnapshot s, RuntimeDataSnapshot? rt) =>
-        rt is null && !DataMode.IsFakeMode ? "The server does not send runtime data yet."
+        rt is null && !DataMode.IsFakeMode ? "Loading runtime data…"
         : s.State == FakeRunState.Idle ? "Start a run: what the preflight and scenarios write shows up here."
         : s.Running ? "Nothing written yet."
         : "This run wrote no runtime data.";
@@ -254,7 +262,7 @@
         {
             case DataWriterKind.Bee: OpenEntry(w.Entry, w.Bee); break;
             case DataWriterKind.Startup or DataWriterKind.Teardown: OpenEntry(w.Entry, null); break;
-            default: Nav.NavigateTo("editor"); break; // the preflight and shutdown programs live with the plan
+            default: openProgram = w.Kind; break; // the preflight and shutdown programs: their output (brain 0029)
         }
     }
 

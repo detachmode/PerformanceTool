@@ -17,6 +17,7 @@ builder.Services.AddSingleton<EnvironmentStore>();
 builder.Services.AddSingleton<LoadRunner>();
 builder.Services.AddSingleton<ScriptScenarioStore>();
 builder.Services.AddSingleton<PreflightStore>();
+builder.Services.AddSingleton<ShutdownStore>();
 var storageProvider = builder.Configuration["Storage:Provider"] ?? "DuckDb";
 if (string.Equals(storageProvider, "Memory", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IRunStorage, InMemoryRunStorage>();
@@ -47,6 +48,7 @@ var app = builder.Build();
 app.Services.GetRequiredService<ScenarioCatalog>();
 await app.Services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync();
 await app.Services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync();
+await app.Services.GetRequiredService<ShutdownStore>().LoadAllFromDiskAsync();
 await app.Services.GetRequiredService<RunManager>().RestoreLatestAsync();
 // The restored run's plan is where the Live plan starts (the editor used to adopt it in the browser).
 app.Services.GetRequiredService<PlanWorkspace>().SeedIfEmpty(app.Services.GetRequiredService<RunManager>().GetCurrent().Plan);
@@ -144,11 +146,37 @@ app.MapPost("/api/preflights/{id}/test-run", async (string id, TestRunPreflightR
     catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
 });
 
+// Shutdown programs (brain 0052): same kind of script as a preflight, but it always runs at the end of a run (also after a stop or a failed preflight).
+app.MapGet("/api/shutdowns", (ShutdownStore store) => store.List());
+app.MapGet("/api/shutdowns/{id}", (string id, ShutdownStore store) =>
+    store.Get(id) is { } p ? Results.Ok(p) : Results.NotFound());
+app.MapPost("/api/shutdowns", async (UploadScriptRequest body, ShutdownStore store, CancellationToken ct) =>
+{
+    var result = await store.CompileAndSaveAsync(body.Id, body.FileName, body.Code ?? "", persist: true, ct);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+app.MapDelete("/api/shutdowns/{id}", (string id, ShutdownStore store) =>
+    store.Delete(id) ? Results.NoContent() : Results.NotFound());
+app.MapPost("/api/shutdowns/{id}/test-run", async (string id, TestRunPreflightRequest? body, ShutdownStore store, CancellationToken ct) =>
+{
+    try
+    {
+        var result = await store.ExecuteAsync(id, body?.EnvironmentName, timeoutSeconds: body?.TimeoutSeconds ?? 60, ct: ct);
+        return Results.Ok(result);
+    }
+    catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+});
+
 // Live runs & persisted SQLite storage queries (brain 0045).
 app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) =>
     storage.ListRunsAsync(limit ?? 50, ct));
 app.MapGet("/api/runs/current", (int? afterSeq, int? maxBees, RunManager runs) =>
     runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000));
+// Runtime data (brain 0052): the run bag and the entry bags of the active run (live), or the final values of a stored run.
+app.MapGet("/api/runs/current/runtime", (RunManager runs) =>
+    runs.GetCurrentRuntime() is { } rt ? Results.Ok(rt) : Results.NoContent());
+app.MapGet("/api/runs/{runId}/runtime", async (string runId, RunManager runs, CancellationToken ct) =>
+    await runs.GetRuntimeAsync(runId, ct) is { } rt ? Results.Ok(rt) : Results.NotFound());
 app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, int? sequence, int? entry, RunManager runs) =>
     runs.GetLiveLogs(afterId ?? 0, limit ?? 500, sequence, entry));
 app.MapPlanEndpoints();

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using PerformanceTool.Client.Services;
+using PerformanceTool.Services.Runtime;
 using PerformanceTool.Services.Scenarios;
 using PerformanceTool.Services.Scenarios.BuiltIn;
 
@@ -109,6 +110,25 @@ public class RuntimeDataTests
         source.Stop();
         Assert.Contains(source.Current.Runtime!.Run.Values, v => v.Key == "tenantId");
         Assert.Contains(source.Current.Runtime!.Entries[0].Values, v => v.Key == "cleanedUp");
+        source.Dispose();
+    }
+
+    [Fact]
+    public void The_fake_shutdown_program_runs_at_the_end_of_a_finished_and_of_a_stopped_run()
+    {
+        var source = new FakeRunSource(Catalog());
+        var seeded = source.Current;
+        Assert.Equal("Succeeded", seeded.Shutdown!.State);
+        Assert.Equal("cleanup.cs", seeded.Shutdown.Name);
+        Assert.Contains(seeded.Shutdown.Logs, l => l.Contains("Deleting"));
+        Assert.Equal(DataWriterKind.Shutdown, seeded.Runtime!.Run.Values.Single(v => v.Key == "cleanedUp").Writer.Kind);
+        Assert.Equal("Succeeded", seeded.Preflight!.State);
+
+        source.Start();
+        Assert.Null(source.Current.Shutdown); // not yet: it runs at the end
+        source.Stop();
+        Assert.Equal("Succeeded", source.Current.Shutdown!.State);
+        Assert.Contains(source.Current.Runtime!.Run.Values, v => v.Key == "deletedCarts" && v.Writer.Kind == DataWriterKind.Shutdown);
         source.Dispose();
     }
 }
