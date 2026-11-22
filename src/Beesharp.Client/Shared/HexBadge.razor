@@ -1,14 +1,18 @@
-@* Honeycomb hexagonal spinner and status icon (ok / warn / bad).
-   Uses SVG pathLength="100" + stroke-dashoffset animation so the hexagon stays upright while a two-tone blue comet traces all 6 edges smoothly across all browsers. *@
+@* Orbiting little bee spinner (#8) + honeycomb hexagonal status icons (ok / warn clock / bad). *@
 @using System.Globalization
 
 <span class="hex-badge @Kind @Class" style="--hex-sz:@(Size)px" aria-hidden="true">
     <svg class="hex-svg" viewBox="0 0 100 100" width="@Size" height="@Size" fill="none">
         @if (Kind == "spin")
         {
-            <path class="hex-track" d="@HexPath" stroke-width="@Sw" />
-            <path class="hex-tail" d="@HexPath" pathLength="100" stroke-width="@Sw" stroke-linecap="round" />
-            <path class="hex-head" d="@HexPath" pathLength="100" stroke-width="@Sw" stroke-linecap="round" />
+            <circle class="hex-orbit-track" cx="50" cy="50" r="41" stroke-width="@OrbitTrackSw" stroke-dasharray="6 7" />
+            <g class="hex-bee-orbit">
+                <path class="hex-orbit-trail" d="M 50 9 A 41 41 0 0 0 18 24" stroke-width="@OrbitTrailSw" stroke-linecap="round" />
+                <ellipse cx="50" cy="9" rx="9.5" ry="6.4" fill="#f5b700" stroke="#110f0c" stroke-width="1.8" />
+                <line x1="48" y1="3.6" x2="48" y2="14.4" stroke="#110f0c" stroke-width="2.4" />
+                <line x1="53" y1="4.2" x2="53" y2="13.8" stroke="#110f0c" stroke-width="2.2" />
+                <ellipse cx="47" cy="3.2" rx="4.6" ry="2.7" fill="#dbeafe" opacity=".92" />
+            </g>
         }
         else
         {
@@ -16,6 +20,11 @@
             @if (Kind == "bad")
             {
                 <path class="hex-glyph" d="M 35 35 L 65 65 M 65 35 L 35 65" stroke-width="@GlyphSw" stroke-linecap="round" stroke-linejoin="round" />
+            }
+            else if (Kind == "warn")
+            {
+                <circle class="hex-glyph" cx="50" cy="50" r="22" stroke-width="@ClockSw" />
+                <path class="hex-glyph" d="M 50 37 L 50 51 L 60 56" stroke-width="@ClockSw" stroke-linecap="round" stroke-linejoin="round" />
             }
             else
             {
@@ -30,7 +39,7 @@
 </span>
 
 @code {
-    // Pointy-top regular hexagon centered at (50,50), radius 44, subtly rounded corners, clockwise from top.
+    // Pointy-top regular hexagon centered at (50,50), radius 44, subtly rounded corners.
     private const string HexPath =
         "M 53.9 8.25 L 84.2 25.75 Q 88.1 28 88.1 32.5 " +
         "L 88.1 67.5 Q 88.1 72 84.2 74.25 " +
@@ -47,5 +56,8 @@
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private string Sw => StrokeWidth.ToString("0.##", CultureInfo.InvariantCulture);
-    private string GlyphSw => Math.Max(7.5, StrokeWidth + 2.2).ToString("0.##", CultureInfo.InvariantCulture);
+    private string GlyphSw => Math.Max(8.0, StrokeWidth + 2.5).ToString("0.##", CultureInfo.InvariantCulture);
+    private string ClockSw => Math.Max(5.5, StrokeWidth).ToString("0.##", CultureInfo.InvariantCulture);
+    private string OrbitTrackSw => (Size <= 20 ? 6.0 : 3.4).ToString("0.##", CultureInfo.InvariantCulture);
+    private string OrbitTrailSw => (Size <= 20 ? 6.5 : 4.0).ToString("0.##", CultureInfo.InvariantCulture);
 }
