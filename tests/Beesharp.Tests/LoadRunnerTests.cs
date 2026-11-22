@@ -123,7 +123,7 @@ public class LoadRunnerTests
     }
 
     [Fact]
-    public async Task Started_equals_results_plus_cancelled_when_the_run_is_stopped()
+    public async Task Started_equals_results_including_canceled_when_the_run_is_stopped()
     {
         using var cts = new CancellationTokenSource();
         var plan = new LoadPlan { DurationSeconds = 5, Scenarios = [Entry(1200, delayMs: 800)] };
@@ -134,8 +134,96 @@ public class LoadRunnerTests
         var ended = activity.Count(a => !a.Started);
         Assert.True(started > 0);
         Assert.Equal(started, ended);                    // every start has an end, results or cancelled
-        Assert.True(results.Count < started);            // the in-flight ones were cancelled, not reported
+        Assert.Equal(started, results.Count);            // the in-flight ones are reported as canceled (brain 0053)
+        Assert.Contains(results, r => r.Canceled);
         Assert.Equal(0, activity.Last(a => !a.Started).TotalInFlight);
+    }
+
+    /// <summary>Two logs and two calls, then a long third call that the stop cuts off.</summary>
+    private sealed class StepsScenario : Scenario<DelayParameters>
+    {
+        public override string Id => "steps";
+        public override string Name => "Steps";
+        public override string Description => "Test scenario.";
+
+        protected override async Task<ScenarioOutcome> ExecuteAsync(DelayParameters p, ScenarioContext ctx, CancellationToken ct)
+        {
+            ctx.Log("first");
+            await ctx.MeasureCallAsync("quick", () => Task.Delay(20, ct));
+            ctx.Log("second");
+            await ctx.MeasureCallAsync("long", () => Task.Delay(p.DelayMs, ct));
+            return new ScenarioOutcome(200, 0);
+        }
+    }
+
+    [Fact]
+    public async Task Bee_in_flight_at_stop_is_canceled_with_its_logs_and_calls()
+    {
+        var catalog = new ScenarioCatalog([new StepsScenario()]);
+        var e = ScenarioRunConfig.CreateFor(catalog.Find("steps")!);
+        e.RatePerMinute = 60;
+        e.Parameters["delayMs"] = 5000;
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(700));
+        var results = new ConcurrentBag<ExecutionResult>();
+        var activity = new ConcurrentQueue<ExecutionActivity>();
+        await new LoadRunner(catalog).RunAsync(new LoadPlan { DurationSeconds = 5, Scenarios = [e] },
+            r => { results.Add(r); return ValueTask.CompletedTask; }, _ => ValueTask.CompletedTask, cts.Token,
+            a => { activity.Enqueue(a); return ValueTask.CompletedTask; });
+
+        var bee = Assert.Single(results);
+        Assert.True(bee.Canceled);
+        Assert.Equal(ExecutionResult.CanceledError, bee.Error);
+        Assert.False(bee.Success);
+        Assert.Equal(["first", "second"], bee.Logs!.Select(l => l.Message));
+        Assert.Equal(2, bee.Calls!.Count);
+        Assert.Null(bee.Calls[0].Error);
+        Assert.Equal("long", bee.Calls[1].Name);
+        Assert.Equal(ExecutionResult.CanceledError, bee.Calls[1].Error);   // the call cut off by the stop is failed...
+        Assert.InRange(bee.Calls[1].DurationMs, 200, 2000);                // ...with the time it ran until the stop
+        Assert.InRange(bee.ElapsedMs, 400, 2000);                          // the bee's duration ends at the stop
+        Assert.Equal(activity.Count(a => a.Started), activity.Count(a => !a.Started));
+    }
+
+    [Fact]
+    public async Task Bee_finished_before_the_stop_is_not_canceled()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(600));
+        var plan = new LoadPlan { DurationSeconds = 5, Scenarios = [Entry(60, delayMs: 50)] };
+        var (results, _) = await RunWithActivity(plan, cts.Token);
+        var bee = Assert.Single(results);
+        Assert.False(bee.Canceled);
+        Assert.True(bee.Success);
+    }
+
+    [Fact]
+    public async Task Exception_thrown_because_of_the_stop_also_ends_as_canceled()
+    {
+        var catalog = new ScenarioCatalog([new WrappedCancelScenario()]);
+        var e = ScenarioRunConfig.CreateFor(catalog.Find("wrapped")!);
+        e.RatePerMinute = 60;
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(500));
+        var results = new ConcurrentBag<ExecutionResult>();
+        await new LoadRunner(catalog).RunAsync(new LoadPlan { DurationSeconds = 5, Scenarios = [e] },
+            r => { results.Add(r); return ValueTask.CompletedTask; }, _ => ValueTask.CompletedTask, cts.Token);
+        var bee = Assert.Single(results);
+        Assert.True(bee.Canceled);
+    }
+
+    private sealed class WrappedCancelScenario : Scenario<DelayParameters>
+    {
+        public override string Id => "wrapped";
+        public override string Name => "Wrapped";
+        public override string Description => "Test scenario.";
+
+        protected override async Task<ScenarioOutcome> ExecuteAsync(DelayParameters p, ScenarioContext ctx, CancellationToken ct)
+        {
+            try { await Task.Delay(5000, ct); }
+            catch (OperationCanceledException ex) { throw new HttpRequestException("The request was canceled", ex); }
+            return new ScenarioOutcome(200, 0);
+        }
     }
 
     [Fact]

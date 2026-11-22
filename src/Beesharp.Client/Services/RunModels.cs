@@ -91,6 +91,8 @@ public readonly record struct BeeRecord(int Sequence, int Entry, double StartedA
 {
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => ErrorId != ErrorDictionary.None;
+    /// <summary>In flight when the user stopped the run (brain 0053). Looks and counts like failed; this tells it apart.</summary>
+    public bool Canceled => Failed && ExecutionResult.IsCanceledError(Error);
     public BeeOutcome Outcome => Failed ? BeeOutcome.Failed : SlowCalls > 0 ? BeeOutcome.Slow : BeeOutcome.Ok;
     public string Name => $"B{Sequence + 1}";
     /// <summary>How many times its typical duration the bee's worst call took (brain 0041); kept in one byte (<see cref="RatioCode"/>).</summary>

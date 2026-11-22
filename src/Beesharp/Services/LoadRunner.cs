@@ -174,16 +174,21 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                         onLiveLog?.Invoke(new LiveLogEvent(seq, entry, l));
                     },
                     runSeconds: () => clockRef.Elapsed.TotalSeconds,
-                    runBag: data.RunBagFor(new DataWriter(DataWriterKind.Bee, entry, seq)));
+                    runBag: data.RunBagFor(new DataWriter(DataWriterKind.Bee, entry, seq)),
+                    runStopped: () => ct.IsCancellationRequested);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;
+                var canceled = false;
                 try
                 {
                     outcome = await scenario.ExecuteAsync(parameters, ctx, execCts.Token);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (Exception) when (ct.IsCancellationRequested)
                 {
-                    return; // user stopped the run: don't report half-finished executions
+                    // The user stopped the run (brain 0053): keep the bee as canceled with the logs and calls it already has. Any exception
+                    // thrown because of the stop (OperationCanceledException, a wrapped TaskCanceledException, ...) ends here, not as an ordinary failure.
+                    outcome = ScenarioOutcome.Failed(ExecutionResult.CanceledError);
+                    canceled = true;
                 }
                 catch (OperationCanceledException)
                 {
@@ -210,7 +215,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     outcome.Bytes,
                     outcome.FailureReason,
                     calls.Count > 0 ? calls : null,
-                    logs.Count > 0 ? logs : null));
+                    logs.Count > 0 ? logs : null,
+                    canceled));
             }
 
             await Task.WhenAll(Enumerable.Range(0, plan.Scenarios.Count).Select(ScheduleEntry));
