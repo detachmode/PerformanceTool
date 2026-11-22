@@ -908,6 +908,27 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }
 
+/* ----- unified run & preflight bento card ----- */
+.run-launch-card { display: flex; flex-direction: column; gap: .65rem; margin-bottom: 1rem; padding: .85rem .95rem; background: var(--bee-shell-bg); border: 1px solid rgba(255, 232, 198, 0.09); border-radius: 22px; box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6); }
+.run-pf-row { display: flex; align-items: stretch; gap: .5rem; }
+.run-pf-trigger { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: .7rem; padding: .62rem .85rem; background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.07); border-radius: 14px; color: var(--title); cursor: pointer; text-align: left; transition: background-color .15s, border-color .15s; }
+.run-pf-trigger:hover:not(:disabled) { background: #26211a; border-color: rgba(245, 183, 0, 0.35); }
+.run-pf-trigger:disabled { opacity: .45; cursor: default; }
+.run-pf-trigger.muted-trigger { border-style: dashed; background: transparent; color: var(--muted); }
+.run-pf-play { flex: none; width: 30px; height: 30px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--bee-accent); color: #110f0c; }
+.run-pf-play svg { margin-left: 1px; }
+.run-pf-text { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.run-pf-text b { font-size: .88rem; color: var(--title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-pf-text .mono { font-family: var(--mono); font-size: .84rem; }
+.run-pf-text small { font-size: .73rem; }
+.run-pf-plus { flex: none; width: 42px; display: inline-flex; align-items: center; justify-content: center; background: var(--bee-bento-bg); border: 1px dashed rgba(255, 232, 198, 0.14); border-radius: 14px; color: var(--muted); font-size: 1.15rem; font-weight: 500; cursor: pointer; transition: color .15s, border-color .15s, background-color .15s; }
+.run-pf-plus:hover:not(:disabled) { color: var(--bee-accent); border-color: rgba(245, 183, 0, 0.45); background: #26211a; }
+.run-pf-plus.danger:hover:not(:disabled) { color: var(--bad); border-color: rgba(240, 82, 82, 0.45); }
+.run-pf-plus:disabled { opacity: .4; cursor: default; }
+.run-pf-plus-inline { font-size: 1.1rem; color: var(--bee-accent); font-weight: 600; padding-left: .15rem; }
+.run-pf-picker { background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.08); border-radius: 14px; overflow: hidden; }
+.run-pf-picker-head { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--border); font-size: .84rem; }
+
 /* ----- preflight box (below Duration, above scenarios) & overview output view ----- */
 .pf-tag { font-size: .64rem; font-weight: 700; letter-spacing: .06em; padding: .12rem .4rem; border-radius: 4px; background: color-mix(in srgb, var(--accent2) 22%, var(--panel2)); color: var(--accent); border: 1px solid rgba(245, 183, 0, 0.35); flex: none; }
 .preflight-box { margin-bottom: .85rem; background: var(--panel); border: 1px solid var(--border); border-left: 3.5px solid var(--accent2); border-radius: var(--radius); overflow: hidden; }

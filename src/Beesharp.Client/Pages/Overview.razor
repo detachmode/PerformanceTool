@@ -43,7 +43,7 @@
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
             @if (!editMode)
             {
-                <span class="muted">@state · @s.Count scenarios · @Format.Num(s.Scenarios.Sum(x => x.Finished)) finished</span>
+                <span class="muted">@state · @Format.Num(s.Scenarios.Sum(x => x.Finished)) finished</span>
             }
         </div>
         <div class="preset-actions">
@@ -53,7 +53,6 @@
                 {
                     <button type="button" class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
                 }
-                <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo("editor")' title="Open the C# Script Editor for .cs files">Scripts (.cs)</button>
                 <div class="dd">
                     <button type="button" class="btn ghost small" aria-haspopup="menu" aria-expanded="@Aria.Bool(actionsOpen)" disabled="@locked"
                             @onclick="() => actionsOpen = !actionsOpen" title="Preset &amp; plan actions">
@@ -82,56 +81,61 @@
             }
             else
             {
-                @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
-                {
-                    <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download title="Export this run as a ZIP of Parquet files">Export</a>
-                }
-                <button type="button" class="btn ghost small" @onclick="() => Logs.Show()" aria-haspopup="dialog" title="Open run logs">Logs</button>
-                <button type="button" class="btn ghost small edit-mode-btn" @onclick="EnterEditMode" disabled="@locked"
+                <button type="button" class="btn ghost small" @onclick="EnterEditMode" disabled="@locked"
                         title="@(locked ? "Stop the running test to edit scenarios" : "Edit scenarios, spawning and parameters")">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                    <span>Edit</span>
+                    Edit
                 </button>
+                <div class="dd">
+                    <button type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
+                            @onclick="() => viewMenuOpen = !viewMenuOpen" aria-label="More actions" title="More actions">
+                        ⋯
+                    </button>
+                    @if (viewMenuOpen)
+                    {
+                        <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
+                        <div class="dd-menu right" role="menu" aria-label="Overview actions">
+                            <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Run logs popup</button>
+                            @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
+                            {
+                                <a class="dd-item" role="menuitem" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download @onclick="() => viewMenuOpen = false">Export Parquet (.zip)</a>
+                            }
+                        </div>
+                    }
+                </div>
             }
         </div>
     </section>
 
-    <section class="settings plan-settings" aria-label="Plan settings">
-        <div class="plan-top-row">
-            <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
-                <label for="p-dur">Duration (s)</label>
-                <div class="slider with-input">
-                    <input type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
-                           aria-label="Duration slider" disabled="@locked"
-                           @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
-                    <input id="p-dur" class="slider-num" type="number" min="1" step="1" value="@plan.DurationSeconds"
-                           @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
-                           disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
-                </div>
-            </div>
-            <button type="button" class="btn @(editMode ? "ghost" : "primary") small plan-run-btn"
-                    disabled="@(locked || editMode || plan.Scenarios.Count == 0)"
-                    @onclick="StartRun"
-                    title="@(editMode ? "Finish editing to start a run" : locked ? "Run is in progress" : "Start load test run")">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>
-                <span>Run</span>
-            </button>
-        </div>
-        @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
-    </section>
-
-    @if (!DataMode.IsFakeMode && (!string.IsNullOrWhiteSpace(plan.PreflightScriptId) || editMode))
-    {
-        var activePf = !string.IsNullOrWhiteSpace(plan.PreflightScriptId)
+    @{
+        var hasPreflight = !DataMode.IsFakeMode && !string.IsNullOrWhiteSpace(plan.PreflightScriptId);
+        var activePf = hasPreflight
             ? preflights.FirstOrDefault(p => string.Equals(p.ScriptId, plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase))
             : null;
-        <section class="preflight-box @(string.IsNullOrWhiteSpace(plan.PreflightScriptId) && !preflightPickerOpen ? "empty" : "")" aria-label="Preflight program">
-            @if (preflightPickerOpen)
-            {
-                <div class="detail-head preflight-box-head">
-                    <span class="pf-tag">PREFLIGHT</span>
-                    <b>Select preflight script</b>
+    }
+    <section class="run-launch-card" aria-label="Run and preflight controls">
+        <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
+            <label for="p-dur">Duration (s)</label>
+            <div class="slider with-input">
+                <input type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
+                       aria-label="Duration slider" disabled="@locked"
+                       @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
+                <input id="p-dur" class="slider-num" type="number" min="1" step="1" value="@plan.DurationSeconds"
+                       @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
+                       disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
+            </div>
+        </div>
+        @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
+
+        @if (preflightPickerOpen)
+        {
+            <div class="run-pf-picker">
+                <div class="run-pf-picker-head">
+                    <b>Preflight script</b>
                     <span class="spacer"></span>
+                    @if (hasPreflight)
+                    {
+                        <button type="button" class="btn ghost danger small" disabled="@locked" @onclick="RemovePreflight">Remove</button>
+                    }
                     <button type="button" class="icon-btn" @onclick="() => preflightPickerOpen = false" aria-label="Close">✕</button>
                 </div>
                 <ul class="add-menu inline" aria-label="Available preflight scripts">
@@ -141,7 +145,7 @@
                         <li>
                             <button type="button" @onclick="() => PickPreflight(chosen.ScriptId)">
                                 <b>@chosen.FileName</b>
-                                <span>Runs before scenarios start</span>
+                                <span>Runs once before scenarios start</span>
                             </button>
                         </li>
                     }
@@ -152,33 +156,63 @@
                         </button>
                     </li>
                 </ul>
-            }
-            else if (!string.IsNullOrWhiteSpace(plan.PreflightScriptId))
-            {
-                <div class="preflight-box-row">
-                    <span class="pf-tag">PREFLIGHT</span>
-                    <div class="preflight-box-info">
-                        <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
-                        <span class="muted">Runs once before scenarios start</span>
-                    </div>
-                    <span class="spacer"></span>
-                    @if (editMode)
+            </div>
+        }
+        else
+        {
+            <div class="run-pf-row">
+                @if (editMode)
+                {
+                    @if (hasPreflight)
                     {
-                        <button type="button" class="btn ghost small" disabled="@locked" @onclick="OpenPreflightPickerAsync">Change</button>
-                        <button type="button" class="icon-btn danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
+                        <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Change preflight script">
+                            <span class="run-pf-text">
+                                <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
+                                <small class="muted">Preflight · tap to change</small>
+                            </span>
+                        </button>
+                        <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
                     }
-                </div>
-            }
-            else if (editMode)
-            {
-                <button type="button" class="preflight-add-btn" disabled="@locked" @onclick="OpenPreflightPickerAsync">
-                    <span class="plus">+</span>
-                    <span>Add preflight program</span>
-                    <small class="muted">Optional C# script that runs before scenarios start</small>
-                </button>
-            }
-        </section>
-    }
+                    else if (!DataMode.IsFakeMode)
+                    {
+                        <button type="button" class="run-pf-trigger muted-trigger" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Attach a preflight script">
+                            <span class="run-pf-plus-inline">+</span>
+                            <span class="run-pf-text">
+                                <span>Add preflight</span>
+                                <small class="muted">Optional script before scenarios start</small>
+                            </span>
+                        </button>
+                    }
+                }
+                else
+                {
+                    <button type="button" class="run-pf-trigger @(hasPreflight ? "has-pf" : "")"
+                            disabled="@(locked || plan.Scenarios.Count == 0)"
+                            @onclick="StartRun"
+                            title="@(locked ? "Run is in progress" : hasPreflight ? "Run preflight and start scenarios" : "Start load test run")">
+                        <span class="run-pf-play" aria-hidden="true">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>
+                        </span>
+                        <span class="run-pf-text">
+                            @if (hasPreflight)
+                            {
+                                <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
+                                <small class="muted">@(locked ? "Running…" : "Preflight · tap to run")</small>
+                            }
+                            else
+                            {
+                                <b>@(locked ? "Running…" : "Start run")</b>
+                            }
+                        </span>
+                    </button>
+                    @if (!DataMode.IsFakeMode && !hasPreflight)
+                    {
+                        <button type="button" class="run-pf-plus" disabled="@locked" @onclick="OpenPreflightPickerAsync" aria-label="Add preflight program" title="Add preflight program">+</button>
+                    }
+                }
+            </div>
+        }
+    </section>
 
     @if (editMode)
     {
@@ -445,6 +479,7 @@
     // Overview state
     private int? open;
     private DetailFilter openFilter;
+    private bool viewMenuOpen;
     private List<ClientPreflightSummary> preflights = [];
 
     // Edit mode state
@@ -526,6 +561,7 @@
     private void EnterEditMode()
     {
         if (Sim.IsRunning) return;
+        viewMenuOpen = false;
         open = null;
         editMode = true;
         selected = -1;
