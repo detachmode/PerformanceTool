@@ -180,7 +180,7 @@
                 }
                 else if (!DataMode.IsFakeMode)
                 {
-                    var recentLogs = latestLogByBee.Values.OrderByDescending(l => l.Id).Take(100).ToList();
+                    var recentLogs = OrderedLiveLogs();
                     if (recentLogs.Count == 0)
                     {
                         <div class="live-feed-empty">Waiting for bees to log output…</div>
@@ -194,22 +194,31 @@
                                 var isRun = runningSet.TryGetValue(log.Sequence, out var rBee);
                                 var hasFin = finishedMap.TryGetValue(log.Sequence, out var fBee) && !isRun;
                                 var chipState = isRun ? BeeState.Running : hasFin ? BeeOrder.StateOf(fBee.Outcome) : BeeState.Running;
-                                <button type="button" class="live-feed-row @(selSeq == log.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(log.Sequence)">
-                                    <span class="live-feed-row-head">
-                                        <BeeChip Sequence="log.Sequence" State="chipState" />
-                                        @if (isRun && rBee is not null)
-                                        {
-                                            <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Flying</span>
-                                            <span class="muted">@Format.Time(Math.Max(0, s.Elapsed - rBee.StartedAt))</span>
-                                        }
-                                        else if (hasFin)
-                                        {
-                                            <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
-                                            <span class="muted">@Format.Ms(fBee.DurationMs)</span>
-                                        }
-                                    </span>
-                                    <span class="live-feed-row-log">
-                                        <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                                <button type="button" class="live-feed-row @(selSeq == log.Sequence ? "on" : "") @(isRun ? "is-flying" : "")" @onclick="() => SelectLiveBee(log.Sequence)">
+                                    @if (isRun && rBee is not null)
+                                    {
+                                        var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
+                                        <span class="bee-row-spin" aria-hidden="true">
+                                            <span class="bee-spin-ring"></span>
+                                            <b class="bee-row-spin-num">@CompactSec(sec)</b>
+                                        </span>
+                                    }
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="log.Sequence" State="chipState" />
+                                            @if (isRun && rBee is not null)
+                                            {
+                                                <span class="state run">Flying</span>
+                                            }
+                                            else if (hasFin)
+                                            {
+                                                <span class="state @Cls(fBee.Outcome)">@(fBee.Failed ? "Failed" : fBee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                                                <span class="muted">@Format.Ms(fBee.DurationMs)</span>
+                                            }
+                                        </span>
+                                        <span class="live-feed-row-log">
+                                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                                        </span>
                                     </span>
                                 </button>
                             }
@@ -230,16 +239,21 @@
                                 var rBee = rb;
                                 var elapsedMs = Math.Max(0, (s.Elapsed - rBee.StartedAt) * 1000);
                                 var lastCall = rBee.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs);
-                                <button type="button" class="live-feed-row @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
-                                    <span class="live-feed-row-head">
-                                        <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
-                                        <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Flying</span>
-                                        <span class="muted">@Format.Time(elapsedMs / 1000.0)</span>
+                                <button type="button" class="live-feed-row is-flying @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
+                                    <span class="bee-row-spin" aria-hidden="true">
+                                        <span class="bee-spin-ring"></span>
+                                        <b class="bee-row-spin-num">@CompactSec(elapsedMs / 1000.0)</b>
                                     </span>
-                                    @if (lastCall is not null)
-                                    {
-                                        <span class="live-feed-row-log muted">@lastCall.Name</span>
-                                    }
+                                    <span class="live-feed-row-body">
+                                        <span class="live-feed-row-head">
+                                            <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
+                                            <span class="state run">Flying</span>
+                                        </span>
+                                        @if (lastCall is not null)
+                                        {
+                                            <span class="live-feed-row-log muted">@lastCall.Name</span>
+                                        }
+                                    </span>
                                 </button>
                             }
                             @for (var fi = view.Finished - 1; fi >= Math.Max(0, view.Finished - 30); fi--)
@@ -554,6 +568,8 @@
     private bool beeLogWrap = true;
     private bool liveShowFailed;
     private readonly Dictionary<int, ClientLiveLogDto> latestLogByBee = [];
+    private List<int> liveBeeOrder = [];
+    private long liveOrderUpdatedAt;
     private long entryLogAfterId;
     private CancellationTokenSource? entryLogCts;
     private bool entryLogPolling;
@@ -595,6 +611,12 @@
         statsCache = BeeStats.Compute(bees, count, from, to);
         statsKey = key; statsCount = count; statsAt = Environment.TickCount64;
         return statsCache;
+    }
+
+    private static string CompactSec(double sec)
+    {
+        var s = Math.Max(0, (int)Math.Floor(sec));
+        return s < 60 ? $"{s}s" : $"{s / 60}m";
     }
 
     private static string Pc(double v) => v == 0 ? "0%" : v < 10 ? v.ToString("0.0", CultureInfo.InvariantCulture) + "%" : v.ToString("0", CultureInfo.InvariantCulture) + "%";
@@ -714,10 +736,46 @@
         if (shouldPoll)
         {
             latestLogByBee.Clear();
+            liveBeeOrder.Clear();
+            liveOrderUpdatedAt = 0;
             entryLogAfterId = 0;
             entryLogCts = new CancellationTokenSource();
             _ = PollEntryLogsAsync(entryLogCts.Token);
         }
+    }
+
+    /// <summary>
+    /// Keeps the live bee list order steady by only re-sorting every 10 seconds, while each row
+    /// immediately reflects the newest log line from <see cref="latestLogByBee"/> on every poll.
+    /// </summary>
+    private List<ClientLiveLogDto> OrderedLiveLogs()
+    {
+        if (latestLogByBee.Count == 0) return [];
+        var now = Environment.TickCount64;
+        if (liveBeeOrder.Count == 0 || now - liveOrderUpdatedAt >= 10_000)
+        {
+            liveBeeOrder = latestLogByBee.Values
+                .OrderByDescending(l => l.Id)
+                .Select(l => l.Sequence)
+                .Take(100)
+                .ToList();
+            liveOrderUpdatedAt = now;
+        }
+        else if (liveBeeOrder.Count < 20)
+        {
+            // Early in a run, append newly appearing bees at the bottom without shuffling existing rows.
+            var seen = liveBeeOrder.ToHashSet();
+            foreach (var item in latestLogByBee.Values.OrderByDescending(l => l.Id))
+            {
+                if (liveBeeOrder.Count >= 20) break;
+                if (seen.Add(item.Sequence)) liveBeeOrder.Add(item.Sequence);
+            }
+        }
+
+        var result = new List<ClientLiveLogDto>(liveBeeOrder.Count);
+        foreach (var seq in liveBeeOrder)
+            if (latestLogByBee.TryGetValue(seq, out var log)) result.Add(log);
+        return result;
     }
 
     private async Task PollEntryLogsAsync(CancellationToken ct)

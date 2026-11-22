@@ -933,6 +933,10 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 .live-feed { display: flex; flex-direction: column; gap: .45rem; }
 .live-feed-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: #0d0b09; overflow: hidden; max-height: 46dvh; overflow-y: auto; }
 .live-feed-row { display: flex; flex-direction: column; gap: .22rem; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid #2e281f88; padding: .52rem .72rem; cursor: pointer; transition: background-color .12s; }
+.live-feed-row.is-flying { flex-direction: row; align-items: center; gap: .65rem; }
+.live-feed-row-body { display: flex; flex-direction: column; gap: .2rem; flex: 1 1 auto; min-width: 0; }
+.bee-row-spin { position: relative; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.bee-row-spin-num { position: relative; z-index: 1; font-family: var(--mono); font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--title); line-height: 1; }
 .live-feed-row:last-child { border-bottom: 0; }
 .live-feed-row:hover { background: var(--panel); }
 .live-feed-row.on { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent2); }
