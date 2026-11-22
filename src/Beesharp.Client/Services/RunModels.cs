@@ -130,7 +130,8 @@ public sealed record RunSnapshot(
     IReadOnlyList<string> Labels,
     ScenarioView[] Scenarios,
     RunStore Store,
-    IReadOnlyList<RunningBee>[]? BeesInFlight = null)
+    IReadOnlyList<RunningBee>[]? BeesInFlight = null,
+    RuntimeDataSnapshot? Runtime = null)
 {
     /// <summary>True while a run is active (running or paused).</summary>
     public bool Running => State is FakeRunState.Running or FakeRunState.Paused;

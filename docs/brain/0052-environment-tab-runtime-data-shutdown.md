@@ -37,3 +37,12 @@
 ## Consequences
 - Current phase is UI drafts with fake data: the tab is first drafted with `FakeRunSource` data.
 - Calm UI (0016): show little, reveal on demand. Every figure in the tab drills down (0029).
+
+## Implementation notes (S1) - Proposed (Claude, not decided by the user)
+- **Page:** `/environment` (`Pages/EnvironmentPage.razor`, one row component `Components/RuntimeRow.razor`), nav item "Environment" after Logs.
+  Two sections: Static values (selected environment, "Configure..." opens the existing popup; "No environment" shows a quiet line with the environments to pick) and Runtime data (run bag, then one entry bag per scenario entry).
+- **Data seam:** runtime data travels in `RunSnapshot.Runtime` (`RuntimeDataSnapshot`: run bag + entry bags of `RuntimeValue(key, JsonNode, writer, atSeconds)`), so it is read through `IRunSource.Current` like everything else. `null` means the source has none (`ApiRunSource` for now: the page says so quietly). Only the final value per key is kept, no history.
+- **Fake data:** `FakeRuntimeScript` (own random source, so the seeded run is unchanged): preflight writes `authToken`, `refreshCount`, `tenantId`, `seedUserIds`, `seedData`; entry startups write `pool`, `completed`; bees write a per-entry value (`cartIds` bounded to 5, `lastOrderId`, ...); a bee of the first entry refreshes the token every ~30 s; teardowns write `cleanedUp` when the run ends (also on Stop).
+- **Calm UI:** run bag open, entry bags collapsed; the count ("4 values") is the toggle; a row shows key + compact value on one line, click expands to the full value (pretty JSON for objects) and "Last written by X at m:ss". A value written since the last update fades neutrally for 1.4 s. Credential-looking keys (same rule as the Configure popup) are masked with Show, in both scopes.
+- **Drill-down:** writer B42 opens that bee in the scenario popup, Startup/Teardown and the entry bag name open the scenario entry; Preflight/Shutdown navigate to the editor (placeholder until those programs have a view).
+- **Filter:** one box over the keys of both scopes; while filtering, matching bags and sections open.
