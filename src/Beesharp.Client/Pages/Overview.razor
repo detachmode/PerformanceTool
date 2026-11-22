@@ -142,6 +142,7 @@
         var totalFinished = s.Scenarios.Sum(x => x.Finished);
         var totalFailed = s.Scenarios.Sum(x => x.Failed);
         var totalSlow = s.Scenarios.Sum(x => x.SlowBees);
+        var totalOk = Math.Max(0, totalFinished - totalFailed - totalSlow);
         <section class="run-launch-card history-info-card" aria-label="Stored run details">
             <div class="history-info-head">
                 <div class="history-info-title">
@@ -152,9 +153,9 @@
             </div>
             <div class="history-info-stats">
                 <span class="hi-stat"><small>duration</small> <b>@Format.Time(s.Elapsed)</b></span>
-                <span class="hi-stat"><small>bees</small> <b>@Format.Num(totalFinished)</b></span>
-                <span class="hi-stat @(totalFailed > 0 ? "bad" : "")"><small>errors</small> <b>@Format.Num(totalFailed)</b></span>
-                <span class="hi-stat @(totalSlow > 0 ? "warn" : "")"><small>slow</small> <b>@Format.Num(totalSlow)</b></span>
+                <span class="hi-stat good"><HexBadge Kind="ok" Size="15" StrokeWidth="7" /> <b>@Format.Num(totalOk)</b> <small>success</small></span>
+                <span class="hi-stat @(totalFailed > 0 ? "bad" : "")"><HexBadge Kind="bad" Size="15" StrokeWidth="7" /> <b>@Format.Num(totalFailed)</b> <small>failed</small></span>
+                <span class="hi-stat @(totalSlow > 0 ? "warn" : "")"><HexBadge Kind="warn" Size="15" StrokeWidth="7" /> <b>@Format.Num(totalSlow)</b> <small>slow</small></span>
                 <span class="hi-stat"><small>logs</small> <b>@Format.Num((int)Math.Min(int.MaxValue, ApiRun.TotalServerLogs))</b></span>
             </div>
         </section>
@@ -539,7 +540,7 @@
             @for (var i = 0; i < s.Count; i++)
             {
                 var idx = i;
-                <ScenarioCard @key="s.Plan.Scenarios[idx]" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
+                <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
                               Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" IsLive="s.Running && !s.Paused"
                               OnOpen="i => { open = i; openFilter = DetailFilter.All; }"
                               OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; }" />

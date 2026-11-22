@@ -7,9 +7,15 @@
     var reason = View.Failed > 0
         ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow", "slow") : "")
         : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
+    var isActive = IsLive || View.InFlight > 0;
+    var okCount = Math.Max(0, View.Finished - View.Failed - View.SlowBees);
     var (titleMain, titleSub) = SplitLabel(Label);
     var aria = Label + ": "
-        + (Idle ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "") : View.InFlight + " active bees, " + Format.Num(View.Finished) + " finished, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
+        + (Idle
+            ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "")
+            : isActive
+                ? View.InFlight + " active bees, " + Format.Num(View.Finished) + " finished, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute"
+                : Format.Num(okCount) + " success, " + Format.Num(View.Failed) + " failed, " + Format.Num(View.SlowBees) + " slow, " + Format.Rate(actual) + " of " + Format.Rate(Target) + " bees per minute")
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
@@ -40,25 +46,15 @@
             }
         </span>
     }
-    else
+    else if (isActive)
     {
         <span class="bento-kpi-row">
-            @if (IsLive || View.InFlight > 0)
-            {
-                <span class="bento-cell bento-kpi-left is-live">
-                    <HexBadge Kind="spin" Size="58" StrokeWidth="5.8" Class="card-hex-spin">
-                        <b class="bee-spin-num">@View.InFlight</b>
-                    </HexBadge>
-                    <small class="bento-lbl bee-spin-time"><span class="bee-spin-tag">active</span> · @Format.Time(Elapsed)</small>
-                </span>
-            }
-            else
-            {
-                <span class="bento-cell bento-kpi-left">
-                    <b class="bento-num">@View.InFlight</b>
-                    <small class="bento-lbl">active<br />bees</small>
-                </span>
-            }
+            <span class="bento-cell bento-kpi-left is-live">
+                <HexBadge Kind="spin" Size="58" StrokeWidth="5.8" Class="card-hex-spin">
+                    <b class="bee-spin-num">@View.InFlight</b>
+                </HexBadge>
+                <small class="bento-lbl bee-spin-time"><span class="bee-spin-tag">active</span> · @Format.Time(Elapsed)</small>
+            </span>
             <span class="bento-cell bento-kpi-right">
                 <span class="bento-kpi-top">
                     <b class="bento-num">@Format.Num(View.Finished)</b>
@@ -68,6 +64,40 @@
                     </span>
                 </span>
                 <small class="bento-lbl mono-sub">finished</small>
+            </span>
+        </span>
+
+        @if (stats.HasData)
+        {
+            <span class="bento-cell bento-stats" title="Typical duration and slowest 5 % of finished bees. Click to open details.">
+                <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
+                <span class="st right @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
+            </span>
+        }
+    }
+    else
+    {
+        <span class="bento-kpi-done">
+            <span class="bento-cell bento-done-cell good @(okCount == 0 ? "zero" : "")" title="@Format.Plural(okCount, "successful bee", "successful bees")">
+                <span class="bento-done-top">
+                    <HexBadge Kind="ok" Size="24" StrokeWidth="6" />
+                    <b class="bento-done-num">@Format.Num(okCount)</b>
+                </span>
+                <small class="bento-lbl">success</small>
+            </span>
+            <span class="bento-cell bento-done-cell bad @(View.Failed == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true" title="@Format.Plural(View.Failed, "failed bee", "failed bees")">
+                <span class="bento-done-top">
+                    <HexBadge Kind="bad" Size="24" StrokeWidth="6" />
+                    <b class="bento-done-num">@Format.Num(View.Failed)</b>
+                </span>
+                <small class="bento-lbl">failed</small>
+            </span>
+            <span class="bento-cell bento-done-cell warn @(View.SlowBees == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true" title="@Format.Plural(View.SlowBees, "slow bee", "slow bees")">
+                <span class="bento-done-top">
+                    <HexBadge Kind="warn" Size="24" StrokeWidth="6" />
+                    <b class="bento-done-num">@Format.Num(View.SlowBees)</b>
+                </span>
+                <small class="bento-lbl">slow</small>
             </span>
         </span>
 

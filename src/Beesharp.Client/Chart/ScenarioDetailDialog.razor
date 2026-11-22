@@ -109,32 +109,39 @@
 
         <div class="pop-body">
         <div class="pop-main">
-        <div class="dlg-summary-grid @(!Selection ? "cols-7" : "")" role="group" aria-label="Scenario summary">
-            @if (!Selection)
+        @{
+            var dlgActive = !Selection && (s.Running || view.InFlight > 0);
+            var dlgOk = Math.Max(0, view.Finished - view.Failed - view.SlowBees);
+        }
+        <div class="dlg-summary-grid @(dlgActive ? "cols-7" : "")" role="group" aria-label="Scenario summary">
+            @if (dlgActive)
             {
-                var activeLive = s.Running || view.InFlight > 0;
-                <div class="dlg-stat static active-tile @(activeLive ? "active-live" : "")" title="@Format.Plural(view.InFlight, "active bee", "active bees") currently running">
+                <div class="dlg-stat static active-tile active-live" title="@Format.Plural(view.InFlight, "active bee", "active bees") currently running">
                     <small>Active</small>
                     <b class="active-val">
-                        @if (activeLive)
-                        {
-                            <HexBadge Kind="spin" Size="18" StrokeWidth="9" />
-                        }
+                        <HexBadge Kind="spin" Size="18" StrokeWidth="9" />
                         <span>@Format.Num(view.InFlight)</span>
                     </b>
                 </div>
+                <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all finished bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
+                    <small>Finished</small>
+                    <b>@Format.Num(view.Finished)</b>
+                </button>
             }
-            <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all finished bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
-                <small>Finished</small>
-                <b>@Format.Num(view.Finished)</b>
-            </button>
+            else
+            {
+                <button type="button" class="dlg-stat @(dlgOk > 0 ? "good" : "") @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all bees (@Format.Num(dlgOk) succeeded)" aria-pressed="@Aria.Bool(show == BeeShow.All)">
+                    <small>Success</small>
+                    <b class="stat-icon-val"><HexBadge Kind="ok" Size="17" StrokeWidth="7" /><span>@Format.Num(dlgOk)</span></b>
+                </button>
+            }
             <button type="button" class="dlg-stat @(view.Failed > 0 ? "bad" : "") @(show == BeeShow.Failed ? "on" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">
-                <small>Errors @(stats.Count > 0 ? Pc(stats.ErrorRate) : "")</small>
-                <b>@Format.Num(view.Failed)</b>
+                <small>Failed @(stats.Count > 0 ? Pc(stats.ErrorRate) : "")</small>
+                <b class="stat-icon-val"><HexBadge Kind="bad" Size="17" StrokeWidth="7" /><span>@Format.Num(view.Failed)</span></b>
             </button>
             <button type="button" class="dlg-stat @(view.SlowBees > 0 ? "warn" : "") @(show == BeeShow.Slow ? "on" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">
                 <small>Slow @(stats.Count > 0 ? Pc(stats.SlowRate) : "")</small>
-                <b>@Format.Num(view.SlowBees)</b>
+                <b class="stat-icon-val"><HexBadge Kind="warn" Size="17" StrokeWidth="7" /><span>@Format.Num(view.SlowBees)</span></b>
             </button>
             <button type="button" class="dlg-stat" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median)">
                 <small>Typical</small>
@@ -239,7 +246,7 @@
                                 var hasFin = finishedMap.TryGetValue(beeSeq, out var fBee) && !isRun;
                                 var hasLog = latestLogByBee.TryGetValue(beeSeq, out var log);
                                 var chipState = isRun ? BeeState.Running : hasFin ? BeeOrder.StateOf(fBee.Outcome) : BeeState.Running;
-                                <button type="button" class="live-feed-row has-icon @(selSeq == beeSeq ? "on" : "")" @onclick="() => SelectLiveBee(beeSeq)">
+                                <button type="button" @key="beeSeq" class="live-feed-row has-icon @(selSeq == beeSeq ? "on" : "")" @onclick="() => SelectLiveBee(beeSeq)">
                                     @if (isRun && rBee is not null)
                                     {
                                         var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
@@ -294,7 +301,7 @@
                                 var rBee = rb;
                                 var elapsedMs = Math.Max(0, (s.Elapsed - rBee.StartedAt) * 1000);
                                 var lastCall = rBee.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs);
-                                <button type="button" class="live-feed-row has-icon @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
+                                <button type="button" @key="rBee.Sequence" class="live-feed-row has-icon @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
                                     <HexBadge Kind="spin" Size="36" StrokeWidth="6.5">
                                         <b class="bee-row-spin-num">@CompactSec(elapsedMs / 1000.0)</b>
                                     </HexBadge>
