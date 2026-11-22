@@ -1,7 +1,7 @@
-using Beesharp.Client.Components;
-using Beesharp.Client.Components.Assistant;
-using Beesharp.Client.Services;
 using Beesharp.Services;
+using Beesharp.Client.Assistant;
+using Beesharp.Client.Chart;
+using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Tests;
 

@@ -1,0 +1,84 @@
+@* Hosts the full-screen view of a card's bees (brain 0049): the popup chart (ScenarioDetailDialog) fed with a bee set instead of a scenario entry, so the user inspects them the same way
+   (click a bar, calls and logs, zoom, step through failed and slow). It re-queries live data when it opens. Lives in the layout, next to the other popups. *@
+@implements IDisposable
+@inject AssistantState Assistant
+@inject AssistantClient Client
+
+@if (Assistant.BeeSet is { } request)
+{
+    @if (set is null)
+    {
+        <div class="overlay" role="presentation" @onclick="Assistant.CloseBees">
+            <div class="dialog" role="dialog" aria-modal="true" aria-label="@request.Title" @onclick:stopPropagation="true">
+                <div class="dlg-head"><h2>@request.Title</h2><span class="spacer"></span><button class="icon-btn" @onclick="Assistant.CloseBees" aria-label="Close">✕</button></div>
+                <p class="muted" style="padding:1.2rem 0">@(failed ? "These bees could not be loaded." : "Loading bees…")</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <ScenarioDetailDialog @key="loadedVersion" Index="0" Snapshot="set.Snapshot" Selection="true" InitialBee="request.InitialBee" InitialShow="Filter(request.Show)"
+                              Notes="request.Notes" EnsureDetail="EnsureDetailAsync" OpenLogs="OpenLogsAsync" OnClose="Assistant.CloseBees" />
+    }
+}
+
+@code {
+    private BeeSet? set;
+    private int loadedVersion = -1;
+    private bool failed;
+    private readonly HashSet<int> requested = [];
+
+    protected override void OnInitialized() => Assistant.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadIfNeededAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) => await LoadIfNeededAsync();
+
+    private async Task LoadIfNeededAsync()
+    {
+        var request = Assistant.BeeSet;
+        if (request is null) { set = null; loadedVersion = -1; failed = false; return; }
+        if (loadedVersion == Assistant.BeeSetVersion) return;
+        loadedVersion = Assistant.BeeSetVersion;
+        set = null;
+        failed = false;
+        requested.Clear();
+        var version = loadedVersion;
+
+        var run = await Client.GetRunAsync(request.RunId);
+        var page = request.Sequences is { } seq
+            ? await Client.GetBeesAsync(request.RunId, seq)
+            : await Client.GetBeesAsync(request.RunId, request.Entry, request.Outcome, 0, 5000);
+        if (version != loadedVersion) return; // opened something else meanwhile
+        if (page is null) failed = true;
+        else
+        {
+            var startedUtc = run?.StartedUtc ?? DateTimeOffset.UtcNow;
+            set = BeeSet.Build(request.Title, request.RunId, startedUtc, page.Items);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static DetailFilter Filter(string? show) => show switch { "failed" => DetailFilter.Failed, "slow" => DetailFilter.Slow, _ => DetailFilter.All };
+
+    /// <summary>The popup asks for a selected bee's calls and logs on every render: fetch each bee once.</summary>
+    private async Task EnsureDetailAsync(int sequence)
+    {
+        var current = set;
+        if (current is null || !requested.Add(sequence)) return;
+        var detail = await Client.GetBeeDetailAsync(current.RunId, sequence);
+        if (detail is null || !ReferenceEquals(current, set)) return;
+        current.ApplyDetail(detail);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenLogsAsync(int sequence) => set is { } s ? Assistant.OpenBeeLogsAsync(s.RunId, sequence) : Task.CompletedTask;
+
+    public void Dispose() => Assistant.Changed -= OnChanged;
+}

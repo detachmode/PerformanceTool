@@ -1,4 +1,5 @@
-using Beesharp.Client.Components;
+using Beesharp.Client.Chart;
+
 
 namespace Beesharp.Client.Tests;
 
