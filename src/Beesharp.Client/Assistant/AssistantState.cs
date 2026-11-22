@@ -4,6 +4,7 @@ using Beesharp.Ai.Contracts;
 using Beesharp.Client.Chart;
 using Beesharp.Client.Data;
 using Beesharp.Client.Logs;
+using Beesharp.Client.Environments;
 
 namespace Beesharp.Client.Assistant;
 

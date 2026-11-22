@@ -10,6 +10,8 @@ using Beesharp.Client.Assistant;
 using Beesharp.Client.Data;
 using Beesharp.Client.Layout;
 using Beesharp.Client.Logs;
+using Beesharp.Client.Editor;
+using Beesharp.Client.Environments;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
