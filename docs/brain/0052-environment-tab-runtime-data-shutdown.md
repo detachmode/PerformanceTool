@@ -1,0 +1,31 @@
+# 0052. Environment tab: static values, runtime data, and a shutdown program
+
+- Status: Accepted (goal), details open
+- Date: 2026-11-22
+- Related: 0033 (environments), 0042 (lifecycle hooks), 0005 (presets), 0016 (calm UI), 0029 (every info drills down)
+
+## What (user decision)
+1. **Environment tab.** A tab (next to Overview, Editor, Logs) where the user **inspects the environment**.
+2. An environment has two parts, both shown in the tab:
+   - **Static values**: picked by the user, **loaded by presets**, and they **never change during a run**
+     (e.g. the base URL). These are today's environment key-value pairs (0033).
+   - **Runtime data**: dynamic data that **preflight programs and scenarios can read and write during the run**.
+3. **Shutdown program**: besides the preflight (runs before the scenarios), there is a shutdown program.
+
+## Where the code stands (before this record)
+- The active environment is picked in the top-bar dropdown and is **not** part of a preset (0033).
+- A preflight is one C# script per plan (`LoadPlan.PreflightScriptId`, `PreflightStore`); it can only **read** the
+  environment (`PreflightGlobals.Env`).
+- Scenario code has `context.State`, shared only inside **one scenario entry** (startup, its bees, teardown; 0042),
+  not with other entries or the preflight. Nothing shows it in the UI.
+- There is no shutdown program.
+
+## Open (ask the user, one at a time)
+- Is runtime data kept with the run, so a finished run's Environment tab still shows it (and how it changed)?
+- When does the shutdown program run: always after the scenarios (also after a stop or a failed preflight)?
+- "Loaded by presets": does a preset name its environment, so loading the preset picks it?
+- Scope of runtime data: one bag for the whole run (preflight, every scenario entry, shutdown)?
+
+## Consequences
+- Current phase is UI drafts with fake data: the tab is first drafted with `FakeRunSource` data.
+- Calm UI (0016): show little, reveal on demand. Every figure in the tab drills down (0029).
