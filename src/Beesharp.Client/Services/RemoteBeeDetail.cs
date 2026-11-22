@@ -31,7 +31,7 @@ public static class RemoteBeeDetail
         }
         if (calls.Count == 0)
             calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,
-                store.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: detail.Error is null && detail.DurationMs >= 1500, TypicalMs: null, Errors: store.Errors));
+                store.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: false, TypicalMs: null, Errors: store.Errors));
 
         var sequence = detail.Sequence;
         var scope = new Dictionary<string, string> { ["Bee"] = $"B{sequence + 1}" };

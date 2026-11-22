@@ -465,6 +465,6 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     {
         if (res.Calls is { Count: > 0 })
             return res.Calls.Count(c => c.Error is null && c.DurationMs >= SlowThresholdMs);
-        return res.Error is null && res.ElapsedMs >= SlowThresholdMs ? 1 : 0;
+        return 0;
     }
 }
