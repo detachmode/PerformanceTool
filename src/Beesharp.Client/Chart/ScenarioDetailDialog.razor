@@ -81,7 +81,7 @@
     }
     var newCount = aiming && win is not { Follow: false } ? Math.Max(0, view.Starts - cd.Starts) : 0;
     var selSeq = selected?.Sequence ?? selRunning;
-    var stats = StatsFor(bees, view.Finished, from, to);
+    var stats = StatsFor(bees, view.Finished);   // the boxes always describe the whole run (brain 0056); only the chart and the side list follow the zoom
     var activeBucket = bucketed ? bucket : null;
     var sideRows = SideRows(bees, view.Finished, runningNow, show, from, to, activeBucket, width);
     // The selected bee stays selected when it is folded into a time bucket: that bucket shows as selected.
@@ -643,17 +643,15 @@
     private string sideReset = "";
     private double? tailMs;
     private BeeStats statsCache = BeeStats.Empty;
-    private (double, double) statsKey;
     private int statsCount = -1;
     private long statsAt;
 
-    /// <summary>Statistics of the bees in the visible window (brain 0030), recomputed when the window changes and at most every 0.7 s otherwise.</summary>
-    private BeeStats StatsFor(IReadOnlyList<BeeRecord> bees, int count, double from, double to)
+    /// <summary>Statistics of the whole run's finished bees (brain 0030, 0056), independent of the zoom; recomputed when the finished count changed and at most every 0.7 s (brain 0021).</summary>
+    private BeeStats StatsFor(IReadOnlyList<BeeRecord> bees, int count)
     {
-        var key = (from, to);
-        if (key == statsKey && (count == statsCount || Environment.TickCount64 - statsAt < 700)) return statsCache;
-        statsCache = BeeStats.Compute(bees, count, from, to);
-        statsKey = key; statsCount = count; statsAt = Environment.TickCount64;
+        if (count == statsCount || (statsCount >= 0 && Environment.TickCount64 - statsAt < 700)) return statsCache;
+        statsCache = BeeStats.Compute(bees, count);
+        statsCount = count; statsAt = Environment.TickCount64;
         return statsCache;
     }
 
@@ -681,7 +679,22 @@
     private void SelectIndex(int index)
     {
         var bees = Snapshot.Store.Bees(Index);
-        if (index >= 0 && index < bees.Count) { selRunning = null; selected = bees[index]; }
+        if (index < 0 || index >= bees.Count) return;
+        selRunning = null; selected = bees[index];
+        // A box can target a bee outside the zoomed range (brain 0056): move the view to it, keeping its width.
+        if (win is { } w && Snapshot.Elapsed is var elapsed)
+        {
+            var span = w.To - w.From;
+            double vf = w.Follow ? Math.Max(0, elapsed - span) : w.From, vt = w.Follow ? elapsed : w.To;
+            var at = selected.Value.StartedAt;
+            if ((at < vf || at > vt) && span > 0)
+            {
+                var from = Math.Clamp(at - span / 2, 0, Math.Max(0, elapsed - span));
+                var to = from + span;
+                win = to >= elapsed - 0.02 * span ? new Win(Math.Max(0, elapsed - span), elapsed, true) : new Win(from, to, false);
+                bucket = null; fz = null;
+            }
+        }
     }
 
     private void TailOnly(double ms) { tailMs = tailMs is null ? ms : null; show = BeeShow.All; bucket = null; }

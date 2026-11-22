@@ -17,6 +17,8 @@ public sealed record BeeStats(int Count, int Failed, int Slow, double Median, do
     public bool TailIsSlow => Count >= SlowCallRule.MinSamples && SlowCallRule.IsSlow(P95, Median);
     public bool LongestIsSlow => Count >= SlowCallRule.MinSamples && SlowCallRule.IsSlow(Longest, Median);
 
+    public static BeeStats Compute(IReadOnlyList<BeeRecord> bees, int count) => Compute(bees, count, double.NegativeInfinity, double.PositiveInfinity);
+
     public static BeeStats Compute(IReadOnlyList<BeeRecord> bees, int count, double from, double to)
     {
         var durations = new List<(double Ms, int Index)>();
