@@ -39,7 +39,7 @@
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
             <h1>Scenarios</h1>
-            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
+            @if (editMode && dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
             @if (!editMode)
             {
@@ -49,35 +49,7 @@
         <div class="preset-actions">
             @if (editMode)
             {
-                @if (dirty && selected < 0)
-                {
-                    <button type="button" class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
-                }
-                <div class="dd">
-                    <button type="button" class="btn ghost small" aria-haspopup="menu" aria-expanded="@Aria.Bool(actionsOpen)" disabled="@locked"
-                            @onclick="() => actionsOpen = !actionsOpen" title="Preset &amp; plan actions">
-                        Presets ▾
-                    </button>
-                    @if (actionsOpen)
-                    {
-                        <div class="dd-backdrop" @onclick="() => actionsOpen = false"></div>
-                        <div class="dd-menu right" role="menu" aria-label="Preset actions">
-                            <button type="button" class="dd-item" role="menuitem" disabled="@(!dirty)" @onclick="() => { actionsOpen = false; Save(); }">Save “@Sim.PresetName”</button>
-                            <button type="button" class="dd-item" role="menuitem" @onclick="() => { actionsOpen = false; OpenSaveAs(); }">Save as new preset…</button>
-                            @if (Sim.PresetNames.Count > 0)
-                            {
-                                <div class="dd-sep" role="separator"></div>
-                                <div class="dd-lbl">Load preset</div>
-                                @foreach (var p in Sim.PresetNames)
-                                {
-                                    var preset = p;
-                                    <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreset(preset)">@preset</button>
-                                }
-                            }
-                        </div>
-                    }
-                </div>
-                <button type="button" class="btn @(!dirty && selected < 0 ? "primary" : "ghost") small" @onclick="ExitEditMode" title="Finish editing and return to Overview">Done</button>
+                <button type="button" class="btn @(dirty ? "primary" : "ghost") small" @onclick="ExitEditMode" title="Finish editing and return to Overview">Done</button>
             }
             else
             {
@@ -85,26 +57,74 @@
                         title="@(locked ? "Stop the running test to edit scenarios" : "Edit scenarios, spawning and parameters")">
                     Edit
                 </button>
-                <div class="dd">
-                    <button type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
-                            @onclick="() => viewMenuOpen = !viewMenuOpen" aria-label="More actions" title="More actions">
-                        ⋯
-                    </button>
-                    @if (viewMenuOpen)
-                    {
-                        <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
-                        <div class="dd-menu right" role="menu" aria-label="Overview actions">
+            }
+            <div class="dd">
+                <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
+                        aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
+                        @onclick="() => viewMenuOpen = !viewMenuOpen" aria-label="More actions" title="Presets and actions">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <circle cx="5" cy="12" r="2" />
+                        <circle cx="12" cy="12" r="2" />
+                        <circle cx="19" cy="12" r="2" />
+                    </svg>
+                </button>
+                @if (viewMenuOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
+                    <div class="dd-menu right" role="menu" aria-label="Presets and overview actions">
+                        <div class="dd-lbl">Presets</div>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" @onclick="() => { viewMenuOpen = false; Save(); }">
+                            Save “@Sim.PresetName”
+                        </button>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { viewMenuOpen = false; OpenSaveAs(); }">
+                            Save as new preset…
+                        </button>
+                        @if (Sim.PresetNames.Count > 0)
+                        {
+                            <div class="dd-sep" role="separator"></div>
+                            <div class="dd-lbl">Load preset</div>
+                            @foreach (var p in Sim.PresetNames)
+                            {
+                                var preset = p;
+                                var isCurrent = string.Equals(preset, Sim.PresetName, StringComparison.OrdinalIgnoreCase);
+                                <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { viewMenuOpen = false; PickPreset(preset); }">
+                                    @(isCurrent ? "✓ " : "")@preset
+                                </button>
+                            }
+                        }
+                        @if (!editMode)
+                        {
+                            <div class="dd-sep" role="separator"></div>
+                            <div class="dd-lbl">Run</div>
                             <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Run logs popup</button>
                             @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
                             {
                                 <a class="dd-item" role="menuitem" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download @onclick="() => viewMenuOpen = false">Export Parquet (.zip)</a>
                             }
-                        </div>
-                    }
-                </div>
-            }
+                        }
+                    </div>
+                }
+            </div>
         </div>
     </section>
+
+    @if (pendingLoad is not null)
+    {
+        <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
+            <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
+            <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
+            <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
+        </div>
+    }
+    @if (saveAsOpen)
+    {
+        <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
+            <label for="save-as">Save the scenarios as preset</label>
+            <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
+            <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
+            <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
+        </form>
+    }
 
     @{
         var hasPreflight = !DataMode.IsFakeMode && !string.IsNullOrWhiteSpace(plan.PreflightScriptId);
@@ -216,23 +236,6 @@
 
     @if (editMode)
     {
-        @if (pendingLoad is not null)
-        {
-            <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
-                <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
-                <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
-                <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
-            </div>
-        }
-        @if (saveAsOpen)
-        {
-            <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
-                <label for="save-as">Save the scenarios as preset</label>
-                <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
-                <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
-                <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
-            </form>
-        }
         @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
 
         <div class="grid ed-grid" aria-label="Edit scenarios">
@@ -488,7 +491,7 @@
     private bool preflightWrap = true;
     private bool wasRunning;
     private int selected = -1;
-    private bool addOpen, saveAsOpen, savedNote, actionsOpen;
+    private bool addOpen, saveAsOpen, savedNote;
     private string saveAsName = "";
     private string? pendingLoad;
     private bool disposed;
@@ -576,7 +579,6 @@
         selected = -1;
         addOpen = false;
         preflightPickerOpen = false;
-        actionsOpen = false;
         saveAsOpen = false;
         pendingLoad = null;
         ResetErrors();
@@ -704,8 +706,7 @@
 
     private void PickPreset(string name)
     {
-        actionsOpen = false;
-        if (Sim.HasUnsavedChanges) pendingLoad = name;
+        if (editMode && Sim.HasUnsavedChanges) pendingLoad = name;
         else DoLoad(name);
     }
 
