@@ -180,7 +180,7 @@
                 }
                 else if (!DataMode.IsFakeMode)
                 {
-                    var recentLogs = OrderedLiveLogs();
+                    var recentLogs = OrderedLiveLogs(runningSet, view.Finished);
                     if (recentLogs.Count == 0)
                     {
                         <div class="live-feed-empty">Waiting for bees to log output…</div>
@@ -570,6 +570,7 @@
     private readonly Dictionary<int, ClientLiveLogDto> latestLogByBee = [];
     private List<int> liveBeeOrder = [];
     private long liveOrderUpdatedAt;
+    private int liveOrderFinishedCount = -1;
     private long entryLogAfterId;
     private CancellationTokenSource? entryLogCts;
     private bool entryLogPolling;
@@ -738,6 +739,7 @@
             latestLogByBee.Clear();
             liveBeeOrder.Clear();
             liveOrderUpdatedAt = 0;
+            liveOrderFinishedCount = -1;
             entryLogAfterId = 0;
             entryLogCts = new CancellationTokenSource();
             _ = PollEntryLogsAsync(entryLogCts.Token);
@@ -745,37 +747,47 @@
     }
 
     /// <summary>
-    /// Keeps the live bee list order steady by only re-sorting every 10 seconds, while each row
-    /// immediately reflects the newest log line from <see cref="latestLogByBee"/> on every poll.
+    /// Keeps flying bees always above finished bees and re-sorts whenever a bee finishes (or every 10 seconds),
+    /// while each row immediately reflects the newest log line from <see cref="latestLogByBee"/> on every poll.
     /// </summary>
-    private List<ClientLiveLogDto> OrderedLiveLogs()
+    private List<ClientLiveLogDto> OrderedLiveLogs(Dictionary<int, RunningBee> runningSet, int finishedCount)
     {
         if (latestLogByBee.Count == 0) return [];
         var now = Environment.TickCount64;
-        if (liveBeeOrder.Count == 0 || now - liveOrderUpdatedAt >= 10_000)
+        if (liveBeeOrder.Count == 0 || finishedCount != liveOrderFinishedCount || now - liveOrderUpdatedAt >= 10_000)
         {
             liveBeeOrder = latestLogByBee.Values
-                .OrderByDescending(l => l.Id)
+                .OrderByDescending(l => runningSet.ContainsKey(l.Sequence))
+                .ThenByDescending(l => l.Id)
                 .Select(l => l.Sequence)
                 .Take(100)
                 .ToList();
             liveOrderUpdatedAt = now;
+            liveOrderFinishedCount = finishedCount;
         }
         else if (liveBeeOrder.Count < 20)
         {
-            // Early in a run, append newly appearing bees at the bottom without shuffling existing rows.
             var seen = liveBeeOrder.ToHashSet();
-            foreach (var item in latestLogByBee.Values.OrderByDescending(l => l.Id))
+            foreach (var item in latestLogByBee.Values
+                .OrderByDescending(l => runningSet.ContainsKey(l.Sequence))
+                .ThenByDescending(l => l.Id))
             {
                 if (liveBeeOrder.Count >= 20) break;
                 if (seen.Add(item.Sequence)) liveBeeOrder.Add(item.Sequence);
             }
         }
 
-        var result = new List<ClientLiveLogDto>(liveBeeOrder.Count);
+        // Always partition flying bees above finished bees even between re-sorts.
+        var flying = new List<ClientLiveLogDto>();
+        var done = new List<ClientLiveLogDto>();
         foreach (var seq in liveBeeOrder)
-            if (latestLogByBee.TryGetValue(seq, out var log)) result.Add(log);
-        return result;
+        {
+            if (!latestLogByBee.TryGetValue(seq, out var log)) continue;
+            if (runningSet.ContainsKey(seq)) flying.Add(log);
+            else done.Add(log);
+        }
+        flying.AddRange(done);
+        return flying;
     }
 
     private async Task PollEntryLogsAsync(CancellationToken ct)
