@@ -186,7 +186,11 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 }
                 catch (Exception ex)
                 {
-                    outcome = ScenarioOutcome.Failed(ex.InnerException?.Message ?? ex.Message);
+                    var msg = ex.InnerException?.Message ?? ex.Message;
+                    var errLog = new RecordedLog(clockRef.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", ex.ToString());
+                    lock (logs) logs.Add(errLog);
+                    onLiveLog?.Invoke(new LiveLogEvent(seq, entry, errLog));
+                    outcome = ScenarioOutcome.Failed(msg);
                 }
                 sw.Stop();
 

@@ -336,7 +336,9 @@ public sealed class ScriptScenarioStore
         {
             startupSw.Stop();
             execSw.Stop();
-            outcome = ScenarioOutcome.Failed(ex.InnerException?.Message ?? ex.Message);
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            logs.Enqueue(FormatSerilog(new RecordedLog(execSw.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", ex.ToString())));
+            outcome = ScenarioOutcome.Failed(msg);
         }
         finally
         {
@@ -352,7 +354,7 @@ public sealed class ScriptScenarioStore
                 }
                 catch (Exception ex)
                 {
-                    logs.Enqueue($"[{DateTimeOffset.Now:HH:mm:ss.fff} ERR] Teardown error: {ex.InnerException?.Message ?? ex.Message}");
+                    logs.Enqueue(FormatSerilog(new RecordedLog(teardownSw.Elapsed.TotalSeconds, "Error", $"Teardown error: {ex.InnerException?.Message ?? ex.Message}", ex.ToString())));
                 }
                 teardownSw.Stop();
             }

@@ -187,4 +187,42 @@ public class LoadRunnerTests
         Assert.Equal(5, results.Count);
         Assert.Equal(3, dropped[0]);
     }
+
+    private sealed class ThrowingScenario : Scenario<DelayParameters>
+    {
+        public override string Id => "throw";
+        public override string Name => "Throw";
+        public override string Description => "Throws an unhandled exception.";
+
+        protected override Task<ScenarioOutcome> ExecuteAsync(DelayParameters p, ScenarioContext ctx, CancellationToken ct)
+            => throw new InvalidOperationException("boom");
+    }
+
+    [Fact]
+    public async Task Unhandled_exception_is_logged_with_full_exception_tostring()
+    {
+        var liveLogs = new List<LiveLogEvent>();
+        var results = new List<ExecutionResult>();
+        var sc = new ThrowingScenario();
+        var runner = new LoadRunner(new ScenarioCatalog([sc]));
+        var entry = ScenarioRunConfig.CreateFor(sc);
+        entry.RatePerMinute = 60;
+        var plan = new LoadPlan { DurationSeconds = 1, MaxConcurrency = 2, Scenarios = [entry] };
+        await runner.RunAsync(
+            plan,
+            r => { lock (results) results.Add(r); return ValueTask.CompletedTask; },
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None,
+            onLiveLog: l => { lock (liveLogs) liveLogs.Add(l); });
+
+        Assert.NotEmpty(results);
+        var r = results[0];
+        Assert.NotNull(r.Logs);
+        var errLog = Assert.Single(r.Logs!, l => l.Level == "Error");
+        Assert.Contains("boom", errLog.Message);
+        Assert.NotNull(errLog.Exception);
+        Assert.Contains(nameof(InvalidOperationException), errLog.Exception!);
+        Assert.Contains(nameof(ThrowingScenario), errLog.Exception!);
+        Assert.Contains(liveLogs, l => l.Log.Level == "Error" && l.Log.Exception?.Contains(nameof(InvalidOperationException)) == true);
+    }
 }
