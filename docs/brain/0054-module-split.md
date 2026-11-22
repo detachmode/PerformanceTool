@@ -42,5 +42,10 @@ Beesharp.Client          folders by topic: Runs/, Chart/, Editor/, Environment/,
 tests/                   one test project per project
 ```
 
+## Answers (user, 2026-11-22)
+- **CI runner = a command-line tool**, a separate small program (no web server), e.g.
+  `beesharp run --preset "Black Friday" --env Staging`: runs the preset, prints a summary, saves the run, and exits
+  with an error code when bees failed.
+
 ## Open (ask the user, one at a time)
-- See the conversation; answers get recorded here.
+- More details; answers get recorded above.
