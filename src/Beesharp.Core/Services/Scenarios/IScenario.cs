@@ -136,6 +136,7 @@ public sealed class ScenarioContext
     private readonly Action<RecordedLog>? logSink;
     private readonly Func<double> runSeconds;
     private readonly Stopwatch beeClock;
+    private readonly Func<bool>? runStopped;
     private int currentCallIndex = -1;
 
     public ScenarioContext(
@@ -148,8 +149,10 @@ public sealed class ScenarioContext
         Action<RecordedCall>? callSink = null,
         Action<RecordedLog>? structuredLogSink = null,
         Func<double>? runSeconds = null,
-        BagAccess? runBag = null)
+        BagAccess? runBag = null,
+        Func<bool>? runStopped = null)
     {
+        this.runStopped = runStopped;
         Http = http;
         Environment = environment ?? EnvironmentValues.None;
         CancellationToken = cancellationToken;
@@ -247,7 +250,9 @@ public sealed class ScenarioContext
         catch (Exception ex)
         {
             sw.Stop();
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, ex.Message));
+            // A call cut off because the user stopped the run is kept as failed with the time it ran until the stop (brain 0053).
+            var error = ex is OperationCanceledException && runStopped?.Invoke() == true ? ExecutionResult.CanceledError : ex.Message;
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error));
             throw;
         }
         finally

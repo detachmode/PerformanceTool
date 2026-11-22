@@ -349,6 +349,21 @@ public sealed class FakeRunSource : IRunSource
         starts[entry]++;
     }
 
+    /// <summary>The bee as it stands at the stop: finished calls stay, the running call is cut off (failed, with the time it ran), later calls never ran.</summary>
+    private Pending Cancel(Pending p, double at)
+    {
+        var cutMs = Math.Round(Math.Clamp((at - p.StartedAt) * 1000, 0, Math.Max(0, p.ElapsedMs - 0.1)), 1);
+        var errorId = store.Errors.Intern(ExecutionResult.CanceledError);
+        var calls = new List<FakeCall>(p.Calls.Count);
+        foreach (var c in p.Calls)
+        {
+            if (c.Skipped || c.OffsetMs + c.DurationMs <= cutMs) calls.Add(c);
+            else if (c.OffsetMs < cutMs) calls.Add(c with { DurationMs = Math.Round(cutMs - c.OffsetMs, 1), Status = null, ErrorId = errorId });
+            else calls.Add(c with { DurationMs = 0, Status = null, ErrorId = ErrorDictionary.None, Skipped = true, ThinkBeforeMs = 0 });
+        }
+        return p with { EndAt = at, ElapsedMs = cutMs, Calls = calls, Error = ExecutionResult.CanceledError };
+    }
+
     /// <summary>A bee finished: decide which of its calls were slow (the placeholder rule), update the counters and store it.</summary>
     private void Complete(Pending p)
     {
@@ -422,6 +437,10 @@ public sealed class FakeRunSource : IRunSource
                 if (rng.NextDouble() < 0.08) Log(end - 0.55, "Debug", $"Response body ({(int)(c.DurationMs * 3)} bytes): {{\"id\":{seq + 1000},\"status\":\"ok\",\"items\":[{{\"sku\":\"A-{seq:x4}\",\"name\":\"Wireless headphones with noise cancelling\",\"price\":129.9,\"stock\":14}},{{\"sku\":\"B-{seq:x4}\",\"name\":\"USB-C charging cable, 2 m\",\"price\":9.5,\"stock\":210}}],\"links\":{{\"next\":\"/api/v2/catalog/items?page=4\"}}}}", call: c);
                 if (c.Slow) Log(end - 0.2, "Warning", $"Slow response: {c.DurationMs:0} ms, typical for this call is {c.TypicalMs:0} ms", call: c);
             }
+            else if (ExecutionResult.IsCanceledError(c.Error))
+            {
+                Log(end, "Warning", $"{c.Name} was cut off after {c.DurationMs:0.#} ms: the run was stopped", call: c, intern: true);
+            }
             else if (c.Status is null)
             {
                 Log(c.OffsetMs + c.DurationMs * 0.4, "Warning", "Retrying partner call (attempt 2)", call: c, intern: true);
@@ -436,7 +455,7 @@ public sealed class FakeRunSource : IRunSource
                     $"System.Net.Http.HttpRequestException: Response status code does not indicate success: {c.Status} ({c.Error}).\n   at Beesharp.Scenarios.UserJourney.GetAsync(String url) in UserJourney.cs:line 61\n   at Beesharp.Scenarios.UserJourney.ExecuteAsync(CancellationToken ct) in UserJourney.cs:line 38", c);
             }
         }
-        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"B{seq + 1} finished" : $"B{seq + 1} finished with failure: {error}");
+        Log(ms + 0.2, error is null ? "Debug" : "Information", error is null ? $"B{seq + 1} finished" : ExecutionResult.IsCanceledError(error) ? $"B{seq + 1} canceled: run stopped" : $"B{seq + 1} finished with failure: {error}");
         return list;
     }
 
@@ -451,9 +470,12 @@ public sealed class FakeRunSource : IRunSource
 
     private void Finish(double at)
     {
-        // Bees still in flight when the run is stopped are cancelled (no result), like the real runner.
+        // Bees still in flight when the run is stopped are kept as canceled (brain 0053), like the real runner: they keep the calls and logs
+        // up to the stop, the call cut off by the stop is failed, and they look and count like failed.
+        var stopped = pending.OrderBy(p => p.Sequence).ToList();
         pending.Clear();
         Array.Clear(inFlight);
+        foreach (var p in stopped) Complete(Cancel(p, at));
         elapsed = at;
         script.End(runPlan.Scenarios.Count, at);
         // The shutdown program always runs at the end, also when the run was stopped (brain 0052).

@@ -16,3 +16,7 @@ Failing the build keeps the count at zero, also for agents.
 ## Consequences
 - The two existing warnings were fixed (nullable: `ScenarioContext` constructor order, a test).
 - New code must build without warnings in Debug, Release and the trimmed client publish.
+- **.NET 11 reports more than the .NET 10 agent copy**, so CI can fail where the local copy passed. Found on the first CI run:
+  NU1510 (Core's `Microsoft.Extensions.*.Abstractions` references are provided by .NET 11; they are now conditional on a
+  target below 11.0, without a literal `net11.0` so the copy's rewrite keeps them), BL0016 (a JS interop call must have its
+  own try/catch) and BL0012 (a `StateHasChanged()` at the end of an event handler is unnecessary). Watch CI after pushing.

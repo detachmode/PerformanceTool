@@ -22,6 +22,7 @@ Projects (brain 0015, 0054), all `net11.0`, solution `Beesharp.slnx`; namespaces
     plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
     parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Components/Parameters/`), never hand-written per scenario (brain 0007).
   - `Services/Runtime/RunData.cs`: runtime data (brain 0052): the **run bag** (`ScenarioContext.RunBag`, `Data` in preflight/shutdown scripts) and one **entry bag** per entry (`ScenarioContext.State`), with last writer and run time per key; `DataWriter`/`RuntimeValue`/`RuntimeDataSnapshot` are also the REST wire format.
+  - Stopped runs (brain 0053): `LoadRunner` reports bees in flight at the stop as canceled (`ExecutionResult.Canceled`, error `ExecutionResult.CanceledError`); they look and count like failed.
   - `Services/LoadPlan.cs` (the plan, also the preset format), `ExecutionModels.cs` (`ExecutionResult`, `ExecutionActivity`).
 - `src/Beesharp.Contracts` — the **REST wire types** shared by server and client (run status, stored runs, bee detail, log pages, scripts, preflights, shutdowns, plan, presets, request bodies). **A REST type goes in Contracts, never duplicated** on the server or the client: add the record there, use it in the endpoint and in the client call. Property names are the JSON (web defaults); `ContractsRoundTripTests` guards them. It references only Core (`LoadPlan`, `RecordedCall`/`RecordedLog` are the shared model); the assistant's wire types stay in `Beesharp.Ai.Contracts`. Server and client csprojs import `Beesharp.Contracts` as a global using.
 - `src/Beesharp.Client` — the UI, standalone **Blazor WebAssembly**. Pages `/` (overview), `/editor` and `/environment` (static values of the selected environment plus runtime data: run bag and entry bags, `RunSnapshot.Runtime`, fake data in `Services/RuntimeData.cs`, brain 0052).
@@ -50,7 +51,7 @@ Client alone (fake data): `dotnet run --project src/Beesharp.Client`. Server plu
 ```bash
 dotnet run --project src/Beesharp
 ```
-**Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too.
+**Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too. .NET 11 (CI) reports more than the .NET 10 copy (e.g. Blazor BL0016: give every JS interop call its own try/catch; BL0012: no `StateHasChanged()` at the end of an event handler), so watch CI.
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/`, the
 `.slnx` and `Directory.Build.props` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
