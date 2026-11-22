@@ -20,4 +20,9 @@
     <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
 </Project>

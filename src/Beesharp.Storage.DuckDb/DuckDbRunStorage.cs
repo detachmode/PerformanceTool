@@ -38,11 +38,6 @@ public sealed class DuckDbRunStorage : IRunStorage
     private sealed record FinishRunOp(string RunId, DateTimeOffset FinishedUtc, string State, double ElapsedSeconds, string? Error) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
 
-    public DuckDbRunStorage(IConfiguration configuration, IWebHostEnvironment env)
-        : this(ResolvePath(configuration, env))
-    {
-    }
-
     public DuckDbRunStorage(string dbPath)
     {
         DatabasePath = dbPath;
@@ -60,14 +55,6 @@ public sealed class DuckDbRunStorage : IRunStorage
             AllowSynchronousContinuations = false,
         });
         writerTask = Task.Run(WriterLoopAsync, CancellationToken.None);
-    }
-
-    private static string ResolvePath(IConfiguration configuration, IWebHostEnvironment env)
-    {
-        var configured = configuration["Storage:DuckDbPath"];
-        return string.IsNullOrWhiteSpace(configured)
-            ? Path.Combine(env.ContentRootPath, "data", "beesharp.duckdb")
-            : Path.IsPathRooted(configured) ? configured : Path.Combine(env.ContentRootPath, configured);
     }
 
     private void InitializeSchema()

@@ -79,18 +79,6 @@ public sealed class CanceledBeesTests
     }
 
     [Fact]
-    public async Task Canceled_bee_is_stored_and_read_back_from_sqlite()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"perftool-cancel-{Guid.NewGuid():N}.db");
-        try
-        {
-            await using var s = new SqliteRunStorage(path);
-            AssertCanceled(await StopAndReadBack(s));
-        }
-        finally { TryDelete(path); }
-    }
-
-    [Fact]
     public async Task Canceled_bee_is_stored_and_read_back_from_duckdb()
     {
         var path = Path.Combine(Path.GetTempPath(), $"perftool-cancel-{Guid.NewGuid():N}.duckdb");

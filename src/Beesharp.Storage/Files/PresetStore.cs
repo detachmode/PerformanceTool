@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Beesharp.Services;
 
 /// <summary>
-/// Stores presets as one JSON file per preset in a directory (config key <c>Presets:Directory</c>).
+/// Stores presets as one JSON file per preset in a directory (config key <c>Presets:Directory</c>, see <see cref="BeesharpDirectories"/>).
 /// Plain files so presets can be diffed, shared and committed. See docs/brain/0005-presets-as-json-files.md.
 /// </summary>
 public sealed class PresetStore
@@ -16,12 +16,13 @@ public sealed class PresetStore
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
     private readonly SemaphoreSlim mutex = new(1, 1);
-    private readonly ILogger<PresetStore> logger;
+    private readonly ILogger logger;
 
-    public PresetStore(IConfiguration config, IWebHostEnvironment env, ILogger<PresetStore> logger)
+    /// <param name="directory">The folder of the JSON files (see <see cref="BeesharpDirectories"/>).</param>
+    public PresetStore(string directory, ILogger<PresetStore>? logger = null)
     {
-        this.logger = logger;
-        Directory = Path.GetFullPath(config["Presets:Directory"] ?? "presets", env.ContentRootPath);
+        this.logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        Directory = Path.GetFullPath(directory);
     }
 
     public string Directory { get; }

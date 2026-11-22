@@ -4,7 +4,7 @@ using Beesharp.Services.Environments;
 namespace Beesharp.Services;
 
 /// <summary>
-/// Stores environments as one JSON file per environment in a directory (config key <c>Environments:Directory</c>, next to the presets), like
+/// Stores environments as one JSON file per environment in a directory (config key <c>Environments:Directory</c>, see <see cref="BeesharpDirectories"/>, next to the presets), like
 /// Bruno: each file can be shared or kept local on its own. See docs/brain/0033-environments.md.
 /// </summary>
 public sealed class EnvironmentStore
@@ -15,12 +15,13 @@ public sealed class EnvironmentStore
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
     private readonly SemaphoreSlim mutex = new(1, 1);
-    private readonly ILogger<EnvironmentStore> logger;
+    private readonly ILogger logger;
 
-    public EnvironmentStore(IConfiguration config, IWebHostEnvironment env, ILogger<EnvironmentStore> logger)
+    /// <param name="directory">The folder of the JSON files (see <see cref="BeesharpDirectories"/>).</param>
+    public EnvironmentStore(string directory, ILogger<EnvironmentStore>? logger = null)
     {
-        this.logger = logger;
-        Directory = Path.GetFullPath(config["Environments:Directory"] ?? "environments", env.ContentRootPath);
+        this.logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        Directory = Path.GetFullPath(directory);
     }
 
     public string Directory { get; }
