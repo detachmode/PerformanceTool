@@ -26,25 +26,6 @@ public sealed class PreflightGlobals
     public required Func<string, string, Task<int>> RunProcessAsync { get; init; }
 }
 
-public sealed record PreflightScriptSummary(
-    string ScriptId,
-    string FileName,
-    string Name,
-    string Code,
-    DateTimeOffset UpdatedUtc);
-
-public sealed record PreflightCompileResult(
-    bool Success,
-    PreflightScriptSummary? Script,
-    IReadOnlyList<ScriptDiagnosticDto> Diagnostics,
-    string? Error = null);
-
-public sealed record PreflightRunResult(
-    bool Success,
-    double DurationMs,
-    string? Error,
-    IReadOnlyList<string> Logs);
-
 /// <summary>
 /// Compiles, persists (<c>scripts/preflight/*.cs</c>) and runs preflight C# scripts that execute before a load test
 /// starts. Only if the preflight completes without throwing / failing will the load scenarios begin.

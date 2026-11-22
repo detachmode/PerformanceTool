@@ -6,62 +6,6 @@ using Beesharp.Services.Storage;
 
 namespace Beesharp.Services;
 
-/// <summary>Compact bee summary returned by incremental <c>/api/runs/current</c> polling (no calls/logs embedded).</summary>
-public sealed record LiveBeeDto(
-    int Sequence,
-    int Entry,
-    double StartedAt,
-    double DurationMs,
-    int? StatusCode,
-    long Bytes,
-    string? Error,
-    int SlowCalls);
-
-public sealed record LiveScenarioViewDto(
-    int Starts,
-    int Finished,
-    int InFlight,
-    int Failed,
-    int SlowBees,
-    int SlowCalls,
-    int Dropped);
-
-public sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
-
-public sealed record LiveLogEntryDto(
-    long Id,
-    int Sequence,
-    string BeeName,
-    int Entry,
-    double AtSeconds,
-    DateTimeOffset Timestamp,
-    string Level,
-    string Message,
-    string? Exception);
-
-public sealed record LiveRunStatusDto(
-    string RunId,
-    string State,
-    double ElapsedSeconds,
-    DateTimeOffset StartedUtc,
-    LoadPlan Plan,
-    IReadOnlyList<LiveScenarioViewDto> Scenarios,
-    IReadOnlyList<LiveBeeDto> NewBees,
-    int LastSequence,
-    long TotalLogs,
-    string StorageProvider,
-    string? Error,
-    string? PreflightState = null,
-    string? PreflightScriptName = null,
-    IReadOnlyList<string>? PreflightLogs = null,
-    string? PreflightError = null,
-    IReadOnlyList<LiveRunningBeeDto>? RunningBees = null,
-    string? ShutdownState = null,
-    string? ShutdownScriptName = null,
-    IReadOnlyList<string>? ShutdownLogs = null,
-    string? ShutdownError = null,
-    long RuntimeVersion = 0);
-
 /// <summary>
 /// Hosts the currently active (or most recent) server-side <see cref="LoadRunner"/> run, persisting all bees,
 /// calls and logs into <see cref="IRunStorage"/> (DuckDB by default) without blocking bees, and serving

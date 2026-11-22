@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The REST wire types shared by the server and the WebAssembly client (brain 0054). A REST type lives here and
+       nowhere else: never write a second copy on the client or the server. Depends only on Beesharp.Core, because
+       LoadPlan, RecordedCall/RecordedLog and the runtime data snapshot are already the shared wire format there.
+       The assistant's wire types stay in Beesharp.Ai.Contracts. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Beesharp.Contracts</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+  </ItemGroup>
+
+</Project>

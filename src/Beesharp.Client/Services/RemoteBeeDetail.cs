@@ -2,24 +2,11 @@ using Beesharp.Services;
 
 namespace Beesharp.Client.Services;
 
-/// <summary>One bee's calls and log lines as the server stores them (<c>GET /api/runs/{id}/bees/{sequence}</c>).</summary>
-public sealed record ServerBeeDetailDto(
-    string RunId,
-    int Sequence,
-    int Entry,
-    double StartedAt,
-    double DurationMs,
-    int? StatusCode,
-    long Bytes,
-    string? Error,
-    List<RecordedCall> Calls,
-    List<RecordedLog> Logs);
-
 /// <summary>Turns the server's bee detail into the <see cref="BeeDetail"/> the popup and the bee panel read. Shared by the live run and the assistant's bee sets.</summary>
 public static class RemoteBeeDetail
 {
     /// <param name="entry">The scenario entry index the bee gets in <paramref name="store"/> (a bee set has only entry 0).</param>
-    public static BeeDetail Build(ServerBeeDetailDto detail, RunStore store, DateTimeOffset runStartedUtc, int entry)
+    public static BeeDetail Build(StoredBeeDetail detail, RunStore store, DateTimeOffset runStartedUtc, int entry)
     {
         var calls = new List<FakeCall>(detail.Calls.Count);
         for (var i = 0; i < detail.Calls.Count; i++)

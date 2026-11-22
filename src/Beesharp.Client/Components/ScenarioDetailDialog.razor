@@ -604,7 +604,7 @@
     private bool showWaterfall;
     private bool beeLogWrap = true;
     private bool liveShowFailed;
-    private readonly Dictionary<int, ClientLiveLogDto> latestLogByBee = [];
+    private readonly Dictionary<int, LiveLogEntryDto> latestLogByBee = [];
     private List<int> liveBeeOrder = [];
     private List<int>? frozenFeedSeqs;
     private bool liveFeedScrolledDown;
@@ -618,7 +618,7 @@
     private CancellationTokenSource? entryLogCts;
     private bool entryLogPolling;
     private ElementReference runningLogEl;
-    private readonly List<ClientLiveLogDto> runningLogs = [];
+    private readonly List<LiveLogEntryDto> runningLogs = [];
     private int? runningLogSeq;
     private long runningLogAfterId;
     private CancellationTokenSource? runningLogCts;
@@ -863,7 +863,7 @@
     /// Keeps flying bees always above finished bees and re-sorts whenever a bee finishes (or every 10 seconds),
     /// while each row immediately reflects the newest log line from <see cref="latestLogByBee"/> on every poll.
     /// </summary>
-    private List<ClientLiveLogDto> OrderedLiveLogs(Dictionary<int, RunningBee> runningSet, int finishedCount)
+    private List<LiveLogEntryDto> OrderedLiveLogs(Dictionary<int, RunningBee> runningSet, int finishedCount)
     {
         if (latestLogByBee.Count == 0) return [];
         var now = Environment.TickCount64;
@@ -891,8 +891,8 @@
         }
 
         // Always partition flying bees above finished bees even between re-sorts.
-        var flying = new List<ClientLiveLogDto>();
-        var done = new List<ClientLiveLogDto>();
+        var flying = new List<LiveLogEntryDto>();
+        var done = new List<LiveLogEntryDto>();
         foreach (var seq in liveBeeOrder)
         {
             if (!latestLogByBee.TryGetValue(seq, out var log)) continue;

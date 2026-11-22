@@ -34,12 +34,18 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.*-*" />
     <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <!-- The assistant's wire DTOs (brain 0047). Only the contracts: never Microsoft.Extensions.AI, so the trimmed WASM stays small. -->
     <ProjectReference Include="../Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" />
     <!-- The generated parameter editor reflects over the parameter classes (brain 0007). Keep everything in Core
          (types, properties, attributes) when the Release publish trims the app. -->
     <TrimmerRootAssembly Include="Beesharp.Core" />
+    <TrimmerRootAssembly Include="Beesharp.Contracts" />
     <TrimmerRootAssembly Include="Beesharp.Ai.Contracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
   </ItemGroup>
 
 </Project>

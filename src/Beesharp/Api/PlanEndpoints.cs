@@ -5,8 +5,6 @@ namespace Beesharp.Api;
 /// <summary>REST for the server-owned Live plan and the presets (brain 0047/0050).</summary>
 public static class PlanEndpoints
 {
-    public sealed record AddEntryRequest(string ScenarioId);
-
     public static IEndpointRouteBuilder MapPlanEndpoints(this IEndpointRouteBuilder app)
     {
         // The plan being edited. With ?knownVersion=N the answer is 204 when nothing changed (cheap polling).

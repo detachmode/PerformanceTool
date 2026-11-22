@@ -45,6 +45,6 @@ public sealed class BeeSet
     }
 
     /// <summary>Fills in the calls and logs of a bee from the server's detail.</summary>
-    public void ApplyDetail(ServerBeeDetailDto detail) =>
+    public void ApplyDetail(StoredBeeDetail detail) =>
         Snapshot.Store.ReplaceDetail(RemoteBeeDetail.Build(detail, Snapshot.Store, RunStartedUtc, 0));
 }

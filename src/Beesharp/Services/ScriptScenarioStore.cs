@@ -23,39 +23,6 @@ public sealed class ScenarioScriptGlobals
     public required ScenarioScriptHost Scenario { get; init; }
 }
 
-public sealed record ScriptDiagnosticDto(string Id, string Severity, int Line, int Column, string Message);
-
-public sealed record ScriptScenarioSummary(
-    string ScriptId,
-    string FileName,
-    string ScenarioId,
-    string ScenarioName,
-    string Description,
-    string Code,
-    DateTimeOffset UpdatedUtc,
-    JsonObject Parameters);
-
-public sealed record ScriptCompileResult(
-    bool Success,
-    ScriptScenarioSummary? Script,
-    IReadOnlyList<ScriptDiagnosticDto> Diagnostics,
-    string? Error = null);
-
-public sealed record ScriptRecordedCall(string Method, string Url, int? StatusCode, double DurationMs, long Bytes, string? Error = null);
-
-public sealed record ScriptTestRunResult(
-    bool Success,
-    string ScenarioId,
-    string ScenarioName,
-    int? StatusCode,
-    long Bytes,
-    double DurationMs,
-    double StartupDurationMs,
-    double TeardownDurationMs,
-    string? Error,
-    IReadOnlyList<ScriptRecordedCall> Calls,
-    IReadOnlyList<string> Logs);
-
 /// <summary>
 /// Compiles, persists and test-runs custom C# scenario scripts (<c>.csx</c> / <c>.cs</c>) using Roslyn Scripting
 /// (brain 0040). Compiled scenarios are registered into <see cref="ScenarioCatalog"/> immediately so they work in

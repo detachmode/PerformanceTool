@@ -76,66 +76,6 @@ public sealed class CustomScriptsPopupState
     }
 }
 
-public sealed record ClientScriptDiagnostic(string Id, string Severity, int Line, int Column, string Message);
-
-public sealed record ClientScriptSummary(
-    string ScriptId,
-    string FileName,
-    string ScenarioId,
-    string ScenarioName,
-    string Description,
-    string Code,
-    DateTimeOffset UpdatedUtc,
-    JsonObject Parameters);
-
-public sealed record ClientScriptCompileResult(
-    bool Success,
-    ClientScriptSummary? Script,
-    IReadOnlyList<ClientScriptDiagnostic> Diagnostics,
-    string? Error);
-
-public sealed record ClientRecordedCall(string Method, string Url, int? StatusCode, double DurationMs, long Bytes, string? Error);
-
-public sealed record ClientTestRunResult(
-    bool Success,
-    string ScenarioId,
-    string ScenarioName,
-    int? StatusCode,
-    long Bytes,
-    double DurationMs,
-    double StartupDurationMs,
-    double TeardownDurationMs,
-    string? Error,
-    IReadOnlyList<ClientRecordedCall> Calls,
-    IReadOnlyList<string> Logs);
-
-public sealed record RemoteScenarioDto(
-    string Id,
-    string Name,
-    string Description,
-    bool IsCustom,
-    string? ScriptId,
-    JsonObject Parameters);
-
-public sealed record ClientPreflightSummary(
-    string ScriptId,
-    string FileName,
-    string Name,
-    string Code,
-    DateTimeOffset UpdatedUtc);
-
-public sealed record ClientPreflightCompileResult(
-    bool Success,
-    ClientPreflightSummary? Script,
-    IReadOnlyList<ClientScriptDiagnostic> Diagnostics,
-    string? Error = null);
-
-public sealed record ClientPreflightRunResult(
-    bool Success,
-    double DurationMs,
-    string? Error,
-    IReadOnlyList<string> Logs);
-
 /// <summary>HTTP client for <c>/api/scenarios</c> and <c>/api/scripts</c>, keeping the client <see cref="ScenarioCatalog"/> synced.</summary>
 public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
 {
@@ -145,7 +85,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
     {
         try
         {
-            var list = await http.GetFromJsonAsync<List<RemoteScenarioDto>>("api/scenarios", JsonOpts, ct);
+            var list = await http.GetFromJsonAsync<List<ScenarioInfoDto>>("api/scenarios", JsonOpts, ct);
             if (list is null) return;
             var customs = list
                 .Where(s => s.IsCustom)
@@ -159,14 +99,14 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         }
     }
 
-    public async Task<List<ClientScriptSummary>> ListScriptsAsync(CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<List<ClientScriptSummary>>("api/scripts", JsonOpts, ct) ?? [];
+    public async Task<List<ScriptScenarioSummary>> ListScriptsAsync(CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<ScriptScenarioSummary>>("api/scripts", JsonOpts, ct) ?? [];
 
-    public async Task<ClientScriptCompileResult> CompileAndSaveAsync(string? id, string fileName, string code, CancellationToken ct = default)
+    public async Task<ScriptCompileResult> CompileAndSaveAsync(string? id, string fileName, string code, CancellationToken ct = default)
     {
         var resp = await http.PostAsJsonAsync("api/scripts", new { id, fileName, code }, JsonOpts, ct);
-        var result = await resp.Content.ReadFromJsonAsync<ClientScriptCompileResult>(JsonOpts, ct)
-            ?? new ClientScriptCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
+        var result = await resp.Content.ReadFromJsonAsync<ScriptCompileResult>(JsonOpts, ct)
+            ?? new ScriptCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
         if (result.Success && result.Script is { } s)
             catalog.RegisterCustom(new RemoteSchemaScenario(s.ScenarioId, s.ScenarioName, s.Description, s.Parameters));
         return result;
@@ -180,7 +120,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
             catalog.UnregisterCustom(scenarioId);
     }
 
-    public async Task<ClientTestRunResult> TestRunAsync(string scriptId, JsonObject? parameters, string? environmentName, int timeoutSeconds = 30, CancellationToken ct = default)
+    public async Task<ScriptTestRunResult> TestRunAsync(string scriptId, JsonObject? parameters, string? environmentName, int timeoutSeconds = 30, CancellationToken ct = default)
     {
         var resp = await http.PostAsJsonAsync($"api/scripts/{Uri.EscapeDataString(scriptId)}/test-run",
             new { parameters, environmentName, timeoutSeconds }, JsonOpts, ct);
@@ -196,7 +136,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
             catch (JsonException) { }
             throw new InvalidOperationException($"Test run failed (HTTP {(int)resp.StatusCode}): {errText}");
         }
-        return await resp.Content.ReadFromJsonAsync<ClientTestRunResult>(JsonOpts, ct)
+        return await resp.Content.ReadFromJsonAsync<ScriptTestRunResult>(JsonOpts, ct)
             ?? throw new InvalidOperationException("Empty response from test-run endpoint.");
     }
 
@@ -204,17 +144,17 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
     public const string Preflights = "preflights";
     public const string Shutdowns = "shutdowns";
 
-    public async Task<List<ClientPreflightSummary>> ListPreflightsAsync(CancellationToken ct = default, string kind = Preflights)
+    public async Task<List<PreflightScriptSummary>> ListPreflightsAsync(CancellationToken ct = default, string kind = Preflights)
     {
-        try { return await http.GetFromJsonAsync<List<ClientPreflightSummary>>($"api/{kind}", JsonOpts, ct) ?? []; }
+        try { return await http.GetFromJsonAsync<List<PreflightScriptSummary>>($"api/{kind}", JsonOpts, ct) ?? []; }
         catch { return []; }
     }
 
-    public async Task<ClientPreflightCompileResult> SavePreflightAsync(string? id, string fileName, string code, CancellationToken ct = default, string kind = Preflights)
+    public async Task<PreflightCompileResult> SavePreflightAsync(string? id, string fileName, string code, CancellationToken ct = default, string kind = Preflights)
     {
         var resp = await http.PostAsJsonAsync($"api/{kind}", new { id, fileName, code }, JsonOpts, ct);
-        return await resp.Content.ReadFromJsonAsync<ClientPreflightCompileResult>(JsonOpts, ct)
-            ?? new ClientPreflightCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
+        return await resp.Content.ReadFromJsonAsync<PreflightCompileResult>(JsonOpts, ct)
+            ?? new PreflightCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
     }
 
     public async Task DeletePreflightAsync(string scriptId, CancellationToken ct = default, string kind = Preflights)
@@ -223,11 +163,11 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         resp.EnsureSuccessStatusCode();
     }
 
-    public async Task<ClientPreflightRunResult> TestRunPreflightAsync(string scriptId, string? environmentName, int timeoutSeconds = 60, CancellationToken ct = default, string kind = Preflights)
+    public async Task<PreflightRunResult> TestRunPreflightAsync(string scriptId, string? environmentName, int timeoutSeconds = 60, CancellationToken ct = default, string kind = Preflights)
     {
         var resp = await http.PostAsJsonAsync($"api/{kind}/{Uri.EscapeDataString(scriptId)}/test-run",
             new { environmentName, timeoutSeconds }, JsonOpts, ct);
-        return await resp.Content.ReadFromJsonAsync<ClientPreflightRunResult>(JsonOpts, ct)
+        return await resp.Content.ReadFromJsonAsync<PreflightRunResult>(JsonOpts, ct)
             ?? throw new InvalidOperationException("Empty response from preflight test-run endpoint.");
     }
 }

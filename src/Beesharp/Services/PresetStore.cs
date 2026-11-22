@@ -3,8 +3,6 @@ using System.Text.Json;
 
 namespace Beesharp.Services;
 
-public sealed record Preset(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
-
 /// <summary>
 /// Stores presets as one JSON file per preset in a directory (config key <c>Presets:Directory</c>).
 /// Plain files so presets can be diffed, shared and committed. See docs/brain/0005-presets-as-json-files.md.

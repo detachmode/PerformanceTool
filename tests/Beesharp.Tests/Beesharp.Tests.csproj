@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../../src/Beesharp/Beesharp.csproj" />
     <ProjectReference Include="../../src/Beesharp.Client/Beesharp.Client.csproj" />
     <ProjectReference Include="../../src/Beesharp.Ai/Beesharp.Ai.csproj" />
@@ -24,6 +25,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Beesharp.Contracts" />
   </ItemGroup>
 
 </Project>

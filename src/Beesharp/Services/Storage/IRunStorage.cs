@@ -2,43 +2,6 @@ using Beesharp.Services;
 
 namespace Beesharp.Services.Storage;
 
-public sealed record StoredRunSummary(
-    string RunId,
-    DateTimeOffset StartedUtc,
-    DateTimeOffset? FinishedUtc,
-    string State,
-    double ElapsedSeconds,
-    int TotalBees,
-    int FailedBees,
-    long TotalLogs,
-    string? Error);
-
-public sealed record StoredBeeDetail(
-    string RunId,
-    int Sequence,
-    int Entry,
-    double StartedAt,
-    double DurationMs,
-    int? StatusCode,
-    long Bytes,
-    string? Error,
-    IReadOnlyList<RecordedCall> Calls,
-    IReadOnlyList<RecordedLog> Logs);
-
-public sealed record StoredLogRow(
-    long Id,
-    int Sequence,
-    string BeeName,
-    int Entry,
-    double AtSeconds,
-    string Level,
-    string Message,
-    string? Exception,
-    int? CallIndex,
-    int BeeOutcome,
-    bool IsFailed,
-    bool IsSlow);
-
 public sealed record LogQuery(
     int? Entry = null,
     int? Bee = null,
@@ -50,12 +13,6 @@ public sealed record LogQuery(
     string? Search = null,
     int Offset = 0,
     int Limit = 200);
-
-public sealed record LogPageResult(
-    long TotalCount,
-    int Offset,
-    int Limit,
-    IReadOnlyList<StoredLogRow> Items);
 
 public sealed record StoredBeeSummary(
     int Sequence,
