@@ -220,8 +220,8 @@
             <section class="bee-panel p-run" aria-label="@ra.Name">
                 <div class="bee-head">
                     <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
-                    <span class="state run">Flying</span>
-                    <span class="muted">@Format.Ms(elapsedMs) so far · started @Format.Time(ra.StartedAt)</span>
+                    <span class="state run ado-run-state"><i class="ado-mini-spin" aria-hidden="true"></i>Flying</span>
+                    <span class="muted">@Format.Time(elapsedMs / 1000.0) (@Format.Ms(elapsedMs)) · started @Format.Time(ra.StartedAt)</span>
                     <span class="spacer"></span>
                     <div class="seg" role="group" aria-label="Running bee inspection view">
                         <button type="button" class="@(!showWaterfall ? "on" : "")" @onclick="() => showWaterfall = false">Logs (@runningLogs.Count)</button>

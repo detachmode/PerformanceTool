@@ -52,10 +52,23 @@
     else
     {
         <span class="bento-kpi-row">
-            <span class="bento-cell bento-kpi-left">
-                <b class="bento-num">@View.InFlight</b>
-                <small class="bento-lbl">bees<br />flying</small>
-            </span>
+            @if (IsLive || View.InFlight > 0)
+            {
+                <span class="bento-cell bento-kpi-left is-live">
+                    <span class="bee-spin-wrap" aria-hidden="true">
+                        <span class="bee-spin-ring"></span>
+                        <b class="bee-spin-num">@View.InFlight</b>
+                    </span>
+                    <small class="bento-lbl bee-spin-time">@Format.Time(Elapsed)</small>
+                </span>
+            }
+            else
+            {
+                <span class="bento-cell bento-kpi-left">
+                    <b class="bento-num">@View.InFlight</b>
+                    <small class="bento-lbl">bees<br />flying</small>
+                </span>
+            }
             <span class="bento-cell bento-kpi-right">
                 <b class="bento-num">@Format.Num(View.Finished)</b>
                 <small class="bento-lbl mono-sub">finished · @Format.Rate(Target) @Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>

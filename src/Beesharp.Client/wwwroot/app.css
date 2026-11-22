@@ -136,6 +136,15 @@ label { font-size: .72rem; color: var(--muted); }
 .bento-cell { display: flex; flex-direction: column; background: var(--bee-bento-bg); border: 1px solid rgba(255, 232, 198, 0.055); border-radius: var(--bee-cell-radius); padding: .8rem .9rem; min-width: 0; }
 .bento-kpi-row { display: grid; grid-template-columns: minmax(86px, .82fr) minmax(0, 1.55fr); gap: .6rem; }
 .bento-kpi-left, .bento-kpi-right { gap: .3rem; justify-content: space-between; }
+.bento-kpi-left.is-live { align-items: center; justify-content: center; gap: .42rem; padding: .65rem .6rem; }
+.bee-spin-wrap { position: relative; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.bee-spin-ring { position: absolute; inset: 0; border-radius: 50%; border: 2.5px solid rgba(91, 155, 240, 0.22); border-top-color: var(--running); border-right-color: var(--bee-accent); animation: ado-spin 1.05s linear infinite; }
+.bee-spin-num { position: relative; z-index: 1; font-family: var(--mono); font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--title); line-height: 1; }
+.bee-spin-time { font-family: var(--mono); font-size: .74rem; font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: .02em; }
+.ado-run-state { display: inline-flex; align-items: center; gap: .38rem; }
+.ado-mini-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(91, 155, 240, 0.25); border-top-color: var(--running); animation: ado-spin .95s linear infinite; flex: none; }
+@keyframes ado-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bee-spin-ring, .ado-mini-spin { animation: none; } }
 .bento-num { font-family: var(--mono); font-size: 1.65rem; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--title); }
 .bento-lbl { color: var(--muted); font-size: .76rem; line-height: 1.3; }
 .bento-lbl.mono-sub { font-family: var(--mono); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
