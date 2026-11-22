@@ -52,6 +52,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
   - R3 (done): chat side panel in the client (Live mode only, only when configured), screenshots against a local
     OpenAI-compatible stub.
 
+- **Done as draft, awaiting user review (V, user request):** scenario steps UI draft (incl. a step that repeats; screenshots in `docs/screenshots/2026-11-22-scenario-steps/`) with fake data (0056): stepper in the bee detail, "step N of M" for bees in flight, failed step, bees failed per step in the scenario popup. Screenshots for the user before merging.
+
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done

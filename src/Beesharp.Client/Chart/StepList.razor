@@ -1,0 +1,93 @@
+@* The vertical stepper of one bee (brain 0056, calm UI brain 0016): numbered circles joined by a thin line. A done step gets a check and its time, the step the bee failed at
+   is red with its error (one line), the step in flight is highlighted with the active spinner, steps not reached are greyed out. The calls of a step are folded
+   by default and fold out on a click. *@
+<ol class="stepper" aria-label="@AriaLabel">
+    @foreach (var st in Steps)
+    {
+        var step = st;
+        var open = opened.Contains(step.Index) && step.HasCalls;
+        <li class="stp @Css(step)">
+            <span class="stp-dot" aria-hidden="true">
+                @if (step.State == StepState.Current)
+                {
+                    <HexBadge Kind="spin" Size="26" StrokeWidth="9" />
+                }
+                else if (step.State == StepState.Done)
+                {
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                }
+                else if (step.State == StepState.Failed)
+                {
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                }
+                else
+                {
+                    @(step.Index + 1)
+                }
+            </span>
+            <div class="stp-body">
+                <button type="button" class="stp-head" disabled="@(!step.HasCalls)" aria-expanded="@(step.HasCalls ? Aria.Bool(open) : null)" @onclick="() => Toggle(step.Index)"
+                        title="@(step.HasCalls ? (open ? "Hide the calls of this step" : "Show the calls of this step") : null)">
+                    <span class="stp-name">@step.Name</span>
+                    @if (step.Repeats) { <span class="stp-times" title="This step runs @step.Times times in a row">×@step.Times</span> }
+                    <span class="stp-word">@Word(step)</span>
+                    @if (step.State is StepState.Done or StepState.Failed && step.HasCalls)
+                    {
+                        <span class="stp-time @(step.SlowCalls > 0 ? "warn" : "")">@Format.Ms(step.DurationMs)</span>
+                    }
+                    @if (step.HasCalls) { <span class="stp-chev" aria-hidden="true">@(open ? "▾" : "▸")</span> }
+                </button>
+                @if (step.State == StepState.Failed && !string.IsNullOrWhiteSpace(step.Error))
+                {
+                    <p class="stp-error bad">@OneLine(step.Error)</p>
+                }
+                @if (step.State == StepState.Current && NowCall is not null)
+                {
+                    <p class="stp-now muted">now: @NowCall</p>
+                }
+                @if (open)
+                {
+                    <ol class="stp-calls" aria-label="Calls of @step.Name">
+                        @{ var lastRep = -1; }
+                        @foreach (var c in step.Calls)
+                        {
+                            var cls = c.Failed ? "bad" : c.Slow ? "warn" : "";
+                            if (step.Repeats && c.Rep != lastRep)
+                            {
+                                lastRep = c.Rep;
+                                <li class="stp-rep @(step.FailedRep == c.Rep ? "bad" : "")">@(c.Rep + 1) of @step.Times@(step.FailedRep == c.Rep ? " · failed" : "")</li>
+                            }
+                            <li class="stp-call @cls @(step.Repeats ? "in-rep" : "")">
+                                <span class="call-name" title="@c.Name">@c.Name</span>
+                                <span class="call-dur">@Format.Ms(c.DurationMs)</span>
+                                <span class="call-status">@(c.Failed ? (c.Status?.ToString() ?? (Beesharp.Services.ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "")</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StepView> Steps { get; set; } = [];
+    /// <summary>For a bee in flight: the call it is making now, shown quietly under the current step.</summary>
+    [Parameter] public string? NowCall { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Steps";
+
+    private readonly HashSet<int> opened = [];
+
+    private void Toggle(int index) { if (!opened.Remove(index)) opened.Add(index); }
+
+    private static string Css(StepView s) => s.State switch { StepState.Done => "done", StepState.Failed => "failed", StepState.Current => "current", _ => "pending" };
+    private static string Word(StepView s) => s.State switch { StepState.Failed => (s.Canceled ? "canceled" : "failed") + (s.Repeats && s.FailedRep >= 0 ? ", " + ScenarioSteps.Ordinal(s.FailedRep + 1) + " time" : ""), StepState.Current => s.Repeats && s.CurrentRep >= 0 ? $"active · {s.CurrentRep + 1} of {s.Times}" : "active", StepState.Pending => "not reached", _ => "" };
+
+    private static string OneLine(string text)
+    {
+        var line = text.Trim();
+        var nl = line.IndexOfAny(['\r', '\n']);
+        if (nl >= 0) line = line[..nl].Trim();
+        return line.Length > 110 ? line[..109] + "…" : line;
+    }
+}
