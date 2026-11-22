@@ -114,7 +114,9 @@ public class LoadRunnerTests
     [Fact]
     public async Task In_flight_is_counted_per_entry()
     {
-        var plan = new LoadPlan { DurationSeconds = 1, Scenarios = [Entry(600, delayMs: 300), Entry(60)] };
+        // Entry 1's single bee lasts 500 ms, so entry 0's bees (one every 100 ms) surely start while it flies.
+        // With 0 ms it could end before entry 0's first bee started, and the overlap check failed now and then.
+        var plan = new LoadPlan { DurationSeconds = 1, Scenarios = [Entry(600, delayMs: 300), Entry(60, delayMs: 500)] };
         var (_, activity) = await RunWithActivity(plan);
         Assert.Equal(10, activity.Count(a => a.Started && a.Entry == 0));
         Assert.Equal(1, activity.Count(a => a.Started && a.Entry == 1));
