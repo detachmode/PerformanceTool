@@ -7,7 +7,7 @@ using Beesharp.Services.Scenarios;
 namespace Beesharp.Client.Services;
 
 /// <summary>
-/// Scalable live data source talking to the ASP.NET Core server's REST API (<c>/api/runs/*</c>) backed by SQLite
+/// Scalable live data source talking to the ASP.NET Core server's REST API (<c>/api/runs/*</c>) backed by the run storage (DuckDB)
 /// (brain 0015, 0040, 0045). Uses lightweight incremental polling (<c>afterSeq</c>) for compact bee records,
 /// and lazy-loads bee calls/logs and paged/filtered log queries on demand.
 /// </summary>
@@ -353,7 +353,7 @@ public sealed class ApiRunSource : IRunSource
         Changed?.Invoke();
     }
 
-    /// <summary>Lazily fetches one bee's full calls and logs from SQLite storage on demand.</summary>
+    /// <summary>Lazily fetches one bee's full calls and logs from run storage on demand.</summary>
     public async Task EnsureBeeDetailLoadedAsync(int sequence, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(activeRunId) || loadedDetails.Contains(sequence) || !loadingDetails.Add(sequence))
@@ -372,7 +372,7 @@ public sealed class ApiRunSource : IRunSource
         finally { loadingDetails.Remove(sequence); }
     }
 
-    /// <summary>Queries server-side indexed, filtered, paged logs from SQLite storage.</summary>
+    /// <summary>Queries server-side indexed, filtered, paged logs from run storage.</summary>
     public async Task<LogPageResult?> QueryLogsAsync(
         int? entry,
         int? bee,

@@ -1,5 +1,5 @@
 @* Logs popup (brain 0017, 0020, 0021, 0045): all logs of the run. Filters, each removable: scenario, a single bee, outcome of the bee (all / failed / slow),
-   levels and search. Rows show the full message, word-wrapped (variable row height). Virtualised in both modes; in Live mode queries indexed SQLite storage
+   levels and search. Rows show the full message, word-wrapped (variable row height). Virtualised in both modes; in Live mode queries indexed run storage
    on the server with lazy-loaded pages on scroll so hundreds of thousands of log lines never bloat browser memory. *@
 @implements IDisposable
 @inject IRunSource Sim
@@ -136,7 +136,7 @@
     private int builtSource = -1;
     private long builtAt;
 
-    // Server-side lazy paging state (Live mode + SQLite).
+    // Server-side lazy paging state (Live mode + run storage).
     private long serverTotal;
     private bool serverLoading;
     private string serverQuerySig = "";

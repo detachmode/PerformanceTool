@@ -52,7 +52,7 @@ public sealed class RunStore
     public double RatioOf(int sequence) => sequence >= 0 && sequence < ratios.Length ? SlowCallRule.Decode(ratios[sequence]) : 1;
     public BeeDetail? Detail(int sequence) => details.GetValueOrDefault(sequence);
 
-    /// <summary>Replaces a bee's detail once lazily fetched from server SQLite storage (brain 0045).</summary>
+    /// <summary>Replaces a bee's detail once lazily fetched from server run storage (brain 0045).</summary>
     public void ReplaceDetail(BeeDetail detail) => details[detail.Sequence] = detail;
 
     /// <summary>Cheap check whether the calls and log lines of a bee are still kept (false once evicted, or for an unknown bee).</summary>
