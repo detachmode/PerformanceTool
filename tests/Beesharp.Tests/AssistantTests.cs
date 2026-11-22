@@ -417,7 +417,8 @@ public sealed class AssistantTests : IDisposable
         Assert.Equal(ViewKinds.Timeline, view.Kind);
         Assert.Equal("run-1", view.Query.RunId);
         Assert.Equal(["Search", "Checkout"], view.EntryLabels);
-        Assert.Equal([2, 3], view.Bees!.Select(b => b.Bee)); // sorted by start time
+        Assert.NotNull(view.Bees);
+        Assert.Equal([2, 3], view.Bees.Select(b => b.Bee)); // sorted by start time
         Assert.Equal(["slow", "failed"], view.Bees.Select(b => b.Outcome));
         Assert.Equal(["slowest search", "failed payment"], view.Bees.Select(b => b.Note));
         Assert.Equal(["Search", "Checkout"], view.Bees.Select(b => b.EntryLabel));

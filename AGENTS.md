@@ -49,9 +49,10 @@ Client alone (fake data): `dotnet run --project src/PerformanceTool.Client`. Ser
 ```bash
 dotnet run --project src/PerformanceTool
 ```
+**Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too.
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
-If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/` and the
-`.slnx` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
+If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/`, the
+`.slnx` and `Directory.Build.props` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
 the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.WebAssembly` `11.0.*-*` to `10.0.*` in the copy).
 
 **GitHub Pages:** `.github/workflows/pages.yml` publishes the client (Release, trimmed) on every push to `main` and on manual dispatch, rewrites
