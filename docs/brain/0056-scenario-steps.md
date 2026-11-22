@@ -52,4 +52,9 @@ list of recorded calls cannot.
 ## Consequences
 - New term **Step** in `docs/context.md`; **Call** no longer means "one step" there.
 - Runner and wire format later get a step index per call and per bee (failed step); this draft only uses fake data.
-- Open: enum vs chain style; whether steps nest; how a scenario with `Repeat` counts its steps.
+- **Repeated steps (user request):** a step can run several times in one bee (e.g. *Open product* ×5). The list of
+  declared steps stays the same; the stepper shows the step once with a count, and a bee in flight shows
+  "Step 3 of 5 · Open product (2 of 5)". In the enum style that is just `ctx.Step(...)` in a loop; the chain style
+  would need an extra `Repeat` construct.
+- Open: enum vs chain style; may a bee go back to an earlier step (Search, Open, Search, Open) or only repeat in a
+  row; whether steps nest; how a scenario with `Repeat` counts its steps.
