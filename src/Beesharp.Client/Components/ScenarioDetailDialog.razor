@@ -199,41 +199,28 @@
                 }
                 else if (!DataMode.IsFakeMode)
                 {
-                    var recentLogs = OrderedLiveLogs(runningSet, view.Finished);
-                    var loggedRunning = recentLogs.Where(l => runningSet.ContainsKey(l.Sequence)).Select(l => l.Sequence).ToHashSet();
-                    var unloggedRunning = runningNow.Where(r => !loggedRunning.Contains(r.Sequence)).OrderByDescending(r => r.StartedAt).ToList();
-                    if (recentLogs.Count == 0 && unloggedRunning.Count == 0)
+                    var (displaySeqs, pendingNew) = BuildLiveFeedView(runningNow, runningSet, view.Finished);
+                    if (displaySeqs.Count == 0)
                     {
                         <div class="live-feed-empty">Waiting for bees to log output…</div>
                     }
                     else
                     {
-                        <div class="live-feed-list">
-                            @foreach (var ur in unloggedRunning)
+                        @if (liveFeedScrolledDown && pendingNew > 0)
+                        {
+                            <button type="button" class="live-feed-new-btn" @onclick="JumpLiveFeedToTopAsync" title="Scroll back to top and show new bees">
+                                ↑ @Format.Plural(pendingNew, "new bee", "new bees") · back to top
+                            </button>
+                        }
+                        <div class="live-feed-list" @ref="liveFeedEl">
+                            @foreach (var seq in displaySeqs)
                             {
-                                var rBee = ur;
-                                var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
-                                <button type="button" class="live-feed-row is-flying @(selSeq == rBee.Sequence ? "on" : "")" @onclick="() => SelectLiveBee(rBee.Sequence)">
-                                    <span class="bee-row-spin" aria-hidden="true">
-                                        <span class="bee-spin-ring"></span>
-                                        <b class="bee-row-spin-num">@CompactSec(sec)</b>
-                                    </span>
-                                    <span class="live-feed-row-body">
-                                        <span class="live-feed-row-head">
-                                            <BeeChip Sequence="rBee.Sequence" State="BeeState.Running" />
-                                            <span class="state run">Flying</span>
-                                        </span>
-                                        <span class="live-feed-row-log muted">Running…</span>
-                                    </span>
-                                </button>
-                            }
-                            @foreach (var lg in recentLogs)
-                            {
-                                var log = lg;
-                                var isRun = runningSet.TryGetValue(log.Sequence, out var rBee);
-                                var hasFin = finishedMap.TryGetValue(log.Sequence, out var fBee) && !isRun;
+                                var beeSeq = seq;
+                                var isRun = runningSet.TryGetValue(beeSeq, out var rBee);
+                                var hasFin = finishedMap.TryGetValue(beeSeq, out var fBee) && !isRun;
+                                var hasLog = latestLogByBee.TryGetValue(beeSeq, out var log);
                                 var chipState = isRun ? BeeState.Running : hasFin ? BeeOrder.StateOf(fBee.Outcome) : BeeState.Running;
-                                <button type="button" class="live-feed-row @(selSeq == log.Sequence ? "on" : "") @(isRun ? "is-flying" : "")" @onclick="() => SelectLiveBee(log.Sequence)">
+                                <button type="button" class="live-feed-row @(selSeq == beeSeq ? "on" : "") @(isRun ? "is-flying" : "")" @onclick="() => SelectLiveBee(beeSeq)">
                                     @if (isRun && rBee is not null)
                                     {
                                         var sec = Math.Max(0, s.Elapsed - rBee.StartedAt);
@@ -244,7 +231,7 @@
                                     }
                                     <span class="live-feed-row-body">
                                         <span class="live-feed-row-head">
-                                            <BeeChip Sequence="log.Sequence" State="chipState" />
+                                            <BeeChip Sequence="beeSeq" State="chipState" />
                                             @if (isRun && rBee is not null)
                                             {
                                                 <span class="state run">Flying</span>
@@ -256,7 +243,14 @@
                                             }
                                         </span>
                                         <span class="live-feed-row-log">
-                                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                                            @if (hasLog && log is not null)
+                                            {
+                                                <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                                            }
+                                            else if (isRun)
+                                            {
+                                                <span class="muted">Running…</span>
+                                            }
                                         </span>
                                     </span>
                                 </button>
@@ -610,6 +604,12 @@
     private bool liveShowFailed;
     private readonly Dictionary<int, ClientLiveLogDto> latestLogByBee = [];
     private List<int> liveBeeOrder = [];
+    private List<int>? frozenFeedSeqs;
+    private bool liveFeedScrolledDown;
+    private ElementReference liveFeedEl;
+    private IJSObjectReference? liveFeedScrollHandle;
+    private DotNetObjectReference<ScenarioDetailDialog>? selfRef;
+    private bool liveFeedAttached;
     private long liveOrderUpdatedAt;
     private int liveOrderFinishedCount = -1;
     private long entryLogAfterId;
@@ -792,12 +792,69 @@
         {
             latestLogByBee.Clear();
             liveBeeOrder.Clear();
+            frozenFeedSeqs = null;
+            liveFeedScrolledDown = false;
             liveOrderUpdatedAt = 0;
             liveOrderFinishedCount = -1;
             entryLogAfterId = 0;
             entryLogCts = new CancellationTokenSource();
             _ = PollEntryLogsAsync(entryLogCts.Token);
         }
+    }
+
+    [JSInvokable]
+    public void OnLiveFeedScroll(bool scrolledDown)
+    {
+        if (liveFeedScrolledDown == scrolledDown) return;
+        liveFeedScrolledDown = scrolledDown;
+        if (!scrolledDown)
+        {
+            frozenFeedSeqs = null;
+            liveOrderUpdatedAt = 0; // refresh order when returning to top
+        }
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task JumpLiveFeedToTopAsync()
+    {
+        liveFeedScrolledDown = false;
+        frozenFeedSeqs = null;
+        liveOrderUpdatedAt = 0;
+        if (liveFeedScrollHandle is not null)
+        {
+            try { await liveFeedScrollHandle.InvokeVoidAsync("scrollToTop"); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Builds the displayed bee sequence list for the live feed:
+    /// - When scrolled down, freezes the displayed sequence list (no new bees inserted) while still letting each
+    ///   visible row render its newest log line, and reports how many new bees have arrived since freezing.
+    /// - When at the top, keeps flying bees above finished bees and re-sorts on bee completion or every 10s.
+    /// </summary>
+    private (List<int> Seqs, int PendingNew) BuildLiveFeedView(IReadOnlyList<RunningBee> runningNow, Dictionary<int, RunningBee> runningSet, int finishedCount)
+    {
+        var orderedLogs = OrderedLiveLogs(runningSet, finishedCount);
+        var loggedRunning = orderedLogs.Where(l => runningSet.ContainsKey(l.Sequence)).Select(l => l.Sequence).ToHashSet();
+        var fresh = new List<int>(runningNow.Count + orderedLogs.Count);
+        foreach (var ur in runningNow.Where(r => !loggedRunning.Contains(r.Sequence)).OrderByDescending(r => r.StartedAt))
+            fresh.Add(ur.Sequence);
+        foreach (var lg in orderedLogs)
+            fresh.Add(lg.Sequence);
+
+        if (!liveFeedScrolledDown)
+        {
+            frozenFeedSeqs = fresh;
+            return (fresh, 0);
+        }
+
+        frozenFeedSeqs ??= fresh;
+        var shown = frozenFeedSeqs.ToHashSet();
+        var pending = 0;
+        foreach (var seq in fresh)
+            if (!shown.Contains(seq)) pending++;
+        return (frozenFeedSeqs, pending);
     }
 
     /// <summary>
@@ -943,6 +1000,30 @@
         else if (showLiveConsole && logScrollHandle is not null)
         {
             try { await logScrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
+
+        var showLiveFeed = Snapshot.Running && !Selection && !DataMode.IsFakeMode && !liveShowFailed && (latestLogByBee.Count > 0 || (Snapshot.BeesInFlight is { } rnf && Index < rnf.Length && rnf[Index].Count > 0));
+        if (showLiveFeed && !liveFeedAttached)
+        {
+            try
+            {
+                logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js");
+                selfRef ??= DotNetObjectReference.Create(this);
+                liveFeedScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("watchTop", liveFeedEl, selfRef);
+                liveFeedAttached = true;
+            }
+            catch { }
+        }
+        else if (!showLiveFeed && liveFeedAttached)
+        {
+            liveFeedAttached = false;
+            liveFeedScrolledDown = false;
+            frozenFeedSeqs = null;
+            if (liveFeedScrollHandle is not null)
+            {
+                try { await liveFeedScrollHandle.InvokeVoidAsync("dispose"); await liveFeedScrollHandle.DisposeAsync(); } catch { }
+                liveFeedScrollHandle = null;
+            }
         }
 
         if (!refocus || Logs.IsOpen) return;
@@ -1242,6 +1323,7 @@
         runningLogCts?.Dispose();
         entryLogCts?.Cancel();
         entryLogCts?.Dispose();
+        selfRef?.Dispose();
         Logs.Changed -= OnLogsChanged;
         Settings.Changed -= OnSettingsChanged;
     }

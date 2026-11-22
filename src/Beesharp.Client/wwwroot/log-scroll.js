@@ -22,3 +22,27 @@ export function attach(el) {
         }
     };
 }
+
+// Watches a top-newest feed container: notifies .NET when scrolled away from the top so new items can be paused.
+export function watchTop(el, dotnet) {
+    if (!el) return { scrollToTop() {}, dispose() {} };
+    let away = false;
+
+    const onScroll = () => {
+        const nowAway = el.scrollTop > 12;
+        if (nowAway !== away) {
+            away = nowAway;
+            dotnet.invokeMethodAsync("OnLiveFeedScroll", away);
+        }
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return {
+        scrollToTop() {
+            el.scrollTo({ top: 0, behavior: "smooth" });
+        },
+        dispose() {
+            el.removeEventListener("scroll", onScroll);
+        }
+    };
+}

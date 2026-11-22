@@ -138,7 +138,14 @@ label { font-size: .72rem; color: var(--muted); }
 .bento-kpi-left, .bento-kpi-right { gap: .3rem; justify-content: space-between; }
 .bento-kpi-left.is-live { align-items: center; justify-content: center; gap: .42rem; padding: .65rem .6rem; }
 .bee-spin-wrap { position: relative; width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
-.bee-spin-ring { position: absolute; inset: 0; border-radius: 50%; border: 2.5px solid rgba(91, 155, 240, 0.22); border-top-color: var(--running); border-right-color: var(--bee-accent); animation: ado-spin 1.05s linear infinite; }
+.bee-spin-ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(91, 155, 240, 0.08) 0deg, rgba(91, 155, 240, 0.25) 180deg, #60a5fa 320deg, #93c5fd 360deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.6px), #000 calc(100% - 2.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2.6px), #000 calc(100% - 2.5px));
+    filter: drop-shadow(0 0 4px rgba(91, 155, 240, 0.4));
+    animation: ado-spin .95s linear infinite;
+}
 .bee-spin-num { position: relative; z-index: 1; font-family: var(--mono); font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--title); line-height: 1; }
 .bee-spin-time { font-family: var(--mono); font-size: .74rem; font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: .02em; }
 .ado-run-state { display: inline-flex; align-items: center; gap: .38rem; }
@@ -958,6 +965,8 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 
 /* ----- live running-scenario activity list (replaces bar chart while running) ----- */
 .live-feed { display: flex; flex-direction: column; gap: .45rem; }
+.live-feed-new-btn { align-self: center; display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .85rem; border-radius: 999px; background: rgba(91, 155, 240, 0.16); border: 1px solid rgba(91, 155, 240, 0.45); color: #bfdbfe; font-size: .78rem; font-weight: 600; cursor: pointer; transition: background-color .12s, border-color .12s; }
+.live-feed-new-btn:hover { background: rgba(91, 155, 240, 0.26); border-color: #93c5fd; color: #fff; }
 .live-feed-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: #0d0b09; overflow: hidden; max-height: 46dvh; overflow-y: auto; }
 .live-feed-row { display: flex; flex-direction: column; gap: .22rem; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid #2e281f88; padding: .52rem .72rem; cursor: pointer; transition: background-color .12s; }
 .live-feed-row.is-flying { flex-direction: row; align-items: center; gap: .65rem; }
