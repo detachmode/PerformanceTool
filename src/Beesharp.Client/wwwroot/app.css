@@ -965,9 +965,10 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
 
 /* ----- live running-scenario activity list (replaces bar chart while running) ----- */
 .live-feed { display: flex; flex-direction: column; gap: .45rem; }
-.live-feed-new-btn { align-self: center; display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .85rem; border-radius: 999px; background: rgba(91, 155, 240, 0.16); border: 1px solid rgba(91, 155, 240, 0.45); color: #bfdbfe; font-size: .78rem; font-weight: 600; cursor: pointer; transition: background-color .12s, border-color .12s; }
-.live-feed-new-btn:hover { background: rgba(91, 155, 240, 0.26); border-color: #93c5fd; color: #fff; }
-.live-feed-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: #0d0b09; overflow: hidden; max-height: 46dvh; overflow-y: auto; }
+.live-feed-new-wrap { position: sticky; top: .45rem; z-index: 4; height: 0; display: flex; justify-content: center; pointer-events: none; overflow: visible; }
+.live-feed-new-btn { pointer-events: auto; align-self: flex-start; display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .85rem; border-radius: 999px; background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(91, 155, 240, 0.55); color: #bfdbfe; font-size: .76rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55); transition: background-color .12s, border-color .12s; }
+.live-feed-new-btn:hover { background: rgba(30, 58, 138, 0.95); border-color: #93c5fd; color: #fff; }
+.live-feed-list { position: relative; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: #0d0b09; overflow: hidden; max-height: 46dvh; overflow-y: auto; }
 .live-feed-row { display: flex; flex-direction: column; gap: .22rem; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid #2e281f88; padding: .52rem .72rem; cursor: pointer; transition: background-color .12s; }
 .live-feed-row.is-flying { flex-direction: row; align-items: center; gap: .65rem; }
 .live-feed-row-body { display: flex; flex-direction: column; gap: .2rem; flex: 1 1 auto; min-width: 0; }

@@ -206,13 +206,15 @@
                     }
                     else
                     {
-                        @if (liveFeedScrolledDown && pendingNew > 0)
-                        {
-                            <button type="button" class="live-feed-new-btn" @onclick="JumpLiveFeedToTopAsync" title="Scroll back to top and show new bees">
-                                ↑ @Format.Plural(pendingNew, "new bee", "new bees") · back to top
-                            </button>
-                        }
                         <div class="live-feed-list" @ref="liveFeedEl">
+                            @if (liveFeedScrolledDown && pendingNew > 0)
+                            {
+                                <div class="live-feed-new-wrap">
+                                    <button type="button" class="live-feed-new-btn" @onclick="JumpLiveFeedToTopAsync" title="Scroll back to top and show new bees">
+                                        ↑ @Format.Plural(pendingNew, "new bee", "new bees") · back to top
+                                    </button>
+                                </div>
+                            }
                             @foreach (var seq in displaySeqs)
                             {
                                 var beeSeq = seq;
