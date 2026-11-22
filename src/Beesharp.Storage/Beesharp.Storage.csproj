@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Run storage (IRunStorage, in-memory provider) and the JSON file stores for presets and environments (brain 0054).
+       No ASP.NET and no database engine: DuckDB lives in Beesharp.Storage.DuckDb. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Beesharp</RootNamespace>
+  </PropertyGroup>
+
+  <!-- ILogger and IServiceCollection: from .NET 11 the SDK provides them itself (see Beesharp.Core.csproj); older SDKs still need the packages. -->
+  <ItemGroup Condition="$([MSBuild]::VersionLessThan($([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)')), '11.0'))">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

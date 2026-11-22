@@ -18,6 +18,10 @@
     <ProjectReference Include="../../src/Beesharp.Core/Beesharp.Core.csproj" />
     <ProjectReference Include="../../src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../../src/Beesharp/Beesharp.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Storage/Beesharp.Storage.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Scripting/Beesharp.Scripting.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Engine/Beesharp.Engine.csproj" />
     <ProjectReference Include="../../src/Beesharp.Client/Beesharp.Client.csproj" />
     <ProjectReference Include="../../src/Beesharp.Ai/Beesharp.Ai.csproj" />
     <ProjectReference Include="../../src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" />
