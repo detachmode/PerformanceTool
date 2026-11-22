@@ -373,11 +373,11 @@ public sealed class ApiRunSource : IRunSource
         catch { }
     }
 
-    public async Task<List<ClientLiveLogDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default, int? sequence = null)
+    public async Task<List<ClientLiveLogDto>> FetchLiveLogsAsync(long afterId = 0, int limit = 500, CancellationToken ct = default, int? sequence = null, int? entry = null)
     {
-        var url = sequence is { } seq
-            ? $"api/runs/live-logs?afterId={afterId}&limit={limit}&sequence={seq}"
-            : $"api/runs/live-logs?afterId={afterId}&limit={limit}";
+        var url = $"api/runs/live-logs?afterId={afterId}&limit={limit}";
+        if (sequence is { } seq) url += $"&sequence={seq}";
+        if (entry is { } ent) url += $"&entry={ent}";
         try { return await http.GetFromJsonAsync<List<ClientLiveLogDto>>(url, JsonOpts, ct) ?? []; }
         catch { return []; }
     }

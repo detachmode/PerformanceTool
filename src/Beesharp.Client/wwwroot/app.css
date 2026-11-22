@@ -919,6 +919,18 @@ button.cnt:disabled { cursor: default; color: var(--faint); } button.cnt:disable
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }
 
+/* ----- live running-scenario activity list (replaces bar chart while running) ----- */
+.live-feed { display: flex; flex-direction: column; gap: .45rem; }
+.live-feed-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: #0d0b09; overflow: hidden; max-height: 46dvh; overflow-y: auto; }
+.live-feed-row { display: flex; flex-direction: column; gap: .22rem; width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid #2e281f88; padding: .52rem .72rem; cursor: pointer; transition: background-color .12s; }
+.live-feed-row:last-child { border-bottom: 0; }
+.live-feed-row:hover { background: var(--panel); }
+.live-feed-row.on { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent2); }
+.live-feed-row-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.live-feed-row-log { font-family: var(--mono); font-size: .74rem; line-height: 1.35; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-feed-row-log .sl-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-feed-empty { padding: 1.4rem 1rem; text-align: center; color: var(--muted); font-size: .84rem; }
+
 /* ----- unified run & preflight bento card ----- */
 .run-launch-card { display: flex; flex-direction: column; gap: .65rem; margin-bottom: 1rem; padding: .85rem .95rem; background: var(--bee-shell-bg); border: 1px solid rgba(255, 232, 198, 0.09); border-radius: 22px; box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6); }
 .run-pf-row { display: flex; align-items: stretch; gap: .5rem; }
