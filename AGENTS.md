@@ -50,7 +50,7 @@ Client alone (fake data): `dotnet run --project src/PerformanceTool.Client`. Ser
 ```bash
 dotnet run --project src/PerformanceTool
 ```
-**Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too.
+**Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too. .NET 11 (CI) reports more than the .NET 10 copy (e.g. Blazor BL0016: give every JS interop call its own try/catch; BL0012: no `StateHasChanged()` at the end of an event handler), so watch CI.
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/`, the
 `.slnx` and `Directory.Build.props` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
