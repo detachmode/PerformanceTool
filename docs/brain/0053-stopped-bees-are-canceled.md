@@ -1,6 +1,6 @@
 # 0053. Bees in flight when a run is stopped are kept as "canceled", with their logs
 
-- Status: Accepted (goal), details open
+- Status: Accepted
 - Date: 2026-11-22
 - Supersedes: the line "Stopping a run cancels in-flight executions; those are not reported" in 0004
 
@@ -12,8 +12,8 @@ got**. Today they are dropped without a trace (server `LoadRunner.ExecuteOne` re
 - **Look and count like failed** (user answer, 2026-11-22): red, counted in the errors, ordered with the failed bees,
   with the error text "Canceled: run stopped" (so the error dictionary groups them).
 
-## Open (ask the user, one at a time)
-- Whether calls already made (and a call cut off mid-way) are kept like the logs.
+- **Calls are kept too** (user answer, 2026-11-22): finished calls stay as they are; the call cut off by the stop is
+  kept as failed, with the time it ran until the stop. The bee's duration ends at the stop.
 
 ## Consequences
 - A third outcome next to success and failed: `ScenarioOutcome`, `ExecutionResult`, storage, wire format, the
