@@ -1,0 +1,276 @@
+@* Environment tab (brain 0052): inspect the environment of the current run. Static values of the selected environment (fixed during a run), and runtime
+   data written during the run: the run bag and one entry bag per scenario entry. A finished run shows the final values. Calm UI (0016): thin lists, no
+   boxes in boxes, details (full value, who wrote it and when) only on expand. Every figure drills down (0029): counts expand, writers open the bee or
+   the scenario entry. Colour carries meaning (0018), so runtime data stays neutral. *@
+@page "/environment"
+@layout MainLayout
+@implements IDisposable
+@using System.Text.Json.Nodes
+@using PerformanceTool.Services.Environments
+@inject IRunSource Sim
+@inject IEnvironmentSource Envs
+@inject EnvironmentsPopupState EnvPopup
+@inject DataModeState DataMode
+@inject NavigationManager Nav
+
+<PageTitle>Environment · Beesharp</PageTitle>
+
+@{
+    var s = Sim.Current;
+    var rt = s.Runtime;
+    var env = Envs.Active;
+    var staticRows = env is null ? [] : env.Variables.Where(v => v.Key.Trim().Length > 0 && Match(v.Key)).ToList();
+    var staticTotal = env?.Variables.Count(v => v.Key.Trim().Length > 0) ?? 0;
+    var filtering = filter.Trim().Length > 0;
+    var runRows = rt?.Run.Values.Where(v => Match(v.Key)).ToList() ?? [];
+    var total = rt?.TotalValues ?? 0;
+    var shownTotal = (rt is null ? 0 : runRows.Count + rt.Entries.Sum(e => e.Values.Count(v => Match(v.Key))));
+}
+
+<div class="page env-page">
+    <section class="preset-bar" aria-label="Environment header">
+        <div class="preset-title">
+            <h1>Environment</h1>
+            <span class="muted">@StateText(s)</span>
+        </div>
+        <div class="preset-actions">
+            <input class="rt-filter" type="search" placeholder="Filter keys…" aria-label="Filter keys" autocomplete="off" spellcheck="false"
+                   value="@filter" @oninput="e => filter = e.Value?.ToString() ?? string.Empty" />
+        </div>
+    </section>
+
+    @* ---------- static values ---------- *@
+    <section class="rt-sec" aria-labelledby="rt-static">
+        <div class="rt-head">
+            <h2 id="rt-static">
+                <button type="button" class="rt-toggle" aria-expanded="@Aria.Bool(openStatic || filtering)" @onclick="() => openStatic = !openStatic">
+                    <i class="rt-caret" aria-hidden="true">@((openStatic || filtering) ? "▾" : "▸")</i>Static values
+                    @if (env is not null) { <span class="rt-count">@Count(staticRows.Count, staticTotal)</span> }
+                </button>
+            </h2>
+            <span class="muted rt-note">@(env is null ? "" : $"{env.Name} · fixed during a run")</span>
+            <span class="spacer"></span>
+            <button type="button" class="btn ghost small" @onclick="() => EnvPopup.Show(Envs.ActiveName)">Configure…</button>
+        </div>
+        @if (env is null)
+        {
+            <p class="muted rt-quiet">
+                No environment selected, so scenarios get no <code>{{Key}}</code> values.
+                @if (Envs.Environments.Count > 0)
+                {
+                    <span class="rt-pick">Use
+                    @foreach (var e in Envs.Environments)
+                    {
+                        var name = e.Name;
+                        <button type="button" class="rt-link" @onclick="() => Envs.SetActive(name)">@name</button>
+                    }
+                    </span>
+                }
+            </p>
+        }
+        else if (openStatic || filtering)
+        {
+            @if (staticRows.Count == 0)
+            {
+                <p class="muted rt-quiet">@(filtering ? "No static key matches." : "This environment has no keys yet.")</p>
+            }
+            else
+            {
+                <div class="rt-rows" role="list" aria-label="Static values">
+                    @foreach (var v in staticRows)
+                    {
+                        var id = "s:" + v.Key;
+                        <RuntimeRow @key="id" Key="@v.Key" Value="JsonValue.Create(v.Value)" Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                    OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" />
+                    }
+                </div>
+            }
+        }
+    </section>
+
+    @* ---------- runtime data ---------- *@
+    <section class="rt-sec" aria-labelledby="rt-runtime">
+        <div class="rt-head">
+            <h2 id="rt-runtime">
+                <button type="button" class="rt-toggle" aria-expanded="@Aria.Bool(openRuntime)" @onclick="() => openRuntime = !openRuntime">
+                    <i class="rt-caret" aria-hidden="true">@(openRuntime ? "▾" : "▸")</i>Runtime data
+                    @if (rt is not null && total > 0) { <span class="rt-count">@Count(shownTotal, total)</span> }
+                </button>
+            </h2>
+            <span class="muted rt-note">written during the run</span>
+        </div>
+
+        @if (!openRuntime)
+        {
+        }
+        else if (rt is null || total == 0)
+        {
+            <p class="muted rt-quiet">@EmptyText(s, rt)</p>
+        }
+        else if (filtering && shownTotal == 0)
+        {
+            <p class="muted rt-quiet">No runtime key matches “@filter.Trim()”.</p>
+        }
+        else
+        {
+            @if (!filtering || runRows.Count > 0)
+            {
+                <div class="rt-bag" aria-label="Run bag">
+                    <div class="rt-bag-head">
+                        <span class="rt-bag-name">Run bag</span>
+                        <span class="muted rt-note">shared by the whole run</span>
+                        <span class="spacer"></span>
+                        <button type="button" class="rt-count rt-count-btn" aria-expanded="@Aria.Bool(openRun || filtering)" @onclick="() => openRun = !openRun">
+                            @Count(runRows.Count, rt.Run.Values.Count)<i class="rt-caret" aria-hidden="true">@((openRun || filtering) ? "▾" : "▸")</i>
+                        </button>
+                    </div>
+                    @if (openRun || filtering)
+                    {
+                        <div class="rt-rows" role="list">
+                            @foreach (var v in runRows)
+                            {
+                                var id = "r:" + v.Key;
+                                <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
+                                            Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                            OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            @foreach (var bag in rt.Entries)
+            {
+                var entry = bag.Entry;
+                var rows = bag.Values.Where(v => Match(v.Key)).ToList();
+                if (bag.Values.Count == 0 || (filtering && rows.Count == 0)) continue;
+                var open = filtering || openEntries.Contains(entry);
+                <div class="rt-bag" aria-label="Entry bag of @Label(s, entry)">
+                    <div class="rt-bag-head">
+                        <button type="button" class="rt-link rt-bag-name" title="Open this scenario entry" @onclick="() => OpenEntry(entry, null)">@Label(s, entry)</button>
+                        <span class="muted rt-note">entry bag</span>
+                        <span class="spacer"></span>
+                        <button type="button" class="rt-count rt-count-btn" aria-expanded="@Aria.Bool(open)" @onclick="() => ToggleEntry(entry)">
+                            @Count(rows.Count, bag.Values.Count)<i class="rt-caret" aria-hidden="true">@(open ? "▾" : "▸")</i>
+                        </button>
+                    </div>
+                    @if (open)
+                    {
+                        <div class="rt-rows" role="list">
+                            @foreach (var v in rows)
+                            {
+                                var id = $"e{entry}:{v.Key}";
+                                <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
+                                            Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                            OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </section>
+</div>
+
+@if (openEntry is { } oe && oe < s.Count)
+{
+    <ScenarioDetailDialog @key="(oe, openBee)" Index="oe" Snapshot="s" InitialBee="openBee" OnClose="CloseDialog" />
+}
+
+@code {
+    private string filter = "";
+    private bool openStatic = true, openRuntime = true, openRun = true;
+    private readonly HashSet<int> openEntries = [];
+    private readonly HashSet<string> expanded = [], revealed = [];
+    private int? openEntry, openBee;
+
+    // Live values (brain 0052): a value that was written since the last update gets a short, neutral fade. Its element is re-created per write (@key = the value).
+    private readonly Dictionary<string, RuntimeValue> previous = [];
+    private readonly HashSet<RuntimeValue> fresh = new(ReferenceEqualityComparer.Instance);
+    private object? previousRun;
+
+    protected override void OnInitialized()
+    {
+        Remember(initial: true);
+        Sim.Changed += OnChanged;
+        Envs.Changed += OnChanged;
+        DataMode.Changed += OnChanged;
+    }
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(() => { Remember(initial: false); StateHasChanged(); }); }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Compares the values with the ones of the last update to find which were written since.</summary>
+    private void Remember(bool initial)
+    {
+        var s = Sim.Current;
+        var runKey = s.Store;
+        if (!ReferenceEquals(runKey, previousRun)) { previous.Clear(); fresh.Clear(); previousRun = runKey; }
+        var now = new Dictionary<string, RuntimeValue>();
+        if (s.Runtime is { } rt)
+        {
+            foreach (var v in rt.Run.Values) now["r:" + v.Key] = v;
+            foreach (var b in rt.Entries) foreach (var v in b.Values) now[$"e{b.Entry}:{v.Key}"] = v;
+        }
+        if (!initial)
+            foreach (var (id, v) in now)
+                if (previous.TryGetValue(id, out var old) && !ReferenceEquals(old, v)) fresh.Add(v);
+        fresh.IntersectWith(now.Values);
+        previous.Clear();
+        foreach (var (id, v) in now) previous[id] = v;
+    }
+
+    private bool Match(string key) => filter.Trim().Length == 0 || key.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string Count(int shown, int total) => shown == total ? Format.Plural(total, "value", "values") : $"{shown} of {total} values";
+
+    private static string Label(RunSnapshot s, int entry) => entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : $"Entry {entry + 1}";
+
+    private string StateText(RunSnapshot s) => s.State switch
+    {
+        FakeRunState.Running => $"Running · {Format.Time(s.Elapsed)} · values update live",
+        FakeRunState.Paused => $"Paused · {Format.Time(s.Elapsed)}",
+        FakeRunState.Finished => $"Finished run · final values",
+        _ => "No run yet"
+    };
+
+    private string EmptyText(RunSnapshot s, RuntimeDataSnapshot? rt) =>
+        rt is null && !DataMode.IsFakeMode ? "The server does not send runtime data yet."
+        : s.State == FakeRunState.Idle ? "Start a run: what the preflight and scenarios write shows up here."
+        : s.Running ? "Nothing written yet."
+        : "This run wrote no runtime data.";
+
+    private void ToggleEntry(int entry) { if (!openEntries.Remove(entry)) openEntries.Add(entry); }
+    private void Toggle(string id) { if (!expanded.Remove(id)) expanded.Add(id); }
+    private void ToggleReveal(string id) { if (!revealed.Remove(id)) revealed.Add(id); }
+    private void OpenEntry(int entry, int? bee) { openEntry = entry; openBee = bee; }
+    private void CloseDialog() { openEntry = null; openBee = null; }
+
+    private void OpenWriter(DataWriter w)
+    {
+        switch (w.Kind)
+        {
+            case DataWriterKind.Bee: OpenEntry(w.Entry, w.Bee); break;
+            case DataWriterKind.Startup or DataWriterKind.Teardown: OpenEntry(w.Entry, null); break;
+            default: Nav.NavigateTo("editor"); break; // the preflight and shutdown programs live with the plan
+        }
+    }
+
+    private static string WriterText(RunSnapshot s, DataWriter w) => w.Kind switch
+    {
+        DataWriterKind.Preflight => "Preflight",
+        DataWriterKind.Startup => $"Startup · {Label(s, w.Entry)}",
+        DataWriterKind.Bee => $"B{w.Bee + 1} · {Label(s, w.Entry)}",
+        DataWriterKind.Teardown => $"Teardown · {Label(s, w.Entry)}",
+        _ => "Shutdown"
+    };
+
+    public void Dispose()
+    {
+        Sim.Changed -= OnChanged;
+        Envs.Changed -= OnChanged;
+        DataMode.Changed -= OnChanged;
+    }
+}

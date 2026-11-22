@@ -1,0 +1,71 @@
+@* One key of the Environment tab (brain 0052): the key and a compact value on one line; click to see the full value (pretty JSON for objects) and, for runtime
+   data, who wrote it last and when. Credential-like keys are masked until shown (brain 0033). The state (open, revealed) lives in the page. *@
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using PerformanceTool.Services.Environments
+
+@{
+    var secret = EnvironmentDisplay.LooksLikeCredential(Key);
+    var masked = secret && !Revealed;
+    var isObject = Value is JsonObject or JsonArray;
+}
+
+<div class="rt-row @(Fresh ? "fresh" : "")" role="listitem">
+    <button type="button" class="rt-line" aria-expanded="@Aria.Bool(Open)" title="@(Open ? "Hide details" : Written is null ? "Show the full value" : "Show the full value and who wrote it")" @onclick="OnToggle">
+        <span class="rt-key">@Key</span>
+        <span class="rt-val @(isObject ? "obj" : "") @(masked ? "masked" : "")">@(masked ? EnvironmentDisplay.Mask : Compact(Value))</span>
+    </button>
+    @if (secret)
+    {
+        <button type="button" class="rt-reveal" aria-label="@(masked ? "Show" : "Hide") value of @Key" @onclick="OnReveal">@(masked ? "Show" : "Hide")</button>
+    }
+    @if (Open)
+    {
+        <div class="rt-detail">
+            @if (masked)
+            {
+                <p class="muted rt-hidden">Hidden because the key looks like a credential.</p>
+            }
+            else
+            {
+                <pre class="rt-full">@Full(Value)</pre>
+            }
+            @if (Written is not null)
+            {
+                <p class="muted rt-meta">
+                    Last written by
+                    <button type="button" class="rt-link" title="Open" @onclick="OnWriter">@WriterText</button>
+                    at @Format.Time(Written.AtSeconds) into the run
+                </p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Key { get; set; } = "";
+    [Parameter] public JsonNode? Value { get; set; }
+    /// <summary>The runtime value (with its writer and time); null for a static value.</summary>
+    [Parameter] public RuntimeValue? Written { get; set; }
+    [Parameter] public string WriterText { get; set; } = "";
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public bool Revealed { get; set; }
+    /// <summary>Written since the last update: a short neutral fade.</summary>
+    [Parameter] public bool Fresh { get; set; }
+    [Parameter] public EventCallback OnToggle { get; set; }
+    [Parameter] public EventCallback OnReveal { get; set; }
+    [Parameter] public EventCallback OnWriter { get; set; }
+
+    private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
+
+    /// <summary>One line: strings as they are, numbers, booleans and objects as compact JSON.</summary>
+    public static string Compact(JsonNode? v) => v switch
+    {
+        null => "null",
+        JsonValue jv when jv.TryGetValue<string>(out var str) => str,
+        _ => v.ToJsonString()
+    };
+
+    /// <summary>Everything: objects and arrays as indented JSON.</summary>
+    public static string Full(JsonNode? v) => v is JsonObject or JsonArray ? v.ToJsonString(Pretty) : Compact(v);
+}

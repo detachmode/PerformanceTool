@@ -40,6 +40,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (O, user feedback):** slowness as a colour gradient from green at typical time to amber (0041): ratio per actor (one byte), four steps, groups take their worst actor, "1.3x typical" drills down to the calls. Open for the user: review the Proposed details.
 - **Done (P, user feedback):** a burst that does not fit splits into even groups (nice sizes 1, 2, 5, 10, ...) that refine while zooming until every actor has a bar; failed and slow actors stay in their group, previous/next failed steps group by group (0043). Debug URL `?burst=100`.
 - **Next (Q, user feedback):** the lilac selection marker as one robust piece (0044).
+- **Done (S1, user request):** Environment tab UI draft with fake data (0052): static values of the selected environment, run bag and entry bags, live updates while running, final values for finished runs.
+- **Next (S2, user request):** shutdown program that always runs at the end (0052), and runtime data (run bag) in the server runner.
 - **Done (R, user request):** AI assistant (0047-0051), in three steps:
   - R1 (done): the server owns the Live plan and presets (plan workspace + REST, `PresetStore`); `ApiRunSource` uses them.
   - R2 (done): `src/Beesharp.Ai.Contracts` + `src/Beesharp.Ai` (Microsoft.Extensions.AI, env var config `AI__*`, ports,

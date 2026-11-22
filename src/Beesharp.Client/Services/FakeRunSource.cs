@@ -68,6 +68,8 @@ public sealed class FakeRunSource : IRunSource
     private double elapsed;
     private RunStore store = new(0);
     private CallTypicals typicals = new();
+    private RuntimeData runtime = new(0);
+    private FakeRuntimeScript script = new(new RuntimeData(0));
     private int[] starts = [], inFlight = [], failed = [], slowBees = [], slowCalls = [];
     private double[] nextFire = [];
     private readonly List<Pending> pending = [];
@@ -248,6 +250,9 @@ public sealed class FakeRunSource : IRunSource
         pending.Clear();
         store = new RunStore(n, StoreOptions);
         typicals = new CallTypicals();
+        runtime = new RuntimeData(n);
+        script = new FakeRuntimeScript(runtime);
+        script.Begin(n);
         starts = new int[n]; inFlight = new int[n]; failed = new int[n]; slowBees = new int[n]; slowCalls = new int[n];
         // First fire at a random offset inside the first interval, like independent arrival streams.
         nextFire = runPlan.Scenarios.Select(s => rng.NextDouble() * FireInterval(s)).ToArray();
@@ -357,6 +362,7 @@ public sealed class FakeRunSource : IRunSource
             calls.Add(c with { Slow = isSlow, TypicalMs = typical });
         }
         var record = new BeeRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors, SlowCallRule.Encode(worst));
+        script.BeeFinished(p.Entry, p.Sequence, p.EndAt, record.Failed, store.Bees(p.Entry).Count + 1);
         if (record.Failed) failed[p.Entry]++;
         else if (slow > 0) slowBees[p.Entry]++;
         slowCalls[p.Entry] += slow;
@@ -445,6 +451,7 @@ public sealed class FakeRunSource : IRunSource
         pending.Clear();
         Array.Clear(inFlight);
         elapsed = at;
+        script.End(runPlan.Scenarios.Count, at);
         state = FakeRunState.Finished;
     }
 
@@ -458,7 +465,7 @@ public sealed class FakeRunSource : IRunSource
         var running = new IReadOnlyList<RunningBee>[n];
         for (var i = 0; i < n; i++)
             running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningBee(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running);
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot());
     }
 
     // ---------- the fake plan ----------
