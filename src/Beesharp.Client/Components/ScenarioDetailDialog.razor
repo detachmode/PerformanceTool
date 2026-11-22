@@ -453,7 +453,7 @@
                                 <span class="call-name" title="@call.Name">@call.Name</span>
                                 <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                                 <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
-                                <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? "timeout") : call.Status?.ToString() ?? "")</span>
+                                <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? (ExecutionResult.IsCanceledError(call.Error) ? "canceled" : "timeout")) : call.Status?.ToString() ?? "")</span>
                             </li>
                         }
                     </ol>
@@ -1316,7 +1316,7 @@
     }
 
     private static string CallStatus(FakeCall c) =>
-        c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? "timeout") : c.Slow ? "slow" : c.Status?.ToString() ?? "";
+        c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? (ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "";
 
     public void Dispose()
     {
