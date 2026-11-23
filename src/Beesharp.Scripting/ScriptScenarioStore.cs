@@ -11,10 +11,12 @@ using Beesharp.Services.Scenarios.Spec;
 
 namespace Beesharp.Services;
 
-/// <summary>Globals object injected into every C# scenario script (brain 0040).</summary>
+/// <summary>Globals object injected into every C# scenario script (brain 0040, 0057).</summary>
 public sealed class ScenarioScriptGlobals
 {
     public required ScenarioScriptHost Scenario { get; init; }
+    /// <summary>Matches the top-level <c>args</c> parameter in .NET file-based apps so <c>await scenario.DebugRunAsync(args);</c> compiles cleanly.</summary>
+    public string[] args { get; init; } = [];
 }
 
 /// <summary>
@@ -180,7 +182,8 @@ public sealed class ScriptScenarioStore
         var host = new ScenarioScriptHost();
         try
         {
-            await script.RunAsync(new ScenarioScriptGlobals { Scenario = host }, ct);
+            using (Scenario.BeginHostScope(host))
+                await script.RunAsync(new ScenarioScriptGlobals { Scenario = host }, ct);
         }
         catch (Exception ex)
         {

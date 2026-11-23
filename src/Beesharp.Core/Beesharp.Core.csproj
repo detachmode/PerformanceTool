@@ -7,7 +7,22 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <PackageId>Beesharp.Core</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Dennis</Authors>
+    <Description>Core scenario, parameter, step-machine and runtime APIs for Beesharp load tests.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>beesharp;load-testing;performance;scenarios</PackageTags>
+    <PackageProjectUrl>https://github.com/detachmode/PerformanceTool</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/detachmode/PerformanceTool</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="buildTransitive/Beesharp.Core.props" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
 
   <!-- Only for AddScenario<T>() on IServiceCollection and ILogger on ScenarioContext. From .NET 11 the SDK provides them
        itself (NU1510 asks to drop the references); older SDKs (the .NET 10 agent copy) still need them. The condition avoids a

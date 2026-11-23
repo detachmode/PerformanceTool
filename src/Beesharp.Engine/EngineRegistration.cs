@@ -26,6 +26,7 @@ public static class EngineRegistration
     /// </summary>
     public static async Task<IReadOnlyList<ScriptLoadProblem>> LoadBeesharpScriptsAsync(this IServiceProvider services, CancellationToken ct = default)
     {
+        ScriptSdkDropper.Sync(services.GetRequiredService<BeesharpDirectories>().ResolveScripts());
         var problems = new List<ScriptLoadProblem>();
         problems.AddRange(await services.GetRequiredService<ScriptScenarioStore>().LoadAllFromDiskAsync(ct));
         problems.AddRange(await services.GetRequiredService<PreflightStore>().LoadAllFromDiskAsync(ct));

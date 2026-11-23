@@ -1,0 +1,118 @@
+name: NuGet
+
+# Packs and publishes Beesharp.Core to NuGet.org on version tags (v*) or manual dispatch.
+# Supports either NuGet Trusted Publishing (OIDC: set repository variable NUGET_USER)
+# or a classic API key (set repository secret NUGET_API_KEY).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish (leave empty to use Beesharp.Core.csproj, e.g. 0.1.0)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Pack and upload artifact only without pushing to NuGet.org'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Beesharp.Core/Beesharp.Core.csproj | head -n 1)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved package version: $VERSION"
+
+      - name: Test Core and Scripting
+        run: |
+          dotnet test tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj -c Release
+          dotnet test tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj -c Release
+
+      - name: Pack Beesharp.Core
+        run: >
+          dotnet pack src/Beesharp.Core/Beesharp.Core.csproj
+          -c Release
+          -o artifacts/nuget
+          -p:Version=${{ steps.ver.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beesharp-core-${{ steps.ver.outputs.version }}
+          path: artifacts/nuget/*.nupkg
+
+      # Option 1 (recommended): NuGet Trusted Publishing via OIDC (no long-lived API key secret).
+      - name: NuGet login (Trusted Publishing)
+        id: nuget-login
+        if: inputs.dry_run != true && secrets.NUGET_API_KEY == '' && vars.NUGET_USER != ''
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        if: inputs.dry_run != true
+        env:
+          API_KEY: ${{ secrets.NUGET_API_KEY != '' && secrets.NUGET_API_KEY || steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "::error::Neither secrets.NUGET_API_KEY nor vars.NUGET_USER (NuGet Trusted Publishing) is configured."
+            exit 1
+          fi
+          dotnet nuget push "artifacts/nuget/Beesharp.Core.*.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$API_KEY" \
+            --skip-duplicate
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Beesharp.Core NuGet"
+            echo "- **Version:** \`${{ steps.ver.outputs.version }}\`"
+            echo "- **Dry run:** \`${{ inputs.dry_run == true }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
