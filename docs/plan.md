@@ -55,6 +55,10 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (V, user request):** scenario steps UI draft (incl. a step that repeats; screenshots in `docs/screenshots/2026-11-22-scenario-steps/`) with fake data (0056): stepper in the bee detail, "step N of M" for bees in flight, failed step, bees failed per step in the scenario popup.
 - **Done (W, user request):** scenario steps backend + Live mode (0056): C# 15 `union` step machine (`Scenario<TParameters, TStep>`, `Scenario.DefineSteps`), automatic HTTP call recording in load runs, DuckDB schema v2 migration, REST/CLI/AI/Client Live wiring, and `src/Beesharp/scripts/checkout-steps.cs`.
 
+- **Done (X, user request):** UI polish (2026-11-23): one calm look, new overview cards, step list (0056), fixes; screenshots `docs/screenshots/2026-11-23-ui-polish-review/`.
+- **Next (Y1, user decision 0057):** the scenario as its own page (three columns: steps, chart and bees, the selected bee on the right) instead of the popup.
+- **Next (Y2, user decision 0057):** Logs page (filter column with counts, full-width search, removable filter chips), Editor (toolbar + Try column), Environment (one column), and a copy-all-logs button wherever logs show.
+
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done

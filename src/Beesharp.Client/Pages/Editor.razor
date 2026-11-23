@@ -545,6 +545,8 @@
         }
         catch (Exception ex)
         {
+            // Fake mode has no server (GitHub Pages): the example script stays, and "Switch to Live" says where scripts come from.
+            if (DataMode.IsFakeMode) return;
             statusMessage = $"Load error: {ex.Message}";
             statusIsError = true;
         }

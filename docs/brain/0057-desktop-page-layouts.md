@@ -12,6 +12,7 @@ Desktop first; the phone layouts follow from these.
 
 - **Editor: A's toolbar + B's Try column.** One toolbar above the code (file ▾, Saved, Save, Try, ⋯), the code at full height, and the Try result (passed/failed, its steps, then Logs and Calls tabs) in a column on the right. No script list on the left.
 - **Logs: B with a full-width search.** A filter column on the left with a count per filter (level, scenario, steps of the chosen scenario; errors per step). Above the log lines a full-width search field; under it every active filter as a chip with ✕ to remove it, plus "Clear all", like Kibana / Elastic.
+- **Copy all logs (user):** wherever logs are shown (Logs page, a bee's Logs tab, the Try result, preflight and shutdown output, live consoles), a small button copies **all** of them (the whole filtered set, not only the visible lines) to the clipboard.
 - **Environment: A.** One centred column: the static values of the selected environment, then the runtime data (run bag, one bag per scenario entry) below.
 
 ## Why

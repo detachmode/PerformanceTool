@@ -141,28 +141,9 @@
             var goodPct = view.Finished > 0 ? Math.Max(0, 100.0 - badPct - slowPct) : 0;
         }
 
-        @* Active Editorial KPI Hero (no bar diagram when active) *@
+        @* The run's progress (while active) or the outcome shares (finished) as one thin line; the figures are in the title block below (calm UI, brain 0016). *@
         @if (dlgActive)
         {
-            <section class="yt-dlg-hero" aria-label="Live run status">
-                <span class="yt-ed-badge run">
-                    <i class="yt-live-dot white" aria-hidden="true"></i>
-                    @Format.Num(view.InFlight) ACTIVE
-                </span>
-                <div class="yt-ed-hero">
-                    <div class="yt-ed-big">@Format.Num(view.InFlight)<small>bees</small></div>
-                    <div class="yt-ed-sub">
-                        <b>in flight right now</b>
-                        <span>@Format.Num(view.Finished) finished@(view.Failed > 0 ? $" · {Format.Num(view.Failed)} failed ({Pc(stats.ErrorRate)})" : "")</span>
-                    </div>
-                </div>
-                <div class="yt-dlg-hero-foot">
-                    <span class="yt-dlg-hero-stat">
-                        @(stats.Count > 0 ? $"typical {Format.Ms(stats.Median)} · slowest 5% {Format.Ms(stats.P95)}" : $"rate {Format.Rate(actual)} / {Format.Rate(target)}/m")
-                    </span>
-                    <span class="yt-dlg-hero-pill">@Format.Time(s.Elapsed)@(s.Plan.DurationSeconds > 0 ? $" / {Format.Time(s.Plan.DurationSeconds)}" : "")</span>
-                </div>
-            </section>
             <div class="yt-scrubber" aria-hidden="true">
                 <span class="yt-scrub-seg run" style="width:@(livePct.ToString("0.#", CultureInfo.InvariantCulture))%">
                     <i class="yt-scrub-dot @(view.Failed > 0 ? "bad" : "")"></i>
@@ -184,7 +165,9 @@
             <div class="yt-dlg-meta">
                 @if (dlgActive)
                 {
-                    <span>@Format.Num(view.InFlight) active</span>
+                    <span class="yt-dlg-live"><i class="yt-live-dot" aria-hidden="true"></i>@Format.Num(view.InFlight) active</span>
+                    <span class="yt-sep" aria-hidden="true">·</span>
+                    <span class="tnum">@Format.Time(s.Elapsed)@(s.Plan.DurationSeconds > 0 ? $" / {Format.Time(s.Plan.DurationSeconds)}" : "")</span>
                     <span class="yt-sep" aria-hidden="true">·</span>
                 }
                 <span>@Format.Num(view.Finished) finished</span>
@@ -230,61 +213,28 @@
             </button>
         </div>
 
-        @* Steps vertical timeline card (with active & failed pill indicators per step) *@
+        @* The steps of the scenario (brain 0056): always shown, right under the title, so you see first where the bees got to.
+           A count filters the chart and the lists to the bees behind it (brain 0029); clicking it again clears the filter. *@
         @if (hasSteps && !Selection)
         {
             var failedPer = s.Store.FailedPerStep(Index);
             var inFlightPer = StepLogic.InFlightCounts(stepsDecl, runningRaw, s.Elapsed);
-            var worst = StepLogic.MostFailed(failedPer);
-            var stripOpen = stepsOpen ?? (stepFilter is not null);
-            <section class="yt-steps-card @(stripOpen ? "open" : "")" role="group" aria-label="Steps of this scenario">
-                <button type="button" class="yt-steps-head" aria-expanded="@Aria.Bool(stripOpen)" @onclick="() => stepsOpen = !stripOpen" title="@(stripOpen ? "Hide the steps" : "Show the steps with their counts")">
-                    <b>Steps · @stepsDecl.Count</b>
-                    @if (worst is { } wf)
+            <section class="dlg-steps" aria-label="Steps of this scenario">
+                <div class="dlg-steps-head">
+                    <h3>Steps</h3>
+                    @if (stepFilter is { } sf)
                     {
-                        <span class="yt-steps-hint">most failed at @stepsDecl.Name(wf.Step) (@Format.Num(wf.Count))</span>
+                        <span class="dlg-steps-filter">Showing bees @(sf.InFlight ? "in flight at" : "that failed at") <b>@stepsDecl.Name(sf.Step)</b></span>
+                        <button type="button" class="btn ghost small" @onclick="() => ToggleStepFilter(sf.Step, sf.InFlight)">Show all</button>
                     }
-                    <svg class="yt-ico sm yt-steps-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-                </button>
-                @if (stripOpen)
-                {
-                    <ol class="yt-tl">
-                        @for (var si = 0; si < stepsDecl.Count; si++)
-                        {
-                            var st = si;
-                            var nFailed = st < failedPer.Count ? failedPer[st] : 0;
-                            var nFlight = inFlightPer[st];
-                            var onStep = stepFilter is { } sfo && sfo.Step == st;
-                            var tlCls = nFailed > 0 ? "has-bad" : nFlight > 0 ? "has-run" : "";
-                            <li class="yt-tl-item @tlCls @(onStep ? "on" : "")">
-                                <span class="yt-tl-dot" aria-hidden="true">@(st + 1)</span>
-                                <span class="yt-tl-name">@stepsDecl.Name(st)@if (stepsDecl.Times(st) > 1) { <span class="stp-times">×@stepsDecl.Times(st)</span> }</span>
-                                <span class="yt-tl-counts">
-                                    @if (nFlight > 0)
-                                    {
-                                        <button type="button" class="yt-cnt-pill run @(onStep && stepFilter!.Value.InFlight ? "on" : "")"
-                                                @onclick="() => ToggleStepFilter(st, true)"
-                                                aria-pressed="@Aria.Bool(onStep && stepFilter!.Value.InFlight)"
-                                                title="Show only the bees in flight in the step @stepsDecl.Name(st)">
-                                            <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>
-                                            <span>@Format.Num(nFlight) active</span>
-                                        </button>
-                                    }
-                                    @if (nFailed > 0)
-                                    {
-                                        <button type="button" class="yt-cnt-pill bad @(onStep && !stepFilter!.Value.InFlight ? "on" : "")"
-                                                @onclick="() => ToggleStepFilter(st, false)"
-                                                aria-pressed="@Aria.Bool(onStep && !stepFilter!.Value.InFlight)"
-                                                title="Show only the bees that failed at the step @stepsDecl.Name(st)">
-                                            <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
-                                            <span>@Format.Num(nFailed) failed</span>
-                                        </button>
-                                    }
-                                </span>
-                            </li>
-                        }
-                    </ol>
-                }
+                    else
+                    {
+                        <span class="muted">Click a number to see its bees</span>
+                    }
+                </div>
+                <StepTrack Steps="stepsDecl" FailedPer="failedPer" InFlightPer="inFlightPer" Finished="view.Finished" Live="@(s.Running || view.InFlight > 0)"
+                           Selected="stepFilter?.Step" SelectedInFlight="@(stepFilter?.InFlight ?? false)"
+                           OnFailed="st => ToggleStepFilter(st, false)" OnInFlight="st => ToggleStepFilter(st, true)" AriaLabel="@("Steps of " + label)" />
             </section>
         }
 
@@ -540,7 +490,7 @@
             <p class="chart-note muted">
                 @if (bucketed) { <text>@Format.Plural(total, "bee", "bees") in time buckets of @FT(width, width); a bar is red or yellow if any bee in it failed or was slow. Click a bar to list its bees.</text> }
                 else { <text>One bar per bee, taller = slower. The axis shows the run time of the bees at that position. Click a bee to see its calls.</text> }
-                <text> Drag across the chart to zoom into a time frame (touch: swipe the time axis to magnify, swipe the bars to scroll, pinch or double tap to zoom).</text>
+                <text> Drag across the chart to zoom (touch: pinch or double tap).</text>
             </p>
         }
         }
@@ -823,12 +773,16 @@
                         <button class="link-btn" @onclick="() => ZoomTo(ab, ab + width)" title="Zoom the chart into this bucket">Zoom in</button>
                     }
                 </p>
+                @* The counts of the time frame; for the whole run the chips above already say the same. *@
+                @if (win is not null || activeBucket is not null || groupSel is not null)
+                {
                 <p class="side-counts">
                     <button class="cnt bad" @onclick="() => SetShow(BeeShow.Failed, true)" disabled="@(sideCounts[0] == 0)" title="Show only failed bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>@Format.Num(sideCounts[0]) failed</button>
                     <button class="cnt warn" @onclick="() => SetShow(BeeShow.Slow, true)" disabled="@(sideCounts[1] == 0)" title="Show only slow bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>@Format.Num(sideCounts[1]) slow</button>
                     <button class="cnt good" @onclick="() => SetShow(BeeShow.All, true)" title="Show all bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></svg>@Format.Num(sideCounts[3]) ok</button>
                     @if (sideCounts[2] > 0) { <span class="cnt run"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>@Format.Num(sideCounts[2]) running</span> }
                 </p>
+                }
             </div>
             <BeeSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" RunningStep="@(hasSteps ? (seq => runStep.TryGetValue(seq, out var rs1) ? $"{rs1.Step + 1}/{stepsDecl.Count}" : null) : null)" />
         </aside>
@@ -852,6 +806,8 @@
     [Parameter] public int? InitialBee { get; set; }
     /// <summary>Open with the bees that failed at this step of the scenario (the overview card's "Most failed at …" line, brain 0056).</summary>
     [Parameter] public int? InitialFailedStep { get; set; }
+    /// <summary>Open showing the bees in flight at this step (the "now" count on the card's step list).</summary>
+    [Parameter] public int? InitialInFlightStep { get; set; }
     /// <summary>The assistant's short reason per picked bee (sequence to text), shown in the bee panel.</summary>
     [Parameter] public IReadOnlyDictionary<int, string>? Notes { get; set; }
 
@@ -866,7 +822,6 @@
     /// <summary>Scenario steps (brain 0056): the active filter (failed at / in flight in a step), whether the steps strip is open (null = open only while a step filter is on),
     /// whether a bee's panel shows its steps (the default when the scenario has steps), and the finished bees as filtered at the last render.</summary>
     private StepFilter? stepFilter;
-    private bool? stepsOpen;
     private bool showSteps = true;
     private IReadOnlyList<BeeRecord> curBees = [];
     private (StepFilter? Filter, int Count) fbKey = (null, -1);
@@ -1019,6 +974,7 @@
             for (var i = 0; i < all.Count; i++) if (all[i].Sequence == initialBee) { selected = all[i]; break; }
         }
         if (InitialFailedStep is { } fstep && Snapshot.StepsOf(Index).Any) { stepFilter = new StepFilter(fstep, false); liveShowFailed = true; }
+        else if (InitialInFlightStep is { } rstep && Snapshot.StepsOf(Index).Any) stepFilter = new StepFilter(rstep, true);
         switch (InitialShow)
         {
             case DetailFilter.Failed: show = BeeShow.Failed; liveShowFailed = true; break;
@@ -1393,7 +1349,7 @@
     private int? runningStepsAttachedSeq;
     private (int Seq, bool HasDetail)? beeStepsScrolled;
     private bool beeMenuOpen;
-    private bool stepsAllExpanded = true;
+    private bool stepsAllExpanded;
     private int stepsExpandVersion;
 
     private void ToggleAllSteps()

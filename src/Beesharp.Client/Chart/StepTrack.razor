@@ -1,0 +1,177 @@
+@* The steps of a scenario at a glance (brain 0056): where the bees of a run got to. Shown on the overview card (Compact) and at the top of the
+   scenario popup, always open, so the steps are the first thing you see. Every count drills down (brain 0029): a failed count opens the bees
+   that failed at that step, an active count the bees in flight there.
+   The step list (user's choice): per step the bees there right now and the bees that failed there, then the bees that finished all steps.
+   The earlier "track" draft (numbered nodes on a line) stays reachable with ?steps=track for comparison.
+   Any number of steps (brain 0056): past a few steps, runs of quiet steps (no failed and no active bees) fold into one "+N steps" item that opens
+   on click, so a failure is never pushed out of sight; the first and the last step always show. Debug URL "?stepcount=1,8,24". *@
+@inject NavigationManager Nav
+@{
+    var n = Steps.Count;
+    var failed = new int[n];
+    var flight = new int[n];
+    for (var i = 0; i < n; i++)
+    {
+        failed[i] = i < FailedPer.Count ? FailedPer[i] : 0;
+        flight[i] = InFlightPer is not null && i < InFlightPer.Count ? InFlightPer[i] : 0;
+    }
+    // Bees that reached a step: every finished bee, minus those that failed at an earlier step. Bees in flight are counted at their step.
+    var reached = new int[n];
+    var before = 0;
+    for (var i = 0; i < n; i++) { reached[i] = Math.Max(0, Finished - before); before += failed[i]; }
+    var passedAll = Math.Max(0, Finished - before);
+    var list = !UseTrack;
+    var items = Items(n, failed, flight, list ? (Compact ? 6 : 10) : (Compact ? 6 : 8));
+}
+
+@if (n > 0)
+{
+    @if (list)
+    {
+        @* The step list: per step, the bees there right now (while the run goes) and the bees that failed there; the last line counts the bees
+           that finished every step. Zero is a quiet dash, so the numbers that matter stand out. *@
+        <div class="sls @(Compact ? "compact" : "") @(Live ? "live" : "")" role="table" aria-label="@AriaLabel">
+            <div class="sls-row sls-headrow" role="row">
+                <span class="sls-no" role="columnheader"></span>
+                <span class="sls-name" role="columnheader">@(Compact ? "" : "Step")</span>
+                @if (Live) { <span class="sls-col run" role="columnheader"><i class="yt-live-dot" aria-hidden="true"></i>Now</span> }
+                <span class="sls-col bad" role="columnheader">Failed</span>
+            </div>
+            @foreach (var item in items)
+            {
+                var st = item.From;
+                if (item.IsGroup)
+                {
+                    var grp = item;
+                    <div class="sls-row grp" role="row">
+                        <span class="sls-no" aria-hidden="true">⋯</span>
+                        <button type="button" class="sls-name sls-grp" role="cell" @onclick="() => Expand(grp.From)" @onclick:stopPropagation="true" title="@GroupTitle(grp)">
+                            Steps @(grp.From + 1)–@(grp.To + 1) <small>@(grp.Count) steps</small>
+                        </button>
+                        @if (Live) { <span class="sls-col zero" role="cell">–</span> }
+                        <span class="sls-col zero" role="cell">–</span>
+                    </div>
+                    continue;
+                }
+                var on = Selected == st;
+                <div class="sls-row @(flight[st] > 0 ? "has-run" : "") @(failed[st] > 0 ? "has-bad" : "") @(on ? "on" : "")" role="row">
+                    <span class="sls-no" aria-hidden="true">@(st + 1)</span>
+                    <span class="sls-name" role="cell" title="@Steps.Name(st)">@Steps.Name(st)@if (Steps.Times(st) > 1) { <small>×@Steps.Times(st)</small> }</span>
+                    @if (Live)
+                    {
+                        @if (flight[st] > 0)
+                        {
+                            <button type="button" class="sls-col sls-num run @(on && SelectedInFlight ? "on" : "")" role="cell" @onclick="() => OnInFlight.InvokeAsync(st)" @onclick:stopPropagation="true"
+                                    title="@Format.Plural(flight[st], "bee is", "bees are") at @Steps.Name(st) right now: show them">@Format.Num(flight[st])</button>
+                        }
+                        else { <span class="sls-col zero" role="cell">–</span> }
+                    }
+                    @if (failed[st] > 0)
+                    {
+                        <button type="button" class="sls-col sls-num bad @(on && !SelectedInFlight ? "on" : "")" role="cell" @onclick="() => OnFailed.InvokeAsync(st)" @onclick:stopPropagation="true"
+                                title="@Format.Plural(failed[st], "bee", "bees") failed at @Steps.Name(st): show them">@Format.Num(failed[st])</button>
+                    }
+                    else { <span class="sls-col zero" role="cell">–</span> }
+                </div>
+            }
+            <div class="sls-row end" role="row">
+                <span class="sls-no" aria-hidden="true">✓</span>
+                <span class="sls-name" role="cell">Finished all steps</span>
+                @if (Live) { <span class="sls-col" role="cell"></span> }
+                <span class="sls-col sls-done @(passedAll > 0 ? "" : "zero")" role="cell" title="Bees that went through every step">@(passedAll > 0 ? Format.Num(passedAll) : "–")</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <ol class="stk @(Compact ? "compact" : "") @(items.Count > (Compact ? 6 : 8) ? "many" : "")" style="--n:@items.Count" aria-label="@AriaLabel">
+            @foreach (var item in items)
+            {
+                var st = item.From;
+                if (item.IsGroup)
+                {
+                    var grp = item;
+                    <li class="stk-step grp @(Finished > 0 && reached[st] > 0 ? "done" : "")">
+                        <button type="button" class="stk-node stk-grp" @onclick="() => Expand(grp.From)" @onclick:stopPropagation="true"
+                                title="@GroupTitle(grp)" aria-label="Show @grp.Count more steps">+@grp.Count</button>
+                        <span class="stk-name muted-name">@(grp.From + 1)–@(grp.To + 1)</span>
+                        <span class="stk-counts"></span>
+                    </li>
+                    continue;
+                }
+                var on = Selected == st;
+                var kind = failed[st] > 0 ? "bad" : flight[st] > 0 ? "run" : Finished > 0 && reached[st] > 0 ? "done" : "";
+                <li class="stk-step @kind @(on ? "on" : "")">
+                    <span class="stk-node" aria-hidden="true">
+                        @if (kind == "bad") { <svg viewBox="0 0 24 24"><path d="M8 8l8 8M16 8l-8 8" /></svg> }
+                        else if (kind == "done") { <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.5 3.5 7.5-8" /></svg> }
+                        else { @(st + 1) }
+                    </span>
+                    <span class="stk-name" title="@Steps.Name(st)">@Steps.Name(st)@if (Steps.Times(st) > 1) { <small>×@Steps.Times(st)</small> }</span>
+                    <span class="stk-counts">
+                        @if (flight[st] > 0)
+                        {
+                            <button type="button" class="stk-count run @(on && SelectedInFlight ? "on" : "")" @onclick="() => OnInFlight.InvokeAsync(st)" @onclick:stopPropagation="true"
+                                    title="Show the bees in flight at @Steps.Name(st)">@Format.Num(flight[st])@(Compact ? "" : " active")</button>
+                        }
+                        @if (failed[st] > 0)
+                        {
+                            <button type="button" class="stk-count bad @(on && !SelectedInFlight ? "on" : "")" @onclick="() => OnFailed.InvokeAsync(st)" @onclick:stopPropagation="true"
+                                    title="Show the bees that failed at @Steps.Name(st)">@Format.Num(failed[st])@(Compact ? "" : " failed")</button>
+                        }
+                    </span>
+                </li>
+            }
+        </ol>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public ScenarioSteps Steps { get; set; } = ScenarioSteps.None;
+    [Parameter, EditorRequired] public IReadOnlyList<int> FailedPer { get; set; } = [];
+    [Parameter] public IReadOnlyList<int>? InFlightPer { get; set; }
+    /// <summary>Finished bees of the entry (to count the bees that finished all steps).</summary>
+    [Parameter] public int Finished { get; set; }
+    /// <summary>The small form on the overview card.</summary>
+    [Parameter] public bool Compact { get; set; }
+    /// <summary>The step the popup filters by, if any.</summary>
+    [Parameter] public int? Selected { get; set; }
+    [Parameter] public bool SelectedInFlight { get; set; }
+    [Parameter] public EventCallback<int> OnFailed { get; set; }
+    [Parameter] public EventCallback<int> OnInFlight { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Steps";
+    /// <summary>The run is going: show the "Now" column with the bees at each step right now.</summary>
+    [Parameter] public bool Live { get; set; }
+
+    private readonly HashSet<int> expanded = [];
+
+    /// <summary>One shown item: a single step, or a run of quiet steps folded into one (<see cref="IsGroup"/>).</summary>
+    private readonly record struct Item(int From, int To)
+    {
+        public bool IsGroup => To > From;
+        public int Count => To - From + 1;
+    }
+
+    /// <summary>All steps when they fit (<paramref name="max"/>); otherwise runs of two or more quiet steps fold into one item, unless the user opened them.</summary>
+    private List<Item> Items(int n, int[] failed, int[] flight, int max)
+    {
+        var list = new List<Item>(n);
+        bool Quiet(int i) => failed[i] == 0 && flight[i] == 0 && Selected != i;
+        for (var i = 0; i < n; i++)
+        {
+            var j = i;
+            if (n > max && i > 0 && Quiet(i) && !expanded.Contains(i))
+                while (j + 1 < n - 1 && Quiet(j + 1)) j++;
+            if (j > i) { list.Add(new Item(i, j)); i = j; }
+            else list.Add(new Item(i, i));
+        }
+        return list;
+    }
+
+    private void Expand(int from) => expanded.Add(from);
+
+    private string GroupTitle(Item g) => string.Join(" → ", Enumerable.Range(g.From, g.Count).Select(Steps.Name)) + " (click to show)";
+
+    private bool UseTrack => Nav.Uri.Contains("steps=track", StringComparison.OrdinalIgnoreCase);
+
+}

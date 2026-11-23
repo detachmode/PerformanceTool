@@ -37,11 +37,12 @@ builder.Services.AddScenario<UserJourneyScenario>();
 var initialFake = !string.Equals(builder.Configuration["DataSource"], "Api", StringComparison.OrdinalIgnoreCase);
 builder.Services.AddSingleton(sp => new DataModeState(sp.GetRequiredService<IJSRuntime>(), initialFake));
 
-// Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0044). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
+// Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0044). "?stepcount=1,8,24" adds one entry per number with that many steps (brain 0056). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
 builder.Services.AddSingleton(sp => new FakeRunSource(
     sp.GetRequiredService<ScenarioCatalog>(),
     SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri), null,
-    BurstBees(sp.GetRequiredService<NavigationManager>().Uri)));
+    BurstBees(sp.GetRequiredService<NavigationManager>().Uri),
+    StepCounts(sp.GetRequiredService<NavigationManager>().Uri)));
 builder.Services.AddSingleton<FakeEnvironmentSource>();
 builder.Services.AddSingleton<ApiEnvironmentSource>();
 builder.Services.AddSingleton<ApiRunSource>();
@@ -67,4 +68,10 @@ static int BurstBees(string uri)
 {
     var m = Regex.Match(uri, @"[?&]burst=(\d+)");
     return m.Success ? Math.Clamp(int.Parse(m.Groups[1].Value), 1, 1000) : 0;
+}
+
+static int[] StepCounts(string uri)
+{
+    var m = Regex.Match(uri, @"[?&]stepcount=([\d,]+)");
+    return m.Success ? m.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray() : [];
 }

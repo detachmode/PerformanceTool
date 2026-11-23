@@ -1,8 +1,14 @@
 @* The vertical stepper of one bee (brain 0056, calm UI brain 0016): numbered circles joined by a thin line. A done step gets a check and its time, the step the bee failed at
    is red with its error (one line), the step in flight is highlighted with the active spinner, steps not reached are greyed out. Clicking any step expands its calls and
    Azure DevOps-style console output; currently running and failed steps auto-open so logs stream in live. *@
+@{
+    // Steps the bee never reached at the end of a long story fold into one row (any number of steps, brain 0056); a click shows them.
+    var tailFrom = Steps.Count;
+    while (tailFrom > 0 && Steps[tailFrom - 1].State == StepState.Pending) tailFrom--;
+    var shown = !showPending && Steps.Count - tailFrom >= 3 ? tailFrom : Steps.Count;
+}
 <ol class="stepper" aria-label="@AriaLabel">
-    @for (var rowIdx = 0; rowIdx < Steps.Count; rowIdx++)
+    @for (var rowIdx = 0; rowIdx < shown; rowIdx++)
     {
         var row = rowIdx;
         var step = Steps[row];
@@ -112,6 +118,19 @@
             </div>
         </li>
     }
+    @if (shown < Steps.Count)
+    {
+        <li class="stp pending stp-fold">
+            <span class="stp-dot" aria-hidden="true"><HexBadge Kind="num" Size="24" StrokeWidth="6.5">⋯</HexBadge></span>
+            <div class="stp-body">
+                <button type="button" class="stp-head" @onclick="() => showPending = true" title="@string.Join(" → ", Steps.Skip(shown).Select(x => x.Name))">
+                    <span class="stp-name">Steps @(shown + 1)–@Steps.Count</span>
+                    <span class="stp-word">@(Steps.Count - shown) not reached</span>
+                    <span class="stp-chev" aria-hidden="true">▸</span>
+                </button>
+            </div>
+        </li>
+    }
 </ol>
 
 @code {
@@ -129,6 +148,7 @@
     [Parameter] public string AriaLabel { get; set; } = "Steps";
 
     private readonly HashSet<int> toggled = [];
+    private bool showPending;
     private int lastResetKey;
 
     protected override void OnParametersSet()

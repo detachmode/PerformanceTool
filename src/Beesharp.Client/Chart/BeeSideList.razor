@@ -51,9 +51,13 @@
         {
             <span class="state good bee-ok-state" title="Ok" aria-label="Ok"><HexBadge Kind="ok" Size="16" StrokeWidth="7" /></span>
         }
+        else if (a.State is BeeState.Failed or BeeState.Slow)
+        {
+            <span class="state @BeeOrder.Css(a.State) bee-ok-state" title="@BeeOrder.Word(a.State)" aria-label="@BeeOrder.Word(a.State)"><HexBadge Kind="@(a.State == BeeState.Failed ? "bad" : "warn")" Size="16" StrokeWidth="7" /></span>
+        }
         else
         {
-            <span class="state @BeeOrder.Css(a.State)">@(a.State is BeeState.Failed or BeeState.Slow ? BeeOrder.Word(a.State) : "")</span>
+            <span class="state @BeeOrder.Css(a.State)"></span>
         }
     </button>;
 }

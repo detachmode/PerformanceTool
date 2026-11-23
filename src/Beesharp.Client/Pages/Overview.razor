@@ -159,7 +159,7 @@
             </div>
         </section>
     }
-    else
+    else if (!locked || editMode)   @* while a run is going the player bar at the bottom holds its controls (brain 0027) *@
     {
     <section class="run-launch-card" aria-label="Run and preflight controls">
         <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
@@ -542,12 +542,14 @@
                 <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
                               Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" IsLive="s.Running && !s.Paused"
                               ScenarioType="@(Catalog.Find(s.Plan.Scenarios[idx].ScenarioId)?.Name)"
-                              OnOpen="i => { open = i; openFilter = DetailFilter.All; openStep = null; }"
-                              OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; openStep = null; }"
+                              OnOpen="i => { open = i; openFilter = DetailFilter.All; openStep = null; openStepNow = null; }"
+                              OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; openStep = null; openStepNow = null; }"
                               OnOpenLogs="i => Logs.Show(entry: i)"
                               OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
-                              MostFailedStep="StepLogic.MostFailed(s.Store.FailedPerStep(idx))" StepName="@(StepLogic.MostFailed(s.Store.FailedPerStep(idx)) is { } mfs ? s.StepsOf(idx).Name(mfs.Step) : null)"
-                              OnOpenStep="t => { open = t.Index; openFilter = DetailFilter.All; openStep = t.Step; }" />
+                              Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
+                              InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
+                              OnOpenStep="t => { open = t.Index; openFilter = DetailFilter.All; openStep = t.Step; openStepNow = null; }"
+                              OnOpenStepInFlight="t => { open = t.Index; openFilter = DetailFilter.All; openStep = null; openStepNow = t.Step; }" />
             }
         </div>
     }
@@ -555,7 +557,7 @@
 
 @if (!editMode && open is { } o && o < s.Count)
 {
-    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" InitialFailedStep="openStep" OnClose="() => { open = null; openStep = null; }" />
+    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" InitialFailedStep="openStep" InitialInFlightStep="openStepNow" OnClose="() => { open = null; openStep = null; openStepNow = null; }" />
 }
 
 @code {
@@ -571,6 +573,7 @@
     private int? open;
     private DetailFilter openFilter;
     private int? openStep;
+    private int? openStepNow;
     private bool viewMenuOpen;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
