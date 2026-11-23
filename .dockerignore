@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/TestResults/
+src/Beesharp/data/
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+docs/
+tests/
