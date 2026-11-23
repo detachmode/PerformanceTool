@@ -68,6 +68,8 @@ dotnet run --project src/Beesharp
 ```
 **Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too. .NET 11 (CI) reports more than the .NET 10 copy (e.g. Blazor BL0016: give every JS interop call its own try/catch; BL0012: no `StateHasChanged()` at the end of an event handler), so watch CI.
 CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
+**Docker and end-to-end test:** `.github/workflows/docker.yml` builds the image for `linux/amd64` and `linux/arm64` in parallel on native runners, starts each one and runs `tests/e2e/smoke.mjs` (Playwright: the client boots on `/` and `/editor` without 404s or script errors, `/api/scenarios` answers); only tested images are pushed. Locally: `docker build -t beesharp:e2e . && docker run -d -p 8080:8080 beesharp:e2e`, then `cd tests/e2e && npm ci && npx playwright install chromium && npm run smoke`.
+**index.html in the host:** when the host publishes the client, the SDK leaves `#[.{fingerprint}]` and the empty importmap in `wwwroot/index.html`; `Api/ClientIndexEndpoints.cs` fills them at runtime from the static asset endpoints (`MapClientIndex()`, instead of `MapFallbackToFile`).
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/`, the
 `.slnx` and `Directory.Build.props` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
 the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.WebAssembly` `11.0.*-*` to `10.0.*` in the copy).

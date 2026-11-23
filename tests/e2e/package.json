@@ -1,0 +1,12 @@
+{
+  "name": "beesharp-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Smoke test against a running Beesharp host (the Docker image in CI).",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}

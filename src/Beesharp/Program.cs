@@ -75,7 +75,7 @@ app.MapBeesharpAi();
 // Unknown API routes are a real 404, not the client app.
 app.Map("/api/{**rest}", () => Results.NotFound());
 
-// Everything else is a client-side route of the WebAssembly app (/editor, ...).
-app.MapFallbackToFile("index.html");
+// Everything else is a client-side route of the WebAssembly app (/editor, ...): index.html with its asset placeholders filled.
+app.MapClientIndex();
 
 app.Run();
