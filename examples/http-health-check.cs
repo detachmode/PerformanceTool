@@ -1,16 +1,8 @@
+#:package Beesharp.Core@0.1.0
 // Example scenario script without steps: every bee runs this body once per entry, top to bottom.
-// Copy it into the scripts folder (or mount this folder there, see README.md) and it shows up in the editor.
-public record HealthCheckParams(
-    [property: Description("Base URL of the service under test")]
-    string BaseUrl = "https://example.com",
-    [property: Description("Path that is fetched on every run")]
-    string Path = "/",
-    [property: Description("Fail when the response takes longer than this")]
-    [property: Range(10, 60000)]
-    int MaxDurationMs = 2000
-);
+// Run locally with `dotnet run examples/http-health-check.cs` (or F5 in your IDE), or copy/mount into scripts/.
 
-Scenario.Define<HealthCheckParams>("HTTP Health Check", async (p, ctx) =>
+var scenario = Scenario.Define<HealthCheckParams>("HTTP Health Check", async (p, ctx) =>
 {
     var url = p.BaseUrl.TrimEnd('/') + "/" + p.Path.TrimStart('/');
 
@@ -29,3 +21,15 @@ Scenario.Define<HealthCheckParams>("HTTP Health Check", async (p, ctx) =>
     });
 })
 .WithDescription("Fetches one URL per run and fails on an error status or a slow answer. A plain scenario without steps.");
+
+await scenario.DebugRunAsync(args);
+
+record HealthCheckParams(
+    [property: Description("Base URL of the service under test")]
+    string BaseUrl = "https://example.com",
+    [property: Description("Path that is fetched on every run")]
+    string Path = "/",
+    [property: Description("Fail when the response takes longer than this")]
+    [property: Range(10, 60000)]
+    int MaxDurationMs = 2000
+);

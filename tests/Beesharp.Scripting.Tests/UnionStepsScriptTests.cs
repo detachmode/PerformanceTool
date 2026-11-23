@@ -81,7 +81,7 @@ public class UnionStepsScriptTests
     [Fact]
     public async Task Example_checkout_steps_script_compiles_and_runs()
     {
-        var scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docs", "examples", "checkout-steps.cs"));
+        var scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "examples", "checkout-steps.cs"));
         Assert.True(File.Exists(scriptPath), $"Missing example script at {scriptPath}");
 
         var dir = Path.Combine(Path.GetTempPath(), $"beesharp-example-script-{Guid.NewGuid():N}");
