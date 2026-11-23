@@ -4,7 +4,7 @@ A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scr
 
 ## Run with Docker Compose
 
-The image is published to Docker Hub for `linux/amd64` and `linux/arm64` (see `.github/workflows/docker.yml`).
+The image is published to the GitHub Container Registry for `linux/amd64` and `linux/arm64` (see `.github/workflows/docker.yml`).
 It runs on Linux, and on Windows and macOS through Docker Desktop.
 
 Create a `compose.yaml`:
@@ -12,7 +12,7 @@ Create a `compose.yaml`:
 ```yaml
 services:
   beesharp:
-    image: docker.io/<dockerhub-user>/beesharp:latest
+    image: ghcr.io/detachmode/beesharp:latest
     restart: unless-stopped
     ports:
       - "5281:8080"            # UI and API: http://localhost:5281
