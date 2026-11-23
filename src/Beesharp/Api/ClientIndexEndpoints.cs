@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.StaticAssets;
@@ -13,7 +14,7 @@ namespace Beesharp.Api;
 /// </summary>
 public static class ClientIndexEndpoints
 {
-    /// <summary>Maps the fallback to index.html. Call after <c>MapStaticAssets()</c>.</summary>
+    /// <summary>Maps /build-info.json and the fallback to index.html. Call after <c>MapStaticAssets()</c>.</summary>
     public static IEndpointRouteBuilder MapClientIndex(this IEndpointRouteBuilder app)
     {
         var descriptors = StaticAssetsEndpointDataSourceHelper.HasStaticAssetsDataSource(app, null)
@@ -21,6 +22,16 @@ public static class ClientIndexEndpoints
             : [];
         var webRoot = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().WebRootFileProvider;
         string? html = null;
+
+        // The client asks for build-info.json to notice a newer deploy (brain 0025). On Pages the workflow writes the file;
+        // here the host answers with its own build sha, which the Docker build shares with the client.
+        var buildSha = typeof(ClientIndexEndpoints).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "BuildSha")?.Value;
+        app.MapGet("/build-info.json", (HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Json(new { sha = string.IsNullOrWhiteSpace(buildSha) ? null : buildSha });
+        });
 
         app.MapFallback(async context =>
         {
