@@ -24,6 +24,9 @@ public interface IScenario
     /// <summary>Editor, validation and schema model generated from the parameter type (or JSON Schema on the client).</summary>
     ParameterSpec Spec { get; }
 
+    /// <summary>Declared steps of this scenario, in order (brain 0056). Empty for scenarios without steps.</summary>
+    IReadOnlyList<StepInfo> Steps => [];
+
     /// <summary>
     /// Lifecycle hook called once per scenario entry before any bees start.
     /// Use <see cref="ScenarioContext.State"/> and <see cref="ScenarioContext.RunBackground"/> to share state or
@@ -55,6 +58,8 @@ public abstract class Scenario<TParameters> : IScenario where TParameters : clas
     public abstract string Description { get; }
 
     public ParameterSpec Spec { get; } = ParameterSpec.For(typeof(TParameters));
+
+    public virtual IReadOnlyList<StepInfo> Steps => [];
 
     Task IScenario.StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         StartupAsync((TParameters)parameters, context, cancellationToken);
@@ -131,13 +136,65 @@ public sealed class ScenarioBackgroundHost : IAsyncDisposable
 /// <summary>Shared services for one execution or lifecycle hook.</summary>
 public sealed class ScenarioContext
 {
+    private static readonly AsyncLocal<ScenarioContext?> currentContext = new();
+
     private readonly ScenarioBackgroundHost? background;
     private readonly Action<RecordedCall>? callSink;
     private readonly Action<RecordedLog>? logSink;
+    private readonly Action<RecordedStepVisit>? stepVisitSink;
     private readonly Func<double> runSeconds;
     private readonly Stopwatch beeClock;
     private readonly Func<bool>? runStopped;
     private int currentCallIndex = -1;
+    private int currentStep = -1;
+    private int currentRep;
+    private readonly List<RecordedStepVisit> liveVisits = [];
+
+    /// <summary>The <see cref="ScenarioContext"/> active on the current async flow, used by <see cref="RecordingHttpHandler"/>.</summary>
+    public static ScenarioContext? Current => currentContext.Value;
+
+    /// <summary>Binds this context to <see cref="Current"/> for the duration of the bee so <see cref="Http"/> calls are recorded automatically.</summary>
+    public IDisposable Activate()
+    {
+        var previous = currentContext.Value;
+        currentContext.Value = this;
+        return new ActivationScope(previous);
+    }
+
+    private sealed class ActivationScope(ScenarioContext? previous) : IDisposable
+    {
+        public void Dispose() => currentContext.Value = previous;
+    }
+
+    /// <summary>Zero-based index of the step this bee is currently executing, or -1 before the first step (or when the scenario has no steps).</summary>
+    public int CurrentStep => Volatile.Read(ref currentStep);
+
+    /// <summary>Zero-based repetition/visit index of the current step (0 on the first visit, 1 on the second, ...).</summary>
+    public int CurrentRep => Volatile.Read(ref currentRep);
+
+    internal double ElapsedMs => beeClock.Elapsed.TotalMilliseconds;
+    internal bool IsRunStopped => runStopped?.Invoke() == true;
+
+    internal void EnterStep(int step, int rep, string? dataJson = null)
+    {
+        Volatile.Write(ref currentStep, step);
+        Volatile.Write(ref currentRep, rep);
+        var visit = new RecordedStepVisit(step, rep, dataJson);
+        lock (liveVisits) liveVisits.Add(visit);
+        stepVisitSink?.Invoke(visit);
+    }
+
+    /// <summary>Thread-safe snapshot of the chronological step visits executed so far by this bee (for live inspection).</summary>
+    public IReadOnlyList<RecordedStepVisit>? SnapshotStepVisits()
+    {
+        lock (liveVisits) return liveVisits.Count == 0 ? null : liveVisits.ToArray();
+    }
+
+    internal void RecordHttpCall(string name, double offsetMs, double durationMs, int? statusCode, long bytes, string? error)
+    {
+        Interlocked.Increment(ref currentCallIndex);
+        callSink?.Invoke(new RecordedCall(name, offsetMs, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep));
+    }
 
     public ScenarioContext(
         HttpClient http,
@@ -150,9 +207,11 @@ public sealed class ScenarioContext
         Action<RecordedLog>? structuredLogSink = null,
         Func<double>? runSeconds = null,
         BagAccess? runBag = null,
-        Func<bool>? runStopped = null)
+        Func<bool>? runStopped = null,
+        Action<RecordedStepVisit>? stepVisitSink = null)
     {
         this.runStopped = runStopped;
+        this.stepVisitSink = stepVisitSink;
         Http = http;
         Environment = environment ?? EnvironmentValues.None;
         CancellationToken = cancellationToken;
@@ -232,27 +291,29 @@ public sealed class ScenarioContext
     public void RecordCall(string name, double durationMs, int? statusCode = 200, long bytes = 0, string? error = null, double? offsetMs = null)
     {
         var off = offsetMs ?? Math.Max(0, beeClock.Elapsed.TotalMilliseconds - durationMs);
-        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error));
+        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep));
     }
 
     /// <summary>Measures an async step as a named call, recording its offset, duration and any failure.</summary>
     public async Task MeasureCallAsync(string name, Func<Task> work, int? statusCode = 200, long bytes = 0)
     {
         var idx = Interlocked.Increment(ref currentCallIndex);
+        var step = Math.Max(0, CurrentStep);
+        var rep = CurrentRep;
         var offsetMs = beeClock.Elapsed.TotalMilliseconds;
         var sw = Stopwatch.StartNew();
         try
         {
             await work();
             sw.Stop();
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes));
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep));
         }
         catch (Exception ex)
         {
             sw.Stop();
             // A call cut off because the user stopped the run is kept as failed with the time it ran until the stop (brain 0053).
             var error = ex is OperationCanceledException && runStopped?.Invoke() == true ? ExecutionResult.CanceledError : ex.Message;
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error));
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep));
             throw;
         }
         finally
@@ -274,7 +335,7 @@ public sealed class ScenarioContext
             _ => "Information",
         };
         int? callIdx = currentCallIndex >= 0 ? currentCallIndex : null;
-        logSink(new RecordedLog(runSeconds(), levelName, message, exception?.Message, callIdx));
+        logSink(new RecordedLog(runSeconds(), levelName, message, exception?.Message, callIdx, Math.Max(0, CurrentStep), CurrentRep));
     }
 
     /// <summary>Sends a request, reads the whole body (so transfer time is included) and maps it to an outcome.</summary>

@@ -15,8 +15,8 @@ public static class RunQueryEndpoints
         app.MapGet("/api/runs/{runId}/summary", async (string runId, IRunHistoryPort history, CancellationToken ct) =>
             await history.GetRunAsync(runId, ct) is { } run ? Results.Ok(run) : Results.NotFound());
 
-        // ?sequences=1,2,3 returns exactly those bees; otherwise the bees of the run (optionally one entry and one outcome), failed first, paged.
-        app.MapGet("/api/runs/{runId}/bees", async (string runId, string? sequences, int? entry, string? outcome, int? offset, int? limit, IRunHistoryPort history, CancellationToken ct) =>
+        // ?sequences=1,2,3 returns exactly those bees; otherwise the bees of the run (optionally one entry, one outcome and/or failedStep), failed first, paged.
+        app.MapGet("/api/runs/{runId}/bees", async (string runId, string? sequences, int? entry, string? outcome, int? failedStep, int? offset, int? limit, IRunHistoryPort history, CancellationToken ct) =>
         {
             try
             {
@@ -33,7 +33,7 @@ public static class RunQueryEndpoints
                     "ok" => BeeOutcomeFilter.Ok,
                     _ => BeeOutcomeFilter.All,
                 };
-                return Results.Ok(await history.ListBeesAsync(runId, entry, filter, Math.Max(0, offset ?? 0), Math.Clamp(limit ?? 500, 1, MaxBeesPerRequest), ct));
+                return Results.Ok(await history.ListBeesAsync(runId, entry, filter, Math.Max(0, offset ?? 0), Math.Clamp(limit ?? 500, 1, MaxBeesPerRequest), ct, failedStep));
             }
             catch (KeyNotFoundException) { return Results.NotFound(); }
             catch (FormatException) { return Results.BadRequest(new { error = "sequences must be a comma separated list of numbers." }); }

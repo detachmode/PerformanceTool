@@ -7,12 +7,13 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using Beesharp.Services.Scenarios
 @using Beesharp.Services.Scenarios.Spec
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ScriptApiClient Api
 @inject ScenarioCatalog Catalog
 @inject IRunSource Sim
 @inject IEnvironmentSource Envs
 @inject DataModeState DataMode
+@inject IJSRuntime JS
 
 <PageTitle>@fileName · Beesharp</PageTitle>
 
@@ -189,50 +190,27 @@
                         <p class="muted" style="margin:0">This scenario takes no parameters.</p>
                     }
 
-                    @if (testResult is not null)
+                    @if (liveTest is not null && !liveTestPopupOpen)
                     {
-                        <div class="test-result @(testResult.Success ? "ok" : "bad")">
-                            <div class="test-result-head">
-                                <b>@(testResult.Success ? "Succeeded" : "Failed")</b>
-                                @if (testResult.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
-                                <span class="muted">@testResult.DurationMs.ToString("0.#") ms</span>
-                                <span class="muted">@testResult.Bytes B</span>
-                                <span class="muted">startup @testResult.StartupDurationMs.ToString("0.#") ms · teardown @testResult.TeardownDurationMs.ToString("0.#") ms</span>
-                                <span class="spacer"></span>
-                                <WrapToggleButton @bind-Wrapped="tryWrap" />
-                            </div>
-                            @if (!string.IsNullOrEmpty(testResult.Error))
-                            {
-                                <div class="field-error">@testResult.Error</div>
-                            }
-                            @if (testResult.Calls.Count > 0)
-                            {
-                                <div class="test-calls">
-                                    @foreach (var c in testResult.Calls)
-                                    {
-                                        <div class="test-call-row">
-                                            <code>@c.Method</code>
-                                            <span class="url">@c.Url</span>
-                                            <span class="muted">@(c.StatusCode?.ToString() ?? "err") · @c.DurationMs.ToString("0.#") ms</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            @if (testResult.Logs.Count > 0)
-                            {
-                                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")">
-                                    @foreach (var line in testResult.Logs)
-                                    {
-                                        <SerilogLine Raw="@line" />
-                                    }
-                                </div>
-                            }
+                        <div class="bee-head-bar" style="padding:.2rem 0">
+                            <span class="muted">Last test run: @(liveTest.Running ? "Running…" : liveTest.Success ? "Succeeded" : "Failed") (@Format.Ms(liveTest.DurationMs))</span>
+                            <span class="spacer"></span>
+                            <button type="button" class="btn ghost small" @onclick="() => liveTestPopupOpen = true">Inspect test bee</button>
                         </div>
                     }
                 }
                 else if (isPreflight)
                 {
-                    @if (preflightResult is null)
+                    @if (testing)
+                    {
+                        <section class="bee-panel p-run" aria-label="Running @ProgramName">
+                            <div class="bee-head" style="margin-bottom:0">
+                                <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Running</span>
+                                <span class="muted">Running @ProgramName…</span>
+                            </div>
+                        </section>
+                    }
+                    else if (preflightResult is null)
                     {
                         <p class="muted" style="margin:0">Click <b>▶ Run once</b> to execute this @ProgramName and inspect its log output.</p>
                     }
@@ -241,8 +219,9 @@
                         <div class="test-result @(preflightResult.Success ? "ok" : "bad")">
                             <div class="test-result-head">
                                 <b>@(preflightResult.Success ? $"{ProgramTitle} succeeded" : $"{ProgramTitle} failed")</b>
-                                <span class="muted">@preflightResult.DurationMs.ToString("0.#") ms</span>
+                                <span class="muted">@Format.Ms(preflightResult.DurationMs)</span>
                                 <span class="spacer"></span>
+                                <CopyButton GetText="@(() => string.Join("\n", preflightResult.Logs))" Disabled="@(preflightResult.Logs.Count == 0)" />
                                 <WrapToggleButton @bind-Wrapped="tryWrap" />
                             </div>
                             @if (!string.IsNullOrEmpty(preflightResult.Error))
@@ -263,6 +242,132 @@
                 }
             </div>
         </div>
+    </div>
+}
+
+@if (liveTestPopupOpen && liveTest is { } lt)
+{
+    var tryHasSteps = lt.Steps is { Count: > 0 };
+    var tryStepsOn = tryHasSteps && tryTab == 0;
+    var tryLogsOn = !tryStepsOn && (tryTab == 1 || (!tryHasSteps && tryTab == 0));
+    var tryWaterfallOn = !tryStepsOn && !tryLogsOn;
+    var tryCalls = BuildLiveTryCalls(lt);
+    var tryStepsDecl = tryHasSteps ? new ScenarioSteps(lt.Steps!.Select(st => st.Name).ToArray()) : ScenarioSteps.None;
+    var statusCls = lt.Running ? "p-run" : lt.Success ? "p-ok" : "p-bad";
+    <div class="overlay bee-inspect-ov" @key="@($"try-{lt.TestRunId}")" role="presentation" @onclick="CloseLiveTestPopup">
+        <section class="bee-panel bee-inspect-dialog @statusCls" @ref="tryInspectEl" role="dialog" aria-modal="true" aria-label="Test bee · @lt.ScenarioName" @onclick:stopPropagation="true">
+            <div class="bee-head">
+                <div class="bee-head-top">
+                    <div class="bee-head-meta">
+                        @if (lt.Running)
+                        {
+                            <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Active</span>
+                        }
+                        else if (lt.Success)
+                        {
+                            <span class="state good bee-ok-state"><HexBadge Kind="ok" Size="16" StrokeWidth="7.5" />Succeeded</span>
+                        }
+                        else
+                        {
+                            <span class="state bad bee-ok-state"><HexBadge Kind="bad" Size="16" StrokeWidth="7.5" />Failed</span>
+                        }
+                        @if (lt.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
+                        <span class="muted bee-meta-time">@Format.Ms(lt.DurationMs) · @lt.Bytes B</span>
+                        @if (lt.Running && tryHasSteps && lt.CurrentStep >= 0)
+                        {
+                            <span class="step-now">@tryStepsDecl.Position(lt.CurrentStep, lt.CurrentRep)</span>
+                        }
+                        else if (!lt.Running && !lt.Success && tryHasSteps && lt.FailedStep >= 0)
+                        {
+                            <span class="step-now bad">failed at @tryStepsDecl.Name(lt.FailedStep)</span>
+                        }
+                    </div>
+                    <div class="bee-head-btns">
+                        @if (lt.Running)
+                        {
+                            <button type="button" class="btn ghost danger small" @onclick="StopLiveTestRunAsync">Stop</button>
+                        }
+                        <button type="button" class="icon-btn" @onclick="CloseLiveTestPopup" aria-label="Close test run">✕</button>
+                    </div>
+                </div>
+                <div class="bee-head-bar">
+                    <div class="seg" role="group" aria-label="Test run inspection view">
+                        @if (tryHasSteps) { <button type="button" class="@(tryStepsOn ? "on" : "")" @onclick="() => tryTab = 0">Steps (@lt.Steps!.Count)</button> }
+                        <button type="button" class="@(tryLogsOn ? "on" : "")" @onclick="() => tryTab = 1">Logs (@lt.Logs.Count)</button>
+                        <button type="button" class="@(tryWaterfallOn ? "on" : "")" @onclick="() => tryTab = 2">Waterfall (@lt.Calls.Count)</button>
+                    </div>
+                    <span class="spacer"></span>
+                    @if (tryStepsOn)
+                    {
+                        <button type="button" class="btn ghost small bee-toggle-all" @onclick="() => { tryStepsExpanded = !tryStepsExpanded; tryStepsReset++; }">
+                            @(tryStepsExpanded ? "Collapse all" : "Expand all")
+                        </button>
+                    }
+                    else if (tryLogsOn)
+                    {
+                        <CopyButton GetText="@(() => FormatLiveTestLogs(lt.Logs))" Disabled="@(lt.Logs.Count == 0)" />
+                        <WrapToggleButton @bind-Wrapped="tryWrap" />
+                    }
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(lt.Error) && !(tryStepsOn && lt.FailedStep >= 0))
+            {
+                <p class="bee-error bad">@lt.Error</p>
+            }
+            @if (tryStepsOn)
+            {
+                @if (lt.Running)
+                {
+                    var runningBee = new RunningBee(0, 0, 0, tryCalls, lt.CurrentStep, lt.CurrentRep, lt.StepVisits);
+                    <StepList Steps="StepLogic.ForRunning(tryStepsDecl, runningBee, Math.Max(1, lt.DurationMs))" LiveLogs="lt.Logs" DefaultExpanded="tryStepsExpanded" ResetKey="tryStepsReset" AriaLabel="Live steps of test run" />
+                }
+                else
+                {
+                    <StepList Steps="StepLogic.ForBee(tryStepsDecl, tryCalls, lt.FailedStep, lt.FailedRep, lt.Error, lt.StepVisits)" LiveLogs="lt.Logs" DefaultExpanded="tryStepsExpanded" ResetKey="tryStepsReset" AriaLabel="Steps of test run" />
+                }
+            }
+            else if (tryLogsOn)
+            {
+                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")" role="log" aria-live="polite" aria-label="Logs of test run">
+                    @if (lt.Logs.Count == 0)
+                    {
+                        <div class="sl-empty" style="padding:.35rem 0">@(lt.Running ? "Waiting for logs…" : "No logs emitted by this test run.")</div>
+                    }
+                    else
+                    {
+                        @foreach (var log in lt.Logs)
+                        {
+                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                var denom = Math.Max(1, Math.Max(lt.DurationMs, tryCalls.Count > 0 ? tryCalls.Max(c => c.OffsetMs + c.DurationMs) : 1));
+                @if (tryCalls.Count == 0)
+                {
+                    <p class="muted" style="margin:0">@(lt.Running ? "Waiting for calls…" : "No calls recorded.")</p>
+                }
+                else
+                {
+                    <ol class="calls" aria-label="Calls of test run">
+                        @foreach (var call in tryCalls)
+                        {
+                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : "good";
+                            var left = Math.Clamp(call.OffsetMs / denom * 100, 0, 100);
+                            var width = Math.Max(0.8, Math.Min(100 - left, call.DurationMs / denom * 100));
+                            <li class="call @cls">
+                                <span class="call-name" title="@call.Name">@call.Name</span>
+                                <span class="track"><i style="left:@left.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;width:@width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
+                                <span class="call-dur">@Format.Ms(call.DurationMs)</span>
+                                <span class="call-status" title="@call.Error">@(call.Failed ? (call.Status?.ToString() ?? "failed") : call.Status?.ToString() ?? "ok")</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            }
+        </section>
     </div>
 }
 
@@ -294,12 +399,21 @@
     private string scriptCode = ScenarioTemplate;
     private bool wordWrap = true;
     private bool tryWrap = true;
+    private int tryTab; // 0 = Steps (when present), 1 = Logs, 2 = Waterfall
+    private bool tryStepsExpanded = true;
+    private int tryStepsReset;
     private bool filesOpen;
     private bool moreOpen;
     private bool renameOpen;
     private bool tryOpen;
     private List<ScriptDiagnosticDto> diagnostics = [];
-    private ScriptTestRunResult? testResult;
+    private LiveTestRunStatusDto? liveTest;
+    private bool liveTestPopupOpen;
+    private CancellationTokenSource? liveTestPollCts;
+    private ElementReference tryInspectEl;
+    private IJSObjectReference? logScrollMod;
+    private IJSObjectReference? tryScrollHandle;
+    private string? tryScrollAttachedRunId;
     private PreflightRunResult? preflightResult;
     private string? statusMessage;
     private bool statusIsError;
@@ -436,6 +550,26 @@
         }
     }
 
+    private static List<FakeCall> BuildLiveTryCalls(LiveTestRunStatusDto res)
+    {
+        var errs = new ErrorDictionary();
+        var list = new List<FakeCall>(res.Calls.Count);
+        var cursor = 0.0;
+        for (var i = 0; i < res.Calls.Count; i++)
+        {
+            var c = res.Calls[i];
+            var off = c.OffsetMs > 0 || i == 0 ? c.OffsetMs : cursor;
+            cursor = Math.Max(cursor, off + c.DurationMs);
+            var name = c.Method == "STEP" ? c.Url : $"{c.Method} {c.Url}";
+            var slow = c.Error is null && c.DurationMs >= 1500;
+            list.Add(new FakeCall(i, name, off, c.DurationMs, c.StatusCode, errs.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: errs, Step: c.Step, Rep: c.Rep));
+        }
+        return list;
+    }
+
+    private static string FormatLiveTestLogs(IReadOnlyList<LiveLogEntryDto> logs) =>
+        string.Join("\n", logs.Select(l => $"[{l.Timestamp.ToLocalTime():HH:mm:ss.fff} {l.Level[..Math.Min(3, l.Level.Length)].ToUpperInvariant()}] {l.Message}" + (string.IsNullOrEmpty(l.Exception) ? "" : "\n" + l.Exception)));
+
     private void PickScenarioFile(ScriptScenarioSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
     private void PickPreflightFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
     private void PickShutdownFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
@@ -450,7 +584,8 @@
         fileName = s.FileName;
         scriptCode = s.Code;
         diagnostics = [];
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         compiledSpec = ParameterSpec.FromJsonSchema(s.Parameters);
         testParams = compiledSpec.DefaultJson();
@@ -474,7 +609,8 @@
         fileName = p.FileName;
         scriptCode = p.Code;
         diagnostics = [];
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         compiledSpec = null;
         statusMessage = null;
@@ -494,7 +630,8 @@
         fileName = "custom-scenario.cs";
         scriptCode = ScenarioTemplate;
         diagnostics = [];
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         statusMessage = null;
         statusIsError = false;
@@ -521,7 +658,8 @@
         fileName = "preflight-check.cs";
         scriptCode = PreflightTemplate;
         diagnostics = [];
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         statusMessage = null;
         statusIsError = false;
@@ -541,7 +679,8 @@
         selectedSummary = null;
         selectedPreflight = null;
         compiledSpec = null;
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         diagnostics = [];
         await CompileAndSave();
@@ -554,7 +693,8 @@
         statusMessage = null;
         statusIsError = false;
         diagnostics = [];
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
         preflightResult = null;
         try
         {
@@ -611,24 +751,100 @@
     private async Task RunTest()
     {
         if (!canTry) return;
+        StopLiveTestPolling();
         testing = true;
         statusMessage = null;
         statusIsError = false;
-        testResult = null;
+        liveTest = null;
+        liveTestPopupOpen = false;
+        liveTest = null;
         preflightResult = null;
         try
         {
             if (isPreflight)
+            {
                 preflightResult = await Api.TestRunPreflightAsync(selectedPreflight!.ScriptId, Envs.ActiveName, kind: ProgramKind);
+                testing = false;
+            }
             else
-                testResult = await Api.TestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
+            {
+                liveTest = await Api.StartLiveTestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
+                tryTab = 0;
+                tryStepsExpanded = true;
+                tryStepsReset++;
+                liveTestPopupOpen = true;
+                if (liveTest.Running)
+                {
+                    StartLiveTestPolling(liveTest.TestRunId);
+                }
+                else
+                {
+                    testing = false;
+                }
+            }
         }
         catch (Exception ex)
         {
             statusMessage = ex.Message;
             statusIsError = true;
+            testing = false;
         }
-        finally { testing = false; }
+    }
+
+    private void StartLiveTestPolling(string testRunId)
+    {
+        StopLiveTestPolling();
+        liveTestPollCts = new CancellationTokenSource();
+        var ct = liveTestPollCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    await Task.Delay(150, ct);
+                    var snap = await Api.GetLiveTestRunAsync(testRunId, ct);
+                    if (snap is null) break;
+                    liveTest = snap;
+                    if (!snap.Running)
+                    {
+                        testing = false;
+                        await InvokeAsync(StateHasChanged);
+                        break;
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch
+            {
+                testing = false;
+                try { await InvokeAsync(StateHasChanged); } catch (ObjectDisposedException) { }
+            }
+        }, CancellationToken.None);
+    }
+
+    private void StopLiveTestPolling()
+    {
+        liveTestPollCts?.Cancel();
+        liveTestPollCts?.Dispose();
+        liveTestPollCts = null;
+    }
+
+    private async Task StopLiveTestRunAsync()
+    {
+        if (liveTest is { Running: true } lt)
+            await Api.StopLiveTestRunAsync(lt.TestRunId);
+    }
+
+    private void CloseLiveTestPopup()
+    {
+        liveTestPopupOpen = false;
+        if (liveTest is not { Running: true })
+        {
+            StopLiveTestPolling();
+            testing = false;
+        }
     }
 
     private void AddToPlan()
@@ -687,9 +903,48 @@
         _ = ReloadAllAsync();
     }
 
-    public void Dispose()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        var runId = liveTestPopupOpen ? liveTest?.TestRunId : null;
+        if (runId != tryScrollAttachedRunId)
+        {
+            if (tryScrollHandle is not null)
+            {
+                try { await tryScrollHandle.InvokeVoidAsync("dispose"); } catch { }
+                try { await tryScrollHandle.DisposeAsync(); } catch { }
+                tryScrollHandle = null;
+            }
+            tryScrollAttachedRunId = runId;
+            if (runId is not null)
+            {
+                try { logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js"); } catch { }
+                if (logScrollMod is not null)
+                {
+                    try { tryScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("attach", tryInspectEl); } catch { }
+                }
+            }
+        }
+        else if (runId is not null && tryScrollHandle is not null)
+        {
+            try { await tryScrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopLiveTestPolling();
         DataMode.Changed -= OnStateChanged;
         Sim.Changed -= OnStateChanged;
+        if (tryScrollHandle is not null)
+        {
+            try { await tryScrollHandle.InvokeVoidAsync("dispose"); } catch { }
+            try { await tryScrollHandle.DisposeAsync(); } catch { }
+            tryScrollHandle = null;
+        }
+        if (logScrollMod is not null)
+        {
+            try { await logScrollMod.DisposeAsync(); } catch { }
+            logScrollMod = null;
+        }
     }
 }

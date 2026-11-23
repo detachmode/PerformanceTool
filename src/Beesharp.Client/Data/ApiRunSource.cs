@@ -508,8 +508,8 @@ public sealed class ApiRunSource : IRunSource
             if (a.Entry < 0 || a.Entry >= count) continue;
             if (!seenSequences.Add(a.Sequence)) continue; // two overlapping polls can deliver the same bee twice
             var errId = activeStore.Errors.Intern(a.Error);
-            var record = new BeeRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.SlowCalls, errId, activeStore.Errors);
-            var placeholderCall = new FakeCall(0, "Loading…", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: a.SlowCalls > 0, TypicalMs: null, Errors: activeStore.Errors);
+            var record = new BeeRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.SlowCalls, errId, activeStore.Errors, FailedStep: a.FailedStep, FailedRep: a.FailedRep);
+            var placeholderCall = new FakeCall(0, "Loading…", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: a.SlowCalls > 0, TypicalMs: null, Errors: activeStore.Errors, Step: Math.Max(0, a.FailedStep), Rep: Math.Max(0, a.FailedRep));
             var detail = new BeeDetail(a.Sequence, a.Entry, [placeholderCall], () => []);
             activeStore.Complete(record, detail);
             if (a.Sequence > lastSequence) lastSequence = a.Sequence;
@@ -540,9 +540,33 @@ public sealed class ApiRunSource : IRunSource
             foreach (var rb in dto.RunningBees)
             {
                 if (rb.Entry >= 0 && rb.Entry < count)
-                    buckets[rb.Entry].Add(new RunningBee(rb.Sequence, rb.Entry, rb.StartedAt, []));
+                    buckets[rb.Entry].Add(new RunningBee(rb.Sequence, rb.Entry, rb.StartedAt, [], rb.Step, rb.Rep, rb.StepVisits));
             }
             beesInFlight = buckets;
+        }
+
+        IReadOnlyList<ScenarioSteps>? steps = null;
+        if (count > 0)
+        {
+            var mapped = new ScenarioSteps[count];
+            var anySteps = false;
+            for (var i = 0; i < count; i++)
+            {
+                var raw = dto.Steps is not null && i < dto.Steps.Count ? dto.Steps[i] : catalog.Find(dto.Plan.Scenarios[i].ScenarioId)?.Steps;
+                if (raw is { Count: > 0 })
+                {
+                    anySteps = true;
+                    var hasTimes = raw.Any(st => st.Times is > 1);
+                    mapped[i] = new ScenarioSteps(
+                        raw.Select(st => st.Name).ToArray(),
+                        hasTimes ? raw.Select(st => st.Times ?? 1).ToArray() : null);
+                }
+                else
+                {
+                    mapped[i] = ScenarioSteps.None;
+                }
+            }
+            if (anySteps) steps = mapped;
         }
 
         Current = new RunSnapshot(
@@ -555,7 +579,8 @@ public sealed class ApiRunSource : IRunSource
             beesInFlight,
             runtime,
             dto.ShutdownState is null ? null : new ProgramRun(dto.ShutdownState, dto.ShutdownScriptName ?? "shutdown.cs", dto.ShutdownError, dto.ShutdownLogs ?? []),
-            dto.PreflightState is null ? null : new ProgramRun(dto.PreflightState, dto.PreflightScriptName ?? "preflight.cs", dto.PreflightError, dto.PreflightLogs ?? []));
+            dto.PreflightState is null ? null : new ProgramRun(dto.PreflightState, dto.PreflightScriptName ?? "preflight.cs", dto.PreflightError, dto.PreflightLogs ?? []),
+            steps);
         Changed?.Invoke();
         if (dto.RunId.Length > 0 && dto.RuntimeVersion != runtimeVersion && !runtimeFetching) _ = FetchRuntimeAsync(dto.RunId, dto.RuntimeVersion, count);
     }

@@ -34,10 +34,12 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         return new RunInfo(data.RunId, data.State, data.ElapsedSeconds, data.StartedUtc, data.Bees.Count, entries.Sum(e => e.Failed), entries.Sum(e => e.SlowBees), data.TotalLogs, data.Error, entries);
     }
 
-    public async Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct)
+    public async Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct, int? failedStep = null)
     {
         var all = await AllBeesAsync(runId, ct);
-        var filtered = all.Where(b => (entry is null || b.Entry == entry) && outcome switch
+        var filtered = all.Where(b => (entry is null || b.Entry == entry)
+            && (failedStep is null || (b.Outcome == "failed" && b.FailedStep == failedStep))
+            && outcome switch
         {
             BeeOutcomeFilter.Failed => b.Outcome == "failed",
             BeeOutcomeFilter.Slow => b.Outcome == "slow",
@@ -61,8 +63,8 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         var d = await storage.GetBeeDetailAsync(runId, sequence, ct);
         if (d is null) return null;
         return new BeeDetailInfo(
-            new BeeInfo(d.Sequence, d.Entry, d.StartedAt, d.DurationMs, d.StatusCode, d.Bytes, d.Error, d.Calls.Count(c => c.Error is null && c.DurationMs >= 1500)),
-            d.Calls.Select(c => new BeeCallInfo(c.Name, c.OffsetMs, c.DurationMs, c.StatusCode, c.Error)).ToList(),
+            new BeeInfo(d.Sequence, d.Entry, d.StartedAt, d.DurationMs, d.StatusCode, d.Bytes, d.Error, d.Calls.Count(c => c.Error is null && c.DurationMs >= 1500), d.FailedStep, d.FailedRep),
+            d.Calls.Select(c => new BeeCallInfo(c.Name, c.OffsetMs, c.DurationMs, c.StatusCode, c.Error, c.Step, c.Rep)).ToList(),
             d.Logs.Select(l => new BeeLogInfo(l.AtSeconds, l.Level, l.Message, l.Exception, l.CallIndex)).ToList());
     }
 
@@ -79,8 +81,8 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
     private async Task<IReadOnlyList<BeeInfo>> AllBeesAsync(string runId, CancellationToken ct)
     {
         if (IsCurrent(runId))
-            return runs.GetCurrent(-1, 10_000).NewBees.Select(b => new BeeInfo(b.Sequence, b.Entry, b.StartedAt, b.DurationMs, b.StatusCode, b.Bytes, b.Error, b.SlowCalls)).ToList();
+            return runs.GetCurrent(-1, 10_000).NewBees.Select(b => new BeeInfo(b.Sequence, b.Entry, b.StartedAt, b.DurationMs, b.StatusCode, b.Bytes, b.Error, b.SlowCalls, b.FailedStep, b.FailedRep)).ToList();
         var data = await storage.GetRunAsync(runId, ct) ?? throw new KeyNotFoundException($"There is no run '{runId}'.");
-        return data.Bees.Take(MaxBeesScanned).Select(b => new BeeInfo(b.Sequence, b.Entry, b.StartedAt, b.DurationMs, b.StatusCode, b.Bytes, b.Error, b.SlowCalls)).ToList();
+        return data.Bees.Take(MaxBeesScanned).Select(b => new BeeInfo(b.Sequence, b.Entry, b.StartedAt, b.DurationMs, b.StatusCode, b.Bytes, b.Error, b.SlowCalls, b.FailedStep, b.FailedRep)).ToList();
     }
 }

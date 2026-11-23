@@ -1,0 +1,31 @@
+{
+  "name": "Funny two",
+  "savedAt": "2026-11-22T23:33:20.872459+00:00",
+  "plan": {
+    "scenarios": [
+      {
+        "scenarioId": "script-checkout-union-steps",
+        "label": "Checkout (Union Steps)",
+        "ratePerMinute": 30,
+        "pattern": "Bursts",
+        "beesPerBurst": 47,
+        "burstsPerMinute": 4,
+        "maxInFlight": 200,
+        "parameters": {
+          "query": "honey",
+          "openCount": 4,
+          "addToCartPercent": 50,
+          "baseDelayMs": 1000,
+          "openFailPercent": 10,
+          "payRetryPercent": 35,
+          "payFailPercent": 15
+        }
+      }
+    ],
+    "durationSeconds": 600,
+    "maxConcurrency": 200,
+    "timeoutSeconds": 120,
+    "preflightScriptId": null,
+    "shutdownScriptId": null
+  }
+}

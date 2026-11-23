@@ -56,6 +56,23 @@ public static class ScriptEndpoints
                 return Results.BadRequest(new { error = ex.Message });
             }
         });
+        app.MapPost("/api/scripts/{id}/test-run/start", async (string id, TestRunScriptRequest? body, ScriptScenarioStore store, CancellationToken ct) =>
+        {
+            try
+            {
+                var started = await store.StartLiveTestRunAsync(id, body?.Parameters, body?.EnvironmentName, body?.TimeoutSeconds ?? 30, ct);
+                return Results.Ok(started);
+            }
+            catch (KeyNotFoundException ex) { return Results.NotFound(new { error = ex.Message }); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+        app.MapGet("/api/scripts/test-runs/{testRunId}", (string testRunId, ScriptScenarioStore store) =>
+            store.GetLiveTestRun(testRunId) is { } snap ? Results.Ok(snap) : Results.NotFound());
+        app.MapPost("/api/scripts/test-runs/{testRunId}/stop", (string testRunId, ScriptScenarioStore store) =>
+            store.StopLiveTestRun(testRunId) ? Results.Ok() : Results.NotFound());
         return app;
     }
 }

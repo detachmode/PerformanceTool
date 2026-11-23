@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Contracts.Tests;
 
@@ -22,9 +23,12 @@ public class ContractsRoundTripTests
     {
         var dto = new LiveRunStatusDto(
             "r1", "Running", 12.5, DateTimeOffset.UtcNow, new LoadPlan(),
-            [new LiveScenarioViewDto(10, 8, 2, 1, 0, 0, 0)],
-            [new LiveBeeDto(0, 0, 1.5, 120, 200, 42, null, 0)],
-            7, 3, "DuckDb", null, PreflightState: "Done", RunningBees: [new LiveRunningBeeDto(8, 0, 11.9)], RuntimeVersion: 4);
+            [new LiveScenarioViewDto(10, 8, 2, 1, 0, 0, 0, [0, 1], [1, 1])],
+            [new LiveBeeDto(0, 0, 1.5, 120, 200, 42, "boom", 0, FailedStep: 1, FailedRep: 2)],
+            7, 3, "DuckDb", null, PreflightState: "Done",
+            RunningBees: [new LiveRunningBeeDto(8, 0, 11.9, Step: 1, Rep: 2)],
+            RuntimeVersion: 4,
+            Steps: [[new StepInfo("Log in"), new StepInfo("Pay")]]);
         var json = JsonSerializer.Serialize(dto, Web);
         var node = JsonNode.Parse(json)!.AsObject();
         Assert.Equal("r1", (string?)node["runId"]);
@@ -35,6 +39,11 @@ public class ContractsRoundTripTests
         var back = RoundTrip(dto);
         Assert.Equal(dto.NewBees[0], back.NewBees[0]);
         Assert.Equal(dto.RunningBees![0], back.RunningBees![0]);
+        Assert.Equal(2, back.Steps![0].Count);
+        Assert.Equal(1, back.NewBees[0].FailedStep);
+        Assert.Equal(2, back.NewBees[0].FailedRep);
+        Assert.Equal(1, back.RunningBees[0].Step);
+        Assert.Equal(2, back.RunningBees[0].Rep);
     }
 
     [Fact]

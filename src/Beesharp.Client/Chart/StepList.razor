@@ -1,11 +1,17 @@
 @* The vertical stepper of one bee (brain 0056, calm UI brain 0016): numbered circles joined by a thin line. A done step gets a check and its time, the step the bee failed at
-   is red with its error (one line), the step in flight is highlighted with the active spinner, steps not reached are greyed out. The calls of a step are folded
-   by default and fold out on a click. *@
+   is red with its error (one line), the step in flight is highlighted with the active spinner, steps not reached are greyed out. Clicking any step expands its calls and
+   Azure DevOps-style console output; currently running and failed steps auto-open so logs stream in live. *@
 <ol class="stepper" aria-label="@AriaLabel">
-    @foreach (var st in Steps)
+    @for (var rowIdx = 0; rowIdx < Steps.Count; rowIdx++)
     {
-        var step = st;
-        var open = opened.Contains(step.Index) && step.HasCalls;
+        var row = rowIdx;
+        var step = Steps[row];
+        var stepLogs = LogsFor(step);
+        var stepLiveLogs = LiveLogsFor(step);
+        var hasLogs = stepLogs.Count > 0 || stepLiveLogs.Count > 0;
+        var canOpen = step.HasCalls || hasLogs || step.State == StepState.Current;
+        var defaultOpen = DefaultExpanded || (step.State == StepState.Current && (hasLogs || LiveLogs is not null)) || (step.State == StepState.Failed && hasLogs);
+        var open = canOpen && (toggled.Contains(row) ? !defaultOpen : defaultOpen);
         <li class="stp @Css(step)">
             <span class="stp-dot" aria-hidden="true">
                 @if (step.State == StepState.Current)
@@ -14,29 +20,34 @@
                 }
                 else if (step.State == StepState.Done)
                 {
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                    <HexBadge Kind="@(step.SlowCalls > 0 ? "warn" : "ok")" Size="24" StrokeWidth="7" />
                 }
                 else if (step.State == StepState.Failed)
                 {
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    <HexBadge Kind="bad" Size="24" StrokeWidth="7" />
                 }
                 else
                 {
-                    @(step.Index + 1)
+                    <HexBadge Kind="num" Size="24" StrokeWidth="6.5">@(step.Index + 1)</HexBadge>
                 }
             </span>
             <div class="stp-body">
-                <button type="button" class="stp-head" disabled="@(!step.HasCalls)" aria-expanded="@(step.HasCalls ? Aria.Bool(open) : null)" @onclick="() => Toggle(step.Index)"
-                        title="@(step.HasCalls ? (open ? "Hide the calls of this step" : "Show the calls of this step") : null)">
+                <button type="button" class="stp-head" disabled="@(!canOpen)" aria-expanded="@(canOpen ? Aria.Bool(open) : null)" @onclick="() => Toggle(row)"
+                        title="@(canOpen ? (open ? "Hide calls and logs of this step" : "Show calls and logs of this step") : null)">
                     <span class="stp-name">@step.Name</span>
-                    @if (step.Repeats) { <span class="stp-times" title="This step runs @step.Times times in a row">×@step.Times</span> }
+                    @if (step.VisitNumber > 1) { <span class="stp-times" title="Visit #@step.VisitNumber of @step.Name">#@step.VisitNumber</span> }
+                    else if (step.Repeats) { <span class="stp-times" title="@(step.HasKnownTotal ? $"This step runs {step.Times} times in a row" : $"This step ran {step.Times} times")">×@step.Times</span> }
                     <span class="stp-word">@Word(step)</span>
                     @if (step.State is StepState.Done or StepState.Failed && step.HasCalls)
                     {
                         <span class="stp-time @(step.SlowCalls > 0 ? "warn" : "")">@Format.Ms(step.DurationMs)</span>
                     }
-                    @if (step.HasCalls) { <span class="stp-chev" aria-hidden="true">@(open ? "▾" : "▸")</span> }
+                    @if (canOpen) { <span class="stp-chev" aria-hidden="true">@(open ? "▾" : "▸")</span> }
                 </button>
+                @if (!step.Repeats && step.RepData is not null && step.RepData.TryGetValue(0, out var singleData))
+                {
+                    <div class="stp-data" title="@singleData">@StepLogic.FormatStepData(singleData)</div>
+                }
                 @if (step.State == StepState.Failed && !string.IsNullOrWhiteSpace(step.Error))
                 {
                     <p class="stp-error bad">@OneLine(step.Error)</p>
@@ -47,23 +58,56 @@
                 }
                 @if (open)
                 {
-                    <ol class="stp-calls" aria-label="Calls of @step.Name">
-                        @{ var lastRep = -1; }
-                        @foreach (var c in step.Calls)
-                        {
-                            var cls = c.Failed ? "bad" : c.Slow ? "warn" : "";
-                            if (step.Repeats && c.Rep != lastRep)
+                    @if (step.HasCalls)
+                    {
+                        <ol class="stp-calls" aria-label="Calls of @step.Name">
+                            @{ var lastRep = -1; }
+                            @foreach (var c in step.Calls)
                             {
-                                lastRep = c.Rep;
-                                <li class="stp-rep @(step.FailedRep == c.Rep ? "bad" : "")">@(c.Rep + 1) of @step.Times@(step.FailedRep == c.Rep ? " · failed" : "")</li>
+                                var cls = c.Failed ? "bad" : c.Slow ? "warn" : "";
+                                if (step.Repeats && c.Rep != lastRep)
+                                {
+                                    lastRep = c.Rep;
+                                    var repJson = step.RepData is not null && step.RepData.TryGetValue(c.Rep, out var rd) ? rd : null;
+                                    <li class="stp-rep @(step.FailedRep == c.Rep ? "bad" : "")">
+                                        <span>@(step.HasKnownTotal ? $"{c.Rep + 1} of {step.Times}" : $"#{c.Rep + 1}")@(step.FailedRep == c.Rep ? " · failed" : "")</span>
+                                        @if (repJson is not null)
+                                        {
+                                            <span class="stp-rep-data" title="@repJson">@StepLogic.FormatStepData(repJson)</span>
+                                        }
+                                    </li>
+                                }
+                                <li class="stp-call @cls @(step.Repeats ? "in-rep" : "")">
+                                    <span class="call-name" title="@c.Name">@c.Name</span>
+                                    <span class="call-dur">@Format.Ms(c.DurationMs)</span>
+                                    <span class="call-status">@(c.Failed ? (c.Status?.ToString() ?? (Beesharp.Services.ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "")</span>
+                                </li>
                             }
-                            <li class="stp-call @cls @(step.Repeats ? "in-rep" : "")">
-                                <span class="call-name" title="@c.Name">@c.Name</span>
-                                <span class="call-dur">@Format.Ms(c.DurationMs)</span>
-                                <span class="call-status">@(c.Failed ? (c.Status?.ToString() ?? (Beesharp.Services.ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "")</span>
-                            </li>
-                        }
-                    </ol>
+                        </ol>
+                    }
+                    @if (stepLiveLogs.Count > 0 || stepLogs.Count > 0 || (step.State == StepState.Current && LiveLogs is not null))
+                    {
+                        <div class="sl-console compact stp-console wrap" role="log" aria-label="Console output of @step.Name">
+                            @if (stepLiveLogs.Count > 0)
+                            {
+                                @foreach (var l in stepLiveLogs)
+                                {
+                                    <SerilogLine Timestamp="l.Timestamp" Level="@l.Level" Message="@l.Message" Exception="@l.Exception" />
+                                }
+                            }
+                            else if (stepLogs.Count > 0)
+                            {
+                                @foreach (var l in stepLogs)
+                                {
+                                    <SerilogLine Timestamp="l.Timestamp" Level="@l.Level" Message="@l.Message" Exception="@l.Exception" />
+                                }
+                            }
+                            else
+                            {
+                                <div class="sl-empty" style="padding:.2rem 0">Waiting for output…</div>
+                            }
+                        </div>
+                    }
                 }
             </div>
         </li>
@@ -74,14 +118,52 @@
     [Parameter, EditorRequired] public IReadOnlyList<StepView> Steps { get; set; } = [];
     /// <summary>For a bee in flight: the call it is making now, shown quietly under the current step.</summary>
     [Parameter] public string? NowCall { get; set; }
+    /// <summary>Stored logs of a finished bee, matched to each step by (Step, Rep).</summary>
+    [Parameter] public IReadOnlyList<FakeLogEntry>? Logs { get; set; }
+    /// <summary>Live streaming logs of a running bee, matched to each step by (Step, Rep).</summary>
+    [Parameter] public IReadOnlyList<LiveLogEntryDto>? LiveLogs { get; set; }
+    /// <summary>Whether steps start expanded (all console outputs visible) by default.</summary>
+    [Parameter] public bool DefaultExpanded { get; set; } = true;
+    /// <summary>Incremented by the parent when clicking Collapse all / Expand all to clear per-row manual overrides.</summary>
+    [Parameter] public int ResetKey { get; set; }
     [Parameter] public string AriaLabel { get; set; } = "Steps";
 
-    private readonly HashSet<int> opened = [];
+    private readonly HashSet<int> toggled = [];
+    private int lastResetKey;
 
-    private void Toggle(int index) { if (!opened.Remove(index)) opened.Add(index); }
+    protected override void OnParametersSet()
+    {
+        if (ResetKey != lastResetKey)
+        {
+            lastResetKey = ResetKey;
+            toggled.Clear();
+        }
+    }
+
+    private void Toggle(int index) { if (!toggled.Remove(index)) toggled.Add(index); }
+
+    private List<FakeLogEntry> LogsFor(StepView step)
+    {
+        if (Logs is not { Count: > 0 }) return [];
+        var rep = step.VisitNumber > 0 ? step.VisitNumber - 1 : -1;
+        return Logs.Where(l => l.Step == step.Index && (rep < 0 || l.Rep == rep)).ToList();
+    }
+
+    private List<LiveLogEntryDto> LiveLogsFor(StepView step)
+    {
+        if (LiveLogs is not { Count: > 0 }) return [];
+        var rep = step.VisitNumber > 0 ? step.VisitNumber - 1 : -1;
+        return LiveLogs.Where(l => l.Step == step.Index && (rep < 0 || l.Rep == rep)).ToList();
+    }
 
     private static string Css(StepView s) => s.State switch { StepState.Done => "done", StepState.Failed => "failed", StepState.Current => "current", _ => "pending" };
-    private static string Word(StepView s) => s.State switch { StepState.Failed => (s.Canceled ? "canceled" : "failed") + (s.Repeats && s.FailedRep >= 0 ? ", " + ScenarioSteps.Ordinal(s.FailedRep + 1) + " time" : ""), StepState.Current => s.Repeats && s.CurrentRep >= 0 ? $"active · {s.CurrentRep + 1} of {s.Times}" : "active", StepState.Pending => "not reached", _ => "" };
+    private static string Word(StepView s) => s.State switch
+    {
+        StepState.Failed => (s.Canceled ? "canceled" : "failed") + (s.VisitNumber == 0 && (s.Repeats || s.FailedRep > 0) && s.FailedRep >= 0 ? ", " + ScenarioSteps.Ordinal(s.FailedRep + 1) + " time" : ""),
+        StepState.Current => s.HasKnownTotal && s.Repeats && s.CurrentRep >= 0 ? $"active · {s.CurrentRep + 1} of {s.Times}" : s.CurrentRep > 0 ? $"active · {ScenarioSteps.Ordinal(s.CurrentRep + 1)} time" : "active",
+        StepState.Pending => "not reached",
+        _ => "",
+    };
 
     private static string OneLine(string text)
     {

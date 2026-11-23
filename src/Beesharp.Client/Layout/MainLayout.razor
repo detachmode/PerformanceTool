@@ -4,7 +4,6 @@
 @inject LogsPopupState Logs
 @inject ViewSettings Settings
 @inject EnvironmentsPopupState EnvPopup
-@inject CustomScriptsPopupState ScriptsPopup
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
 @inject IRunSource Sim
@@ -190,21 +189,10 @@
     <EnvironmentsDialog @key="EnvPopup.Version" />
 }
 
-@if (ScriptsPopup.IsOpen)
-{
-    <CustomScriptsDialog @key="ScriptsPopup.Version" />
-}
-
 @if (Logs.IsOpen)
 {
     <LogsDialog @key="Logs.Version" />
 }
-
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
 
 @code {
     private bool menuOpen;
@@ -256,7 +244,6 @@
         Logs.Changed += OnChanged;
         Settings.Changed += OnChanged;
         EnvPopup.Changed += OnChanged;
-        ScriptsPopup.Changed += OnChanged;
         DataMode.Changed += OnChanged;
         ApiRun.Changed += OnChanged;
         Envs.Changed += OnChanged;
@@ -290,7 +277,6 @@
         Logs.Changed -= OnChanged;
         Settings.Changed -= OnChanged;
         EnvPopup.Changed -= OnChanged;
-        ScriptsPopup.Changed -= OnChanged;
         DataMode.Changed -= OnChanged;
         ApiRun.Changed -= OnChanged;
         Envs.Changed -= OnChanged;

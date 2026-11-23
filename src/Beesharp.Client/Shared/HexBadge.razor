@@ -26,6 +26,10 @@
                 <circle class="hex-glyph" cx="50" cy="50" r="22" stroke-width="@ClockSw" />
                 <path class="hex-glyph" d="M 50 37 L 50 51 L 60 56" stroke-width="@ClockSw" stroke-linecap="round" stroke-linejoin="round" />
             }
+            else if (Kind == "num")
+            {
+                @* Plain honeycomb hexagon shell for numbered step badges (number goes in ChildContent). *@
+            }
             else
             {
                 <path class="hex-glyph" d="M 31 52 L 45 66 L 70 36" stroke-width="@GlyphSw" stroke-linecap="round" stroke-linejoin="round" />

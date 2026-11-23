@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using DuckDB.NET.Data;
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Services.Storage;
 
@@ -15,7 +16,7 @@ namespace Beesharp.Services.Storage;
 /// </summary>
 public sealed class DuckDbRunStorage : IRunStorage
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
@@ -33,7 +34,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     public string DatabasePath { get; }
 
     private abstract record WriteOp;
-    private sealed record StartRunOp(string RunId, DateTimeOffset StartedUtc, string PlanJson) : WriteOp;
+    private sealed record StartRunOp(string RunId, DateTimeOffset StartedUtc, string PlanJson, string? StepsJson) : WriteOp;
     private sealed record BeeOp(string RunId, ExecutionResult Result, int BeeOutcome, int SlowCalls) : WriteOp;
     private sealed record FinishRunOp(string RunId, DateTimeOffset FinishedUtc, string State, double ElapsedSeconds, string? Error) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
@@ -87,6 +88,11 @@ public sealed class DuckDbRunStorage : IRunStorage
                     json VARCHAR NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS run_steps (
+                    run_id VARCHAR PRIMARY KEY,
+                    json VARCHAR NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS bees (
                     run_id VARCHAR NOT NULL,
                     sequence INTEGER NOT NULL,
@@ -102,12 +108,19 @@ public sealed class DuckDbRunStorage : IRunStorage
                     is_slow BOOLEAN NOT NULL,
                     slow_calls INTEGER NOT NULL,
                     call_count INTEGER NOT NULL,
-                    log_count INTEGER NOT NULL
+                    log_count INTEGER NOT NULL,
+                    failed_step INTEGER NOT NULL DEFAULT -1,
+                    failed_rep INTEGER NOT NULL DEFAULT -1,
+                    step_visits_json VARCHAR
                 );
+                ALTER TABLE bees ADD COLUMN IF NOT EXISTS failed_step INTEGER DEFAULT -1;
+                ALTER TABLE bees ADD COLUMN IF NOT EXISTS failed_rep INTEGER DEFAULT -1;
+                ALTER TABLE bees ADD COLUMN IF NOT EXISTS step_visits_json VARCHAR;
                 CREATE INDEX IF NOT EXISTS idx_bees_run_seq ON bees(run_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_bees_run_name ON bees(run_id, bee_name);
                 CREATE INDEX IF NOT EXISTS idx_bees_run_failed ON bees(run_id, is_failed);
                 CREATE INDEX IF NOT EXISTS idx_bees_run_slow ON bees(run_id, is_slow);
+                CREATE INDEX IF NOT EXISTS idx_bees_run_failed_step ON bees(run_id, entry, failed_step);
 
                 CREATE TABLE IF NOT EXISTS calls (
                     id BIGINT NOT NULL,
@@ -119,8 +132,12 @@ public sealed class DuckDbRunStorage : IRunStorage
                     duration_ms DOUBLE NOT NULL,
                     status_code INTEGER,
                     bytes BIGINT NOT NULL,
-                    error VARCHAR
+                    error VARCHAR,
+                    step INTEGER NOT NULL DEFAULT 0,
+                    rep INTEGER NOT NULL DEFAULT 0
                 );
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS step INTEGER DEFAULT 0;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS rep INTEGER DEFAULT 0;
                 CREATE INDEX IF NOT EXISTS idx_calls_run_seq ON calls(run_id, sequence);
 
                 CREATE TABLE IF NOT EXISTS logs (
@@ -137,8 +154,12 @@ public sealed class DuckDbRunStorage : IRunStorage
                     call_index INTEGER,
                     bee_outcome INTEGER NOT NULL,
                     is_failed BOOLEAN NOT NULL,
-                    is_slow BOOLEAN NOT NULL
+                    is_slow BOOLEAN NOT NULL,
+                    step INTEGER NOT NULL DEFAULT 0,
+                    rep INTEGER NOT NULL DEFAULT 0
                 );
+                ALTER TABLE logs ADD COLUMN IF NOT EXISTS step INTEGER DEFAULT 0;
+                ALTER TABLE logs ADD COLUMN IF NOT EXISTS rep INTEGER DEFAULT 0;
                 CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id, id);
                 CREATE INDEX IF NOT EXISTS idx_logs_run_seq ON logs(run_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_logs_run_bee_name ON logs(run_id, bee_name);
@@ -155,8 +176,12 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
-    public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan) =>
-        queue.Writer.TryWrite(new StartRunOp(runId, startedUtc, JsonSerializer.Serialize(plan, JsonOpts)));
+    public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null) =>
+        queue.Writer.TryWrite(new StartRunOp(
+            runId,
+            startedUtc,
+            JsonSerializer.Serialize(plan, JsonOpts),
+            steps is not null && steps.Any(s => s.Count > 0) ? JsonSerializer.Serialize(steps, JsonOpts) : null));
 
     public void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls) =>
         queue.Writer.TryWrite(new BeeOp(runId, result, beeOutcome, slowCalls));
@@ -258,6 +283,14 @@ public sealed class DuckDbRunStorage : IRunStorage
                         cmd.Parameters.Add(new DuckDBParameter(s.PlanJson));
                         cmd.ExecuteNonQuery();
                     }
+                    if (s.StepsJson is not null)
+                    {
+                        using var scmd = conn.CreateCommand();
+                        scmd.CommandText = "DELETE FROM run_steps WHERE run_id = $1; INSERT INTO run_steps(run_id, json) VALUES ($1, $2);";
+                        scmd.Parameters.Add(new DuckDBParameter(s.RunId));
+                        scmd.Parameters.Add(new DuckDBParameter(s.StepsJson));
+                        scmd.ExecuteNonQuery();
+                    }
                     break;
 
                 case BeeOp a:
@@ -312,6 +345,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                    .AppendValue(a.SlowCalls)
                    .AppendValue(r.Calls?.Count ?? 0)
                    .AppendValue(r.Logs?.Count ?? 0)
+                   .AppendValue(r.FailedStep)
+                   .AppendValue(r.FailedRep)
+                   .AppendValue(r.StepVisits is { Count: > 0 } ? JsonSerializer.Serialize(r.StepVisits, JsonOpts) : null)
                    .EndRow();
             }
         }
@@ -337,6 +373,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                        .AppendValue(c.StatusCode)
                        .AppendValue(c.Bytes)
                        .AppendValue(c.Error)
+                       .AppendValue(c.Step)
+                       .AppendValue(c.Rep)
                        .EndRow();
                 }
             }
@@ -370,6 +408,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                        .AppendValue(a.BeeOutcome)
                        .AppendValue(isFailed)
                        .AppendValue(isSlow)
+                       .AppendValue(l.Step)
+                       .AppendValue(l.Rep)
                        .EndRow();
                 }
             }
@@ -442,11 +482,21 @@ public sealed class DuckDbRunStorage : IRunStorage
                 totalLogs = Convert.ToInt64(rr.GetValue(5));
             }
 
+            IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null;
+            using (var sCmd = conn.CreateCommand())
+            {
+                sCmd.CommandText = "SELECT json FROM run_steps WHERE run_id = $1;";
+                sCmd.Parameters.Add(new DuckDBParameter(runId));
+                if (sCmd.ExecuteScalar() is string stepsJson)
+                    steps = JsonSerializer.Deserialize<List<List<StepInfo>>>(stepsJson, JsonOpts);
+            }
+
             var bees = new List<StoredBeeSummary>();
             using (var aCmd = conn.CreateCommand())
             {
                 aCmd.CommandText = """
-                    SELECT sequence, entry, started_at, duration_ms, status_code, bytes, error, slow_calls
+                    SELECT sequence, entry, started_at, duration_ms, status_code, bytes, error, slow_calls,
+                           COALESCE(failed_step, -1), COALESCE(failed_rep, -1)
                     FROM bees WHERE run_id = $1 ORDER BY sequence;
                     """;
                 aCmd.Parameters.Add(new DuckDBParameter(runId));
@@ -461,11 +511,13 @@ public sealed class DuckDbRunStorage : IRunStorage
                         ar.IsDBNull(4) ? null : ar.GetInt32(4),
                         ar.GetInt64(5),
                         ar.IsDBNull(6) ? null : ar.GetString(6),
-                        ar.GetInt32(7)));
+                        ar.GetInt32(7),
+                        ar.GetInt32(8),
+                        ar.GetInt32(9)));
                 }
             }
 
-            return Task.FromResult<StoredRunData?>(new StoredRunData(runId, startedUtc, state, elapsedSeconds, plan, bees, totalLogs, error));
+            return Task.FromResult<StoredRunData?>(new StoredRunData(runId, startedUtc, state, elapsedSeconds, plan, bees, totalLogs, error, steps));
         }
     }
 
@@ -473,16 +525,18 @@ public sealed class DuckDbRunStorage : IRunStorage
     {
         lock (dbLock)
         {
-            int entry;
+            int entry, failedStep, failedRep;
             double startedAt, durationMs;
             int? statusCode;
             long bytes;
             string? error;
+            IReadOnlyList<RecordedStepVisit>? stepVisits = null;
 
             using (var beeCmd = conn.CreateCommand())
             {
                 beeCmd.CommandText = """
-                    SELECT entry, started_at, duration_ms, status_code, bytes, error
+                    SELECT entry, started_at, duration_ms, status_code, bytes, error,
+                           COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json
                     FROM bees
                     WHERE run_id = $1 AND sequence = $2
                     LIMIT 1;
@@ -497,13 +551,18 @@ public sealed class DuckDbRunStorage : IRunStorage
                 statusCode = reader.IsDBNull(3) ? null : reader.GetInt32(3);
                 bytes = reader.GetInt64(4);
                 error = reader.IsDBNull(5) ? null : reader.GetString(5);
+                failedStep = reader.GetInt32(6);
+                failedRep = reader.GetInt32(7);
+                if (!reader.IsDBNull(8) && reader.GetString(8) is { Length: > 0 } svJson)
+                    stepVisits = JsonSerializer.Deserialize<List<RecordedStepVisit>>(svJson, JsonOpts);
             }
 
             var calls = new List<RecordedCall>();
             using (var callCmd = conn.CreateCommand())
             {
                 callCmd.CommandText = """
-                    SELECT name, offset_ms, duration_ms, status_code, bytes, error
+                    SELECT name, offset_ms, duration_ms, status_code, bytes, error,
+                           COALESCE(step, 0), COALESCE(rep, 0)
                     FROM calls
                     WHERE run_id = $1 AND sequence = $2
                     ORDER BY call_index;
@@ -519,7 +578,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                         cr.GetDouble(2),
                         cr.IsDBNull(3) ? null : cr.GetInt32(3),
                         cr.GetInt64(4),
-                        cr.IsDBNull(5) ? null : cr.GetString(5)));
+                        cr.IsDBNull(5) ? null : cr.GetString(5),
+                        cr.GetInt32(6),
+                        cr.GetInt32(7)));
                 }
             }
 
@@ -527,7 +588,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             using (var logCmd = conn.CreateCommand())
             {
                 logCmd.CommandText = """
-                    SELECT at_seconds, level, message, exception, call_index
+                    SELECT at_seconds, level, message, exception, call_index, COALESCE(step, 0), COALESCE(rep, 0)
                     FROM logs
                     WHERE run_id = $1 AND sequence = $2
                     ORDER BY id;
@@ -542,12 +603,14 @@ public sealed class DuckDbRunStorage : IRunStorage
                         lr.GetString(1),
                         lr.GetString(2),
                         lr.IsDBNull(3) ? null : lr.GetString(3),
-                        lr.IsDBNull(4) ? null : lr.GetInt32(4)));
+                        lr.IsDBNull(4) ? null : lr.GetInt32(4),
+                        lr.GetInt32(5),
+                        lr.GetInt32(6)));
                 }
             }
 
             return Task.FromResult<StoredBeeDetail?>(new StoredBeeDetail(
-                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs));
+                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs, failedStep, failedRep, stepVisits));
         }
     }
 
@@ -668,6 +731,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                     var tables = new (string File, string Sql)[]
                     {
                         ("runs.parquet", $"SELECT * FROM runs WHERE run_id = '{escapedId}'"),
+                        ("run_steps.parquet", $"SELECT * FROM run_steps WHERE run_id = '{escapedId}'"),
                         ("bees.parquet", $"SELECT * FROM bees WHERE run_id = '{escapedId}' ORDER BY sequence"),
                         ("calls.parquet", $"SELECT * FROM calls WHERE run_id = '{escapedId}' ORDER BY sequence, call_index"),
                         ("logs.parquet", $"SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id"),
@@ -751,6 +815,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                             ATTACH '{escapedPath}' AS {alias};
                             CREATE TABLE {alias}.schema_meta AS SELECT * FROM schema_meta;
                             CREATE TABLE {alias}.runs AS SELECT * FROM runs WHERE run_id = '{escapedId}';
+                            CREATE TABLE {alias}.run_steps AS SELECT * FROM run_steps WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.bees AS SELECT * FROM bees WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.calls AS SELECT * FROM calls WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.logs AS SELECT * FROM logs WHERE run_id = '{escapedId}';
@@ -772,7 +837,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var bees = new List<object>();
             using (var aCmd = conn.CreateCommand())
             {
-                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls FROM bees WHERE run_id = $1 ORDER BY sequence;";
+                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls, COALESCE(failed_step, -1), COALESCE(failed_rep, -1) FROM bees WHERE run_id = $1 ORDER BY sequence;";
                 aCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var ar = aCmd.ExecuteReader();
                 while (ar.Read())
@@ -791,6 +856,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                         isFailed = ar.GetBoolean(9),
                         isSlow = ar.GetBoolean(10),
                         slowCalls = ar.GetInt32(11),
+                        failedStep = ar.GetInt32(12),
+                        failedRep = ar.GetInt32(13),
                     });
                 }
             }
@@ -798,7 +865,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var calls = new List<object>();
             using (var cCmd = conn.CreateCommand())
             {
-                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
+                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0) FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
                 cCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var cr = cCmd.ExecuteReader();
                 while (cr.Read())
@@ -813,6 +880,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                         statusCode = cr.IsDBNull(5) ? (int?)null : cr.GetInt32(5),
                         bytes = cr.GetInt64(6),
                         error = cr.IsDBNull(7) ? null : cr.GetString(7),
+                        step = cr.GetInt32(8),
+                        rep = cr.GetInt32(9),
                     });
                 }
             }
@@ -820,7 +889,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var logs = new List<object>();
             using (var lCmd = conn.CreateCommand())
             {
-                lCmd.CommandText = "SELECT id, sequence, bee_name, entry, at_seconds, level, message, exception, call_index, is_failed, is_slow FROM logs WHERE run_id = $1 ORDER BY id;";
+                lCmd.CommandText = "SELECT id, sequence, bee_name, entry, at_seconds, level, message, exception, call_index, is_failed, is_slow, COALESCE(step, 0) FROM logs WHERE run_id = $1 ORDER BY id;";
                 lCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var lr = lCmd.ExecuteReader();
                 while (lr.Read())
@@ -838,6 +907,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                         callIndex = lr.IsDBNull(8) ? (int?)null : lr.GetInt32(8),
                         isFailed = lr.GetBoolean(9),
                         isSlow = lr.GetBoolean(10),
+                        step = lr.GetInt32(11),
                     });
                 }
             }

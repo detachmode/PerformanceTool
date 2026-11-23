@@ -5,7 +5,7 @@
 @inject LogsPopupState Logs
 @inject ViewSettings Settings
 @inject ScenarioCatalog Catalog
-@inject CustomScriptsPopupState ScriptsPopup
+@inject NavigationManager Nav
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
 @inject IJSRuntime JS
@@ -28,7 +28,7 @@
     var runningAll = StepLogic.FilterRunning(runningRaw, stepFilter, s.Elapsed);
     // Where each bee in flight is (brain 0056): shown quietly as "Step 2 of 4 · Search" wherever such a bee appears.
     var runStep = new Dictionary<int, (int Step, int Rep)>();
-    if (hasSteps) foreach (var r in runningRaw) { var ems = Math.Max(0, (s.Elapsed - r.StartedAt) * 1000); runStep[r.Sequence] = (StepLogic.CurrentStep(r.Calls, ems), StepLogic.CurrentRep(r.Calls, ems)); }
+    if (hasSteps) foreach (var r in runningRaw) { var ems = Math.Max(0, (s.Elapsed - r.StartedAt) * 1000); runStep[r.Sequence] = (StepLogic.CurrentStep(r, ems), StepLogic.CurrentRep(r, ems)); }
     // The brushed time window (brain 0023, update 3): bees that started in [from, to). A window that reaches the live edge follows it (to = open).
     // The view [vf, vt]: a following window keeps its width and slides with the live edge.
     double vf = 0, vt = 0;
@@ -105,16 +105,26 @@
 }
 
 <div class="overlay" tabindex="-1" @ref="root" @onkeydown="OnKey" @onclick="OnClose" role="presentation">
-    <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
-        <div class="dlg-head">
-            <h2 id="scn-title">@label</h2>
+    <div class="dialog wide yt-dlg" role="dialog" aria-modal="true" aria-labelledby="scn-title" @onclick:stopPropagation="true">
+        <div class="dlg-head yt-dlg-head">
+            <button type="button" class="yt-dlg-ico-btn" @onclick="OnClose" aria-label="Back" title="Close">
+                <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <span class="yt-dlg-head-lbl">Scenario details</span>
             <span class="spacer"></span>
             @if (Index < s.Plan.Scenarios.Count && Catalog.IsCustom(s.Plan.Scenarios[Index].ScenarioId))
             {
-                <button class="btn ghost small" @onclick="() => ScriptsPopup.Show(s.Plan.Scenarios[Index].ScenarioId)" title="View and edit this scenario's .cs file on the server">Edit .cs</button>
+                var scriptScnId = s.Plan.Scenarios[Index].ScenarioId;
+                <button type="button" class="yt-dlg-ico-btn" @onclick="() => EditScript(scriptScnId)" title="Open this scenario's .cs file in the Script Editor" aria-label="Edit script">
+                    <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5" /><path d="m16 7 5 5-5 5" /></svg>
+                </button>
             }
-            <button class="icon-btn gear" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">⚙</button>
-            <button class="icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
+            <button type="button" class="yt-dlg-ico-btn" @onclick="Settings.Open" aria-label="Settings" title="Zoom strength and bars before grouping">
+                <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>
+            </button>
+            <button type="button" class="yt-dlg-ico-btn" @onclick="OnClose" aria-label="Close" title="Close">
+                <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
         </div>
 
         <div class="pop-body">
@@ -122,100 +132,160 @@
         @{
             var dlgActive = !Selection && (s.Running || view.InFlight > 0);
             var dlgOk = Math.Max(0, view.Finished - view.Failed - view.SlowBees);
+            var dlgStatusKind = dlgActive ? "run" : view.Failed > 0 ? "bad" : view.SlowBees > 0 ? "warn" : "good";
+            var scnTypeName = Index < s.Plan.Scenarios.Count ? Catalog.Find(s.Plan.Scenarios[Index].ScenarioId)?.Name : null;
+            var livePct = s.Plan.DurationSeconds > 0 ? Math.Clamp(s.Elapsed * 100.0 / s.Plan.DurationSeconds, 4, 100) : 50;
+            var totFin = Math.Max(1, view.Finished);
+            var badPct = view.Finished > 0 ? view.Failed * 100.0 / totFin : 0;
+            var slowPct = view.Finished > 0 ? view.SlowBees * 100.0 / totFin : 0;
+            var goodPct = view.Finished > 0 ? Math.Max(0, 100.0 - badPct - slowPct) : 0;
         }
-        <div class="dlg-summary-grid @(dlgActive ? "cols-7" : "")" role="group" aria-label="Scenario summary">
-            @if (dlgActive)
-            {
-                <div class="dlg-stat static active-tile active-live" title="@Format.Plural(view.InFlight, "active bee", "active bees") currently running">
-                    <small>Active</small>
-                    <b class="active-val">
-                        <HexBadge Kind="spin" Size="18" StrokeWidth="9" />
-                        <span>@Format.Num(view.InFlight)</span>
-                    </b>
+
+        @* Active Editorial KPI Hero (no bar diagram when active) *@
+        @if (dlgActive)
+        {
+            <section class="yt-dlg-hero" aria-label="Live run status">
+                <span class="yt-ed-badge run">
+                    <i class="yt-live-dot white" aria-hidden="true"></i>
+                    @Format.Num(view.InFlight) ACTIVE
+                </span>
+                <div class="yt-ed-hero">
+                    <div class="yt-ed-big">@Format.Num(view.InFlight)<small>bees</small></div>
+                    <div class="yt-ed-sub">
+                        <b>in flight right now</b>
+                        <span>@Format.Num(view.Finished) finished@(view.Failed > 0 ? $" · {Format.Num(view.Failed)} failed ({Pc(stats.ErrorRate)})" : "")</span>
+                    </div>
                 </div>
-                <button type="button" class="dlg-stat @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all finished bees" aria-pressed="@Aria.Bool(show == BeeShow.All)">
-                    <small>Finished</small>
-                    <b>@Format.Num(view.Finished)</b>
-                </button>
-            }
-            else
-            {
-                <button type="button" class="dlg-stat @(dlgOk > 0 ? "good" : "") @(show == BeeShow.All ? "on" : "")" @onclick="() => SetShow(BeeShow.All)" title="Show all bees (@Format.Num(dlgOk) succeeded)" aria-pressed="@Aria.Bool(show == BeeShow.All)">
-                    <small>Success</small>
-                    <b class="stat-icon-val"><HexBadge Kind="ok" Size="17" StrokeWidth="7" /><span>@Format.Num(dlgOk)</span></b>
-                </button>
-            }
-            <button type="button" class="dlg-stat @(view.Failed > 0 ? "bad" : "") @(show == BeeShow.Failed ? "on" : "")" @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)" title="Show only failed bees" aria-pressed="@Aria.Bool(show == BeeShow.Failed)">
-                <small>Failed @(stats.Count > 0 ? Pc(stats.ErrorRate) : "")</small>
-                <b class="stat-icon-val"><HexBadge Kind="bad" Size="17" StrokeWidth="7" /><span>@Format.Num(view.Failed)</span></b>
-            </button>
-            <button type="button" class="dlg-stat @(view.SlowBees > 0 ? "warn" : "") @(show == BeeShow.Slow ? "on" : "")" @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)" title="Show only slow bees" aria-pressed="@Aria.Bool(show == BeeShow.Slow)">
-                <small>Slow @(stats.Count > 0 ? Pc(stats.SlowRate) : "")</small>
-                <b class="stat-icon-val"><HexBadge Kind="warn" Size="17" StrokeWidth="7" /><span>@Format.Num(view.SlowBees)</span></b>
-            </button>
-            <button type="button" class="dlg-stat" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.MedianIndex)" title="Typical duration (median)">
-                <small>Typical</small>
-                <b>@(stats.Count > 0 ? Format.Ms(stats.Median) : "—")</b>
-            </button>
-            <button type="button" class="dlg-stat @(stats.TailIsSlow ? "warn" : "") @(tailMs is not null ? "on" : "")" disabled="@(stats.Count == 0)" @onclick="() => TailOnly(stats.P95)" title="Slowest 5%" aria-pressed="@Aria.Bool(tailMs is not null)">
-                <small>Slowest 5%</small>
-                <b>@(stats.Count > 0 ? Format.Ms(stats.P95) : "—")</b>
-            </button>
-            @if (!Selection)
-            {
-                var rateTitle = $"{Format.Rate(actual)} of {Format.Rate(target)} {Terms.PerMinuteShort}{(shape.Length > 0 ? " · " + shape : "")}";
-                <div class="dlg-stat static" title="@rateTitle">
-                    <small>Rate / @Format.Rate(target)</small>
-                    <b>@Format.Rate(actual)<span class="unit">/m</span></b>
+                <div class="yt-dlg-hero-foot">
+                    <span class="yt-dlg-hero-stat">
+                        @(stats.Count > 0 ? $"typical {Format.Ms(stats.Median)} · slowest 5% {Format.Ms(stats.P95)}" : $"rate {Format.Rate(actual)} / {Format.Rate(target)}/m")
+                    </span>
+                    <span class="yt-dlg-hero-pill">@Format.Time(s.Elapsed)@(s.Plan.DurationSeconds > 0 ? $" / {Format.Time(s.Plan.DurationSeconds)}" : "")</span>
                 </div>
-            }
-            else
-            {
-                <button type="button" class="dlg-stat @(stats.LongestIsSlow ? "warn" : "")" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest bee">
-                    <small>Longest</small>
-                    <b>@(stats.Count > 0 ? Format.Ms(stats.Longest) : "—")</b>
-                </button>
-            }
+            </section>
+            <div class="yt-scrubber" aria-hidden="true">
+                <span class="yt-scrub-seg run" style="width:@(livePct.ToString("0.#", CultureInfo.InvariantCulture))%">
+                    <i class="yt-scrub-dot @(view.Failed > 0 ? "bad" : "")"></i>
+                </span>
+            </div>
+        }
+        else if (view.Finished > 0)
+        {
+            <div class="yt-scrubber" aria-hidden="true">
+                <span class="yt-scrub-seg good" style="width:@(goodPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+                <span class="yt-scrub-seg warn" style="width:@(slowPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+                <span class="yt-scrub-seg bad" style="width:@(badPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+            </div>
+        }
+
+        @* Title block: scenario name + meta + channel row *@
+        <div class="yt-dlg-titleblock">
+            <h2 id="scn-title">@label</h2>
+            <div class="yt-dlg-meta">
+                @if (dlgActive)
+                {
+                    <span>@Format.Num(view.InFlight) active</span>
+                    <span class="yt-sep" aria-hidden="true">·</span>
+                }
+                <span>@Format.Num(view.Finished) finished</span>
+                @if (stats.Count > 0)
+                {
+                    <span class="yt-sep" aria-hidden="true">·</span>
+                    <button type="button" class="yt-meta-btn" @onclick="() => SelectIndex(stats.MedianIndex)" title="Open typical bee">typical @Format.Ms(stats.Median)</button>
+                }
+                @if (!Selection)
+                {
+                    <span class="yt-sep" aria-hidden="true">·</span>
+                    <span title="@($"{Format.Rate(actual)} of {Format.Rate(target)} {Terms.PerMinuteShort}")">@Format.Rate(actual) / @Format.Rate(target)/m</span>
+                }
+            </div>
         </div>
 
+        <div class="yt-dlg-chan">
+            <span class="yt-avatar @dlgStatusKind" aria-hidden="true">
+                @if (dlgStatusKind == "run")
+                {
+                    <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>
+                }
+                else if (dlgStatusKind == "bad")
+                {
+                    <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M12 8.2v4.6" /><path d="M12 16h.01" /></svg>
+                }
+                else if (dlgStatusKind == "warn")
+                {
+                    <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M12 8v4l2.6 1.6" /></svg>
+                }
+                else
+                {
+                    <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="m8.8 12.2 2.2 2.2 4.4-4.6" /></svg>
+                }
+            </span>
+            <div class="yt-dlg-chan-text">
+                <b>@(scnTypeName ?? label)</b>
+                <span>@(shape.Length > 0 ? $"Bursts · {shape}" : $"Linear · {Format.Rate(target)} {Terms.PerMinuteShort}")@(hasSteps ? $" · {stepsDecl.Count} steps" : "")</span>
+            </div>
+            <button type="button" class="yt-dlg-logs-btn" @onclick="() => Logs.Show(entry: Index)" title="Open logs filtered to @label">
+                <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9M7.5 13h6M7.5 16h3.5" /></svg>
+                <span>Logs</span>
+            </button>
+        </div>
+
+        @* Steps vertical timeline card (with active & failed pill indicators per step) *@
         @if (hasSteps && !Selection)
         {
             var failedPer = s.Store.FailedPerStep(Index);
             var inFlightPer = StepLogic.InFlightCounts(stepsDecl, runningRaw, s.Elapsed);
             var worst = StepLogic.MostFailed(failedPer);
             var stripOpen = stepsOpen ?? (stepFilter is not null);
-            <div class="steps-strip" role="group" aria-label="Steps of this scenario">
-                <button type="button" class="steps-toggle" aria-expanded="@Aria.Bool(stripOpen)" @onclick="() => stepsOpen = !stripOpen" title="@(stripOpen ? "Hide the steps" : "Show the steps with their counts")">
-                    <span aria-hidden="true">@(stripOpen ? "▾" : "▸")</span><b>Steps</b><span>@stepsDecl.Count</span>
-                    @if (!stripOpen && worst is { } wf) { <span class="hint">most failed at @stepsDecl.Name(wf.Step) (@Format.Num(wf.Count))</span> }
+            <section class="yt-steps-card @(stripOpen ? "open" : "")" role="group" aria-label="Steps of this scenario">
+                <button type="button" class="yt-steps-head" aria-expanded="@Aria.Bool(stripOpen)" @onclick="() => stepsOpen = !stripOpen" title="@(stripOpen ? "Hide the steps" : "Show the steps with their counts")">
+                    <b>Steps · @stepsDecl.Count</b>
+                    @if (worst is { } wf)
+                    {
+                        <span class="yt-steps-hint">most failed at @stepsDecl.Name(wf.Step) (@Format.Num(wf.Count))</span>
+                    }
+                    <svg class="yt-ico sm yt-steps-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
                 </button>
                 @if (stripOpen)
                 {
-                    <ol class="steps-list">
+                    <ol class="yt-tl">
                         @for (var si = 0; si < stepsDecl.Count; si++)
                         {
                             var st = si;
                             var nFailed = st < failedPer.Count ? failedPer[st] : 0;
                             var nFlight = inFlightPer[st];
                             var onStep = stepFilter is { } sfo && sfo.Step == st;
-                            <li class="sps @(onStep ? "on" : "")">
-                                <span class="sps-dot" aria-hidden="true">@(st + 1)</span>
-                                <span class="sps-name">@stepsDecl.Name(st)@if (stepsDecl.Times(st) > 1) { <span class="stp-times">×@stepsDecl.Times(st)</span> }</span>
-                                <span class="sps-counts">
+                            var tlCls = nFailed > 0 ? "has-bad" : nFlight > 0 ? "has-run" : "";
+                            <li class="yt-tl-item @tlCls @(onStep ? "on" : "")">
+                                <span class="yt-tl-dot" aria-hidden="true">@(st + 1)</span>
+                                <span class="yt-tl-name">@stepsDecl.Name(st)@if (stepsDecl.Times(st) > 1) { <span class="stp-times">×@stepsDecl.Times(st)</span> }</span>
+                                <span class="yt-tl-counts">
                                     @if (nFlight > 0)
                                     {
-                                        <button type="button" class="cnt run @(onStep && stepFilter!.Value.InFlight ? "on" : "")" @onclick="() => ToggleStepFilter(st, true)" aria-pressed="@Aria.Bool(onStep && stepFilter!.Value.InFlight)" title="Show only the bees in flight in the step @stepsDecl.Name(st)"><i></i>@Format.Num(nFlight) active</button>
+                                        <button type="button" class="yt-cnt-pill run @(onStep && stepFilter!.Value.InFlight ? "on" : "")"
+                                                @onclick="() => ToggleStepFilter(st, true)"
+                                                aria-pressed="@Aria.Bool(onStep && stepFilter!.Value.InFlight)"
+                                                title="Show only the bees in flight in the step @stepsDecl.Name(st)">
+                                            <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>
+                                            <span>@Format.Num(nFlight) active</span>
+                                        </button>
                                     }
                                     @if (nFailed > 0)
                                     {
-                                        <button type="button" class="cnt bad @(onStep && !stepFilter!.Value.InFlight ? "on" : "")" @onclick="() => ToggleStepFilter(st, false)" aria-pressed="@Aria.Bool(onStep && !stepFilter!.Value.InFlight)" title="Show only the bees that failed at the step @stepsDecl.Name(st)"><i></i>@Format.Num(nFailed) failed</button>
+                                        <button type="button" class="yt-cnt-pill bad @(onStep && !stepFilter!.Value.InFlight ? "on" : "")"
+                                                @onclick="() => ToggleStepFilter(st, false)"
+                                                aria-pressed="@Aria.Bool(onStep && !stepFilter!.Value.InFlight)"
+                                                title="Show only the bees that failed at the step @stepsDecl.Name(st)">
+                                            <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
+                                            <span>@Format.Num(nFailed) failed</span>
+                                        </button>
                                     }
                                 </span>
                             </li>
                         }
                     </ol>
                 }
-            </div>
+            </section>
         }
 
         @if (s.Running && !Selection)
@@ -223,13 +293,11 @@
             var runningSet = runningNow.ToDictionary(r => r.Sequence);
             var finishedMap = new Dictionary<int, BeeRecord>(fin);
             for (var fi = 0; fi < fin; fi++) finishedMap[bees[fi].Sequence] = bees[fi];
-            <div class="bees-bar">
-                <div class="seg" role="group" aria-label="Live bees view">
-                    <button type="button" class="@(!liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(!liveShowFailed)" @onclick="() => liveShowFailed = false">Recent logs <span class="n">@Format.Num(latestLogByBee.Count)</span></button>
-                    <button type="button" class="@(liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(liveShowFailed)" @onclick="() => liveShowFailed = true">Failed <span class="n">@Format.Num(view.Failed)</span></button>
-                </div>
+            <div class="yt-dlg-tabs" role="group" aria-label="Live bees view">
+                <button type="button" class="yt-dlg-tab @(!liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(!liveShowFailed)" @onclick="() => liveShowFailed = false">Recent logs <span class="n">@Format.Num(latestLogByBee.Count)</span></button>
+                <button type="button" class="yt-dlg-tab @(liveShowFailed ? "on" : "")" aria-pressed="@Aria.Bool(liveShowFailed)" @onclick="() => liveShowFailed = true">Failed <span class="n">@Format.Num(view.Failed)</span></button>
             </div>
-            <div class="live-feed" role="region" aria-label="@(liveShowFailed ? "Failed bees" : "Most recently logged bees")">
+            <div class="live-feed yt-live-feed" role="region" aria-label="@(liveShowFailed ? "Failed bees" : "Most recently logged bees")">
                 @if (liveShowFailed)
                 {
                     var failedList = new List<BeeRecord>();
@@ -362,7 +430,7 @@
                                         </span>
                                         @if (hasSteps)
                                         {
-                                            <span class="live-feed-row-log muted">@StepLogic.PositionOf(stepsDecl, rBee.Calls, elapsedMs)</span>
+                                            <span class="live-feed-row-log muted">@StepLogic.PositionOf(stepsDecl, rBee, elapsedMs)</span>
                                         }
                                         else if (lastCall is not null)
                                         {
@@ -397,14 +465,9 @@
         else
         {
         <div class="bees-bar">
-            <div class="seg" role="group" aria-label="Show bees">
-                <button class="@(show == BeeShow.All ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.All)" @onclick="() => SetShow(BeeShow.All)">All</button>
-                <button class="@(show == BeeShow.Failed ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.Failed)" @onclick="() => SetShow(BeeShow.Failed)">Failed <span class="n">@Format.Num(view.Failed)</span></button>
-                <button class="@(show == BeeShow.Slow ? "on" : "")" aria-pressed="@Aria.Bool(show == BeeShow.Slow)" @onclick="() => SetShow(BeeShow.Slow)">Slow <span class="n">@Format.Num(view.SlowBees)</span></button>
-            </div>
             <div class="step" role="group" aria-label="Step through @StepWord bees">
-                <button class="btn ghost small" @onclick="() => StepTo(-1)" disabled="@(StepCount(view) == 0)" title="Previous @StepWord bee">‹ Previous @StepWord</button>
-                <button class="btn ghost small" @onclick="() => StepTo(1)" disabled="@(StepCount(view) == 0)" title="Next @StepWord bee">Next @StepWord ›</button>
+                <button type="button" class="btn ghost small" @onclick="() => StepTo(-1)" disabled="@(StepCount(view) == 0)" title="Previous @StepWord bee">‹ Previous @StepWord</button>
+                <button type="button" class="btn ghost small" @onclick="() => StepTo(1)" disabled="@(StepCount(view) == 0)" title="Next @StepWord bee">Next @StepWord ›</button>
             </div>
         </div>
 
@@ -482,34 +545,59 @@
         }
         }
 
-        @if (selRunning is { } rseq && runningNow.FirstOrDefault(r => r.Sequence == rseq) is { } ra)
+        @if (selRunning is { } rseq && (runningRaw.FirstOrDefault(r => r.Sequence == rseq) ?? (lastSelectedRunning?.Sequence == rseq ? lastSelectedRunning : null)) is { } ra)
         {
             var elapsedMs = Math.Max(0, (s.Elapsed - ra.StartedAt) * 1000);
             var denom = Math.Max(1, Math.Max(scale, elapsedMs));
-            <section class="bee-panel p-run" aria-label="@ra.Name">
+            <div class="overlay bee-inspect-ov" @key="@($"run-{ra.Sequence}")" role="presentation" @onclick="() => { selRunning = null; lastSelectedRunning = null; beeMenuOpen = false; SyncRunningLogPoll(); }">
+            <section class="bee-panel bee-inspect-dialog p-run" @ref="beeInspectEl" role="dialog" aria-modal="true" aria-label="@ra.Name" @onclick:stopPropagation="true">
                 <div class="bee-head">
-                    <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
-                    <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Active</span>
-                    <span class="muted">@Format.Time(elapsedMs / 1000.0) (@Format.Ms(elapsedMs)) · started @Format.Time(ra.StartedAt)</span>
-                    @if (hasSteps) { <span class="step-now" title="The step this bee is in now">@StepLogic.PositionOf(stepsDecl, ra.Calls, elapsedMs)</span> }
-                    <span class="spacer"></span>
-                    <div class="seg" role="group" aria-label="Running bee inspection view">
-                        @if (hasSteps) { <button type="button" class="@(stepsOn ? "on" : "")" @onclick="() => showSteps = true">Steps (@stepsDecl.Count)</button> }
-                        <button type="button" class="@(!showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = false; }">Logs (@runningLogs.Count)</button>
-                        <button type="button" class="@(showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = true; }">Waterfall (@ra.Calls.Count)</button>
+                    <div class="bee-head-top">
+                        <div class="bee-head-meta">
+                            <b class="bee-title"><BeeChip Sequence="ra.Sequence" State="BeeState.Running" /></b>
+                            <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Active</span>
+                            <span class="muted bee-meta-time">@Format.Time(elapsedMs / 1000.0) · @Format.Time(ra.StartedAt)</span>
+                            @if (hasSteps) { <span class="step-now" title="The step this bee is in now">@StepLogic.PositionOf(stepsDecl, ra, elapsedMs)</span> }
+                        </div>
+                        <div class="bee-head-btns">
+                            <div class="dd">
+                                <button type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(beeMenuOpen)"
+                                        @onclick="() => beeMenuOpen = !beeMenuOpen" aria-label="More bee actions" title="More actions">⋯</button>
+                                @if (beeMenuOpen)
+                                {
+                                    <div class="dd-backdrop" @onclick="() => beeMenuOpen = false"></div>
+                                    <div class="dd-menu right" role="menu" aria-label="Bee actions">
+                                        <button type="button" class="dd-item" role="menuitem" @onclick="() => { beeMenuOpen = false; OpenBeeLogs(ra.Sequence); }">Open in full log viewer</button>
+                                    </div>
+                                }
+                            </div>
+                            <button type="button" class="icon-btn" @onclick="() => { selRunning = null; lastSelectedRunning = null; beeMenuOpen = false; SyncRunningLogPoll(); }" aria-label="Close bee details">✕</button>
+                        </div>
                     </div>
-                    @if (!showWaterfall && !stepsOn)
-                    {
-                        <CopyButton GetText="@(() => FormatRunningLogsText())" Disabled="@(runningLogs.Count == 0)" />
-                        <WrapToggleButton @bind-Wrapped="beeLogWrap" />
-                    }
-                    <button class="btn ghost small" @onclick="() => OpenBeeLogs(ra.Sequence)">Full logs</button>
-                    <button class="icon-btn" @onclick="() => { selRunning = null; SyncRunningLogPoll(); }" aria-label="Deselect bee">✕</button>
+                    <div class="bee-head-bar">
+                        <div class="seg" role="group" aria-label="Running bee inspection view">
+                            @if (hasSteps) { <button type="button" class="@(stepsOn ? "on" : "")" @onclick="() => showSteps = true">Steps (@stepsDecl.Count)</button> }
+                            <button type="button" class="@(!showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = false; }">Logs (@runningLogs.Count)</button>
+                            <button type="button" class="@(showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = true; }">Waterfall (@ra.Calls.Count)</button>
+                        </div>
+                        <span class="spacer"></span>
+                        @if (stepsOn)
+                        {
+                            <button type="button" class="btn ghost small bee-toggle-all" @onclick="ToggleAllSteps" title="@(stepsAllExpanded ? "Collapse all step outputs" : "Expand all step outputs")">
+                                @(stepsAllExpanded ? "Collapse all" : "Expand all")
+                            </button>
+                        }
+                        else if (!showWaterfall)
+                        {
+                            <CopyButton GetText="@(() => FormatRunningLogsText())" Disabled="@(runningLogs.Count == 0)" />
+                            <WrapToggleButton @bind-Wrapped="beeLogWrap" />
+                        }
+                    </div>
                 </div>
                 @if (stepsOn)
                 {
                     var nowCall = ra.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs)?.Name;
-                    <StepList @key="ra.Sequence" Steps="StepLogic.ForRunning(stepsDecl, ra.Calls, elapsedMs)" NowCall="@nowCall" AriaLabel="@("Steps of " + ra.Name)" />
+                    <StepList @key="ra.Sequence" Steps="StepLogic.ForRunning(stepsDecl, ra, elapsedMs)" NowCall="@nowCall" LiveLogs="@(DataMode.IsFakeMode ? null : runningLogs)" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + ra.Name)" />
                 }
                 else if (!showWaterfall)
                 {
@@ -549,54 +637,81 @@
                     </ol>
                 }
             </section>
+            </div>
         }
 
         @if (selected is { } bee)
         {
             var detail = s.Store.Detail(bee.Sequence);
-            <section class="bee-panel p-@Cls(bee.Outcome)" aria-label="@bee.Name">
+            <div class="overlay bee-inspect-ov" @key="@($"fin-{bee.Sequence}")" role="presentation" @onclick="() => { selected = null; beeMenuOpen = false; }">
+            <section class="bee-panel bee-inspect-dialog p-@Cls(bee.Outcome)" @ref="beeInspectEl" role="dialog" aria-modal="true" aria-label="@bee.Name" @onclick:stopPropagation="true">
                 <div class="bee-head">
-                    <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
-                    @if (bee.Failed)
-                    {
-                        <span class="state bad bee-ok-state"><HexBadge Kind="bad" Size="16" StrokeWidth="7.5" />Failed</span>
-                    }
-                    else
-                    {
-                        <span class="state @(bee.SlowCalls > 0 ? "warn" : "good") bee-ok-state"><HexBadge Kind="@(bee.SlowCalls > 0 ? "warn" : "ok")" Size="16" StrokeWidth="7.5" />@(bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
-                    }
-                    @if (!bee.Failed && Format.OverTypical(bee.Ratio))
-                    {
-                        <button class="fig-ratio @BeeOrder.Good(bee.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(bee.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(bee.Ratio) typical</button>
-                    }
-                    <span class="muted">@Format.Ms(bee.DurationMs) · started @Format.Time(bee.StartedAt)</span>
-                    @if (hasSteps && bee.Failed && bee.FailedStep >= 0)
-                    {
-                        <button type="button" class="step-now bad" @onclick="() => ToggleStepFilter(bee.FailedStep, false)" title="Show all bees that failed at this step">failed at @stepsDecl.Name(bee.FailedStep)@(detail is not null && stepsDecl.Times(bee.FailedStep) > 1 && StepLogic.FailedRep(detail.Calls) is var fr and >= 0 ? ", " + ScenarioSteps.Ordinal(fr + 1) + " time" : "")</button>
-                    }
-                    @if (Notes is not null && Notes.TryGetValue(bee.Sequence, out var beeNote) && !string.IsNullOrWhiteSpace(beeNote))
-                    {
-                        <span class="bee-note" title="Why the assistant picked this bee">@beeNote</span>
-                    }
-                    <span class="spacer"></span>
+                    <div class="bee-head-top">
+                        <div class="bee-head-meta">
+                            <b class="bee-title"><BeeChip Sequence="bee.Sequence" State="BeeOrder.StateOf(bee.Outcome)" Tint="bee.Tint" /></b>
+                            @if (bee.Failed)
+                            {
+                                <span class="state bad bee-ok-state"><HexBadge Kind="bad" Size="16" StrokeWidth="7.5" />Failed</span>
+                            }
+                            else
+                            {
+                                <span class="state @(bee.SlowCalls > 0 ? "warn" : "good") bee-ok-state"><HexBadge Kind="@(bee.SlowCalls > 0 ? "warn" : "ok")" Size="16" StrokeWidth="7.5" />@(bee.SlowCalls > 0 ? "Slow" : "Ok")</span>
+                            }
+                            @if (!bee.Failed && Format.OverTypical(bee.Ratio))
+                            {
+                                <button class="fig-ratio @BeeOrder.Good(bee.Tint)" @onclick="() => showTypicals = !showTypicals" aria-pressed="@Aria.Bool(showTypicals)" title="Its slowest call took @Format.Times(bee.Ratio) its typical time. Click to @(showTypicals ? "hide" : "show") the typical time of each call">@Format.Times(bee.Ratio) typical</button>
+                            }
+                            <span class="muted bee-meta-time">@Format.Ms(bee.DurationMs) · started @Format.Time(bee.StartedAt)</span>
+                            @if (hasSteps && bee.Failed && bee.FailedStep >= 0)
+                            {
+                                var failRep = bee.FailedRep >= 0 ? bee.FailedRep : (detail is not null ? StepLogic.FailedRep(detail.Calls) : -1);
+                                <button type="button" class="step-now bad" @onclick="() => ToggleStepFilter(bee.FailedStep, false)" title="Show all bees that failed at this step">failed at @stepsDecl.Name(bee.FailedStep)@((stepsDecl.Times(bee.FailedStep) > 1 || failRep > 0) && failRep >= 0 ? ", " + ScenarioSteps.Ordinal(failRep + 1) + " time" : "")</button>
+                            }
+                            @if (Notes is not null && Notes.TryGetValue(bee.Sequence, out var beeNote) && !string.IsNullOrWhiteSpace(beeNote))
+                            {
+                                <span class="bee-note" title="Why the assistant picked this bee">@beeNote</span>
+                            }
+                        </div>
+                        <div class="bee-head-btns">
+                            @if (!Selection || OpenLogs is not null)
+                            {
+                                <div class="dd">
+                                    <button type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(beeMenuOpen)"
+                                            @onclick="() => beeMenuOpen = !beeMenuOpen" aria-label="More bee actions" title="More actions">⋯</button>
+                                    @if (beeMenuOpen)
+                                    {
+                                        <div class="dd-backdrop" @onclick="() => beeMenuOpen = false"></div>
+                                        <div class="dd-menu right" role="menu" aria-label="Bee actions">
+                                            <button type="button" class="dd-item" role="menuitem" @onclick="() => { beeMenuOpen = false; OpenBeeLogs(bee.Sequence); }">Open in full log viewer</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <button type="button" class="icon-btn" @onclick="() => { selected = null; beeMenuOpen = false; }" aria-label="Close bee details">✕</button>
+                        </div>
+                    </div>
                     @if (detail is not null)
                     {
-                        <div class="seg" role="group" aria-label="Bee inspection view">
-                            @if (hasSteps) { <button type="button" class="@(stepsOn ? "on" : "")" @onclick="() => showSteps = true">Steps (@stepsDecl.Count)</button> }
-                            <button type="button" class="@(!showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = false; }">Logs (@detail.Logs.Count)</button>
-                            <button type="button" class="@(showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = true; }">Waterfall (@detail.Calls.Count)</button>
+                        <div class="bee-head-bar">
+                            <div class="seg" role="group" aria-label="Bee inspection view">
+                                @if (hasSteps) { <button type="button" class="@(stepsOn ? "on" : "")" @onclick="() => showSteps = true">Steps (@stepsDecl.Count)</button> }
+                                <button type="button" class="@(!showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = false; }">Logs (@detail.Logs.Count)</button>
+                                <button type="button" class="@(showWaterfall && !stepsOn ? "on" : "")" @onclick="() => { showSteps = false; showWaterfall = true; }">Waterfall (@detail.Calls.Count)</button>
+                            </div>
+                            <span class="spacer"></span>
+                            @if (stepsOn)
+                            {
+                                <button type="button" class="btn ghost small bee-toggle-all" @onclick="ToggleAllSteps" title="@(stepsAllExpanded ? "Collapse all step outputs" : "Expand all step outputs")">
+                                    @(stepsAllExpanded ? "Collapse all" : "Expand all")
+                                </button>
+                            }
+                            else if (!showWaterfall)
+                            {
+                                <CopyButton GetText="@(() => FormatBeeLogsText(detail.Logs))" Disabled="@(detail.Logs.Count == 0)" />
+                                <WrapToggleButton @bind-Wrapped="beeLogWrap" />
+                            }
                         </div>
-                        @if (!showWaterfall && !stepsOn)
-                        {
-                            <CopyButton GetText="@(() => FormatBeeLogsText(detail.Logs))" Disabled="@(detail.Logs.Count == 0)" />
-                            <WrapToggleButton @bind-Wrapped="beeLogWrap" />
-                        }
                     }
-                    @if (!Selection || OpenLogs is not null)
-                    {
-                        <button class="btn ghost small" @onclick="() => OpenBeeLogs(bee.Sequence)" title="Open in full log viewer">Full logs</button>
-                    }
-                    <button class="icon-btn" @onclick="() => selected = null" aria-label="Deselect bee">✕</button>
                 </div>
                 @if (bee.Error is not null && !(stepsOn && bee.FailedStep >= 0)) { <p class="bee-error bad">@bee.Error</p> }
                 @if (detail is null)
@@ -605,7 +720,7 @@
                 }
                 else if (stepsOn)
                 {
-                    <StepList @key="bee.Sequence" Steps="StepLogic.ForBee(stepsDecl, detail.Calls)" AriaLabel="@("Steps of " + bee.Name)" />
+                    <StepList @key="bee.Sequence" Steps="StepLogic.ForBee(stepsDecl, detail.Calls, bee.FailedStep, bee.FailedRep, bee.Error, detail.StepVisits)" Logs="detail.Logs" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + bee.Name)" />
                 }
                 else if (!showWaterfall)
                 {
@@ -645,9 +760,47 @@
                     </ol>
                 }
             </section>
+            </div>
         }
         </div>
         <aside class="pop-side" aria-label="Bees in view" @onpointerenter="() => listHover = true" @onpointerleave="() => listHover = false">
+            @* Filter pills right below the diagram and directly above the list view *@
+            <div class="yt-dlg-chips side-chips" role="group" aria-label="Filter bees">
+                <button type="button" class="yt-chip @(show == BeeShow.All && tailMs is null ? "on" : "")"
+                        @onclick="() => SetShow(BeeShow.All)" aria-pressed="@Aria.Bool(show == BeeShow.All && tailMs is null)"
+                        title="Show all bees (@Format.Num(dlgOk) ok)">
+                    <span>All</span>
+                    <span class="n">@Format.Num(view.Finished)</span>
+                </button>
+                <button type="button" class="yt-chip bad @(view.Failed == 0 ? "zero" : "") @(show == BeeShow.Failed ? "on" : "")"
+                        @onclick="() => SetShow(BeeShow.Failed)" disabled="@(view.Failed == 0)"
+                        aria-pressed="@Aria.Bool(show == BeeShow.Failed)" title="Show only failed bees">
+                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
+                    <span>Failed</span>
+                    <span class="n">@Format.Num(view.Failed)@(stats.Count > 0 && view.Failed > 0 ? $" · {Pc(stats.ErrorRate)}" : "")</span>
+                </button>
+                <button type="button" class="yt-chip warn @(view.SlowBees == 0 ? "zero" : "") @(show == BeeShow.Slow ? "on" : "")"
+                        @onclick="() => SetShow(BeeShow.Slow)" disabled="@(view.SlowBees == 0)"
+                        aria-pressed="@Aria.Bool(show == BeeShow.Slow)" title="Show only slow bees">
+                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>
+                    <span>Slow</span>
+                    <span class="n">@Format.Num(view.SlowBees)</span>
+                </button>
+                <button type="button" class="yt-chip @(stats.TailIsSlow ? "warn" : "") @(tailMs is not null ? "on" : "")"
+                        disabled="@(stats.Count == 0)" @onclick="() => TailOnly(stats.P95)"
+                        aria-pressed="@Aria.Bool(tailMs is not null)" title="Slowest 5%">
+                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>
+                    <span>Slowest 5%</span>
+                    <span class="n">@(stats.Count > 0 ? Format.Ms(stats.P95) : "—")</span>
+                </button>
+                @if (Selection)
+                {
+                    <button type="button" class="yt-chip @(stats.LongestIsSlow ? "warn" : "")" disabled="@(stats.Count == 0)" @onclick="() => SelectIndex(stats.LongestIndex)" title="Open the longest bee">
+                        <span>Longest</span>
+                        <span class="n">@(stats.Count > 0 ? Format.Ms(stats.Longest) : "—")</span>
+                    </button>
+                }
+            </div>
             <div class="side-head">
                 <h3>Bees in view <span class="n">@Format.Num(sideRows.Count)</span></h3>
                 <p class="side-scope muted">
@@ -671,10 +824,10 @@
                     }
                 </p>
                 <p class="side-counts">
-                    <button class="cnt bad" @onclick="() => SetShow(BeeShow.Failed, true)" disabled="@(sideCounts[0] == 0)" title="Show only failed bees"><i></i>@Format.Num(sideCounts[0]) failed</button>
-                    <button class="cnt warn" @onclick="() => SetShow(BeeShow.Slow, true)" disabled="@(sideCounts[1] == 0)" title="Show only slow bees"><i></i>@Format.Num(sideCounts[1]) slow</button>
-                    <button class="cnt good" @onclick="() => SetShow(BeeShow.All, true)" title="Show all bees"><i></i>@Format.Num(sideCounts[3]) ok</button>
-                    @if (sideCounts[2] > 0) { <span class="cnt run"><i></i>@Format.Num(sideCounts[2]) running</span> }
+                    <button class="cnt bad" @onclick="() => SetShow(BeeShow.Failed, true)" disabled="@(sideCounts[0] == 0)" title="Show only failed bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>@Format.Num(sideCounts[0]) failed</button>
+                    <button class="cnt warn" @onclick="() => SetShow(BeeShow.Slow, true)" disabled="@(sideCounts[1] == 0)" title="Show only slow bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>@Format.Num(sideCounts[1]) slow</button>
+                    <button class="cnt good" @onclick="() => SetShow(BeeShow.All, true)" title="Show all bees"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></svg>@Format.Num(sideCounts[3]) ok</button>
+                    @if (sideCounts[2] > 0) { <span class="cnt run"><svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>@Format.Num(sideCounts[2]) running</span> }
                 </p>
             </div>
             <BeeSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" RunningStep="@(hasSteps ? (seq => runStep.TryGetValue(seq, out var rs1) ? $"{rs1.Step + 1}/{stepsDecl.Count}" : null) : null)" />
@@ -742,6 +895,7 @@
     private BeeRecord? selected;
     private bool showTypicals;   // the bee panel names the typical time of every call (brain 0041, 0029)
     private int? selRunning;
+    private RunningBee? lastSelectedRunning;
     private bool showWaterfall;
     private bool beeLogWrap = true;
     private bool liveShowFailed;
@@ -884,17 +1038,31 @@
     }
 
     // A selected running bee turns into its finished record in place once it completes.
+    // Keep the last known RunningBee across any single-tick gap between leaving BeesInFlight and arriving in Store.Bees,
+    // so the inspection popup never closes itself unexpectedly during an active run.
     protected override void OnParametersSet()
     {
         if (selRunning is { } seq)
         {
             var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
-            if (!running.Any(r => r.Sequence == seq))
+            var live = running.FirstOrDefault(r => r.Sequence == seq);
+            if (live is not null)
+            {
+                lastSelectedRunning = live;
+            }
+            else
             {
                 var bees = Snapshot.Store.Bees(Index);
                 for (var i = Snapshot.Scenarios[Index].Finished - 1; i >= 0; i--)
-                    if (bees[i].Sequence == seq) { selected = bees[i]; break; }
-                selRunning = null;
+                {
+                    if (bees[i].Sequence == seq)
+                    {
+                        selected = bees[i];
+                        selRunning = null;
+                        lastSelectedRunning = null;
+                        break;
+                    }
+                }
             }
         }
         SyncRunningLogPoll();
@@ -904,10 +1072,12 @@
     private void SelectLiveBee(int seq)
     {
         var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
-        if (running.Any(r => r.Sequence == seq))
+        var live = running.FirstOrDefault(r => r.Sequence == seq);
+        if (live is not null)
         {
             selected = null;
-            selRunning = selRunning == seq ? null : seq;
+            if (selRunning == seq) { selRunning = null; lastSelectedRunning = null; }
+            else { selRunning = seq; lastSelectedRunning = live; }
             SyncRunningLogPoll();
             return;
         }
@@ -917,6 +1087,7 @@
             if (bees[i].Sequence == seq)
             {
                 selRunning = null;
+                lastSelectedRunning = null;
                 selected = selected is { } cur && cur.Sequence == seq ? null : bees[i];
                 SyncRunningLogPoll();
                 return;
@@ -1170,14 +1341,79 @@
             }
         }
 
+        var runningStepsSeq = selRunning is { } rsq && showSteps && Snapshot.StepsOf(Index).Any ? rsq : (int?)null;
+        if (runningStepsSeq != runningStepsAttachedSeq)
+        {
+            if (runningStepsScrollHandle is not null)
+            {
+                try { await runningStepsScrollHandle.InvokeVoidAsync("dispose"); } catch { }
+                try { await runningStepsScrollHandle.DisposeAsync(); } catch { }
+                runningStepsScrollHandle = null;
+            }
+            runningStepsAttachedSeq = runningStepsSeq;
+            if (runningStepsSeq is not null)
+            {
+                try { logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js"); } catch { }
+                if (logScrollMod is not null)
+                {
+                    try { runningStepsScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("attach", beeInspectEl); } catch { }
+                }
+            }
+        }
+        else if (runningStepsSeq is not null && runningStepsScrollHandle is not null)
+        {
+            try { await runningStepsScrollHandle.InvokeVoidAsync("follow"); } catch { }
+        }
+
+        if (selRunning is null && showSteps && Snapshot.StepsOf(Index).Any && selected?.Sequence is { } openStepSeq)
+        {
+            var hasDetail = Snapshot.Store.Detail(openStepSeq) is not null;
+            if (beeStepsScrolled != (openStepSeq, hasDetail))
+            {
+                beeStepsScrolled = (openStepSeq, hasDetail);
+                try { logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js"); } catch { }
+                if (logScrollMod is not null)
+                {
+                    try { await logScrollMod.InvokeVoidAsync("scrollToBottom", beeInspectEl); } catch { }
+                }
+            }
+        }
+        else if (selRunning is null && selected is null)
+        {
+            beeStepsScrolled = null;
+        }
+
         if (!refocus || Logs.IsOpen) return;
         refocus = false;
         try { await root.FocusAsync(); } catch (Exception) { }
     }
 
+    private ElementReference beeInspectEl;
+    private IJSObjectReference? runningStepsScrollHandle;
+    private int? runningStepsAttachedSeq;
+    private (int Seq, bool HasDetail)? beeStepsScrolled;
+    private bool beeMenuOpen;
+    private bool stepsAllExpanded = true;
+    private int stepsExpandVersion;
+
+    private void ToggleAllSteps()
+    {
+        stepsAllExpanded = !stepsAllExpanded;
+        stepsExpandVersion++;
+    }
+
+    private async Task EditScript(string scenarioId)
+    {
+        await OnClose.InvokeAsync();
+        Nav.NavigateTo($"editor?script={Uri.EscapeDataString(scenarioId)}");
+    }
+
     private void OnKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") OnClose.InvokeAsync();
+        if (e.Key != "Escape") return;
+        if (selRunning is not null) { selRunning = null; SyncRunningLogPoll(); return; }
+        if (selected is not null) { selected = null; return; }
+        OnClose.InvokeAsync();
     }
 
     private void SetShow(BeeShow s, bool keepBucket = false) { show = s; tailMs = null; if (stepFilter is not null) { stepFilter = null; ToggleReset(); } if (!keepBucket) bucket = null; fz = null; }

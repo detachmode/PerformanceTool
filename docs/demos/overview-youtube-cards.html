@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beesharp · Overview UI Concepts (YouTube Card &amp; Outline Icon Style)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    /* Deep YouTube-inspired obsidian canvas + Beesharp warm dark tokens */
+    --bg: #0c0b0a;
+    --surface: #171614;
+    --surface-hover: #1e1c19;
+    --stage-bg: #100f0d;
+    --stage-elev: #1c1a17;
+    --border: rgba(255, 255, 255, 0.075);
+    --border-hover: rgba(255, 255, 255, 0.16);
+    --text: #f3f1ed;
+    --title: #ffffff;
+    --muted: #9e9990;
+    --faint: #6c675f;
+
+    /* Beesharp semantic colours (brain 0018: colour carries meaning) */
+    --good: #34d399;
+    --slow: #fbbf24;
+    --failed: #f05252;
+    --running: #5b9bf0;
+    --accent: #f5b700;
+
+    --g1: #6ee79c;
+    --g2: #b4d966;
+    --g3: #e5c63a;
+
+    --radius-card: 18px;
+    --radius-sm: 8px;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --icon-stroke: 1.65;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Top Navigation Bar (YouTube mobile tab rhythm) ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(12, 11, 10, 0.9);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 54px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--title);
+    letter-spacing: -0.01em;
+    flex: none;
+  }
+  .brand .dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: rgba(245, 183, 0, 0.14);
+    border: 1px solid rgba(245, 183, 0, 0.4);
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+  }
+  .brand span b { color: var(--accent); }
+
+  .yt-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    height: 54px;
+  }
+  .yt-tabs::-webkit-scrollbar { display: none; }
+  .yt-tab {
+    background: none;
+    border: 0;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 0 12px;
+    cursor: pointer;
+    position: relative;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+  .yt-tab:hover { color: var(--text); }
+  .yt-tab.active {
+    color: var(--title);
+    font-weight: 600;
+  }
+  .yt-tab.active::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 0;
+    height: 2.5px;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent);
+  }
+
+  .top-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pill-toggle {
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .pill-toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .pill-toggle button.active {
+    background: #282521;
+    color: var(--title);
+  }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--running);
+    box-shadow: 0 0 8px var(--running);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1.12); }
+  }
+
+  /* ---------- Main Layout ---------- */
+  .wrap {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 26px 20px 100px;
+  }
+  .hero {
+    margin-bottom: 28px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .hero h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--title);
+    letter-spacing: -0.02em;
+  }
+  .hero p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 740px;
+    font-size: 13.5px;
+  }
+  .stroke-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .section {
+    margin-bottom: 44px;
+  }
+  .section.hidden { display: none; }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .sec-head-left {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(245, 183, 0, 0.12);
+    border: 1px solid rgba(245, 183, 0, 0.28);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 700;
+    color: var(--title);
+    letter-spacing: -0.01em;
+  }
+  .sec-desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    width: 100%;
+  }
+
+  /* ---------- Grids ---------- */
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 18px;
+  }
+  .grid-4 {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+    gap: 14px;
+  }
+
+  /* ---------- Outline Icon System (YouTube-inspired crisp strokes) ---------- */
+  .ico {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--icon-stroke);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: none;
+    display: block;
+  }
+  .ico-sm { width: 15px; height: 15px; }
+  .ico-xs { width: 13px; height: 13px; }
+  .ico-lg { width: 22px; height: 22px; }
+
+  /* ---------- Shared YouTube Card Shell ---------- */
+  .yt-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+    cursor: pointer;
+    position: relative;
+  }
+  .yt-card:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 34px -14px rgba(0, 0, 0, 0.78);
+  }
+
+  /* Full-bleed top visual stage */
+  .yt-stage {
+    position: relative;
+    background: var(--stage-bg);
+    aspect-ratio: 16 / 8.4;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .yt-stage.compact {
+    aspect-ratio: 16 / 5.6;
+  }
+  .yt-stage-bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+  }
+
+  /* Top-right floating circular icon controls (like Mute / CC in screenshot) */
+  .stage-float-btns {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .stage-float-row {
+    flex-direction: row;
+  }
+  .float-ico-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(12, 11, 10, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #e8e5df;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.1s;
+    padding: 0;
+  }
+  .float-ico-btn:hover {
+    background: rgba(34, 31, 27, 0.92);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .float-ico-btn.active {
+    background: rgba(245, 183, 0, 0.22);
+    border-color: rgba(245, 183, 0, 0.6);
+    color: var(--accent);
+  }
+  .float-ico-btn.active-bad {
+    background: rgba(240, 82, 82, 0.24);
+    border-color: rgba(240, 82, 82, 0.65);
+    color: #fca5a5;
+  }
+
+  /* Bottom-right time / rate pill (like 1:53 / 28:03 in screenshot) */
+  .stage-pill {
+    position: absolute;
+    right: 10px;
+    bottom: 11px;
+    z-index: 4;
+    background: rgba(10, 9, 8, 0.84);
+    backdrop-filter: blur(6px);
+    color: #f5f2eb;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* Lower-left translucent caption box (echoing YouTube CC overlay) */
+  .stage-caption {
+    position: absolute;
+    left: 10px;
+    bottom: 11px;
+    z-index: 4;
+    background: rgba(10, 9, 8, 0.82);
+    backdrop-filter: blur(6px);
+    color: #f5f2eb;
+    font-size: 12px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 108px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.14s, border-color 0.14s;
+  }
+  .stage-caption:hover {
+    background: rgba(28, 25, 22, 0.96);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  .stage-caption.bad { color: #fecaca; border-color: rgba(240, 82, 82, 0.35); }
+  .stage-caption.warn { color: #fde68a; border-color: rgba(251, 191, 36, 0.35); }
+
+  /* Bottom-edge scrubber / outcome bar (like the red YT progress bar + dot) */
+  .scrubber {
+    position: relative;
+    height: 3.5px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.12);
+    display: flex;
+    overflow: visible;
+    flex: none;
+  }
+  .scrubber-seg { height: 100%; transition: width 0.3s ease; }
+  .scrubber-seg.good { background: var(--good); }
+  .scrubber-seg.warn { background: var(--slow); }
+  .scrubber-seg.bad { background: var(--failed); }
+  .scrubber-seg.run { background: var(--running); position: relative; }
+  .scrubber-dot {
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--running);
+    box-shadow: 0 0 0 3px rgba(91, 155, 240, 0.25), 0 0 10px var(--running);
+  }
+  .scrubber-dot.bad {
+    background: var(--failed);
+    box-shadow: 0 0 0 3px rgba(240, 82, 82, 0.25), 0 0 10px var(--failed);
+  }
+
+  /* ---------- YouTube-style Card Body & Footer ---------- */
+  .yt-body {
+    padding: 13px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+  .yt-title {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--title);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .yt-title .sub-tag {
+    font-weight: 500;
+    color: var(--muted);
+    font-size: 13px;
+    margin-left: 4px;
+  }
+
+  .yt-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+  }
+  .yt-channel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .yt-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    flex: none;
+    display: grid;
+    place-items: center;
+    background: #22201d;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    position: relative;
+  }
+  .yt-avatar.good {
+    background: rgba(52, 211, 153, 0.12);
+    border-color: rgba(52, 211, 153, 0.35);
+    color: var(--good);
+  }
+  .yt-avatar.warn {
+    background: rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.35);
+    color: var(--slow);
+  }
+  .yt-avatar.bad {
+    background: rgba(240, 82, 82, 0.14);
+    border-color: rgba(240, 82, 82, 0.4);
+    color: var(--failed);
+  }
+  .yt-avatar.run {
+    background: rgba(91, 155, 240, 0.14);
+    border-color: rgba(91, 155, 240, 0.45);
+    color: var(--running);
+  }
+
+  .yt-channel-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 1px;
+  }
+  .yt-handle {
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .yt-stats-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-link {
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 1px 3px;
+    margin: -1px -3px;
+    border-radius: 4px;
+    font: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.12s, background 0.12s;
+  }
+  .stat-link:hover {
+    color: var(--title);
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .stat-link.bad { color: var(--failed); font-weight: 600; }
+  .stat-link.warn { color: var(--slow); font-weight: 600; }
+
+  /* Right-aligned monochrome outline icon row (thumbs-up, comment, bookmark, more rhythm) */
+  .yt-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+  }
+  .act-btn {
+    position: relative;
+    height: 34px;
+    min-width: 34px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: #d4d0c8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    transition: background 0.14s, color 0.14s;
+  }
+  .act-btn:hover {
+    background: rgba(255, 255, 255, 0.09);
+    color: #ffffff;
+  }
+  .act-btn.has-bad { color: var(--failed); }
+  .act-btn.has-bad:hover { background: rgba(240, 82, 82, 0.15); color: #fca5a5; }
+  .act-btn.has-warn { color: var(--slow); }
+  .act-btn.has-warn:hover { background: rgba(251, 191, 36, 0.14); color: #fde68a; }
+
+  /* ---------- Concept 1: Bee Bar Chart Stage ---------- */
+  .mini-bars {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    padding: 26px 14px 38px;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+  }
+  .mini-bars.compact-pad {
+    padding: 16px 12px 14px;
+    gap: 2.5px;
+  }
+  .mbar {
+    flex: 1 1 0;
+    min-width: 3px;
+    border-radius: 3px 3px 1px 1px;
+    background: var(--good);
+    opacity: 0.88;
+    transition: opacity 0.15s, transform 0.15s;
+    position: relative;
+  }
+  .mbar:hover {
+    opacity: 1;
+    transform: scaleY(1.06);
+    transform-origin: bottom;
+  }
+  .mbar.g1 { background: var(--g1); }
+  .mbar.g2 { background: var(--g2); }
+  .mbar.g3 { background: var(--g3); }
+  .mbar.warn { background: var(--slow); }
+  .mbar.bad { background: var(--failed); }
+  .mbar.run {
+    background: var(--running);
+    animation: bar-pulse 1.5s ease-in-out infinite;
+  }
+  .mbar.dimmed { opacity: 0.12 !important; }
+  @keyframes bar-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+  }
+  .slow-line {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 42%;
+    border-top: 1px dashed rgba(251, 191, 36, 0.42);
+    z-index: 3;
+    pointer-events: none;
+    transition: opacity 0.18s;
+  }
+  .slow-line span {
+    position: absolute;
+    left: 0;
+    top: -15px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: rgba(251, 191, 36, 0.72);
+  }
+  .slow-line.hidden { opacity: 0; }
+
+  /* ---------- Concept 2: Editorial KPI Stage (SPIEGEL TV inspiration) ---------- */
+  .editorial-stage {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 14px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .ed-badge {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .ed-badge.bad { background: #dc2626; color: #fff; }
+  .ed-badge.warn { background: #d97706; color: #fff; }
+  .ed-badge.good { background: rgba(52, 211, 153, 0.18); color: var(--good); border: 1px solid rgba(52, 211, 153, 0.45); }
+  .ed-badge.run { background: #2563eb; color: #fff; }
+
+  .ed-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: auto 0;
+    padding: 6px 0;
+  }
+  .ed-big {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--title);
+    font-variant-numeric: tabular-nums;
+  }
+  .ed-big small {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+  .ed-sub-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ed-sub-stack b {
+    font-size: 13.5px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .ed-sub-stack span {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .ed-bg-spark {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 44%;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    padding: 0 12px;
+    opacity: 0.22;
+    pointer-events: none;
+  }
+  .ed-bg-spark i {
+    flex: 1;
+    border-radius: 2px 2px 0 0;
+    background: var(--good);
+  }
+  .ed-bg-spark i.warn { background: var(--slow); }
+  .ed-bg-spark i.bad { background: var(--failed); }
+  .ed-bg-spark i.run { background: var(--running); }
+
+  .ed-frame-accent {
+    position: absolute;
+    inset: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+  }
+  .ed-frame-accent.bad { border-color: rgba(240, 82, 82, 0.35); }
+  .ed-frame-accent.warn { border-color: rgba(251, 191, 36, 0.3); }
+  .ed-frame-accent.run { border-color: rgba(91, 155, 240, 0.35); }
+
+  /* ---------- Concept 3: Step Pipeline Stage (brain 0056) ---------- */
+  .step-stage {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 16px 14px 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+  }
+  .step-track {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    position: relative;
+  }
+  .step-track::before {
+    content: "";
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    top: 22px;
+    height: 1.5px;
+    background: rgba(255, 255, 255, 0.1);
+    z-index: 0;
+  }
+  .step-node {
+    position: relative;
+    z-index: 1;
+    background: rgba(24, 22, 19, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 12px;
+    padding: 9px 7px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: border-color 0.14s, background 0.14s, transform 0.12s;
+  }
+  .step-node:hover {
+    background: #24211d;
+    border-color: rgba(255, 255, 255, 0.24);
+    transform: translateY(-2px);
+  }
+  .step-node.bad {
+    border-color: rgba(240, 82, 82, 0.48);
+    background: rgba(240, 82, 82, 0.09);
+  }
+  .step-node.warn {
+    border-color: rgba(251, 191, 36, 0.45);
+    background: rgba(251, 191, 36, 0.08);
+  }
+  .step-node.run {
+    border-color: rgba(91, 155, 240, 0.5);
+    background: rgba(91, 155, 240, 0.1);
+  }
+  .step-idx {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--faint);
+  }
+  .step-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--title);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .step-val {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--good);
+  }
+  .step-node.bad .step-val { color: var(--failed); }
+  .step-node.warn .step-val { color: var(--slow); }
+  .step-node.run .step-val { color: var(--running); }
+
+  /* ---------- Icon Style Showcase ---------- */
+  .icon-sheet {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .icon-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+    transition: border-color 0.14s, background 0.14s;
+    cursor: pointer;
+  }
+  .icon-tile:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+  .icon-tile .ico-ring {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    display: grid;
+    place-items: center;
+    color: #ece9e2;
+  }
+  .icon-tile .ico-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--title);
+  }
+  .icon-tile .ico-use {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ---------- Interactive Toast (shows drill-down action) ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+    background: #1f1d1a;
+    border: 1px solid rgba(245, 183, 0, 0.45);
+    color: var(--title);
+    padding: 10px 16px;
+    border-radius: 999px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.75);
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    max-width: calc(100vw - 32px);
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast b { color: var(--accent); font-weight: 700; }
+
+  @media (max-width: 640px) {
+    .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .topbar-inner { padding: 0 12px; gap: 10px; }
+    .wrap { padding: 18px 12px 84px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="dot">
+        <svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/></svg>
+      </div>
+      <span>Bee<b>sharp</b></span>
+    </div>
+
+    <nav class="yt-tabs" aria-label="Concept views">
+      <button class="yt-tab active" data-tab="all">All Concepts</button>
+      <button class="yt-tab" data-tab="c1">1 · Stage &amp; Scrubber</button>
+      <button class="yt-tab" data-tab="c2">2 · Editorial KPI</button>
+      <button class="yt-tab" data-tab="c3">3 · Step Pipeline</button>
+      <button class="yt-tab" data-tab="c4">4 · Compact Grid</button>
+      <button class="yt-tab" data-tab="icons">Icon Style</button>
+    </nav>
+
+    <div class="top-controls">
+      <div class="pill-toggle" role="group" aria-label="Run state">
+        <button id="mode-finished" class="active" type="button">Finished</button>
+        <button id="mode-live" type="button"><span class="live-dot"></span>Live Run</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <h1>Overview Card Concepts · YouTube Rhythm + Outline Icons</h1>
+      <p>
+        Inspired by the YouTube mobile feed: full-bleed top visual stage, floating corner pill &amp; circular toggles,
+        thin bottom-edge progress/outcome scrubber, clean bold title, avatar + two-line meta with hollow <code>▷</code> counter,
+        and monochrome outline icon actions. Every number, bar, step, and icon is clickable.
+      </p>
+    </div>
+    <div class="stroke-picker">
+      <span>Icon stroke:</span>
+      <div class="pill-toggle">
+        <button type="button" data-stroke="1.45">1.45px</button>
+        <button type="button" class="active" data-stroke="1.65">1.65px</button>
+        <button type="button" data-stroke="1.9">1.9px</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== CONCEPT 1 ==================== -->
+  <section class="section" data-section="c1">
+    <div class="sec-head">
+      <div class="sec-head-left">
+        <span class="sec-num">EXAMPLE 01</span>
+        <h2>Stage &amp; Scrubber Card (Closest to YouTube Feed)</h2>
+      </div>
+      <p class="sec-desc">
+        The top 16:8 stage is the live/finished bee bar chart. Top-right circular buttons toggle "Errors only" or "Slow line" right on the card; lower-left subtitle box calls out the top failure step; the bottom-edge scrubber summarizes success/slow/failed proportions (or live progress).
+      </p>
+    </div>
+    <div class="grid-3" id="grid-c1"></div>
+  </section>
+
+  <!-- ==================== CONCEPT 2 ==================== -->
+  <section class="section" data-section="c2">
+    <div class="sec-head">
+      <div class="sec-head-left">
+        <span class="sec-num">EXAMPLE 02</span>
+        <h2>Editorial KPI Stage (SPIEGEL TV Card Inspiration)</h2>
+      </div>
+      <p class="sec-desc">
+        High-contrast corner status tag + bold hero figure over a quiet background sparkline and subtle inner frame. Designed for instant room-distance scanning while keeping the exact same clean YouTube footer and outline icon strip.
+      </p>
+    </div>
+    <div class="grid-3" id="grid-c2"></div>
+  </section>
+
+  <!-- ==================== CONCEPT 3 ==================== -->
+  <section class="section" data-section="c3">
+    <div class="sec-head">
+      <div class="sec-head-left">
+        <span class="sec-num">EXAMPLE 03</span>
+        <h2>Step Pipeline Stage (Scenario Steps · Brain 0056)</h2>
+      </div>
+      <p class="sec-desc">
+        Uses the top visual stage for declared scenario steps (e.g. Log in → Search → Cart → Pay). Click any step node to drill directly into bees that failed or slowed down at that step; top-right circular button switches between typical duration and failure counts.
+      </p>
+    </div>
+    <div class="grid-3" id="grid-c3"></div>
+  </section>
+
+  <!-- ==================== CONCEPT 4 ==================== -->
+  <section class="section" data-section="c4">
+    <div class="sec-head">
+      <div class="sec-head-left">
+        <span class="sec-num">EXAMPLE 04</span>
+        <h2>Compact High-Density Feed (For 8–12+ Scenarios)</h2>
+      </div>
+      <p class="sec-desc">
+        A tighter 16:5.6 visual stage that fits 4 cards across on desktop without losing the YouTube card hierarchy, scrubber line, or crisp monochrome outline icons.
+      </p>
+    </div>
+    <div class="grid-4" id="grid-c4"></div>
+  </section>
+
+  <!-- ==================== ICON SYSTEM ==================== -->
+  <section class="section" data-section="icons">
+    <div class="sec-head">
+      <div class="sec-head-left">
+        <span class="sec-num">ICON STYLE</span>
+        <h2>Monochrome Outline Icon Set</h2>
+      </div>
+      <p class="sec-desc">
+        Uniform stroke weight, rounded caps &amp; joins, zero heavy fills — neutral off-white by default, taking Beesharp's semantic colour (red / amber / emerald / blue) only when signalling status. Try switching the stroke weight in the top right.
+      </p>
+    </div>
+    <div class="icon-sheet" id="icon-sheet"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  /* ---------- Crisp Outline SVG Icons ---------- */
+  const ICONS = {
+    playOutline: `<svg class="ico ico-xs" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>`,
+    beeHex: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><circle cx="12" cy="12" r="2.2"/></svg>`,
+    checkHex: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="m8.8 12.2 2.2 2.2 4.4-4.6"/></svg>`,
+    alertHex: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M12 8.2v4.6"/><path d="M12 16h.01"/></svg>`,
+    clockHex: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M12 8v4l2.6 1.6"/></svg>`,
+    pulseHex: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2"/></svg>`,
+
+    err: `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><path d="M12 16h.01"/></svg>`,
+    slow: `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>`,
+    logs: `<svg class="ico" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M7.5 9.5h9"/><path d="M7.5 13h6"/><path d="M7.5 16h3.5"/></svg>`,
+    edit: `<svg class="ico" viewBox="0 0 24 24"><path d="M12 20h8.5"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
+    more: `<svg class="ico" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+    filterErr: `<svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>`,
+    slowLine: `<svg class="ico ico-sm" viewBox="0 0 24 24"><path d="M3 12h3m4 0h4m4 0h3"/><path d="M4 18V9m5 9V6m5 12v-7m5 7V8"/></svg>`,
+    bookmark: `<svg class="ico" viewBox="0 0 24 24"><path d="M6.5 4h11a1 1 0 0 1 1 1v15.5l-6.5-4-6.5 4V5a1 1 0 0 1 1-1Z"/></svg>`,
+    chart: `<svg class="ico" viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M7 16V10"/><path d="M12 16V6"/><path d="M17 16v-4"/></svg>`,
+    steps: `<svg class="ico ico-sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/><path d="M7.2 12h2.6m4.4 0h2.6"/></svg>`
+  };
+
+  /* ---------- Realistic Beesharp Scenarios Data ---------- */
+  const SCENARIOS = [
+    {
+      id: "checkout",
+      title: "Checkout Flow",
+      sub: "EU-West",
+      handle: "@CheckoutSteps",
+      pattern: "15 × 4/min · Bursts",
+      rateTarget: "60/min",
+      elapsed: "30:00",
+      liveElapsed: "08:42",
+      liveProgress: 58,
+      inFlight: 14,
+      finished: 4820,
+      failed: 42,
+      slow: 186,
+      typical: "240 ms",
+      p95: "1.42 s",
+      p95Slow: true,
+      mostFailedStep: "Pay",
+      mostFailedCount: 38,
+      steps: [
+        { name: "Log in", ms: "62 ms", fail: 0, state: "good" },
+        { name: "Search", ms: "118 ms", fail: 1, state: "good" },
+        { name: "Cart", ms: "290 ms", fail: 3, state: "warn" },
+        { name: "Pay", ms: "840 ms", fail: 38, state: "bad" }
+      ],
+      bars: [22,26,30,24,62,28,34,25,84,92,40,32,27,54,29,31,78,26,28,66,35,30,88,95,44,31,26,58,34,29,72,28],
+      barStates: ["good","good","g1","good","warn","good","g1","good","bad","bad","g2","good","good","warn","good","g1","bad","good","good","warn","g2","good","bad","bad","g3","good","good","warn","g1","good","warn","good"]
+    },
+    {
+      id: "catalog",
+      title: "Product Search & Filter",
+      sub: "Catalog API",
+      handle: "@CatalogBrowse",
+      pattern: "120 bees/min · Linear",
+      rateTarget: "120/min",
+      elapsed: "30:00",
+      liveElapsed: "08:42",
+      liveProgress: 58,
+      inFlight: 9,
+      finished: 3610,
+      failed: 0,
+      slow: 94,
+      typical: "165 ms",
+      p95: "790 ms",
+      p95Slow: true,
+      mostFailedStep: null,
+      mostFailedCount: 0,
+      steps: [
+        { name: "Home", ms: "44 ms", fail: 0, state: "good" },
+        { name: "Query", ms: "148 ms", fail: 0, state: "good" },
+        { name: "Facets", ms: "410 ms", fail: 0, state: "warn" },
+        { name: "Details", ms: "92 ms", fail: 0, state: "good" }
+      ],
+      bars: [20,22,24,36,28,25,58,64,30,24,22,48,54,28,25,26,68,72,32,27,24,29,56,42,26,25,30,61,35,28,24,26],
+      barStates: ["good","good","good","g2","g1","good","warn","warn","g1","good","good","g3","warn","g1","good","good","warn","warn","g2","good","good","g1","warn","g3","good","good","g1","warn","g2","good","good","good"]
+    },
+    {
+      id: "auth",
+      title: "Token Refresh & Session",
+      sub: "Identity",
+      handle: "@AuthRenew",
+      pattern: "45 bees/min · Linear",
+      rateTarget: "45/min",
+      elapsed: "30:00",
+      liveElapsed: "08:42",
+      liveProgress: 58,
+      inFlight: 4,
+      finished: 1350,
+      failed: 0,
+      slow: 0,
+      typical: "58 ms",
+      p95: "112 ms",
+      p95Slow: false,
+      mostFailedStep: null,
+      mostFailedCount: 0,
+      steps: [
+        { name: "Verify", ms: "18 ms", fail: 0, state: "good" },
+        { name: "Refresh", ms: "24 ms", fail: 0, state: "good" },
+        { name: "Claims", ms: "11 ms", fail: 0, state: "good" },
+        { name: "Ack", ms: "5 ms", fail: 0, state: "good" }
+      ],
+      bars: [18,20,17,22,19,21,24,18,20,23,19,17,21,25,20,18,22,19,20,21,18,24,20,19,22,18,21,23,19,20,18,21],
+      barStates: Array(32).fill("good")
+    },
+    {
+      id: "webhooks",
+      title: "Order Webhook Fan-out",
+      sub: "Partner Sync",
+      handle: "@WebhookDispatch",
+      pattern: "20 × 2/min · Bursts",
+      rateTarget: "40/min",
+      elapsed: "30:00",
+      liveElapsed: "08:42",
+      liveProgress: 58,
+      inFlight: 18,
+      finished: 1190,
+      failed: 11,
+      slow: 28,
+      typical: "310 ms",
+      p95: "1.18 s",
+      p95Slow: true,
+      mostFailedStep: "Deliver",
+      mostFailedCount: 11,
+      steps: [
+        { name: "Sign", ms: "14 ms", fail: 0, state: "good" },
+        { name: "Queue", ms: "45 ms", fail: 0, state: "good" },
+        { name: "Deliver", ms: "620 ms", fail: 11, state: "bad" },
+        { name: "Record", ms: "31 ms", fail: 0, state: "good" }
+      ],
+      bars: [30,28,34,76,32,29,31,42,28,82,36,30,28,58,34,30,29,40,78,31,28,33,52,30,29,34,85,36,31,28,32,30],
+      barStates: ["good","good","g1","bad","g1","good","good","g2","good","bad","g1","good","good","warn","g1","good","good","g2","bad","good","good","g1","warn","good","good","g1","bad","g1","good","good","g1","good"]
+    }
+  ];
+
+  let isLive = false;
+  const cardState = {}; // per-card interactive toggles
+
+  function statusOf(sc) {
+    if (isLive) return "run";
+    if (sc.failed > 0) return "bad";
+    if (sc.slow > 0) return "warn";
+    return "good";
+  }
+
+  function avatarIcon(sc) {
+    const st = statusOf(sc);
+    if (st === "run") return ICONS.pulseHex;
+    if (st === "bad") return ICONS.alertHex;
+    if (st === "warn") return ICONS.clockHex;
+    return ICONS.checkHex;
+  }
+
+  function scrubberHtml(sc) {
+    if (isLive) {
+      const hasErr = sc.failed > 0;
+      return `
+        <div class="scrubber" title="Run progress: ${sc.liveProgress}%">
+          <div class="scrubber-seg run" style="width:${sc.liveProgress}%">
+            <span class="scrubber-dot ${hasErr ? "bad" : ""}"></span>
+          </div>
+        </div>`;
+    }
+    const total = Math.max(1, sc.finished);
+    const badPct = (sc.failed / total) * 100;
+    const slowPct = (sc.slow / total) * 100;
+    const goodPct = Math.max(0, 100 - badPct - slowPct);
+    return `
+      <div class="scrubber" title="${(goodPct).toFixed(1)}% ok · ${(slowPct).toFixed(1)}% slow · ${(badPct).toFixed(1)}% failed">
+        <div class="scrubber-seg good" style="width:${goodPct.toFixed(2)}%"></div>
+        <div class="scrubber-seg warn" style="width:${slowPct.toFixed(2)}%"></div>
+        <div class="scrubber-seg bad" style="width:${badPct.toFixed(2)}%"></div>
+      </div>`;
+  }
+
+  function footerHtml(sc, compact = false) {
+    const st = statusOf(sc);
+    const finishedCount = isLive ? Math.round(sc.finished * 0.42) : sc.finished;
+    return `
+      <div class="yt-body">
+        <h3 class="yt-title">
+          ${sc.title} <span class="sub-tag">(${sc.sub})</span>
+        </h3>
+        <div class="yt-meta-row">
+          <div class="yt-channel">
+            <div class="yt-avatar ${st}" title="Scenario status">${avatarIcon(sc)}</div>
+            <div class="yt-channel-text">
+              <div class="yt-handle">${sc.handle} · ${sc.pattern}</div>
+              <div class="yt-stats-line">
+                <button class="stat-link" data-act="Open all bees for ${sc.title}">
+                  ${ICONS.playOutline} ${finishedCount.toLocaleString()} bees
+                </button>
+                <span>·</span>
+                <button class="stat-link" data-act="Inspect typical duration (${sc.typical}) for ${sc.title}">
+                  ${sc.typical}
+                </button>
+                ${!compact ? `<span>·</span>
+                <button class="stat-link ${sc.p95Slow ? "warn" : ""}" data-act="Filter slowest 5% (${sc.p95}) for ${sc.title}">
+                  p95 ${sc.p95}
+                </button>` : ""}
+              </div>
+            </div>
+          </div>
+
+          <div class="yt-actions">
+            ${sc.failed > 0 ? `
+              <button class="act-btn has-bad" data-act="Filter ${sc.failed} failed bees in ${sc.title}" title="${sc.failed} failed bees">
+                ${ICONS.err}<span>${sc.failed}</span>
+              </button>` : ""}
+            ${!compact && sc.slow > 0 ? `
+              <button class="act-btn has-warn" data-act="Filter ${sc.slow} slow bees in ${sc.title}" title="${sc.slow} slow bees">
+                ${ICONS.slow}<span>${sc.slow}</span>
+              </button>` : ""}
+            <button class="act-btn" data-act="Open logs filtered to ${sc.title}" title="Scenario logs">
+              ${ICONS.logs}
+            </button>
+            ${!compact ? `
+              <button class="act-btn" data-act="Edit ${sc.title} parameters &amp; spawning" title="Edit scenario">
+                ${ICONS.edit}
+              </button>` : ""}
+            <button class="act-btn" data-act="More actions for ${sc.title}" title="More actions">
+              ${ICONS.more}
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ---------- Render Concept 1: Stage & Scrubber ---------- */
+  function renderC1() {
+    const el = document.getElementById("grid-c1");
+    el.innerHTML = SCENARIOS.slice(0, 3).map(sc => {
+      const key = "c1_" + sc.id;
+      const st = cardState[key] || { errOnly: false, showLine: true };
+      const bars = sc.bars.map((h, i) => {
+        let cls = sc.barStates[i];
+        if (isLive && i >= 28) cls = "run";
+        const dim = st.errOnly && cls !== "bad" && cls !== "warn" ? "dimmed" : "";
+        return `<div class="mbar ${cls} ${dim}" style="height:${h}%" data-act="Inspect bee #${1040 + i} in ${sc.title} (${cls})" title="Bee #${1040 + i} · ${cls}"></div>`;
+      }).join("");
+
+      const caption = sc.mostFailedStep
+        ? `<button class="stage-caption bad" data-act="Open ${sc.mostFailedCount} bees failed at step '${sc.mostFailedStep}' in ${sc.title}">
+             ${ICONS.err} Most failed at <b>${sc.mostFailedStep}</b> (${sc.mostFailedCount})
+           </button>`
+        : sc.slow > 0
+        ? `<button class="stage-caption warn" data-act="Open ${sc.slow} slow bees in ${sc.title}">
+             ${ICONS.slow} ${sc.slow} slow bees · p95 ${sc.p95}
+           </button>`
+        : `<button class="stage-caption" data-act="Open all bees for ${sc.title}">
+             All bees healthy · typical ${sc.typical}
+           </button>`;
+
+      return `
+        <article class="yt-card" data-open="Open ScenarioDetailDialog → ${sc.title}">
+          <div class="yt-stage">
+            <div class="yt-stage-bg-grid"></div>
+            <div class="slow-line ${st.showLine ? "" : "hidden"}"><span>slow line</span></div>
+            <div class="stage-float-btns">
+              <button class="float-ico-btn ${st.errOnly ? "active-bad" : ""}" data-toggle="${key}:errOnly" title="Highlight failed &amp; slow bars only">
+                ${ICONS.filterErr}
+              </button>
+              <button class="float-ico-btn ${st.showLine ? "active" : ""}" data-toggle="${key}:showLine" title="Toggle slow threshold line">
+                ${ICONS.slowLine}
+              </button>
+            </div>
+            <div class="mini-bars">${bars}</div>
+            ${caption}
+            <div class="stage-pill">
+              ${isLive ? `<span class="live-dot"></span> ${sc.inFlight} active · ${sc.liveElapsed}` : sc.elapsed}
+            </div>
+          </div>
+          ${scrubberHtml(sc)}
+          ${footerHtml(sc)}
+        </article>`;
+    }).join("");
+  }
+
+  /* ---------- Render Concept 2: Editorial KPI Stage ---------- */
+  function renderC2() {
+    const el = document.getElementById("grid-c2");
+    el.innerHTML = SCENARIOS.slice(0, 3).map(sc => {
+      const st = statusOf(sc);
+      const okPct = (((sc.finished - sc.failed) / sc.finished) * 100).toFixed(1);
+      const badgeText = isLive
+        ? `${sc.inFlight} ACTIVE`
+        : sc.failed > 0 ? `${sc.failed} FAILED`
+        : sc.slow > 0 ? `${sc.slow} SLOW`
+        : `ALL HEALTHY`;
+
+      const heroBig = isLive ? `${sc.inFlight}<small>bees</small>` : `${okPct}<small>%</small>`;
+      const heroTitle = isLive ? `in flight right now` : `success rate`;
+      const heroSub = `typical ${sc.typical} · slowest 5% ${sc.p95}`;
+
+      const bgSpark = sc.bars.map((h, i) => {
+        const cls = (isLive && i >= 28) ? "run" : sc.barStates[i];
+        return `<i class="${cls}" style="height:${h}%"></i>`;
+      }).join("");
+
+      return `
+        <article class="yt-card" data-open="Open ScenarioDetailDialog → ${sc.title}">
+          <div class="yt-stage">
+            <div class="ed-frame-accent ${st}"></div>
+            <div class="ed-bg-spark">${bgSpark}</div>
+            <div class="editorial-stage">
+              <span class="ed-badge ${st}">${badgeText}</span>
+              <div class="ed-hero">
+                <div class="ed-big">${heroBig}</div>
+                <div class="ed-sub-stack">
+                  <b>${heroTitle}</b>
+                  <span>${heroSub}</span>
+                </div>
+              </div>
+              <div></div>
+            </div>
+            <div class="stage-pill">${isLive ? sc.liveElapsed : sc.rateTarget}</div>
+          </div>
+          ${scrubberHtml(sc)}
+          ${footerHtml(sc)}
+        </article>`;
+    }).join("");
+  }
+
+  /* ---------- Render Concept 3: Step Pipeline Stage ---------- */
+  function renderC3() {
+    const el = document.getElementById("grid-c3");
+    el.innerHTML = SCENARIOS.slice(0, 3).map(sc => {
+      const key = "c3_" + sc.id;
+      const st = cardState[key] || { showFails: false };
+
+      const nodes = sc.steps.map((step, idx) => {
+        const nodeState = isLive && idx === 2 ? "run" : step.state;
+        const val = st.showFails
+          ? (step.fail > 0 ? `${step.fail} err` : "0 err")
+          : step.ms;
+        return `
+          <div class="step-node ${nodeState}" data-act="Inspect step ${idx + 1} '${step.name}' in ${sc.title} (${step.ms}, ${step.fail} failed)">
+            <span class="step-idx">0${idx + 1}</span>
+            <span class="step-name">${step.name}</span>
+            <span class="step-val">${val}</span>
+          </div>`;
+      }).join("");
+
+      return `
+        <article class="yt-card" data-open="Open ScenarioDetailDialog → ${sc.title}">
+          <div class="yt-stage">
+            <div class="yt-stage-bg-grid"></div>
+            <div class="stage-float-btns stage-float-row">
+              <button class="float-ico-btn ${st.showFails ? "active-bad" : ""}" data-toggle="${key}:showFails" title="Toggle step latency vs failure count">
+                ${ICONS.steps}
+              </button>
+            </div>
+            <div class="step-stage">
+              <div class="step-track">${nodes}</div>
+            </div>
+            <div class="stage-caption" data-act="Inspect step breakdown for ${sc.title}">
+              ${st.showFails ? "Showing failures per step" : "Showing typical time per step"}
+            </div>
+            <div class="stage-pill">${sc.steps.length} steps · ${isLive ? sc.liveElapsed : sc.elapsed}</div>
+          </div>
+          ${scrubberHtml(sc)}
+          ${footerHtml(sc)}
+        </article>`;
+    }).join("");
+  }
+
+  /* ---------- Render Concept 4: Compact High-Density Feed ---------- */
+  function renderC4() {
+    const el = document.getElementById("grid-c4");
+    el.innerHTML = SCENARIOS.map(sc => {
+      const bars = sc.bars.slice(0, 26).map((h, i) => {
+        let cls = sc.barStates[i];
+        if (isLive && i >= 22) cls = "run";
+        return `<div class="mbar ${cls}" style="height:${h}%" data-act="Inspect bee #${1040 + i} in ${sc.title}"></div>`;
+      }).join("");
+
+      return `
+        <article class="yt-card" data-open="Open ScenarioDetailDialog → ${sc.title}">
+          <div class="yt-stage compact">
+            <div class="yt-stage-bg-grid"></div>
+            <div class="mini-bars compact-pad">${bars}</div>
+            <div class="stage-pill">${isLive ? `<span class="live-dot"></span> ${sc.inFlight}` : sc.rateTarget}</div>
+          </div>
+          ${scrubberHtml(sc)}
+          ${footerHtml(sc, true)}
+        </article>`;
+    }).join("");
+  }
+
+  /* ---------- Render Icon Showcase ---------- */
+  function renderIcons() {
+    const items = [
+      { icon: ICONS.playOutline, name: "Bees / Runs", use: "Inline count prefix (▷)" },
+      { icon: ICONS.chart, name: "Inspect Chart", use: "Open bee bar timeline" },
+      { icon: ICONS.err, name: "Failed Bees", use: "Filter failed &amp; canceled" },
+      { icon: ICONS.slow, name: "Slow Bees", use: "Filter slow threshold" },
+      { icon: ICONS.logs, name: "Run Logs", use: "Scoped scenario logs" },
+      { icon: ICONS.edit, name: "Edit Plan", use: "Spawning &amp; parameters" },
+      { icon: ICONS.bookmark, name: "Preset", use: "Save / load plan preset" },
+      { icon: ICONS.more, name: "More Actions", use: "Export, duplicate, delete" },
+      { icon: ICONS.filterErr, name: "Errors Only", use: "Stage floating toggle" },
+      { icon: ICONS.slowLine, name: "Slow Line", use: "Toggle threshold line" },
+      { icon: ICONS.steps, name: "Step Mode", use: "Latency vs failures" },
+      { icon: ICONS.pulseHex, name: "Live Status", use: "Scenario avatar emblem" }
+    ];
+    document.getElementById("icon-sheet").innerHTML = items.map(it => `
+      <div class="icon-tile" data-act="Icon: ${it.name} — ${it.use}">
+        <div class="ico-ring">${it.icon}</div>
+        <div class="ico-name">${it.name}</div>
+        <div class="ico-use">${it.use}</div>
+      </div>`).join("");
+  }
+
+  function renderAll() {
+    renderC1();
+    renderC2();
+    renderC3();
+    renderC4();
+    renderIcons();
+  }
+
+  /* ---------- Interactive Toast ---------- */
+  let toastTimer;
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.innerHTML = `<span class="live-dot" style="background:var(--accent);box-shadow:0 0 8px var(--accent);animation:none"></span> <span>${msg}</span>`;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
+  /* ---------- Event Delegation ---------- */
+  document.addEventListener("click", (e) => {
+    const toggleBtn = e.target.closest("[data-toggle]");
+    if (toggleBtn) {
+      e.stopPropagation();
+      const [key, prop] = toggleBtn.dataset.toggle.split(":");
+      cardState[key] = cardState[key] || { errOnly: false, showLine: true, showFails: false };
+      cardState[key][prop] = !cardState[key][prop];
+      renderAll();
+      return;
+    }
+
+    const actEl = e.target.closest("[data-act]");
+    if (actEl) {
+      e.stopPropagation();
+      showToast(`<b>Drill-down:</b> ${actEl.dataset.act}`);
+      return;
+    }
+
+    const card = e.target.closest("[data-open]");
+    if (card) {
+      showToast(`<b>Popup:</b> ${card.dataset.open}`);
+    }
+  });
+
+  /* ---------- Tabs ---------- */
+  document.querySelectorAll(".yt-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".yt-tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      document.querySelectorAll(".section").forEach(sec => {
+        sec.classList.toggle("hidden", tab !== "all" && sec.dataset.section !== tab);
+      });
+    });
+  });
+
+  /* ---------- Finished / Live Switch ---------- */
+  document.getElementById("mode-finished").addEventListener("click", () => {
+    isLive = false;
+    document.getElementById("mode-finished").classList.add("active");
+    document.getElementById("mode-live").classList.remove("active");
+    renderAll();
+  });
+  document.getElementById("mode-live").addEventListener("click", () => {
+    isLive = true;
+    document.getElementById("mode-live").classList.add("active");
+    document.getElementById("mode-finished").classList.remove("active");
+    renderAll();
+  });
+
+  /* ---------- Icon Stroke Weight Switch ---------- */
+  document.querySelectorAll("[data-stroke]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-stroke]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.documentElement.style.setProperty("--icon-stroke", btn.dataset.stroke);
+    });
+  });
+
+  renderAll();
+</script>
+</body>
+</html>

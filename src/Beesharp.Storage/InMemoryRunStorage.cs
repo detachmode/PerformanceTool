@@ -1,4 +1,5 @@
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Services.Storage;
 
@@ -14,10 +15,12 @@ public sealed class InMemoryRunStorage : IRunStorage
 
     public string ProviderName => "Memory";
 
-    private sealed class RunBucket(string runId, DateTimeOffset startedUtc)
+    private sealed class RunBucket(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps)
     {
         public string RunId { get; } = runId;
         public DateTimeOffset StartedUtc { get; } = startedUtc;
+        public LoadPlan Plan { get; } = plan;
+        public IReadOnlyList<IReadOnlyList<StepInfo>>? Steps { get; } = steps;
         public DateTimeOffset? FinishedUtc { get; set; }
         public string State { get; set; } = "Running";
         public double ElapsedSeconds { get; set; }
@@ -28,12 +31,12 @@ public sealed class InMemoryRunStorage : IRunStorage
         public List<StoredLogRow> Logs { get; } = [];
     }
 
-    public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan)
+    public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null)
     {
         lock (sync)
         {
             runs.RemoveAll(r => r.RunId == runId);
-            runs.Insert(0, new RunBucket(runId, startedUtc));
+            runs.Insert(0, new RunBucket(runId, startedUtc, plan.Clone(), steps));
             if (runs.Count > MaxRuns) runs.RemoveAt(runs.Count - 1);
         }
     }
@@ -50,7 +53,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             var beeName = $"B{r.Sequence + 1}";
             bucket.Bees[r.Sequence] = new StoredBeeDetail(
                 runId, r.Sequence, r.Entry, r.StartedAtSeconds, r.ElapsedMs, r.StatusCode, r.Bytes, r.Error,
-                r.Calls ?? [], r.Logs ?? []);
+                r.Calls ?? [], r.Logs ?? [], r.FailedStep, r.FailedRep, r.StepVisits);
             if (r.Logs is { Count: > 0 })
             {
                 foreach (var l in r.Logs)
@@ -111,8 +114,8 @@ public sealed class InMemoryRunStorage : IRunStorage
             var b = runs.FirstOrDefault(x => x.RunId == runId);
             if (b is null) return Task.FromResult<StoredRunData?>(null);
             var bees = b.Bees.Values.OrderBy(a => a.Sequence).Select(a => new StoredBeeSummary(
-                a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, 0)).ToList();
-            return Task.FromResult<StoredRunData?>(new StoredRunData(b.RunId, b.StartedUtc, b.State, b.ElapsedSeconds, new LoadPlan(), bees, b.Logs.Count, b.Error));
+                a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, 0, a.FailedStep, a.FailedRep)).ToList();
+            return Task.FromResult<StoredRunData?>(new StoredRunData(b.RunId, b.StartedUtc, b.State, b.ElapsedSeconds, b.Plan.Clone(), bees, b.Logs.Count, b.Error, b.Steps));
         }
     }
 

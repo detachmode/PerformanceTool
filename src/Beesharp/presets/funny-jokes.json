@@ -1,0 +1,45 @@
+{
+  "name": "Funny jokes",
+  "savedAt": "2026-11-22T00:52:35.583622+00:00",
+  "plan": {
+    "scenarios": [
+      {
+        "scenarioId": "script-multi-step-order-flow-ilogger",
+        "label": "Multi-Step Order Flow (ILogger)",
+        "ratePerMinute": 30,
+        "pattern": "Bursts",
+        "beesPerBurst": 10,
+        "burstsPerMinute": 10,
+        "maxInFlight": null,
+        "parameters": {
+          "storeName": "DemoShop",
+          "itemCount": 20,
+          "delay": 500,
+          "retryChancePercent": 40,
+          "failurePercent": 10
+        }
+      },
+      {
+        "scenarioId": "script-funny-log-spammer",
+        "label": "Funny Log Spammer",
+        "ratePerMinute": 30,
+        "pattern": "Bursts",
+        "beesPerBurst": 10,
+        "burstsPerMinute": 100,
+        "maxInFlight": null,
+        "parameters": {
+          "loops": 70,
+          "delayMs": 1000,
+          "failurePercent": 48,
+          "slowPercent": 47,
+          "slowExtraDelayMs": 100,
+          "warningPercent": 15
+        }
+      }
+    ],
+    "durationSeconds": 430,
+    "maxConcurrency": 200,
+    "timeoutSeconds": 120,
+    "preflightScriptId": "check-readiness"
+  }
+}

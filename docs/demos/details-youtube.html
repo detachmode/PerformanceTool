@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Beesharp · Scenario details (YouTube style preview)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0e0d;
+    --surface: #1c1b19;
+    --surface2: #252321;
+    --pill: #272523;
+    --pill-hover: #33302d;
+    --hair: rgba(255,255,255,0.07);
+    --text: #f1efea;
+    --title: #ffffff;
+    --muted: #a19c94;
+    --faint: #6f6a63;
+    --good: #34d399; --slow: #fbbf24; --failed: #f05252; --running: #5b9bf0; --accent: #f5b700;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; color: var(--text); font-family: var(--sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+  .ico.sm { width: 16px; height: 16px; }
+  .ico.xs { width: 13px; height: 13px; }
+
+  .sheet { max-width: 760px; margin: 0 auto; min-height: 100dvh; background: var(--bg); display: flex; flex-direction: column; padding-bottom: 92px; }
+  @media (min-width: 800px) { body { padding: 3vh 0; } .sheet { min-height: auto; border-radius: 16px; overflow: hidden; } }
+
+  /* Sticky top bar */
+  .head { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 4px; padding: 8px 6px 8px 6px; background: rgba(15,14,13,0.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .head-label { font-size: 14px; font-weight: 500; color: var(--muted); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mode-sw { display: inline-flex; background: var(--surface); border-radius: 999px; padding: 2px; gap: 2px; margin-right: 4px; }
+  .mode-sw button { border: 0; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+  .mode-sw button.on { background: #2d2b28; color: var(--title); }
+  .icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: #e7e4de; flex: none; }
+  .icon-btn:hover { background: rgba(255,255,255,0.08); }
+
+  /* Top Hero Stage:
+     - When ACTIVE (Live): calm Editorial KPI stage (NO bar diagram!)
+     - When FINISHED: interactive bee bar diagram */
+  .hero { position: relative; background: linear-gradient(180deg, #11100f 0%, #1a1917 100%); overflow: hidden; }
+  .hero.live-hero { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .hero.chart-hero { aspect-ratio: 16/8.2; }
+  .hidden { display: none !important; }
+
+  .hero-tag { align-self: flex-start; font-family: var(--mono); font-size: 11px; font-weight: 800; letter-spacing: .05em; padding: 4px 9px; border-radius: 5px; background: #2563eb; color: #fff; display: inline-flex; align-items: center; gap: 6px; }
+  .hero-tag.bad { background: #dc2626; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px #fff; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: 1 } }
+
+  .live-kpi { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .live-big { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; color: var(--title); font-variant-numeric: tabular-nums; }
+  .live-big small { font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 3px; }
+  .live-sub { display: flex; flex-direction: column; gap: 2px; }
+  .live-sub b { font-size: 14px; color: var(--text); font-weight: 600; }
+  .live-sub span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .live-row-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hero-pill { font-family: var(--mono); font-size: 11.5px; font-weight: 600; background: rgba(10,9,8,0.85); padding: 3px 8px; border-radius: 6px; color: var(--text); }
+  .chart-hero .hero-pill { position: absolute; right: 10px; bottom: 9px; z-index: 3; }
+  .chart-hero .hero-tag { position: absolute; top: 10px; left: 12px; z-index: 3; }
+
+  /* Bar chart (Finished state only) */
+  .hero-bars { position: absolute; inset: 36px 12px 30px; display: flex; align-items: flex-end; gap: 2px; }
+  .hero-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--good); opacity: .9; cursor: pointer; transition: opacity .15s; }
+  .hero-bars i.warn { background: var(--slow); }
+  .hero-bars i.bad { background: var(--failed); }
+  .hero-bars i.dim { opacity: .13; }
+  .hero-bars i.sel { outline: 1.5px solid #fff; outline-offset: 1px; opacity: 1; }
+  .hero-float { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 6px; }
+  .float-btn { width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(10,9,8,0.72); backdrop-filter: blur(8px); color: #eee; display: grid; place-items: center; cursor: pointer; }
+  .float-btn.on { background: rgba(245,183,0,0.24); color: var(--accent); }
+  .hero-cap { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 12px; background: rgba(10,9,8,0.85); padding: 3px 8px; border-radius: 6px; color: #e9e6e0; max-width: calc(100% - 96px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .scrub { height: 3px; display: flex; background: rgba(255,255,255,0.1); position: relative; }
+  .scrub span { height: 100%; position: relative; }
+  .scrub .g { background: var(--good); } .scrub .w { background: var(--slow); } .scrub .b { background: var(--failed); } .scrub .r { background: var(--running); }
+  .scrub-dot { position: absolute; right: -4px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 8px var(--failed); }
+
+  /* Title block: scenario name */
+  .titleblock { padding: 14px 16px 4px; }
+  .titleblock h2 { margin: 0 0 4px; font-size: 19px; font-weight: 700; color: var(--title); line-height: 1.25; letter-spacing: -.015em; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-variant-numeric: tabular-nums; }
+  .meta button { border: 0; background: none; padding: 0; color: inherit; cursor: pointer; }
+  .meta button:hover { color: var(--title); }
+  .meta .sep { opacity: .5; }
+
+  /* Channel row */
+  .chan { display: flex; align-items: center; gap: 10px; padding: 12px 16px 6px; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .avatar.bad { background: rgba(240,82,82,0.14); color: var(--failed); }
+  .chan-text { flex: 1; min-width: 0; }
+  .chan-text b { display: block; font-size: 14px; color: var(--title); font-weight: 600; }
+  .chan-text span { font-size: 12.5px; color: var(--muted); }
+  .sub-btn { border: 0; border-radius: 999px; background: #f1efea; color: #0f0e0d; font-weight: 600; padding: 8px 15px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Pill chips row */
+  .chips { display: flex; gap: 8px; padding: 10px 16px 12px; overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; border: 0; border-radius: 999px; background: var(--pill); color: var(--text); padding: 8px 14px; font-size: 13.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; transition: background .14s, color .14s; }
+  .chip:hover { background: var(--pill-hover); }
+  .chip .n { font-family: var(--mono); font-weight: 600; font-size: 12.5px; }
+  .chip.bad .n, .chip.bad svg { color: var(--failed); }
+  .chip.warn .n, .chip.warn svg { color: var(--slow); }
+  .chip.run .n, .chip.run svg { color: var(--running); }
+  .chip.on { background: #f1efea; color: #0f0e0d; }
+  .chip.on .n, .chip.on svg { color: #0f0e0d; }
+  .chip.zero { opacity: .5; }
+
+  /* Steps vertical timeline card (with active + failed pill indicators per step) */
+  .desc { margin: 4px 12px 14px; border-radius: 14px; background: linear-gradient(180deg, #1b1a18 0%, #23211e 100%); padding: 12px 14px; }
+  .desc-top { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
+  .desc-top b { color: var(--title); }
+  .desc-top .warn-txt { color: #fca5a5; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .desc-top .chev { margin-left: auto; color: var(--muted); transition: transform .2s; }
+  .desc.open .chev { transform: rotate(180deg); }
+  .timeline { display: none; list-style: none; margin: 12px 0 2px; padding: 0; }
+  .desc.open .timeline { display: block; }
+  .tl-item { position: relative; display: flex; align-items: center; gap: 11px; padding: 7px 0; }
+  .tl-item::before { content: ""; position: absolute; left: 11px; top: 26px; bottom: -10px; width: 1.5px; background: rgba(255,255,255,0.12); }
+  .tl-item:last-child::before { display: none; }
+  .tl-dot { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; flex: none; display: grid; place-items: center; font-family: var(--mono); font-size: 11px; font-weight: 700; background: #2a2825; color: var(--muted); }
+  .tl-item.has-run .tl-dot { background: rgba(91,155,240,0.16); color: var(--running); }
+  .tl-item.has-bad .tl-dot { background: rgba(240,82,82,0.16); color: var(--failed); }
+  .tl-name { font-size: 13.5px; font-weight: 500; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-counts { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .cnt-pill { border: 0; border-radius: 999px; padding: 4px 9px; font-family: var(--mono); font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; transition: background .14s, color .14s; }
+  .cnt-pill.run { background: rgba(91,155,240,0.14); color: #93c5fd; }
+  .cnt-pill.run:hover { background: rgba(91,155,240,0.24); }
+  .cnt-pill.run.on { background: var(--running); color: #0b0a09; }
+  .cnt-pill.bad { background: rgba(240,82,82,0.14); color: #fca5a5; }
+  .cnt-pill.bad:hover { background: rgba(240,82,82,0.24); }
+  .cnt-pill.bad.on { background: var(--failed); color: #fff; }
+
+  /* Tabs */
+  .tabs { position: sticky; top: 54px; z-index: 15; display: flex; gap: 4px; padding: 0 10px; background: rgba(15,14,13,0.94); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); overflow-x: auto; scrollbar-width: none; }
+  .tab { border: 0; background: none; padding: 12px 10px; color: var(--muted); font-weight: 500; cursor: pointer; position: relative; white-space: nowrap; }
+  .tab .n { color: var(--faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .tab.on { color: var(--title); font-weight: 600; }
+  .tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2.5px; border-radius: 2px 2px 0 0; background: var(--title); }
+
+  /* Comment-style feed */
+  .feed { display: flex; flex-direction: column; }
+  .row { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+  .row:hover { background: rgba(255,255,255,0.03); }
+  .ring { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .ring.run { border: 1.5px dashed rgba(91,155,240,0.6); color: #bfdbfe; }
+  .ring.bad { background: rgba(240,82,82,0.14); color: var(--failed); }
+  .ring.warn { background: rgba(251,191,36,0.13); color: var(--slow); }
+  .ring.good { background: rgba(52,211,153,0.12); color: var(--good); }
+  .row-body { flex: 1; min-width: 0; }
+  .row-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .row-head b { color: var(--title); font-weight: 600; }
+  .row-head .st { font-size: 12.5px; color: var(--muted); }
+  .row-head .st.run { color: var(--running); } .row-head .st.bad { color: var(--failed); } .row-head .st.warn { color: var(--slow); }
+  .row-head time { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+  .row-msg { margin-top: 3px; font-family: var(--mono); font-size: 12.5px; color: #cfcac2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-msg .lvl { font-weight: 700; margin-right: 6px; }
+  .row-msg .lvl.inf { color: var(--good); } .row-msg .lvl.err { color: var(--failed); } .row-msg .lvl.wrn { color: var(--slow); }
+  .row-actions { display: flex; gap: 14px; margin-top: 6px; color: var(--muted); font-size: 12px; }
+  .row-actions span { display: inline-flex; align-items: center; gap: 5px; }
+  .more-btn { margin: 14px auto 6px; border: 0; border-radius: 999px; background: var(--pill); padding: 9px 18px; cursor: pointer; font-weight: 500; }
+
+  /* Bottom player bar */
+  .player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: rgba(18,17,16,0.96); backdrop-filter: blur(14px); max-width: 760px; margin: 0 auto; }
+  .play { width: 46px; height: 46px; border-radius: 50%; border: 0; background: #f1efea; color: #0f0e0d; display: grid; place-items: center; cursor: pointer; flex: none; }
+  .play .ico { stroke-width: 2.2; }
+  .stop { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--pill); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .p-time { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+  .p-time b { font-family: var(--mono); font-size: 15px; color: var(--title); }
+  .p-prog { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+  .p-prog span { display: block; height: 100%; width: 54%; background: var(--running); }
+  .p-stat { display: flex; flex-direction: column; align-items: flex-end; font-size: 10.5px; color: var(--muted); letter-spacing: .03em; }
+  .p-stat b { font-family: var(--mono); font-size: 14px; color: var(--running); }
+  .p-stat.bad b { color: var(--failed); }
+
+  .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(14px); opacity: 0; pointer-events: none; z-index: 60; background: #2a2825; padding: 9px 15px; border-radius: 999px; font-size: 13px; transition: opacity .2s, transform .2s; max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header class="head">
+    <button class="icon-btn" data-act="Close details" title="Back">
+      <svg class="ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <span class="head-label">Scenario details</span>
+    <div class="mode-sw" role="group" aria-label="Preview state">
+      <button id="sw-live" class="on" type="button">Active</button>
+      <button id="sw-done" type="button">Finished</button>
+    </div>
+    <button class="icon-btn" data-act="Open checkout-steps.cs in the script editor" title="Edit .cs">
+      <svg class="ico" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/></svg>
+    </button>
+    <button class="icon-btn" data-act="Close details" title="Close">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+
+  <!-- ACTIVE HERO: Editorial KPI stage (NO bar diagram while running) -->
+  <section class="hero live-hero" id="heroLive">
+    <span class="hero-tag"><i class="live-dot"></i>74 ACTIVE</span>
+    <div class="live-kpi">
+      <div class="live-big">74<small>bees</small></div>
+      <div class="live-sub">
+        <b>in flight right now</b>
+        <span>43 finished · 146 failed (65%)</span>
+      </div>
+    </div>
+    <div class="live-row-bottom">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">typical 11.4 s · slowest 5% 20.8 s</span>
+      <span class="hero-pill">3:22 / 6:00</span>
+    </div>
+  </section>
+
+  <!-- FINISHED HERO: Interactive bar chart (only shown when Finished) -->
+  <section class="hero chart-hero hidden" id="heroDone">
+    <span class="hero-tag bad">146 FAILED</span>
+    <div class="hero-float">
+      <button class="float-btn" id="issuesBtn" title="Show failed and slow only">
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>
+      </button>
+      <button class="float-btn" data-act="Full screen chart" title="Full screen">
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+    </div>
+    <div class="hero-bars" id="bars"></div>
+    <span class="hero-cap" id="heroCap">Tap a bar to inspect a bee</span>
+    <span class="hero-pill">6:00</span>
+  </section>
+
+  <div class="scrub" id="scrub">
+    <span class="r" style="width:56%"><i class="scrub-dot"></i></span>
+  </div>
+
+  <!-- Title below stage: Scenario name -->
+  <div class="titleblock">
+    <h2>Checkout (Union Steps)</h2>
+    <div class="meta">
+      <button data-act="Filter running bees">74 active</button><span class="sep">·</span>
+      <button data-act="Filter finished bees">43 finished</button><span class="sep">·</span>
+      <button data-act="Typical duration 11.4 s">typical 11.4 s</button><span class="sep">·</span>
+      <button data-act="Rate: 205 of 196 bees/min">205/m</button>
+    </div>
+  </div>
+
+  <!-- Channel row -->
+  <div class="chan">
+    <div class="avatar bad"><svg class="ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M12 8.2v4.6"/><path d="M12 16h.01"/></svg></div>
+    <div class="chan-text">
+      <b>User journey</b>
+      <span>Bursts · 15 × 4/min · 5 steps</span>
+    </div>
+    <button class="sub-btn" data-act="Open logs for this scenario">
+      <svg class="ico sm" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M7.5 9.5h9M7.5 13h6M7.5 16h3.5"/></svg>Logs
+    </button>
+  </div>
+
+  <!-- Filter chips -->
+  <div class="chips" id="chips">
+    <button class="chip on" data-filter="all">All <span class="n">189</span></button>
+    <button class="chip bad" data-filter="bad">
+      <svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></svg>
+      Failed <span class="n">146</span>
+    </button>
+    <button class="chip warn zero" data-filter="warn">
+      <svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+      Slow <span class="n">0</span>
+    </button>
+    <button class="chip" data-filter="p95">
+      <svg class="ico sm" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+      Slowest 5% <span class="n">20.8 s</span>
+    </button>
+    <button class="chip run" data-filter="run">
+      <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2"/></svg>
+      Active <span class="n">74</span>
+    </button>
+  </div>
+
+  <!-- Steps vertical timeline card with active & failed indicators per step -->
+  <section class="desc open" id="desc">
+    <div class="desc-top" id="descToggle">
+      <b>Steps · 5</b>
+      <span class="warn-txt">most failed at Open product (26)</span>
+      <svg class="ico sm chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+    </div>
+    <ol class="timeline" id="timeline" aria-label="Scenario steps"></ol>
+  </section>
+
+  <!-- Tabs -->
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-tab="logs">Recent logs<span class="n">435</span></button>
+    <button class="tab" data-tab="failed">Failed<span class="n">151</span></button>
+    <button class="tab" data-tab="bees">Bees in view<span class="n">104</span></button>
+  </nav>
+
+  <div class="feed" id="feed"></div>
+  <button class="more-btn" data-act="Load older log lines">Show more</button>
+</div>
+
+<!-- Player bar -->
+<div class="player">
+  <button class="play" id="playBtn" title="Pause">
+    <svg class="ico" viewBox="0 0 24 24" id="playIco"><path d="M9 5v14M15 5v14"/></svg>
+  </button>
+  <button class="stop" data-act="Stop the run" title="Stop">
+    <svg class="ico sm" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+  </button>
+  <div class="p-time"><b>3:22</b><div class="p-prog"><span></span></div></div>
+  <div class="p-stat"><span>ACTIVE</span><b>51</b></div>
+  <div class="p-stat bad"><span>ERRORS</span><b>151</b></div>
+  <button class="stop" data-act="More run actions" title="More">
+    <svg class="ico sm" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>
+  </button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const STEPS = [
+    { name: "Log in", active: 8, failed: 0 },
+    { name: "Search", active: 15, failed: 3 },
+    { name: "Open product", active: 24, failed: 26 },
+    { name: "Add to cart", active: 19, failed: 18 },
+    { name: "Pay", active: 8, failed: 9 }
+  ];
+  let stepFilter = null; // { idx, inFlight }
+  let isLive = true;
+
+  function drawSteps() {
+    document.getElementById("timeline").innerHTML = STEPS.map((st, idx) => {
+      const act = isLive ? st.active : 0;
+      const onAct = stepFilter && stepFilter.idx === idx && stepFilter.inFlight;
+      const onFail = stepFilter && stepFilter.idx === idx && !stepFilter.inFlight;
+      const cls = st.failed > 0 ? "has-bad" : act > 0 ? "has-run" : "";
+      return `<li class="tl-item ${cls}">
+        <span class="tl-dot">${idx + 1}</span>
+        <span class="tl-name">${st.name}</span>
+        <span class="tl-counts">
+          ${act > 0 ? `<button type="button" class="cnt-pill run ${onAct ? "on" : ""}" data-step="${idx}:1" title="Show bees currently active in ${st.name}">
+            <svg class="ico xs" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z"/><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2"/></svg>${act} active
+          </button>` : ""}
+          ${st.failed > 0 ? `<button type="button" class="cnt-pill bad ${onFail ? "on" : ""}" data-step="${idx}:0" title="Show bees that failed at ${st.name}">
+            <svg class="ico xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></svg>${st.failed} failed
+          </button>` : ""}
+        </span>
+      </li>`;
+    }).join("");
+  }
+
+  // Bar diagram data (shown only when Finished)
+  const kinds = [];
+  for (let i = 0; i < 64; i++) {
+    let k = Math.random() < 0.62 ? "bad" : "good";
+    if (k === "good" && Math.random() < 0.14) k = "warn";
+    kinds.push(k);
+  }
+  const heights = kinds.map(k => k === "bad" ? 42 + Math.random() * 54 : 20 + Math.random() * 44);
+  let filter = "all", issuesOnly = false, selected = -1;
+
+  function drawBars() {
+    document.getElementById("bars").innerHTML = kinds.map((k, i) => {
+      const hidden = (issuesOnly && k !== "bad" && k !== "warn") || (filter !== "all" && filter !== "p95" && filter !== k);
+      const cls = (k === "good" ? "" : k) + (hidden ? " dim" : "") + (i === selected ? " sel" : "");
+      return `<i class="${cls}" data-i="${i}" style="height:${heights[i].toFixed(0)}%"></i>`;
+    }).join("");
+  }
+
+  function updateMode() {
+    document.getElementById("sw-live").classList.toggle("on", isLive);
+    document.getElementById("sw-done").classList.toggle("on", !isLive);
+    document.getElementById("heroLive").classList.toggle("hidden", !isLive);
+    document.getElementById("heroDone").classList.toggle("hidden", isLive);
+    document.getElementById("scrub").innerHTML = isLive
+      ? `<span class="r" style="width:56%"><i class="scrub-dot"></i></span>`
+      : `<span class="g" style="width:35%"></span><span class="b" style="width:65%"></span>`;
+    drawSteps();
+  }
+
+  const msgs = [
+    ["run", "INF", "Opened product SKU-002"],
+    ["run", "INF", "Added SKU-002 to cart"],
+    ["bad", "ERR", "Unhandled exception: HttpRequestException 503 at Open product"],
+    ["run", "INF", "Searching for 'headphones'"],
+    ["good", "INF", "Payment confirmed, order #8812"],
+    ["bad", "ERR", "Timeout after 20 s waiting for /cart"],
+    ["warn", "WRN", "Search took 4.2 s (2.6× typical)"]
+  ];
+  function ringHtml(k, i) {
+    if (k === "run") return `<div class="ring run">${5 + (i % 4)}s</div>`;
+    if (k === "bad") return `<div class="ring bad"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></svg></div>`;
+    if (k === "warn") return `<div class="ring warn"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></div>`;
+    return `<div class="ring good"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.8"/></svg></div>`;
+  }
+  function drawFeed(tab) {
+    let rows = [];
+    for (let i = 0; i < 12; i++) rows.push(msgs[(i * 3 + (tab === "bees" ? 1 : 0)) % msgs.length]);
+    if (tab === "failed") rows = rows.map(r => r[0] === "bad" ? r : msgs[2 + (rows.indexOf(r) % 2) * 3]);
+    document.getElementById("feed").innerHTML = rows.map((r, i) => {
+      const [k, lvl, text] = r;
+      const id = 643 + i * 7;
+      const st = k === "run" ? "Active" : k === "bad" ? "Failed · 6.7 s" : k === "warn" ? "Slow · 9.1 s" : "OK · 4.3 s";
+      const step = STEPS[i % STEPS.length].name;
+      return `<div class="row" data-act="Open bee B${id}">
+        ${ringHtml(k, i)}
+        <div class="row-body">
+          <div class="row-head"><b>B${id}</b><span class="st ${k}">${st}</span><time>23:07:42</time></div>
+          <div class="row-msg"><span class="lvl ${lvl.toLowerCase()}">${lvl}</span>${text}</div>
+          <div class="row-actions">
+            <span><svg class="ico xs" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>step ${(i % 5) + 1} of 5 · ${step}</span>
+            <span><svg class="ico xs" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M7.5 9.5h9M7.5 13h6"/></svg>${3 + (i % 6)} logs</span>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  let t;
+  function toast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(t); t = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  document.addEventListener("click", e => {
+    if (e.target.closest("#sw-live")) { isLive = true; updateMode(); return; }
+    if (e.target.closest("#sw-done")) { isLive = false; updateMode(); return; }
+    const stepBtn = e.target.closest("[data-step]");
+    if (stepBtn) {
+      const [idx, fl] = stepBtn.dataset.step.split(":").map(Number);
+      const inFlight = fl === 1;
+      if (stepFilter && stepFilter.idx === idx && stepFilter.inFlight === inFlight) {
+        stepFilter = null;
+        toast("Cleared step filter");
+      } else {
+        stepFilter = { idx, inFlight };
+        toast(`Filtered to ${inFlight ? "active" : "failed"} bees at step ${idx + 1} · ${STEPS[idx].name}`);
+      }
+      drawSteps(); return;
+    }
+    const bar = e.target.closest(".hero-bars i");
+    if (bar) {
+      selected = +bar.dataset.i; drawBars();
+      const k = kinds[selected];
+      document.getElementById("heroCap").textContent = `B${600 + selected} · ${k === "bad" ? "failed at Open product" : k === "warn" ? "slow" : "ok"} · ${(heights[selected] / 8).toFixed(1)} s`;
+      return;
+    }
+    const chip = e.target.closest("[data-filter]");
+    if (chip) {
+      filter = chip.dataset.filter;
+      document.querySelectorAll("[data-filter]").forEach(c => c.classList.toggle("on", c === chip));
+      drawBars(); return;
+    }
+    const tab = e.target.closest("[data-tab]");
+    if (tab) {
+      document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x === tab));
+      drawFeed(tab.dataset.tab); return;
+    }
+    if (e.target.closest("#descToggle")) { document.getElementById("desc").classList.toggle("open"); return; }
+    if (e.target.closest("#issuesBtn")) { issuesOnly = !issuesOnly; document.getElementById("issuesBtn").classList.toggle("on", issuesOnly); drawBars(); return; }
+    if (e.target.closest("#playBtn")) {
+      const ico = document.getElementById("playIco");
+      const paused = ico.dataset.p === "1";
+      ico.dataset.p = paused ? "0" : "1";
+      ico.innerHTML = paused ? '<path d="M9 5v14M15 5v14"/>' : '<path d="M8 5.5v13l11-6.5z"/>';
+      return;
+    }
+    const act = e.target.closest("[data-act]");
+    if (act) toast(act.dataset.act);
+  });
+
+  drawBars(); updateMode(); drawFeed("logs");
+</script>
+</body>
+</html>

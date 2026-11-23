@@ -22,7 +22,6 @@ builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<LogsPopupState>();
 builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
-builder.Services.AddSingleton<CustomScriptsPopupState>();
 builder.Services.AddSingleton<ScriptApiClient>();
 builder.Services.AddSingleton<Beesharp.Client.Assistant.AssistantClient>();
 builder.Services.AddSingleton<Beesharp.Client.Assistant.AssistantState>();

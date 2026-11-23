@@ -75,3 +75,15 @@ Fake data and client only; status stays Proposed. Screenshots: `docs/screenshots
 - **UI:** `Chart/StepList.razor` (vertical stepper, calls folded by default), steps strip in the scenario popup (folded by default, opens with a filter; counts only when above 0; clicking filters the chart, list and live feed; chip in the side head), one quiet "Most failed at X (n)" line on the overview card, "Step N of M" for bees in flight.
 - **Repetitions (user feedback):** a step that runs several times shows once with a quiet "x5"; its repetitions fold out like its calls; "Step 3 of 5 - Open product (2 of 5)" for a bee in flight, "failed at Open product, 3rd time" for a failed one. The popup counts bees, not repetitions. **Repetitions are consecutive only in this draft**; whether a bee may loop back to an earlier step is an open question for the user. The repeat count (5) is a constant of the fake profile here (the real one would come from a scenario parameter).
 - Colour stays failed = red, slow = amber (a step with a slow call has an amber time), active = blue, done = neutral grey check.
+
+## Decisions and backend implementation (W, 2026-11-22)
+- **Accepted (user):**
+  - Steps are written as a **C# 15 `union` of step records, run as a step machine** (`Scenario<TParameters, TStep>` for compiled scenarios, `Scenario.DefineSteps<TParameters, TStep>(...)` in `.cs` scripts). Returning `null` finishes the bee; retries and looping back to earlier steps work naturally.
+  - **No upfront repeat total:** dynamic repeats/retries show `"Open product · 2nd time"` while running and `×N` (with `#1`, `#2`, … when expanded) once run.
+  - **Declared stepper (Option A):** the vertical stepper always shows the fixed list of declared steps in declaration order; multiple visits to a step aggregate under that step with `×N` and fold out per visit.
+  - **Failures outside a step:** attributed to the step that started last (or step 0 if before the first step).
+- **Implemented across all modules:**
+  - Core: `StepInfo`, `StepUnionReflection`, `Scenario<TParameters, TStep>`, `StepMachineRunner`, `Scenario.DefineSteps`, `RecordingHttpHandler` (automatic HTTP call recording in load runs, brain 0013), `RecordedCall.Step/Rep`, `RecordedLog.Step`, `ExecutionResult.FailedStep/FailedRep`.
+  - Scripting: upgraded `Microsoft.CodeAnalysis.CSharp.Scripting` to `5.12.0` (C# 15 `union` support); `ScriptScenarioStore.TestRunAsync` returns `Steps`, `FailedStep`, `FailedRep`, and tagged calls. Example script: `src/Beesharp/scripts/checkout-steps.cs`.
+  - Engine & Storage: `LoadRunner` + `RunManager` track live step/rep per active bee, `FailedPerStep`/`InFlightPerStep`, and persist declared steps per run (`run_steps`, DuckDB schema v1 → v2 migration, exports).
+  - Contracts, Server API, CLI, AI & Client Live mode: all wired end to end (`GET /api/scenarios`, `GET /api/runs/{id}/bees?failedStep=n`, `RunSummary`, assistant tools, `ApiRunSource`, `RemoteBeeDetail`, `StepList.razor`).

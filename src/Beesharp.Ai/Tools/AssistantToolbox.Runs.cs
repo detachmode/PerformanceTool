@@ -89,11 +89,12 @@ public sealed partial class AssistantToolbox
     }
 
     [AssistantTool("list_bees")]
-    [Description("Lists the bees of a run (a bee is one play-through of a scenario; a bee in flight when the user stopped the run counts as failed with the error Canceled: run stopped), failed first, then slow, then ok. Bee numbers start at 1 and match the B-numbers of the UI. Paged.")]
+    [Description("Lists the bees of a run (a bee is one play-through of a scenario; a bee in flight when the user stopped the run counts as failed with the error Canceled: run stopped), failed first, then slow, then ok. Bee and step numbers start at 1 and match the UI. Paged.")]
     public async Task<object> ListBees(
         [Description("Run id; leave out for the current or newest run")] string? runId = null,
         [Description("Only this scenario entry (number from 1)")] int? entry = null,
         [Description("all, ok, slow or failed")] string? outcome = null,
+        [Description("Only bees that failed at this step (number from 1)")] int? failedStep = null,
         [Description("Skip this many bees (paging)")] int? offset = null,
         [Description("How many, 1 to 100 (default 20)")] int? limit = null,
         CancellationToken ct = default)
@@ -101,7 +102,7 @@ public sealed partial class AssistantToolbox
         var id = await RunIdAsync(runId, ct);
         var o = Bounds.Offset(offset);
         var l = Bounds.Limit(limit);
-        var page = await history.ListBeesAsync(id, entry is { } e ? ToIndex(e, "Entry") : null, ParseOutcome(outcome), o, l, ct);
+        var page = await history.ListBeesAsync(id, entry is { } e ? ToIndex(e, "Entry") : null, ParseOutcome(outcome), o, l, ct, failedStep is { } fs ? ToIndex(fs, "Step") : null);
         rec.Read($"Looked at {page.Items.Count} of {page.Total} bees", RunLink(id));
         return new { runId = id, total = page.Total, offset = o, hasMore = o + page.Items.Count < page.Total, bees = page.Items.Select(BeeRow).ToList() };
     }
@@ -114,11 +115,13 @@ public sealed partial class AssistantToolbox
         durationMs = Math.Round(b.DurationMs),
         status = b.StatusCode,
         outcome = b.Outcome,
+        failedStep = b.FailedStep >= 0 ? b.FailedStep + 1 : (int?)null,
+        failedRep = b.FailedStep >= 0 && b.FailedRep > 0 ? b.FailedRep + 1 : (int?)null,
         error = b.Error is null ? null : Bounds.Cut(b.Error),
     };
 
     [AssistantTool("get_bee")]
-    [Description("Reads one bee: its calls (name, status, duration, error) and its first log lines.")]
+    [Description("Reads one bee: its calls (name, step number from 1, repetition, status, duration, error) and its first log lines.")]
     public async Task<object> GetBee(
         [Description("Bee number from 1 (B12 = 12)")] int bee,
         [Description("Run id; leave out for the current or newest run")] string? runId = null,
@@ -132,7 +135,7 @@ public sealed partial class AssistantToolbox
         {
             runId = id,
             bee = BeeRow(detail.Bee),
-            calls = detail.Calls.Take(Bounds.MaxList).Select(c => new { name = c.Name, offsetMs = Math.Round(c.OffsetMs), durationMs = Math.Round(c.DurationMs), status = c.StatusCode, error = c.Error is null ? null : Bounds.Cut(c.Error) }).ToList(),
+            calls = detail.Calls.Take(Bounds.MaxList).Select(c => new { name = c.Name, step = c.Step + 1, rep = c.Rep + 1, offsetMs = Math.Round(c.OffsetMs), durationMs = Math.Round(c.DurationMs), status = c.StatusCode, error = c.Error is null ? null : Bounds.Cut(c.Error) }).ToList(),
             callsTotal = detail.Calls.Count,
             logs = detail.Logs.Take(Bounds.DefaultList).Select(l => new { atSeconds = Math.Round(l.AtSeconds, 2), level = l.Level, message = Bounds.Cut(l.Message) }).ToList(),
             logsTotal = detail.Logs.Count,

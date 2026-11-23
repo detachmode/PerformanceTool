@@ -15,7 +15,8 @@ public static class ScenarioEndpoints
             s.Description,
             catalog.IsCustom(s.Id),
             scripts.FindScriptIdForScenario(s.Id),
-            s.Spec.ToJsonSchema())));
+            s.Spec.ToJsonSchema(),
+            s.Steps.Count > 0 ? s.Steps : null)));
         return app;
     }
 }

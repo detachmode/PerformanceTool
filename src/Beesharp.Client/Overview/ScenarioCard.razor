@@ -1,15 +1,31 @@
-@* Warm Beeswax Bento scenario card: outer shell (#161310, 28px radius) with nested bento cells (#201C16, 18px radius).
-   Colour carries meaning: emerald = good, amber = slow, coral red = failed, calm blue = active. *@
+@* Editorial KPI YouTube-inspired scenario card with crisp monochrome outline icons.
+   Top full-bleed stage pairs a high-contrast semantic status tag and bold hero figure over a quiet background sparkline
+   and subtle inner frame; bottom-edge scrubber summarizes outcome proportions (or live progress); footer carries bold title,
+   status emblem, two-line meta, and monochrome outline icon actions.
+   Colour carries meaning (brain 0018): emerald = good, amber = slow, coral red = failed, calm blue = active. *@
 @using System.Globalization
+@using Beesharp.Client.Chart
 @{
     var cls = View.Failed > 0 ? "bad" : View.SlowCalls > 0 ? "warn" : !Idle && View.Finished > 0 ? "calm-ok" : "";
     var actual = Elapsed > 0 ? View.Starts / (Elapsed / 60) : 0;
-    var reason = View.Failed > 0
-        ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow", "slow") : "")
-        : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
     var isActive = IsLive || View.InFlight > 0;
     var okCount = Math.Max(0, View.Finished - View.Failed - View.SlowBees);
     var (titleMain, titleSub) = SplitLabel(Label);
+    var statusKind = Idle ? "idle" : isActive ? "run" : View.Failed > 0 ? "bad" : View.SlowBees > 0 ? "warn" : "good";
+    var handlePrefix = !string.IsNullOrWhiteSpace(ScenarioType) && !string.Equals(ScenarioType, titleMain, StringComparison.OrdinalIgnoreCase)
+        ? ScenarioType
+        : !string.IsNullOrWhiteSpace(Subtitle) && !string.Equals(Subtitle, titleMain, StringComparison.OrdinalIgnoreCase)
+            ? Subtitle
+            : "";
+    var rateText = Idle
+        ? (Shape.Length > 0 ? Shape : $"{Format.Rate(Target)} {Terms.PerMinuteShort}")
+        : $"{Format.Rate(actual)} / {Format.Rate(Target)} {Terms.PerMinuteShort}" + (Shape.Length > 0 ? $" · {Shape}" : "");
+    var handleText = string.IsNullOrEmpty(handlePrefix) ? rateText : $"{handlePrefix} · {rateText}";
+
+    var reason = View.Failed > 0
+        ? Format.Plural(View.Failed, "error", "errors") + (View.SlowCalls > 0 ? " · " + Format.Plural(View.SlowCalls, "slow", "slow") : "")
+        : View.SlowCalls > 0 ? Format.Plural(View.SlowCalls, "slow call", "slow calls") : "";
+
     var aria = Label + ": "
         + (Idle
             ? Format.Rate(Target) + " bees per minute" + (Shape.Length > 0 ? " (bursts of " + Shape + ")" : "")
@@ -19,123 +35,303 @@
         + (reason.Length > 0 ? ", " + reason : "")
         + (Idle ? ". Edit settings" : ". Open details")
         + (Edited ? ". Changed since the preset was loaded" : "");
+
+    var totalFinished = Math.Max(1, View.Finished);
+    var badPct = View.Finished > 0 ? View.Failed * 100.0 / totalFinished : 0;
+    var slowPct = View.Finished > 0 ? View.SlowBees * 100.0 / totalFinished : 0;
+    var goodPct = View.Finished > 0 ? Math.Max(0, 100.0 - badPct - slowPct) : 0;
+    var successRatePct = View.Finished > 0 ? Math.Max(0, (View.Finished - View.Failed) * 100.0 / View.Finished) : 100.0;
+    var livePct = DurationSeconds > 0 ? Math.Clamp(Elapsed * 100.0 / DurationSeconds, 4, 100) : 50;
 }
-<button class="card bento-card @cls @(Selected ? "selected" : "") @(Edited ? "edited" : "")" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)" @onclick="() => OnOpen.InvokeAsync(Index)"
-        aria-label="@aria">
-    <span class="bento-head">
-        <span class="card-title bento-title">
-            <span class="bento-title-main">@titleMain</span>
-            @if (!string.IsNullOrEmpty(titleSub))
-            {
-                <span class="bento-title-sub">@titleSub</span>
-            }
-            @if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }
-        </span>
-    </span>
 
-    @if (Idle)
-    {
-        <span class="bento-cell bento-idle-cell">
-            <span class="fig">
-                <b>@Format.Rate(Target)</b>
-                <small>@Terms.PerMinuteShort@if (Shape.Length > 0) { <text> · @Shape</text> }</small>
-            </span>
-            @if (!string.IsNullOrWhiteSpace(Subtitle) && !string.Equals(Subtitle, Label, StringComparison.OrdinalIgnoreCase))
-            {
-                <span class="bento-sub">@Subtitle</span>
-            }
-        </span>
-    }
-    else if (isActive)
-    {
-        <span class="bento-kpi-row">
-            <span class="bento-cell bento-kpi-left is-live">
-                <HexBadge Kind="spin" Size="58" StrokeWidth="5.8" Class="card-hex-spin">
-                    <b class="bee-spin-num">@View.InFlight</b>
-                </HexBadge>
-                <small class="bento-lbl bee-spin-time"><span class="bee-spin-tag">active</span> · @Format.Time(Elapsed)</small>
-            </span>
-            <span class="bento-cell bento-kpi-right">
-                <span class="bento-kpi-top">
-                    <b class="bento-num">@Format.Num(View.Finished)</b>
-                    <span class="bento-kpi-badges">
-                        <span class="kpi-badge bad @(View.Failed == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true" title="@Format.Plural(View.Failed, "error", "errors")">@Format.Num(View.Failed) <small>err</small></span>
-                        <span class="kpi-badge warn @(View.SlowBees == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true" title="@Format.Plural(View.SlowBees, "slow bee", "slow bees")">@Format.Num(View.SlowBees) <small>slow</small></span>
-                    </span>
-                </span>
-                <small class="bento-lbl mono-sub">finished</small>
-            </span>
-        </span>
+<div class="card yt-card @cls @(Idle ? "is-idle" : "") @(Selected ? "selected" : "") @(Edited ? "edited" : "")"
+     role="button" tabindex="0" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)"
+     aria-label="@aria"
+     @onclick="() => OnOpen.InvokeAsync(Index)"
+     @onkeydown="OnCardKey">
 
-        @if (stats.HasData)
+    @* ---------- Top Editorial KPI Visual Stage ---------- *@
+    <div class="yt-stage @(Idle ? "idle" : "")">
+        @if (Idle)
         {
-            <span class="bento-cell bento-stats" title="Typical duration and slowest 5 % of finished bees. Click to open details.">
-                <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
-                <span class="st right @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
-            </span>
-        }
-    }
-    else
-    {
-        <span class="bento-kpi-done">
-            <span class="bento-cell bento-done-cell good @(okCount == 0 ? "zero" : "")" title="@Format.Plural(okCount, "successful bee", "successful bees")">
-                <span class="bento-done-top">
-                    <HexBadge Kind="ok" Size="24" StrokeWidth="6" />
-                    <b class="bento-done-num">@Format.Num(okCount)</b>
-                </span>
-                <small class="bento-lbl">success</small>
-            </span>
-            <span class="bento-cell bento-done-cell bad @(View.Failed == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true" title="@Format.Plural(View.Failed, "failed bee", "failed bees")">
-                <span class="bento-done-top">
-                    <HexBadge Kind="bad" Size="24" StrokeWidth="6" />
-                    <b class="bento-done-num">@Format.Num(View.Failed)</b>
-                </span>
-                <small class="bento-lbl">failed</small>
-            </span>
-            <span class="bento-cell bento-done-cell warn @(View.SlowBees == 0 ? "zero" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true" title="@Format.Plural(View.SlowBees, "slow bee", "slow bees")">
-                <span class="bento-done-top">
-                    <HexBadge Kind="warn" Size="24" StrokeWidth="6" />
-                    <b class="bento-done-num">@Format.Num(View.SlowBees)</b>
-                </span>
-                <small class="bento-lbl">slow</small>
-            </span>
-        </span>
-
-        @if (stats.HasData)
-        {
-            <span class="bento-cell bento-stats" title="Typical duration and slowest 5 % of finished bees. Click to open details.">
-                <span class="st"><small>typical</small> <b>@Format.Ms(stats.Median)</b></span>
-                <span class="st right @(stats.P95Slow ? "warn" : "")" @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"><small>slowest 5%</small> <b>@Format.Ms(stats.P95)</b></span>
-            </span>
-        }
-    }
-
-    @if (!Idle && View.Failed > 0 && MostFailedStep is { } mf && !string.IsNullOrEmpty(StepName))
-    {
-        <span class="bento-stepline" role="button" tabindex="0" @onclick="() => OnOpenStep.InvokeAsync((Index, mf.Step))" @onclick:stopPropagation="true"
-              title="Open the bees that failed at the step @StepName">Most failed at <b>@StepName</b> (@Format.Num(mf.Count))</span>
-    }
-
-    @if (Edited || (!Idle && (actual > 0 || Target > 0)))
-    {
-        <span class="bento-foot">
+            <div class="yt-stage-grid" aria-hidden="true"></div>
+            <div class="yt-idle-stage">
+                <div class="yt-idle-fig">
+                    <b>@Format.Rate(Target)</b>
+                    <small>@Terms.PerMinuteShort@(Shape.Length > 0 ? $" · {Shape}" : "")</small>
+                </div>
+                @if (!string.IsNullOrEmpty(handlePrefix))
+                {
+                    <span class="yt-idle-type">@handlePrefix</span>
+                }
+            </div>
             @if (Edited)
             {
-                <span class="bento-pill edited">Changed</span>
+                <span class="yt-stage-caption edited">Changed</span>
             }
-            else
+            <span class="yt-stage-pill">@(Shape.Length > 0 ? "Bursts" : "Linear")</span>
+        }
+        else
+        {
+            @* Quiet background sparkline *@
+            <div class="yt-ed-spark" aria-hidden="true">
+                @foreach (var b in stageBars)
+                {
+                    var pct = stageMaxMs > 0 ? Math.Clamp(b.MaxMs * 100.0 / stageMaxMs, 14, 100) : 20;
+                    <i class="@BarClass(b)" style="height:@(pct.ToString("0.#", CultureInfo.InvariantCulture))%"></i>
+                }
+                @for (var r = 0; r < runningBarsCount; r++)
+                {
+                    var rPct = 38 + ((r * 17) % 42);
+                    <i class="run" style="height:@(rPct)%"></i>
+                }
+            </div>
+
+            <div class="yt-ed-content">
+                @if (isActive)
+                {
+                    <span class="yt-ed-badge run">
+                        <i class="yt-live-dot white" aria-hidden="true"></i>
+                        @View.InFlight ACTIVE
+                    </span>
+                }
+                else if (View.Failed > 0)
+                {
+                    <button type="button" class="yt-ed-badge bad"
+                            @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true"
+                            title="Open @Format.Plural(View.Failed, "failed bee", "failed bees")">
+                        @Format.Num(View.Failed) FAILED
+                    </button>
+                }
+                else if (View.SlowBees > 0)
+                {
+                    <button type="button" class="yt-ed-badge warn"
+                            @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"
+                            title="Open @Format.Plural(View.SlowBees, "slow bee", "slow bees")">
+                        @Format.Num(View.SlowBees) SLOW
+                    </button>
+                }
+                else if (View.Finished > 0)
+                {
+                    <span class="yt-ed-badge good">ALL HEALTHY</span>
+                }
+                else
+                {
+                    <span class="yt-ed-badge idle">READY</span>
+                }
+
+                <div class="yt-ed-hero">
+                    @if (isActive)
+                    {
+                        <div class="yt-ed-big">@View.InFlight<small>bees</small></div>
+                        <div class="yt-ed-sub">
+                            <b>in flight right now</b>
+                            <span>
+                                @Format.Num(View.Finished) finished@(stats.HasData ? $" · typical {Format.Ms(stats.Median)}" : "")
+                            </span>
+                        </div>
+                    }
+                    else if (View.Finished > 0)
+                    {
+                        <div class="yt-ed-big">@successRatePct.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></div>
+                        <div class="yt-ed-sub">
+                            <b>success rate</b>
+                            @if (stats.HasData)
+                            {
+                                <span>
+                                    typical @Format.Ms(stats.Median) ·
+                                    <button type="button" class="yt-ed-sub-link @(stats.P95Slow ? "warn" : "")"
+                                            @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slowest5Pct))" @onclick:stopPropagation="true"
+                                            title="Open slowest 5% (p95)">
+                                        slowest 5% @Format.Ms(stats.P95)
+                                    </button>
+                                </span>
+                            }
+                            else
+                            {
+                                <span>@Format.Plural(View.Finished, "bee", "bees") finished</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="yt-ed-big">@Format.Rate(Target)<small>@Terms.PerMinuteShort</small></div>
+                        <div class="yt-ed-sub">
+                            <b>no bees recorded</b>
+                            <span>waiting for run</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="yt-ed-foot-spacer"></div>
+            </div>
+
+            @if (View.Failed > 0 && MostFailedStep is { } mf && !string.IsNullOrEmpty(StepName))
             {
-                <span></span>
+                <button type="button" class="yt-stage-caption bad"
+                        @onclick="() => OnOpenStep.InvokeAsync((Index, mf.Step))" @onclick:stopPropagation="true"
+                        title="Open the bees that failed at step @StepName">
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5" /><path d="M12 16h.01" /></svg>
+                    <span>Most failed at <b>@StepName</b> (@Format.Num(mf.Count))</span>
+                </button>
             }
-            @if (!Idle)
+
+            <span class="yt-stage-pill">
+                @if (isActive)
+                {
+                    <span>@Format.Time(Elapsed)</span>
+                }
+                else
+                {
+                    <span>@(Elapsed > 0 ? Format.Time(Elapsed) : $"{Format.Rate(Target)}/min")</span>
+                }
+            </span>
+        }
+    </div>
+
+    @* ---------- Bottom-Edge Scrubber / Outcome Bar ---------- *@
+    <div class="yt-scrubber" aria-hidden="true">
+        @if (Idle)
+        {
+            @if (Edited)
             {
-                <span class="bento-meta">@Format.Rate(actual) / @Format.Rate(Target) @Terms.PerMinuteShort</span>
+                <span class="yt-scrub-seg edited" style="width:100%"></span>
             }
-        </span>
-    }
-</button>
+        }
+        else if (isActive)
+        {
+            <span class="yt-scrub-seg run" style="width:@(livePct.ToString("0.#", CultureInfo.InvariantCulture))%">
+                <i class="yt-scrub-dot @(View.Failed > 0 ? "bad" : "")"></i>
+            </span>
+        }
+        else if (View.Finished > 0)
+        {
+            <span class="yt-scrub-seg good" style="width:@(goodPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+            <span class="yt-scrub-seg warn" style="width:@(slowPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+            <span class="yt-scrub-seg bad" style="width:@(badPct.ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+        }
+    </div>
+
+    @* ---------- YouTube-style Title, Meta & Outline Icon Footer ---------- *@
+    <div class="yt-body">
+        <div class="yt-title-row">
+            <span class="yt-title">
+                <span class="yt-title-main">@titleMain</span>
+                @if (!string.IsNullOrEmpty(titleSub))
+                {
+                    <span class="yt-title-sub">@titleSub</span>
+                }
+                @if (Edited)
+                {
+                    <i class="edit-dot" title="Changed since the preset was loaded"></i>
+                }
+            </span>
+        </div>
+
+        <div class="yt-meta-row">
+            <div class="yt-channel">
+                <span class="yt-avatar @statusKind" aria-hidden="true">
+                    @if (statusKind == "run")
+                    {
+                        <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M7.5 12h2.2l1.3-2.6 2 5.2 1.3-2.6h2.2" /></svg>
+                    }
+                    else if (statusKind == "bad")
+                    {
+                        <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M12 8.2v4.6" /><path d="M12 16h.01" /></svg>
+                    }
+                    else if (statusKind == "warn")
+                    {
+                        <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="M12 8v4l2.6 1.6" /></svg>
+                    }
+                    else if (statusKind == "good")
+                    {
+                        <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><path d="m8.8 12.2 2.2 2.2 4.4-4.6" /></svg>
+                    }
+                    else
+                    {
+                        <svg class="yt-ico" viewBox="0 0 24 24"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7z" /><circle cx="12" cy="12" r="2.2" /></svg>
+                    }
+                </span>
+
+                <div class="yt-channel-text">
+                    <span class="yt-handle" title="@handleText">@handleText</span>
+                    @if (!Idle)
+                    {
+                        <span class="yt-stats-line">
+                            <span class="yt-stat-item" title="@Format.Plural(View.Finished, "finished bee", "finished bees")">
+                                <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+                                @Format.Num(View.Finished) bees
+                            </span>
+                            @if (stats.HasData)
+                            {
+                                <span class="yt-sep" aria-hidden="true">·</span>
+                                <span class="yt-stat-item" title="Typical duration (median)">@Format.Ms(stats.Median)</span>
+                            }
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="yt-stats-line">
+                            <span>Click to edit spawning &amp; parameters</span>
+                        </span>
+                    }
+                </div>
+            </div>
+
+            <div class="yt-actions">
+                @if (!Idle && View.Failed > 0)
+                {
+                    <button type="button" class="yt-act-btn has-bad"
+                            @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Failed))" @onclick:stopPropagation="true"
+                            title="@Format.Plural(View.Failed, "failed bee", "failed bees")"
+                            aria-label="Open @Format.Plural(View.Failed, "failed bee", "failed bees")">
+                        <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5" /><path d="M12 16h.01" /></svg>
+                        <span>@Format.Num(View.Failed)</span>
+                    </button>
+                }
+                @if (!Idle && View.SlowBees > 0)
+                {
+                    <button type="button" class="yt-act-btn has-warn"
+                            @onclick="() => OnOpenFiltered.InvokeAsync((Index, DetailFilter.Slow))" @onclick:stopPropagation="true"
+                            title="@Format.Plural(View.SlowBees, "slow bee", "slow bees")"
+                            aria-label="Open @Format.Plural(View.SlowBees, "slow bee", "slow bees")">
+                        <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>
+                        <span>@Format.Num(View.SlowBees)</span>
+                    </button>
+                }
+                @if (!Idle && OnOpenLogs.HasDelegate)
+                {
+                    <button type="button" class="yt-act-btn"
+                            @onclick="() => OnOpenLogs.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                            title="Open logs for @Label"
+                            aria-label="Open logs for @Label">
+                        <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9" /><path d="M7.5 13h6" /><path d="M7.5 16h3.5" /></svg>
+                    </button>
+                }
+                @if (!ActionsDisabled && OnEdit.HasDelegate)
+                {
+                    <button type="button" class="yt-act-btn"
+                            @onclick="() => OnEdit.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                            title="Edit @Label" aria-label="Edit @Label">
+                        <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8.5" /><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    </button>
+                }
+                @if (!ActionsDisabled && OnDelete.HasDelegate)
+                {
+                    <button type="button" class="yt-act-btn danger"
+                            @onclick="() => OnDelete.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                            title="Remove @Label" aria-label="Remove @Label">
+                        <svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" /><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
 
 @code {
+    private const int StageMaxBars = 36;
+
     [Parameter, EditorRequired] public int Index { get; set; }
     [Parameter, EditorRequired] public string Label { get; set; } = "";
     [Parameter, EditorRequired] public ScenarioView View { get; set; } = default!;
@@ -145,10 +341,12 @@
     [Parameter] public string Shape { get; set; } = "";
     [Parameter] public IReadOnlyList<RunningBee>? Running { get; set; }
     [Parameter] public double Elapsed { get; set; }
+    [Parameter] public double DurationSeconds { get; set; }
     [Parameter] public bool IsLive { get; set; }
     /// <summary>Editor mode (brain 0024): the card shows the configured scenario, not run data.</summary>
     [Parameter] public bool Idle { get; set; }
     [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string? ScenarioType { get; set; }
     [Parameter] public bool Selectable { get; set; }
     [Parameter] public bool Selected { get; set; }
     /// <summary>Changed since the preset was loaded or last saved.</summary>
@@ -156,17 +354,59 @@
     [Parameter] public EventCallback<int> OnOpen { get; set; }
     /// <summary>A statistic of the card was clicked: open the popup pre-filtered (brain 0029).</summary>
     [Parameter] public EventCallback<(int Index, DetailFilter Filter)> OnOpenFiltered { get; set; }
+    /// <summary>Opens the Logs popup pre-filtered to this scenario entry (brain 0017).</summary>
+    [Parameter] public EventCallback<int> OnOpenLogs { get; set; }
+    /// <summary>Direct jump from the overview card into edit mode for this scenario.</summary>
+    [Parameter] public EventCallback<int> OnEdit { get; set; }
+    /// <summary>Quick delete button on the card in edit mode.</summary>
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public bool ActionsDisabled { get; set; }
 
-    /// <summary>The step most bees failed at and how many (brain 0056); null for a scenario without steps or without failures there. The card shows one quiet line for it.</summary>
+    /// <summary>The step most bees failed at and how many (brain 0056); null for a scenario without steps or without failures there.</summary>
     [Parameter] public (int Step, int Count)? MostFailedStep { get; set; }
     [Parameter] public string? StepName { get; set; }
     [Parameter] public EventCallback<(int Index, int Step)> OnOpenStep { get; set; }
 
     private readonly ScenarioStats stats = new();
+    private List<BeeBar> stageBars = [];
+    private double stageMaxMs;
+    private int lastFinished = -1;
+    private IReadOnlyList<BeeRecord>? lastBees;
+    private int runningBarsCount;
 
     protected override void OnParametersSet()
     {
-        if (!Idle) stats.Update(Bees, View.Finished);
+        if (Idle)
+        {
+            stageBars = [];
+            stageMaxMs = 0;
+            runningBarsCount = 0;
+            lastFinished = -1;
+            return;
+        }
+
+        stats.Update(Bees, View.Finished);
+        runningBarsCount = Math.Min(6, Running?.Count ?? (IsLive ? Math.Min(4, View.InFlight) : 0));
+
+        if (!ReferenceEquals(lastBees, Bees) || lastFinished != View.Finished)
+        {
+            lastBees = Bees;
+            lastFinished = View.Finished;
+            var finished = Math.Min(View.Finished, Bees.Count);
+            stageBars = BeeBars.Build(Bees, finished, BeeShow.All, out _, out _, maxBars: StageMaxBars);
+            stageMaxMs = 0;
+            for (var i = 0; i < stageBars.Count; i++)
+                if (stageBars[i].MaxMs > stageMaxMs) stageMaxMs = stageBars[i].MaxMs;
+        }
+    }
+
+    private Task OnCardKey(KeyboardEventArgs e) => e.Key is "Enter" or " " ? OnOpen.InvokeAsync(Index) : Task.CompletedTask;
+
+    private static string BarClass(in BeeBar b)
+    {
+        if (b.Failed > 0) return "bad";
+        if (b.Slow > 0) return "warn";
+        return "good";
     }
 
     private static (string Main, string Sub) SplitLabel(string label)

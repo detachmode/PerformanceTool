@@ -1,0 +1,33 @@
+{
+  "name": "Live plan",
+  "savedAt": "2026-11-22T23:54:53.629632+00:00",
+  "plan": {
+    "scenarios": [
+      {
+        "scenarioId": "script-checkout-union-steps",
+        "label": "Checkout (Union Steps)",
+        "ratePerMinute": 30,
+        "pattern": "Bursts",
+        "beesPerBurst": 28,
+        "burstsPerMinute": 37,
+        "maxInFlight": 200,
+        "parameters": {
+          "query": "honey",
+          "openCount": 4,
+          "addToCartPercent": 50,
+          "baseDelayMs": 1000,
+          "openFailPercent": 10,
+          "payRetryPercent": 35,
+          "payFailPercent": 15,
+          "minDelayMs": 10,
+          "maxDelayMs": 4800
+        }
+      }
+    ],
+    "durationSeconds": 600,
+    "maxConcurrency": 200,
+    "timeoutSeconds": 120,
+    "preflightScriptId": null,
+    "shutdownScriptId": null
+  }
+}

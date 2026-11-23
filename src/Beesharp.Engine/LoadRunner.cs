@@ -13,6 +13,8 @@ namespace Beesharp.Services;
 /// </summary>
 public sealed class LoadRunner(ScenarioCatalog catalog)
 {
+    public ScenarioCatalog Catalog => catalog;
+
     public async Task RunAsync(
         LoadPlan plan,
         Func<ExecutionResult, ValueTask> onResult,
@@ -21,7 +23,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         Func<ExecutionActivity, ValueTask>? onActivity = null,
         EnvironmentDefinition? environment = null,
         Action<LiveLogEvent>? onLiveLog = null,
-        RunData? data = null)
+        RunData? data = null,
+        Action<int, int, ScenarioContext>? onBeeContext = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
@@ -42,8 +45,10 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             MaxConnectionsPerServer = maxConnections,
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
         };
+        // Record HTTP calls automatically against the active bee's ScenarioContext (brain 0013, 0056).
+        using var recordingHandler = new RecordingHttpHandler(handler);
         // Per-execution timeouts are enforced with a CancellationToken so multi-step scenarios are bounded as a whole.
-        using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
         // Runtime data (brain 0052): the run bag and one entry bag per entry. A caller that wants to read them (RunManager) passes its own.
@@ -162,6 +167,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 var startedAt = clockRef.Elapsed.TotalSeconds;
                 var calls = new List<RecordedCall>();
                 var logs = new List<RecordedLog>();
+                var stepVisits = new List<RecordedStepVisit>();
                 var ctx = new ScenarioContext(
                     http,
                     env,
@@ -175,13 +181,16 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     },
                     runSeconds: () => clockRef.Elapsed.TotalSeconds,
                     runBag: data.RunBagFor(new DataWriter(DataWriterKind.Bee, entry, seq)),
-                    runStopped: () => ct.IsCancellationRequested);
+                    runStopped: () => ct.IsCancellationRequested,
+                    stepVisitSink: v => { lock (stepVisits) stepVisits.Add(v); });
+                onBeeContext?.Invoke(seq, entry, ctx);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;
                 var canceled = false;
                 try
                 {
-                    outcome = await scenario.ExecuteAsync(parameters, ctx, execCts.Token);
+                    using (ctx.Activate())
+                        outcome = await scenario.ExecuteAsync(parameters, ctx, execCts.Token);
                 }
                 catch (Exception) when (ct.IsCancellationRequested)
                 {
@@ -198,12 +207,16 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 {
                     var msg = ex.InnerException?.Message ?? ex.Message;
                     var formatted = ScenarioExceptionFormatter.Format(ex, scenario.GetType().Assembly);
-                    var errLog = new RecordedLog(clockRef.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", formatted);
+                    var errLog = new RecordedLog(clockRef.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", formatted, Step: Math.Max(0, ctx.CurrentStep), Rep: ctx.CurrentRep);
                     lock (logs) logs.Add(errLog);
                     onLiveLog?.Invoke(new LiveLogEvent(seq, entry, errLog));
                     outcome = ScenarioOutcome.Failed(msg);
                 }
                 sw.Stop();
+
+                var hasSteps = scenario.Steps.Count > 0;
+                var failedStep = !outcome.Success && hasSteps ? (ctx.CurrentStep >= 0 ? ctx.CurrentStep : 0) : -1;
+                var failedRep = !outcome.Success && hasSteps ? (ctx.CurrentStep >= 0 ? ctx.CurrentRep : 0) : -1;
 
                 var elapsed = outcome.Measured ?? sw.Elapsed;
                 await onResult(new ExecutionResult(
@@ -216,7 +229,10 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     outcome.FailureReason,
                     calls.Count > 0 ? calls : null,
                     logs.Count > 0 ? logs : null,
-                    canceled));
+                    canceled,
+                    failedStep,
+                    failedRep,
+                    stepVisits.Count > 0 ? stepVisits : null));
             }
 
             await Task.WhenAll(Enumerable.Range(0, plan.Scenarios.Count).Select(ScheduleEntry));

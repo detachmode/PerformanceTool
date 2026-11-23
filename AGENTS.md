@@ -18,7 +18,7 @@ to the index. Commit it in the same change as the code.
 ## Project
 Projects (brain 0015, 0054), all `net11.0`, solution `Beesharp.slnx`; namespaces are `Beesharp.*`. Old user scripts with `using PerformanceTool.*` still compile (`LegacyScriptNamespaces`):
 - `src/Beesharp.Core` — class library shared by client and server. Keep it free of ASP.NET and browser dependencies.
-  - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios. A new scenario is a parameter class
+  - `Services/Scenarios/`: `Scenario<TParameters>` and the built-in scenarios; step-machine scenarios use a C# 15 `union` of step records via `Scenario<TParameters, TStep>` or `Scenario.DefineSteps<TParameters, TStep>(...)` in scripts (`StepMachine.cs`, `StepUnionReflection`, `RecordingHttpHandler`, brain 0056). A new scenario is a parameter class
     plus a scenario class plus `AddScenario<T>()` in **both** `Program.cs` files (client and server). The editor is **generated** from the
     parameter class (`Services/Scenarios/Spec/ParameterSpec.cs`, client `Editor/Parameters/`), never hand-written per scenario (brain 0007).
   - `Services/Runtime/RunData.cs`: runtime data (brain 0052): the **run bag** (`ScenarioContext.RunBag`, `Data` in preflight/shutdown scripts) and one **entry bag** per entry (`ScenarioContext.State`), with last writer and run time per key; `DataWriter`/`RuntimeValue`/`RuntimeDataSnapshot` are also the REST wire format.

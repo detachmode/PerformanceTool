@@ -1,4 +1,5 @@
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Services.Storage;
 
@@ -22,7 +23,9 @@ public sealed record StoredBeeSummary(
     int? StatusCode,
     long Bytes,
     string? Error,
-    int SlowCalls);
+    int SlowCalls,
+    int FailedStep = -1,
+    int FailedRep = -1);
 
 public sealed record StoredRunData(
     string RunId,
@@ -32,7 +35,8 @@ public sealed record StoredRunData(
     LoadPlan Plan,
     IReadOnlyList<StoredBeeSummary> Bees,
     long TotalLogs,
-    string? Error);
+    string? Error,
+    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null);
 
 public sealed record RunExportResult(
     string FileName,
@@ -47,7 +51,7 @@ public interface IRunStorage : IAsyncDisposable
 {
     string ProviderName { get; }
 
-    void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan);
+    void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null);
     void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls);
     void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error);
 

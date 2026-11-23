@@ -209,4 +209,52 @@ public sealed class ScenarioStepsTests
         Assert.All(openFailed, b => Assert.Equal(2, StepLogic.FailedRep(s.Store.Detail(b.Sequence)?.Calls ?? [new FakeCall(0, "x", 0, 1, null, 0, false, 0, Step: 2, Rep: 2)])));
         source.Dispose();
     }
+
+    [Fact]
+    public void Dynamic_repeats_without_upfront_total_show_ordinal_and_actual_count()
+    {
+        var steps = new ScenarioSteps(["Log in", "Open product", "Pay"]);
+        Assert.Equal("Step 2 of 3 · Open product · 2nd time", steps.Position(1, 1));
+        Assert.Equal("Step 2 of 3 · Open product", steps.Position(1, 0));
+
+        var err = new ErrorDictionary();
+        var calls = new List<FakeCall>
+        {
+            new(0, "login", 0, 20, 200, ErrorDictionary.None, false, 0, Errors: err, Step: 0, Rep: 0),
+            new(1, "open-1", 20, 20, 200, ErrorDictionary.None, false, 0, Errors: err, Step: 1, Rep: 0),
+            new(2, "open-2", 40, 20, 200, ErrorDictionary.None, false, 0, Errors: err, Step: 1, Rep: 1),
+            new(3, "open-3", 60, 20, 500, err.Intern("404"), false, 0, Errors: err, Step: 1, Rep: 2),
+        };
+        var views = StepLogic.ForBee(steps, calls, failedStep: 1, failedRep: 2, error: "404");
+        Assert.False(views[1].HasKnownTotal);
+        Assert.True(views[1].Repeats);
+        Assert.Equal(3, views[1].Times);
+        Assert.Equal(StepState.Failed, views[1].State);
+        Assert.Equal(2, views[1].FailedRep);
+
+        // Live mode running bee without streamed calls uses CurrentStep / CurrentRep directly.
+        var liveRunning = new RunningBee(9, 0, 1.0, [], CurrentStep: 1, CurrentRep: 2);
+        Assert.Equal("Step 2 of 3 · Open product · 3rd time", StepLogic.PositionOf(steps, liveRunning, 500));
+        var runningViews = StepLogic.ForRunning(steps, liveRunning, 500);
+        Assert.Equal(StepState.Done, runningViews[0].State);
+        Assert.Equal(StepState.Current, runningViews[1].State);
+        Assert.Equal(2, runningViews[1].CurrentRep);
+        Assert.Equal(StepState.Pending, runningViews[2].State);
+
+        // Chronological step visits render each visit in execution order with its own data, plus unreached steps at the bottom.
+        var visits = new[]
+        {
+            new Beesharp.Services.RecordedStepVisit(0, 0, null),
+            new Beesharp.Services.RecordedStepVisit(1, 0, "{\"productId\":\"SKU-001\"}"),
+            new Beesharp.Services.RecordedStepVisit(1, 1, "{\"productId\":\"SKU-002\"}"),
+            new Beesharp.Services.RecordedStepVisit(1, 2, "{\"productId\":\"SKU-003\"}"),
+        };
+        var chrono = StepLogic.ForBee(steps, calls, failedStep: 1, failedRep: 2, error: "404", stepVisits: visits);
+        Assert.Equal(5, chrono.Count); // 4 visits + 1 unreached ("Pay")
+        Assert.Equal(["Log in", "Open product", "Open product", "Open product", "Pay"], chrono.Select(v => v.Name).ToArray());
+        Assert.Equal([StepState.Done, StepState.Done, StepState.Done, StepState.Failed, StepState.Pending], chrono.Select(v => v.State).ToArray());
+        Assert.Equal("productId: SKU-001", StepLogic.FormatStepData(chrono[1].RepData![0]));
+        Assert.Equal("productId: SKU-002", StepLogic.FormatStepData(chrono[2].RepData![0]));
+        Assert.Equal(3, chrono[3].VisitNumber);
+    }
 }

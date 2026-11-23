@@ -11,20 +11,35 @@ public sealed partial class AssistantToolbox
     private static readonly ChipLinkDto EditorLink = new("editor");
 
     [AssistantTool("list_scenarios")]
-    [Description("Lists the scenarios that can be put in a plan (built-in and custom script scenarios): id, name and what each does.")]
+    [Description("Lists the scenarios that can be put in a plan (built-in and custom script scenarios): id, name, declared steps (numbered from 1) and what each does.")]
     public object ListScenarios()
     {
         rec.Read($"Looked at the {catalog.All.Count} scenarios");
-        return catalog.All.Select(s => new { id = s.Id, name = s.Name, description = s.Description, isCustom = catalog.IsCustom(s.Id) }).ToList();
+        return catalog.All.Select(s => new
+        {
+            id = s.Id,
+            name = s.Name,
+            description = s.Description,
+            isCustom = catalog.IsCustom(s.Id),
+            steps = s.Steps.Count > 0 ? s.Steps.Select((st, i) => new { step = i + 1, name = st.Name }).ToList() : null,
+        }).ToList();
     }
 
     [AssistantTool("get_scenario")]
-    [Description("Describes one scenario: its description and the JSON Schema of its parameters (the settings of a scenario entry).")]
+    [Description("Describes one scenario: its description, declared steps (numbered from 1) and the JSON Schema of its parameters (the settings of a scenario entry).")]
     public object GetScenario([Description("Scenario id, e.g. http-get")] string scenarioId)
     {
         var s = catalog.Find(scenarioId) ?? throw new KeyNotFoundException($"There is no scenario '{scenarioId}'. Use list_scenarios.");
         rec.Read($"Looked at scenario {s.Name}");
-        return new { id = s.Id, name = s.Name, description = s.Description, isCustom = catalog.IsCustom(s.Id), parameters = s.Spec.ToJsonSchema() };
+        return new
+        {
+            id = s.Id,
+            name = s.Name,
+            description = s.Description,
+            isCustom = catalog.IsCustom(s.Id),
+            steps = s.Steps.Count > 0 ? s.Steps.Select((st, i) => new { step = i + 1, name = st.Name }).ToList() : null,
+            parameters = s.Spec.ToJsonSchema(),
+        };
     }
 
     [AssistantTool("get_plan")]

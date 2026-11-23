@@ -1,4 +1,5 @@
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Contracts;
 
@@ -14,7 +15,9 @@ public sealed record LiveBeeDto(
     int? StatusCode,
     long Bytes,
     string? Error,
-    int SlowCalls);
+    int SlowCalls,
+    int FailedStep = -1,
+    int FailedRep = -1);
 
 public sealed record LiveScenarioViewDto(
     int Starts,
@@ -23,9 +26,11 @@ public sealed record LiveScenarioViewDto(
     int Failed,
     int SlowBees,
     int SlowCalls,
-    int Dropped);
+    int Dropped,
+    IReadOnlyList<int>? FailedPerStep = null,
+    IReadOnlyList<int>? InFlightPerStep = null);
 
-public sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt);
+public sealed record LiveRunningBeeDto(int Sequence, int Entry, double StartedAt, int Step = -1, int Rep = 0, IReadOnlyList<RecordedStepVisit>? StepVisits = null);
 
 public sealed record LiveLogEntryDto(
     long Id,
@@ -36,7 +41,9 @@ public sealed record LiveLogEntryDto(
     DateTimeOffset Timestamp,
     string Level,
     string Message,
-    string? Exception);
+    string? Exception,
+    int Step = 0,
+    int Rep = 0);
 
 public sealed record LiveRunStatusDto(
     string RunId,
@@ -59,7 +66,8 @@ public sealed record LiveRunStatusDto(
     string? ShutdownScriptName = null,
     IReadOnlyList<string>? ShutdownLogs = null,
     string? ShutdownError = null,
-    long RuntimeVersion = 0);
+    long RuntimeVersion = 0,
+    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null);
 
 public sealed record StoredRunSummary(
     string RunId,
@@ -82,7 +90,10 @@ public sealed record StoredBeeDetail(
     long Bytes,
     string? Error,
     IReadOnlyList<RecordedCall> Calls,
-    IReadOnlyList<RecordedLog> Logs);
+    IReadOnlyList<RecordedLog> Logs,
+    int FailedStep = -1,
+    int FailedRep = -1,
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null);
 
 public sealed record StoredLogRow(
     long Id,

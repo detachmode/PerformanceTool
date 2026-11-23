@@ -15,11 +15,11 @@ public static class RemoteBeeDetail
             var c = detail.Calls[i];
             var slow = c.Error is null && c.DurationMs >= 1500;
             calls.Add(new FakeCall(i, c.Name, c.OffsetMs, c.DurationMs, c.StatusCode,
-                store.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: store.Errors));
+                store.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: store.Errors, Step: c.Step, Rep: c.Rep));
         }
         if (calls.Count == 0)
             calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,
-                store.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: false, TypicalMs: null, Errors: store.Errors));
+                store.Errors.Intern(detail.Error), Skipped: false, ThinkBeforeMs: 0, Slow: false, TypicalMs: null, Errors: store.Errors, Step: Math.Max(0, detail.FailedStep), Rep: Math.Max(0, detail.FailedRep)));
 
         var sequence = detail.Sequence;
         var scope = new Dictionary<string, string> { ["Bee"] = $"B{sequence + 1}" };
@@ -38,6 +38,9 @@ public static class RemoteBeeDetail
                 entry,
                 sequence,
                 scope,
-                l.CallIndex)).ToList());
+                l.CallIndex,
+                l.Step,
+                l.Rep)).ToList(),
+            detail.StepVisits);
     }
 }

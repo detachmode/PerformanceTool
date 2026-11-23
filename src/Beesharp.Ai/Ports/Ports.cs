@@ -54,12 +54,12 @@ public interface IRunPort
 
 public enum BeeOutcomeFilter { All, Ok, Slow, Failed }
 
-public sealed record BeeInfo(int Sequence, int Entry, double StartedAt, double DurationMs, int? StatusCode, long Bytes, string? Error, int SlowCalls)
+public sealed record BeeInfo(int Sequence, int Entry, double StartedAt, double DurationMs, int? StatusCode, long Bytes, string? Error, int SlowCalls, int FailedStep = -1, int FailedRep = -1)
 {
     public string Outcome => Error is not null ? "failed" : SlowCalls > 0 ? "slow" : "ok";
 }
 
-public sealed record BeeCallInfo(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error);
+public sealed record BeeCallInfo(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error, int Step = 0, int Rep = 0);
 public sealed record BeeLogInfo(double AtSeconds, string Level, string Message, string? Exception, int? CallIndex);
 public sealed record BeeDetailInfo(BeeInfo Bee, IReadOnlyList<BeeCallInfo> Calls, IReadOnlyList<BeeLogInfo> Logs);
 
@@ -87,7 +87,7 @@ public interface IRunHistoryPort
     Task<IReadOnlyList<RunInfo>> ListRunsAsync(int limit, CancellationToken ct);
     Task<RunInfo?> GetRunAsync(string runId, CancellationToken ct);
     /// <summary>Bees of a run, failed first, then slow, then ok, within each group by start time (brain 0028).</summary>
-    Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct);
+    Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct, int? failedStep = null);
     /// <summary>Bees by sequence (0-based); unknown sequences are left out.</summary>
     Task<IReadOnlyList<BeeInfo>> GetBeesAsync(string runId, IReadOnlyList<int> sequences, CancellationToken ct);
     Task<BeeDetailInfo?> GetBeeAsync(string runId, int sequence, CancellationToken ct);

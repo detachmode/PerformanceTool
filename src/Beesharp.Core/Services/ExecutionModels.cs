@@ -7,7 +7,9 @@ public sealed record RecordedCall(
     double DurationMs,
     int? StatusCode,
     long Bytes = 0,
-    string? Error = null);
+    string? Error = null,
+    int Step = 0,
+    int Rep = 0);
 
 /// <summary>One log statement emitted by a bee via <c>ctx.Logger</c> or <c>ctx.Log</c>.</summary>
 public sealed record RecordedLog(
@@ -15,7 +17,12 @@ public sealed record RecordedLog(
     string Level,
     string Message,
     string? Exception = null,
-    int? CallIndex = null);
+    int? CallIndex = null,
+    int Step = 0,
+    int Rep = 0);
+
+/// <summary>One visit to a declared step inside a bee, with the step record's captured fields as compact JSON (brain 0056).</summary>
+public sealed record RecordedStepVisit(int Step, int Rep, string? Data = null);
 
 /// <summary>One scenario execution (one bee's playthrough). <see cref="Entry"/> is the index into <see cref="LoadPlan.Scenarios"/>.</summary>
 public sealed record ExecutionResult(
@@ -28,7 +35,10 @@ public sealed record ExecutionResult(
     string? Error,
     IReadOnlyList<RecordedCall>? Calls = null,
     IReadOnlyList<RecordedLog>? Logs = null,
-    bool Canceled = false)
+    bool Canceled = false,
+    int FailedStep = -1,
+    int FailedRep = -1,
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null)
 {
     public bool Success => Error is null;
 

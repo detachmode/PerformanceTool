@@ -30,6 +30,65 @@ public sealed class ScriptScenarioStore
     private readonly Func<HttpMessageHandler>? innerHandlerFactory;
     private readonly Lock sync = new();
     private readonly Dictionary<string, StoredScript> scripts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ActiveTestRun> liveTestRuns = new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed class ActiveTestRun(string testRunId, IScenario scenario, CancellationTokenSource cts)
+    {
+        public string TestRunId { get; } = testRunId;
+        public IScenario Scenario { get; } = scenario;
+        public CancellationTokenSource Cts { get; } = cts;
+        public ConcurrentQueue<ScriptRecordedCall> Calls { get; } = new();
+        public ConcurrentQueue<LiveLogEntryDto> Logs { get; } = new();
+        public Stopwatch StartupSw { get; } = new();
+        public Stopwatch ExecSw { get; } = new();
+        public Stopwatch TeardownSw { get; } = new();
+        public ScenarioContext? ExecCtx;
+        public long NextLogId;
+        public volatile bool Running = true;
+        public bool Success;
+        public int? StatusCode;
+        public long Bytes;
+        public string? Error;
+        public int FailedStep = -1;
+        public int FailedRep = -1;
+        public DateTimeOffset? FinishedUtc;
+
+        public void AddLog(RecordedLog l)
+        {
+            var id = Interlocked.Increment(ref NextLogId);
+            Logs.Enqueue(new LiveLogEntryDto(id, 0, "Test", 0, l.AtSeconds, DateTimeOffset.UtcNow, l.Level, l.Message, l.Exception, l.Step, l.Rep));
+        }
+
+        public LiveTestRunStatusDto Snapshot()
+        {
+            var calls = Calls.ToArray();
+            var logs = Logs.ToArray();
+            var ctx = ExecCtx;
+            var hasSteps = Scenario.Steps.Count > 0;
+            var status = Running ? calls.LastOrDefault(c => c.StatusCode is not null)?.StatusCode : StatusCode;
+            var bytes = Running ? calls.Sum(c => c.Bytes) : Bytes;
+            return new LiveTestRunStatusDto(
+                TestRunId,
+                Running,
+                Success,
+                Scenario.Id,
+                Scenario.Name,
+                status,
+                bytes,
+                ExecSw.Elapsed.TotalMilliseconds,
+                StartupSw.Elapsed.TotalMilliseconds,
+                TeardownSw.Elapsed.TotalMilliseconds,
+                Error,
+                calls,
+                logs,
+                hasSteps ? Scenario.Steps : null,
+                ctx?.CurrentStep ?? -1,
+                ctx?.CurrentRep ?? 0,
+                FailedStep,
+                FailedRep,
+                ctx?.SnapshotStepVisits());
+        }
+    }
 
     /// <summary>References and imports of scenario scripts, on top of the common ones.</summary>
     private static readonly ScriptOptions ScenarioOptions = ScriptCompiler.CreateOptions(
@@ -222,8 +281,10 @@ public sealed class ScriptScenarioStore
 
         var calls = new ConcurrentQueue<ScriptRecordedCall>();
         var logs = new ConcurrentQueue<string>();
+        var stepVisits = new ConcurrentQueue<RecordedStepVisit>();
         using var inner = innerHandlerFactory?.Invoke() ?? new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) };
-        using var recordingHandler = new RecordingHttpHandler(inner, calls);
+        var execSw = new Stopwatch();
+        using var recordingHandler = new RecordingHttpHandler(inner, calls, execSw);
         using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
@@ -235,9 +296,9 @@ public sealed class ScriptScenarioStore
         execCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 300)));
 
         var startupSw = Stopwatch.StartNew();
-        var execSw = new Stopwatch();
         var teardownSw = new Stopwatch();
         ScenarioOutcome outcome;
+        ScenarioContext? execCtx = null;
 
         static string FormatSerilog(RecordedLog l)
         {
@@ -265,15 +326,17 @@ public sealed class ScriptScenarioStore
             started = true;
 
             execSw.Start();
-            var execCtx = new ScenarioContext(
+            execCtx = new ScenarioContext(
                 http,
                 envValues,
                 execCts.Token,
                 state,
                 structuredLogSink: l => logs.Enqueue(FormatSerilog(l)),
-                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error)),
-                runBag: runBag);
-            outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
+                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs)),
+                runBag: runBag,
+                stepVisitSink: stepVisits.Enqueue);
+            using (execCtx.Activate())
+                outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
             execSw.Stop();
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -315,6 +378,9 @@ public sealed class ScriptScenarioStore
         var recordedCalls = calls.ToArray();
         var statusCode = recordedCalls.LastOrDefault(c => c.StatusCode is not null)?.StatusCode ?? outcome.StatusCode;
         var totalBytes = outcome.Bytes > 0 ? outcome.Bytes : recordedCalls.Sum(c => c.Bytes);
+        var hasSteps = scenario.Steps.Count > 0;
+        var failedStep = !outcome.Success && hasSteps ? (execCtx is { CurrentStep: >= 0 } ? execCtx.CurrentStep : 0) : -1;
+        var failedRep = !outcome.Success && hasSteps ? (execCtx is { CurrentStep: >= 0 } ? execCtx.CurrentRep : 0) : -1;
 
         return new ScriptTestRunResult(
             outcome.Success,
@@ -327,7 +393,168 @@ public sealed class ScriptScenarioStore
             teardownSw.Elapsed.TotalMilliseconds,
             outcome.FailureReason,
             recordedCalls,
-            logs.ToArray());
+            logs.ToArray(),
+            hasSteps ? scenario.Steps : null,
+            failedStep,
+            failedRep,
+            stepVisits.IsEmpty ? null : stepVisits.ToArray());
+    }
+
+    /// <summary>Starts a single-bee test run asynchronously so the UI can poll live steps, calls and logs as they happen.</summary>
+    public async Task<LiveTestRunStatusDto> StartLiveTestRunAsync(
+        string scriptOrScenarioId,
+        JsonObject? parameters,
+        string? environmentName,
+        int timeoutSeconds = 30,
+        CancellationToken ct = default)
+    {
+        PruneOldTestRuns();
+
+        IScenario? scenario;
+        lock (sync)
+        {
+            scenario = scripts.TryGetValue(scriptOrScenarioId, out var stored)
+                ? stored.Scenario
+                : catalog.Find(scriptOrScenarioId);
+        }
+        if (scenario is null)
+            throw new KeyNotFoundException($"Script or scenario '{scriptOrScenarioId}' was not found.");
+
+        EnvironmentDefinition? envDef = null;
+        if (environments is not null && !string.IsNullOrWhiteSpace(environmentName))
+            envDef = await environments.GetAsync(environmentName, ct);
+        var envValues = envDef?.ToValues() ?? EnvironmentValues.None;
+
+        var rawParams = parameters is null ? scenario.Spec.DefaultJson() : (JsonObject)parameters.DeepClone();
+        var unknown = new List<string>();
+        var resolvedJson = Placeholders.ResolveJson(rawParams, envValues, unknown);
+        if (unknown.Count > 0)
+            throw new InvalidOperationException(
+                $"{(envValues.Name.Length == 0 ? "No environment is active" : $"Environment '{envValues.Name}' has no value")} for: {string.Join(", ", unknown.Select(k => "{{" + k + "}}"))}.");
+
+        var bound = scenario.Spec.Bind(resolvedJson);
+        scenario.Spec.ResolveSecrets(bound);
+        var validationErrors = scenario.Spec.Validate(resolvedJson);
+        if (validationErrors.Count > 0)
+            throw new ArgumentException(string.Join(" ", validationErrors));
+
+        var clampedTimeout = Math.Clamp(timeoutSeconds, 1, 300);
+        var execCts = new CancellationTokenSource();
+        execCts.CancelAfter(TimeSpan.FromSeconds(clampedTimeout));
+
+        var testRunId = $"test-{Guid.NewGuid():N}"[..17];
+        var run = new ActiveTestRun(testRunId, scenario, execCts);
+        liveTestRuns[testRunId] = run;
+
+        _ = Task.Run(async () =>
+        {
+            using var inner = innerHandlerFactory?.Invoke() ?? new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) };
+            using var recordingHandler = new RecordingHttpHandler(inner, run.Calls, run.ExecSw);
+            using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
+
+            var scratch = new RunData(1);
+            var state = scratch.EntryBagFor(0, new DataWriter(DataWriterKind.Bee, 0, 0));
+            var runBag = scratch.RunBagFor(new DataWriter(DataWriterKind.Bee, 0, 0));
+            ScenarioOutcome outcome;
+
+            await using var bgHost = new ScenarioBackgroundHost(execCts.Token);
+            var started = false;
+            try
+            {
+                run.StartupSw.Start();
+                var startupCtx = new ScenarioContext(http, envValues, execCts.Token, state, bgHost,
+                    structuredLogSink: run.AddLog, runBag: runBag);
+                await scenario.StartupAsync(bound, startupCtx, execCts.Token);
+                run.StartupSw.Stop();
+                started = true;
+
+                run.ExecSw.Start();
+                var execCtx = new ScenarioContext(
+                    http,
+                    envValues,
+                    execCts.Token,
+                    state,
+                    structuredLogSink: run.AddLog,
+                    callSink: c => run.Calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs)),
+                    runBag: runBag);
+                run.ExecCtx = execCtx;
+                using (execCtx.Activate())
+                    outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
+                run.ExecSw.Stop();
+            }
+            catch (OperationCanceledException)
+            {
+                run.StartupSw.Stop();
+                run.ExecSw.Stop();
+                outcome = ScenarioOutcome.Failed(execCts.IsCancellationRequested ? "Stopped or timed out" : $"Timeout after {clampedTimeout} s");
+            }
+            catch (Exception ex)
+            {
+                run.StartupSw.Stop();
+                run.ExecSw.Stop();
+                var msg = ex.InnerException?.Message ?? ex.Message;
+                var formatted = ScenarioExceptionFormatter.Format(ex, scenario.GetType().Assembly);
+                var ctxNow = run.ExecCtx;
+                run.AddLog(new RecordedLog(run.ExecSw.Elapsed.TotalSeconds, "Error", $"Unhandled exception: {msg}", formatted, Step: Math.Max(0, ctxNow?.CurrentStep ?? 0), Rep: ctxNow?.CurrentRep ?? 0));
+                outcome = ScenarioOutcome.Failed(msg);
+            }
+            finally
+            {
+                await bgHost.DisposeAsync();
+                if (started)
+                {
+                    run.TeardownSw.Start();
+                    try
+                    {
+                        var teardownCtx = new ScenarioContext(http, envValues, CancellationToken.None, state,
+                            structuredLogSink: run.AddLog, runBag: runBag);
+                        await scenario.TeardownAsync(bound, teardownCtx, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        var formatted = ScenarioExceptionFormatter.Format(ex, scenario.GetType().Assembly);
+                        run.AddLog(new RecordedLog(run.TeardownSw.Elapsed.TotalSeconds, "Error", $"Teardown error: {ex.InnerException?.Message ?? ex.Message}", formatted));
+                    }
+                    run.TeardownSw.Stop();
+                }
+            }
+
+            var recordedCalls = run.Calls.ToArray();
+            var hasSteps = scenario.Steps.Count > 0;
+            var finalCtx = run.ExecCtx;
+            run.Success = outcome.Success;
+            run.StatusCode = recordedCalls.LastOrDefault(c => c.StatusCode is not null)?.StatusCode ?? outcome.StatusCode;
+            run.Bytes = outcome.Bytes > 0 ? outcome.Bytes : recordedCalls.Sum(c => c.Bytes);
+            run.Error = outcome.FailureReason;
+            run.FailedStep = !outcome.Success && hasSteps ? (finalCtx is { CurrentStep: >= 0 } ? finalCtx.CurrentStep : 0) : -1;
+            run.FailedRep = !outcome.Success && hasSteps ? (finalCtx is { CurrentStep: >= 0 } ? finalCtx.CurrentRep : 0) : -1;
+            run.FinishedUtc = DateTimeOffset.UtcNow;
+            run.Running = false;
+            execCts.Dispose();
+        }, CancellationToken.None);
+
+        return run.Snapshot();
+    }
+
+    public LiveTestRunStatusDto? GetLiveTestRun(string testRunId) =>
+        liveTestRuns.TryGetValue(testRunId, out var run) ? run.Snapshot() : null;
+
+    public bool StopLiveTestRun(string testRunId)
+    {
+        if (!liveTestRuns.TryGetValue(testRunId, out var run)) return false;
+        try { run.Cts.Cancel(); } catch (ObjectDisposedException) { }
+        return true;
+    }
+
+    private void PruneOldTestRuns()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-5);
+        foreach (var kv in liveTestRuns)
+        {
+            if (kv.Value.FinishedUtc is { } done && done < cutoff)
+                liveTestRuns.TryRemove(kv.Key, out _);
+        }
     }
 
     private static ScriptScenarioSummary ToSummary(StoredScript s) => new(
@@ -338,12 +565,16 @@ public sealed class ScriptScenarioStore
         s.Scenario.Description,
         s.Code,
         s.UpdatedUtc,
-        s.Scenario.Spec.ToJsonSchema());
+        s.Scenario.Spec.ToJsonSchema(),
+        s.Scenario.Steps.Count > 0 ? s.Scenario.Steps : null);
 
-    private sealed class RecordingHttpHandler(HttpMessageHandler inner, ConcurrentQueue<ScriptRecordedCall> calls) : DelegatingHandler(inner)
+    private sealed class RecordingHttpHandler(HttpMessageHandler inner, ConcurrentQueue<ScriptRecordedCall> calls, Stopwatch execSw) : DelegatingHandler(inner)
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            var step = Math.Max(0, ScenarioContext.Current?.CurrentStep ?? 0);
+            var rep = ScenarioContext.Current?.CurrentRep ?? 0;
+            var offsetMs = execSw.Elapsed.TotalMilliseconds;
             var sw = Stopwatch.StartNew();
             try
             {
@@ -355,7 +586,11 @@ public sealed class ScriptScenarioStore
                     request.RequestUri?.ToString() ?? "",
                     (int)response.StatusCode,
                     sw.Elapsed.TotalMilliseconds,
-                    bytes));
+                    bytes,
+                    null,
+                    step,
+                    rep,
+                    offsetMs));
                 return response;
             }
             catch (Exception ex)
@@ -367,7 +602,10 @@ public sealed class ScriptScenarioStore
                     null,
                     sw.Elapsed.TotalMilliseconds,
                     0,
-                    ex.Message));
+                    ex.Message,
+                    step,
+                    rep,
+                    offsetMs));
                 throw;
             }
         }

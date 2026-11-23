@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Contracts;
 
@@ -11,7 +13,8 @@ public sealed record ScenarioInfoDto(
     string Description,
     bool IsCustom,
     string? ScriptId,
-    JsonObject Parameters);
+    JsonObject Parameters,
+    IReadOnlyList<StepInfo>? Steps = null);
 
 public sealed record ScriptDiagnosticDto(string Id, string Severity, int Line, int Column, string Message);
 
@@ -23,7 +26,8 @@ public sealed record ScriptScenarioSummary(
     string Description,
     string Code,
     DateTimeOffset UpdatedUtc,
-    JsonObject Parameters);
+    JsonObject Parameters,
+    IReadOnlyList<StepInfo>? Steps = null);
 
 public sealed record ScriptCompileResult(
     bool Success,
@@ -31,7 +35,7 @@ public sealed record ScriptCompileResult(
     IReadOnlyList<ScriptDiagnosticDto> Diagnostics,
     string? Error = null);
 
-public sealed record ScriptRecordedCall(string Method, string Url, int? StatusCode, double DurationMs, long Bytes, string? Error = null);
+public sealed record ScriptRecordedCall(string Method, string Url, int? StatusCode, double DurationMs, long Bytes, string? Error = null, int Step = 0, int Rep = 0, double OffsetMs = 0);
 
 public sealed record ScriptTestRunResult(
     bool Success,
@@ -44,7 +48,33 @@ public sealed record ScriptTestRunResult(
     double TeardownDurationMs,
     string? Error,
     IReadOnlyList<ScriptRecordedCall> Calls,
-    IReadOnlyList<string> Logs);
+    IReadOnlyList<string> Logs,
+    IReadOnlyList<StepInfo>? Steps = null,
+    int FailedStep = -1,
+    int FailedRep = -1,
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null);
+
+/// <summary>Live snapshot of a single-bee script test run polled by the Script Editor Try popup.</summary>
+public sealed record LiveTestRunStatusDto(
+    string TestRunId,
+    bool Running,
+    bool Success,
+    string ScenarioId,
+    string ScenarioName,
+    int? StatusCode,
+    long Bytes,
+    double DurationMs,
+    double StartupDurationMs,
+    double TeardownDurationMs,
+    string? Error,
+    IReadOnlyList<ScriptRecordedCall> Calls,
+    IReadOnlyList<LiveLogEntryDto> Logs,
+    IReadOnlyList<StepInfo>? Steps = null,
+    int CurrentStep = -1,
+    int CurrentRep = 0,
+    int FailedStep = -1,
+    int FailedRep = -1,
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null);
 
 public sealed record PreflightScriptSummary(
     string ScriptId,

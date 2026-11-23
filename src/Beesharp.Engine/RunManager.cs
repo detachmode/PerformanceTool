@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Beesharp.Services.Environments;
 using Beesharp.Services.Runtime;
+using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
 
 namespace Beesharp.Services;
@@ -33,8 +34,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private int[] slowBees = [];
     private int[] slowCalls = [];
     private int[] dropped = [];
+    private IReadOnlyList<StepInfo>[] runSteps = [];
+    private int[][] failedPerStep = [];
     private readonly List<LiveBeeDto> bees = [];
     private readonly Dictionary<int, LiveRunningBeeDto> activeBees = [];
+    private readonly Dictionary<int, ScenarioContext> activeBeeContexts = [];
     private readonly Queue<LiveLogEntryDto> liveLogs = new();
     private long nextLiveLogId;
     private const int MaxLiveLogs = 5000;
@@ -94,13 +98,13 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
     }
 
-    private void AppendLiveLog(int sequence, int entry, double atSeconds, string level, string message, string? exception = null, string? programName = null)
+    private void AppendLiveLog(int sequence, int entry, double atSeconds, string level, string message, string? exception = null, string? programName = null, int step = 0, int rep = 0)
     {
         lock (sync)
         {
             var id = ++nextLiveLogId;
             var name = sequence >= 0 ? $"B{sequence + 1}" : entry >= 0 ? $"Startup #{entry + 1}" : programName ?? "Preflight";
-            liveLogs.Enqueue(new LiveLogEntryDto(id, sequence, name, entry, atSeconds, DateTimeOffset.UtcNow, level, message, exception));
+            liveLogs.Enqueue(new LiveLogEntryDto(id, sequence, name, entry, atSeconds, DateTimeOffset.UtcNow, level, message, exception, step, rep));
             while (liveLogs.Count > MaxLiveLogs)
                 liveLogs.Dequeue();
         }
@@ -152,8 +156,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             slowBees = new int[count];
             slowCalls = new int[count];
             dropped = new int[count];
+            runSteps = BuildRunSteps(data.Plan, data.Steps);
+            failedPerStep = runSteps.Select(s => new int[s.Count]).ToArray();
             bees.Clear();
             activeBees.Clear();
+            activeBeeContexts.Clear();
             liveLogs.Clear();
             lastSequence = -1;
             totalLogs = data.TotalLogs;
@@ -171,13 +178,18 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
 
             foreach (var a in data.Bees)
             {
-                bees.Add(new LiveBeeDto(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, a.SlowCalls));
+                bees.Add(new LiveBeeDto(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, a.SlowCalls, a.FailedStep, a.FailedRep));
                 if (a.Sequence > lastSequence) lastSequence = a.Sequence;
                 if (a.Entry >= 0 && a.Entry < count)
                 {
                     starts[a.Entry]++;
                     finished[a.Entry]++;
-                    if (a.Error is not null) failed[a.Entry]++;
+                    if (a.Error is not null)
+                    {
+                        failed[a.Entry]++;
+                        if (a.FailedStep >= 0 && a.FailedStep < failedPerStep[a.Entry].Length)
+                            failedPerStep[a.Entry][a.FailedStep]++;
+                    }
                     if (a.SlowCalls > 0)
                     {
                         slowBees[a.Entry]++;
@@ -200,8 +212,34 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         lock (sync)
         {
             var elapsed = state == "Running" ? clock.Elapsed.TotalSeconds : finalElapsed;
+            var inFlightByStep = runSteps.Select(s => s.Count > 0 ? new int[s.Count] : null).ToArray();
+            LiveRunningBeeDto[]? runningSnapshot = null;
+            if (activeBees.Count > 0)
+            {
+                var list = new List<LiveRunningBeeDto>(activeBees.Count);
+                foreach (var b in activeBees.Values.OrderBy(x => x.Sequence))
+                {
+                    var step = -1;
+                    var rep = 0;
+                    IReadOnlyList<RecordedStepVisit>? stepVisits = null;
+                    if (activeBeeContexts.TryGetValue(b.Sequence, out var bctx))
+                    {
+                        step = bctx.CurrentStep;
+                        rep = bctx.CurrentRep;
+                        stepVisits = bctx.SnapshotStepVisits();
+                    }
+                    if (b.Entry >= 0 && b.Entry < inFlightByStep.Length && inFlightByStep[b.Entry] is { } arr && step >= 0 && step < arr.Length)
+                        arr[step]++;
+                    list.Add(b with { Step = step, Rep = rep, StepVisits = stepVisits });
+                }
+                runningSnapshot = list.ToArray();
+            }
+
             var views = new LiveScenarioViewDto[activePlan.Scenarios.Count];
             for (var i = 0; i < views.Length; i++)
+            {
+                var failedSteps = i < failedPerStep.Length && failedPerStep[i].Length > 0 ? failedPerStep[i].ToArray() : null;
+                var activeSteps = i < inFlightByStep.Length ? inFlightByStep[i] : null;
                 views[i] = new LiveScenarioViewDto(
                     i < starts.Length ? starts[i] : 0,
                     i < finished.Length ? finished[i] : 0,
@@ -209,7 +247,10 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     i < failed.Length ? failed[i] : 0,
                     i < slowBees.Length ? slowBees[i] : 0,
                     i < slowCalls.Length ? slowCalls[i] : 0,
-                    i < dropped.Length ? dropped[i] : 0);
+                    i < dropped.Length ? dropped[i] : 0,
+                    failedSteps,
+                    activeSteps);
+            }
 
             var delta = new List<LiveBeeDto>();
             if (bees.Count > 0)
@@ -237,12 +278,13 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 preflightScriptName,
                 preflightLogs.Count > 0 ? preflightLogs.ToArray() : null,
                 preflightError,
-                activeBees.Count > 0 ? activeBees.Values.OrderBy(b => b.Sequence).ToArray() : null,
+                runningSnapshot,
                 shutdownState,
                 shutdownScriptName,
                 shutdownLogs.Count > 0 ? shutdownLogs.ToArray() : null,
                 shutdownError,
-                runData?.Version ?? (storedRuntime is null ? 0 : 1));
+                runData?.Version ?? (storedRuntime is null ? 0 : 1),
+                runSteps.Any(s => s.Count > 0) ? runSteps : null);
         }
     }
 
@@ -296,8 +338,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             slowBees = new int[cloned.Scenarios.Count];
             slowCalls = new int[cloned.Scenarios.Count];
             dropped = new int[cloned.Scenarios.Count];
+            runSteps = BuildRunSteps(cloned, null);
+            failedPerStep = runSteps.Select(s => new int[s.Count]).ToArray();
             bees.Clear();
             activeBees.Clear();
+            activeBeeContexts.Clear();
             liveLogs.Clear();
             lastSequence = -1;
             totalLogs = 0;
@@ -356,7 +401,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     }
                 }
 
-                storage.EnqueueRunStarted(currentRunId, DateTimeOffset.UtcNow, cloned);
+                storage.EnqueueRunStarted(currentRunId, DateTimeOffset.UtcNow, cloned, runSteps);
                 runPersisted = true;
 
                 await runner.RunAsync(
@@ -373,14 +418,21 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                             res.StatusCode,
                             res.Bytes,
                             res.Error,
-                            beeSlowCalls);
+                            beeSlowCalls,
+                            res.FailedStep,
+                            res.FailedRep);
 
                         lock (sync)
                         {
                             if (res.Entry >= 0 && res.Entry < finished.Length)
                             {
                                 finished[res.Entry]++;
-                                if (res.Error is not null) failed[res.Entry]++;
+                                if (res.Error is not null)
+                                {
+                                    failed[res.Entry]++;
+                                    if (res.FailedStep >= 0 && res.FailedStep < failedPerStep[res.Entry].Length)
+                                        failedPerStep[res.Entry][res.FailedStep]++;
+                                }
                                 if (beeSlowCalls > 0)
                                 {
                                     slowBees[res.Entry]++;
@@ -417,14 +469,19 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                                 else
                                 {
                                     activeBees.Remove(act.Sequence);
+                                    activeBeeContexts.Remove(act.Sequence);
                                 }
                             }
                         }
                         return ValueTask.CompletedTask;
                     },
                     environment: env,
-                    onLiveLog: ev => AppendLiveLog(ev.Sequence, ev.Entry, ev.Log.AtSeconds, ev.Log.Level, ev.Log.Message, ev.Log.Exception),
-                    data: data);
+                    onLiveLog: ev => AppendLiveLog(ev.Sequence, ev.Entry, ev.Log.AtSeconds, ev.Log.Level, ev.Log.Message, ev.Log.Exception, step: ev.Log.Step, rep: ev.Log.Rep),
+                    data: data,
+                    onBeeContext: (seq, _, bctx) =>
+                    {
+                        lock (sync) activeBeeContexts[seq] = bctx;
+                    });
             }
             catch (OperationCanceledException)
             {
@@ -444,6 +501,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     clock.Stop();
                     for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
                     activeBees.Clear();
+                    activeBeeContexts.Clear();
                     runError = err;
                     if (shutdownMeta is not null)
                     {
@@ -533,6 +591,19 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
         await storage.FlushAsync();
         return GetCurrent();
+    }
+
+    private IReadOnlyList<StepInfo>[] BuildRunSteps(LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? stored)
+    {
+        var result = new IReadOnlyList<StepInfo>[plan.Scenarios.Count];
+        for (var i = 0; i < result.Length; i++)
+        {
+            if (stored is not null && i < stored.Count)
+                result[i] = stored[i];
+            else
+                result[i] = runner.Catalog.Find(plan.Scenarios[i].ScenarioId)?.Steps ?? [];
+        }
+        return result;
     }
 
     private static int CountSlowCalls(ExecutionResult res)

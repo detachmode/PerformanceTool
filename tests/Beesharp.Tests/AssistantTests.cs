@@ -83,9 +83,9 @@ internal sealed class FakeHistoryPort : IRunHistoryPort
         new EntryFigures(1, "Checkout", 2, 2, 0, 1, 0, 0, 0, 30),
     ]));
 
-    public Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct)
+    public Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct, int? failedStep = null)
     {
-        var items = Bees.Where(b => (entry is null || b.Entry == entry) && (outcome == BeeOutcomeFilter.All || (outcome == BeeOutcomeFilter.Failed && b.Outcome == "failed") || (outcome == BeeOutcomeFilter.Slow && b.Outcome == "slow") || (outcome == BeeOutcomeFilter.Ok && b.Outcome == "ok"))).ToList();
+        var items = Bees.Where(b => (entry is null || b.Entry == entry) && (failedStep is null || (b.Outcome == "failed" && b.FailedStep == failedStep)) && (outcome == BeeOutcomeFilter.All || (outcome == BeeOutcomeFilter.Failed && b.Outcome == "failed") || (outcome == BeeOutcomeFilter.Slow && b.Outcome == "slow") || (outcome == BeeOutcomeFilter.Ok && b.Outcome == "ok"))).ToList();
         return Task.FromResult(new BeePage(items.Count, items.Skip(offset).Take(limit).ToList()));
     }
 

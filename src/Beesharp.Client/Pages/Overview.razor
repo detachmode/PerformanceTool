@@ -10,7 +10,6 @@
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
 @inject ScenarioCatalog Catalog
-@inject CustomScriptsPopupState ScriptsPopup
 @inject ScriptApiClient ScriptApi
 @inject LogsPopupState Logs
 @inject NavigationManager Nav
@@ -455,7 +454,7 @@
                 {
                     <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Bees="NoBees" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
                                   Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="false"
-                                  Edited="Sim.IsEntryChanged(c)" OnOpen="Select" />
+                                  Edited="Sim.IsEntryChanged(c)" OnOpen="Select" OnDelete="RemoveAt" ActionsDisabled="locked" />
                 }
             }
 
@@ -541,9 +540,12 @@
             {
                 var idx = i;
                 <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
-                              Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" IsLive="s.Running && !s.Paused"
+                              Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" IsLive="s.Running && !s.Paused"
+                              ScenarioType="@(Catalog.Find(s.Plan.Scenarios[idx].ScenarioId)?.Name)"
                               OnOpen="i => { open = i; openFilter = DetailFilter.All; openStep = null; }"
                               OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; openStep = null; }"
+                              OnOpenLogs="i => Logs.Show(entry: i)"
+                              OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
                               MostFailedStep="StepLogic.MostFailed(s.Store.FailedPerStep(idx))" StepName="@(StepLogic.MostFailed(s.Store.FailedPerStep(idx)) is { } mfs ? s.StepsOf(idx).Name(mfs.Step) : null)"
                               OnOpenStep="t => { open = t.Index; openFilter = DetailFilter.All; openStep = t.Step; }" />
             }
@@ -604,9 +606,6 @@
     protected override void OnInitialized()
     {
         wasRunning = Sim.IsRunning;
-        var rel = Nav.ToBaseRelativePath(Nav.Uri).Trim('/');
-        if (rel.Equals("editor", StringComparison.OrdinalIgnoreCase) && !Sim.IsRunning)
-            editMode = true;
 
         Sim.Changed += OnChanged;
         DataMode.Changed += OnChanged;
@@ -805,10 +804,21 @@
         addOpen = false;
     }
 
-    private void Remove()
+    private void EditEntry(int idx)
     {
-        Sim.RemoveEntry(selected);
-        selected = -1;
+        if (Sim.IsRunning || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory)) return;
+        EnterEditMode();
+        if (idx >= 0 && idx < Sim.Plan.Scenarios.Count) Select(idx);
+    }
+
+    private void Remove() => RemoveAt(selected);
+
+    private void RemoveAt(int idx)
+    {
+        if (Sim.IsRunning || idx < 0 || idx >= Sim.Plan.Scenarios.Count) return;
+        Sim.RemoveEntry(idx);
+        if (selected == idx) selected = -1;
+        else if (selected > idx) selected--;
         ResetErrors();
     }
 

@@ -18,7 +18,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
             if (list is null) return;
             var customs = list
                 .Where(s => s.IsCustom)
-                .Select(s => (IScenario)new RemoteSchemaScenario(s.Id, s.Name, s.Description, s.Parameters))
+                .Select(s => (IScenario)new RemoteSchemaScenario(s.Id, s.Name, s.Description, s.Parameters, s.Steps))
                 .ToList();
             catalog.ReplaceCustomScenarios(customs);
         }
@@ -37,7 +37,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         var result = await resp.Content.ReadFromJsonAsync<ScriptCompileResult>(JsonOpts, ct)
             ?? new ScriptCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
         if (result.Success && result.Script is { } s)
-            catalog.RegisterCustom(new RemoteSchemaScenario(s.ScenarioId, s.ScenarioName, s.Description, s.Parameters));
+            catalog.RegisterCustom(new RemoteSchemaScenario(s.ScenarioId, s.ScenarioName, s.Description, s.Parameters, s.Steps));
         return result;
     }
 
@@ -67,6 +67,35 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         }
         return await resp.Content.ReadFromJsonAsync<ScriptTestRunResult>(JsonOpts, ct)
             ?? throw new InvalidOperationException("Empty response from test-run endpoint.");
+    }
+
+    public async Task<LiveTestRunStatusDto> StartLiveTestRunAsync(string scriptId, JsonObject? parameters, string? environmentName, int timeoutSeconds = 30, CancellationToken ct = default)
+    {
+        var resp = await http.PostAsJsonAsync($"api/scripts/{Uri.EscapeDataString(scriptId)}/test-run/start",
+            new { parameters, environmentName, timeoutSeconds }, JsonOpts, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var errText = await resp.Content.ReadAsStringAsync(ct);
+            try
+            {
+                var node = JsonNode.Parse(errText) as JsonObject;
+                if (node?["error"]?.GetValue<string>() is { Length: > 0 } msg)
+                    throw new InvalidOperationException(msg);
+            }
+            catch (JsonException) { }
+            throw new InvalidOperationException($"Test run failed (HTTP {(int)resp.StatusCode}): {errText}");
+        }
+        return await resp.Content.ReadFromJsonAsync<LiveTestRunStatusDto>(JsonOpts, ct)
+            ?? throw new InvalidOperationException("Empty response from live test-run endpoint.");
+    }
+
+    public async Task<LiveTestRunStatusDto?> GetLiveTestRunAsync(string testRunId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<LiveTestRunStatusDto>($"api/scripts/test-runs/{Uri.EscapeDataString(testRunId)}", JsonOpts, ct);
+
+    public async Task StopLiveTestRunAsync(string testRunId, CancellationToken ct = default)
+    {
+        try { await http.PostAsync($"api/scripts/test-runs/{Uri.EscapeDataString(testRunId)}/stop", null, ct); }
+        catch { }
     }
 
     // Preflights and shutdown programs are the same kind of script (brain 0052): the same calls, on api/preflights or api/shutdowns.

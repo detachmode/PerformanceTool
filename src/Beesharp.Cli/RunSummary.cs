@@ -4,9 +4,12 @@ using Beesharp.Services;
 
 namespace Beesharp.Cli;
 
+public sealed record StepFailureCount(string Step, int Count);
+
 /// <summary>One scenario entry in the summary. <see cref="Failed"/> includes the canceled bees (brain 0053). Times are milliseconds of the bees that did not fail; null when there were none.</summary>
 public sealed record EntrySummary(
-    int Number, string Label, int Started, int Finished, int Failed, int Canceled, int Slow, int Dropped, double? TypicalMs, double? Slowest5PercentMs);
+    int Number, string Label, int Started, int Finished, int Failed, int Canceled, int Slow, int Dropped, double? TypicalMs, double? Slowest5PercentMs,
+    IReadOnlyList<StepFailureCount>? FailedPerStep = null);
 
 public sealed record ErrorCount(string Error, int Count);
 
@@ -58,6 +61,16 @@ public sealed record RunSummary(
             var entryBees = bees.Where(b => b.Entry == i).ToList();
             var times = entryBees.Where(b => b.Error is null).Select(b => b.DurationMs).Order().ToArray();
             var config = status.Plan.Scenarios[i];
+            IReadOnlyList<StepFailureCount>? failedSteps = null;
+            if (status.Steps is not null && i < status.Steps.Count && status.Steps[i].Count > 0 && view.FailedPerStep is { Count: > 0 })
+            {
+                var stepList = status.Steps[i];
+                var counts = new List<StepFailureCount>();
+                for (var s = 0; s < Math.Min(stepList.Count, view.FailedPerStep.Count); s++)
+                    if (view.FailedPerStep[s] > 0)
+                        counts.Add(new StepFailureCount(stepList[s].Name, view.FailedPerStep[s]));
+                if (counts.Count > 0) failedSteps = counts;
+            }
             entries.Add(new EntrySummary(
                 i + 1,
                 string.IsNullOrWhiteSpace(config.Label) ? config.ScenarioId : config.Label,
@@ -65,7 +78,8 @@ public sealed record RunSummary(
                 entryBees.Count(b => ExecutionResult.IsCanceledError(b.Error)),
                 view.SlowBees, view.Dropped,
                 times.Length == 0 ? null : Percentile(times, 0.5),
-                times.Length == 0 ? null : Percentile(times, 0.95)));
+                times.Length == 0 ? null : Percentile(times, 0.95),
+                failedSteps));
         }
 
         var errors = bees.Where(b => b.Error is not null)
@@ -113,6 +127,8 @@ public sealed record RunSummary(
         {
             sb.AppendLine($"  {Label(e).PadRight(label)}  {e.Finished,8}  {e.Failed,6}  {e.Slow,5}  {Ms(e.TypicalMs),9}  {Ms(e.Slowest5PercentMs),10}" +
                 (e.Dropped > 0 ? $"   ({e.Dropped} dropped: too many in flight)" : ""));
+            if (e.FailedPerStep is { Count: > 0 })
+                sb.AppendLine($"    failed at {string.Join(", ", e.FailedPerStep.Select(f => $"{f.Step}: {f.Count}"))}");
         }
         sb.AppendLine($"  {"All".PadRight(label)}  {Bees,8}  {FailedBees,6}  {SlowBees,5}");
         if (CanceledBees > 0) sb.AppendLine($"  {CanceledBees} of the failed bees were canceled when the run stopped.");

@@ -20,13 +20,70 @@
 
 <body>
     <div id="app">
-        <div class="boot">
+        <div class="boot" id="boot-splash">
             <img src="favicon.svg" width="56" height="56" alt="Beesharp" class="boot-icon" />
             <div class="boot-title">Bee<span>sharp</span></div>
-            <div class="boot-sub">Loading…</div>
+            <div class="boot-sub" id="boot-status">Loading…</div>
+            <div class="boot-err" id="boot-error" hidden role="alert">
+                <div class="boot-err-msg" id="boot-error-msg"></div>
+                <div class="boot-err-hint">If the server was rebuilt, restart it and hard-reload. Check the browser console for details.</div>
+                <button type="button" class="btn primary small" onclick="location.reload()">Reload</button>
+            </div>
         </div>
     </div>
+    <div id="blazor-error-ui" role="alert">
+        <span>An unhandled error occurred.</span>
+        <a href="" class="reload" onclick="location.reload(); return false;">Reload</a>
+        <button type="button" class="dismiss" aria-label="Dismiss" onclick="document.getElementById('blazor-error-ui').style.display='none'">✕</button>
+    </div>
     <script>
+        (() => {
+            // Surface boot failures (404 framework assets, stale server manifest, WASM errors) instead of hanging on "Loading…".
+            let bootFailed = false;
+            const showBootError = (msg, isTimeout) => {
+                const splash = document.getElementById('boot-splash');
+                if (!splash) return; // Blazor already mounted.
+                if (bootFailed && isTimeout) return;
+                if (!isTimeout) bootFailed = true;
+                splash.classList.add('failed');
+                const status = document.getElementById('boot-status');
+                const box = document.getElementById('boot-error');
+                const text = document.getElementById('boot-error-msg');
+                if (status) status.textContent = isTimeout ? 'Taking longer than expected…' : 'Failed to load';
+                if (text) text.textContent = msg || 'Unknown error while starting the app.';
+                if (box) box.hidden = false;
+            };
+            window.__beesharpBootError = showBootError;
+
+            const onError = e => {
+                if (!document.getElementById('boot-splash')) { cleanup(); return; }
+                const target = e.target;
+                if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+                    const url = target.src || target.href || 'required asset';
+                    showBootError(`Failed to load ${url}`);
+                    return;
+                }
+                if (e.message) showBootError(e.message);
+            };
+            const onRejection = e => {
+                if (!document.getElementById('boot-splash')) { cleanup(); return; }
+                const r = e.reason;
+                const msg = r instanceof Error ? r.message : (typeof r === 'string' ? r : String(r || 'Unhandled promise rejection'));
+                showBootError(msg);
+            };
+            const timer = setTimeout(() => {
+                if (!document.getElementById('boot-splash')) { cleanup(); return; }
+                showBootError('The app has not finished loading after 15 seconds.', true);
+            }, 15000);
+            const cleanup = () => {
+                window.removeEventListener('error', onError, true);
+                window.removeEventListener('unhandledrejection', onRejection);
+                clearTimeout(timer);
+            };
+            window.addEventListener('error', onError, true);
+            window.addEventListener('unhandledrejection', onRejection);
+        })();
+
         (() => {
             // 1. Blur text/number inputs when touching a range slider so the mobile keyboard stays closed.
             document.addEventListener('pointerdown', e => {
@@ -74,7 +131,7 @@
             document.addEventListener('touchcancel', finishTouch, { passive: true, capture: true });
         })();
     </script>
-    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js" onerror="window.__beesharpBootError && window.__beesharpBootError('Failed to load _framework/blazor.webassembly.js')"></script>
 </body>
 
 </html>

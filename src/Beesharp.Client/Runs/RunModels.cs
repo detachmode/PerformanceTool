@@ -53,25 +53,25 @@ public sealed class FakeLogEntry
     private readonly ErrorDictionary? errors;
 
     public FakeLogEntry(double atSeconds, DateTimeOffset timestamp, string level, string message, string? exception, int entry, int sequence,
-        IReadOnlyDictionary<string, string> scope, int? callIndex = null)
+        IReadOnlyDictionary<string, string> scope, int? callIndex = null, int step = 0, int rep = 0)
     {
         AtSeconds = atSeconds; Timestamp = timestamp; Level = level; this.message = message; this.exception = exception;
-        Entry = entry; Sequence = sequence; Scope = scope; CallIndex = callIndex;
+        Entry = entry; Sequence = sequence; Scope = scope; CallIndex = callIndex; Step = step; Rep = rep;
         LevelRank = Rank(level);
     }
 
     /// <summary>A log entry whose message and exception texts are interned in <paramref name="errors"/> (ids from <see cref="ErrorDictionary.Intern"/>).</summary>
     public FakeLogEntry(double atSeconds, DateTimeOffset timestamp, string level, int messageId, int exceptionId, ErrorDictionary errors, int entry, int sequence,
-        IReadOnlyDictionary<string, string> scope, int? callIndex = null)
-        : this(atSeconds, timestamp, level, null!, null, entry, sequence, scope, callIndex)
+        IReadOnlyDictionary<string, string> scope, int? callIndex = null, int step = 0, int rep = 0)
+        : this(atSeconds, timestamp, level, null!, null, entry, sequence, scope, callIndex, step, rep)
     {
         message = null; this.messageId = messageId; this.exceptionId = exceptionId; this.errors = errors;
     }
 
     /// <summary>A log entry with its own message text (unique, not worth interning) and an interned exception text.</summary>
     public FakeLogEntry(double atSeconds, DateTimeOffset timestamp, string level, string message, int exceptionId, ErrorDictionary errors, int entry, int sequence,
-        IReadOnlyDictionary<string, string> scope, int? callIndex = null)
-        : this(atSeconds, timestamp, level, message, null, entry, sequence, scope, callIndex)
+        IReadOnlyDictionary<string, string> scope, int? callIndex = null, int step = 0, int rep = 0)
+        : this(atSeconds, timestamp, level, message, null, entry, sequence, scope, callIndex, step, rep)
     {
         this.exceptionId = exceptionId; this.errors = errors;
     }
@@ -85,6 +85,8 @@ public sealed class FakeLogEntry
     public int Sequence { get; }
     public IReadOnlyDictionary<string, string> Scope { get; }
     public int? CallIndex { get; }
+    public int Step { get; }
+    public int Rep { get; }
     public int LevelRank { get; }
 }
 
@@ -92,7 +94,7 @@ public sealed class FakeLogEntry
 /// The small, permanent record of one finished bee. Cheap enough to keep for hours of run. The error text lives once in the
 /// run's <see cref="ErrorDictionary"/> (brain 0028); <see cref="Error"/> resolves it.
 /// </summary>
-public readonly record struct BeeRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors, byte RatioCode = 0, int FailedStep = -1)
+public readonly record struct BeeRecord(int Sequence, int Entry, double StartedAt, double DurationMs, int SlowCalls, int ErrorId, ErrorDictionary? Errors, byte RatioCode = 0, int FailedStep = -1, int FailedRep = -1)
 {
     /// <summary>The scenario step the bee failed at (brain 0056), -1 when it did not fail or its scenario has no steps.</summary>
     public string? Error => Errors?.Resolve(ErrorId);
@@ -108,13 +110,15 @@ public readonly record struct BeeRecord(int Sequence, int Entry, double StartedA
 }
 
 /// <summary>Calls and log lines of one bee. Only kept for a limited number of bees per scenario (<see cref="RunStoreOptions"/>); log lines are generated on first use.</summary>
-public sealed class BeeDetail(int sequence, int entry, IReadOnlyList<FakeCall> calls, Func<IReadOnlyList<FakeLogEntry>> makeLogs)
+public sealed class BeeDetail(int sequence, int entry, IReadOnlyList<FakeCall> calls, Func<IReadOnlyList<FakeLogEntry>> makeLogs, IReadOnlyList<RecordedStepVisit>? stepVisits = null)
 {
     private IReadOnlyList<FakeLogEntry>? logs;
     public int Sequence { get; } = sequence;
     public int Entry { get; } = entry;
     public IReadOnlyList<FakeCall> Calls { get; } = calls;
     public IReadOnlyList<FakeLogEntry> Logs => logs ??= makeLogs();
+    /// <summary>Captured union step record payloads per visit (brain 0056); null for scenarios without steps or fake data.</summary>
+    public IReadOnlyList<RecordedStepVisit>? StepVisits { get; } = stepVisits;
     public bool Evicted { get; internal set; }
     internal bool Indexed { get; set; }
 }
@@ -126,7 +130,7 @@ public sealed record ScenarioView(int Finished, int Failed, int SlowBees, int Sl
 /// A bee that is being executed right now (brain 0018). Its outcome is not known yet; <see cref="Calls"/> is the whole playthrough, so a
 /// reader may only show the calls whose time has come (offset within the elapsed time).
 /// </summary>
-public sealed record RunningBee(int Sequence, int Entry, double StartedAt, IReadOnlyList<FakeCall> Calls)
+public sealed record RunningBee(int Sequence, int Entry, double StartedAt, IReadOnlyList<FakeCall> Calls, int CurrentStep = -1, int CurrentRep = 0, IReadOnlyList<RecordedStepVisit>? StepVisits = null)
 {
     public string Name => $"B{Sequence + 1}";
 }
