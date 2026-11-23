@@ -1,0 +1,69 @@
+# Beesharp
+
+A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scripts), runs are stored in DuckDB.
+
+## Run with Docker Compose
+
+The image is published to Docker Hub for `linux/amd64` and `linux/arm64` (see `.github/workflows/docker.yml`).
+It runs on Linux, and on Windows and macOS through Docker Desktop.
+
+Create a `compose.yaml`:
+
+```yaml
+services:
+  beesharp:
+    image: docker.io/<dockerhub-user>/beesharp:latest
+    restart: unless-stopped
+    ports:
+      - "5281:8080"            # UI and API: http://localhost:5281
+    volumes:
+      - beesharp-data:/app/data                   # stored runs (DuckDB)
+      - beesharp-presets:/app/presets             # saved presets
+      - beesharp-environments:/app/environments   # environments
+      - beesharp-scripts:/app/scripts             # scenario, preflight and shutdown scripts
+      # Optional: add a script from this repo's examples/ folder (read-only).
+      - ./examples/http-health-check.cs:/app/scripts/http-health-check.cs:ro
+    environment:
+      # Optional: the AI assistant. Without AI__Model the chat icon stays hidden.
+      # AI__Model: gpt-4.1-mini
+      # AI__ApiKey: ${OPENAI_API_KEY}
+      # AI__Endpoint: http://ollama:11434/v1   # any OpenAI-compatible server
+      # Optional: keep runs in memory only (nothing written to /app/data).
+      # Storage__Provider: Memory
+
+volumes:
+  beesharp-data:
+  beesharp-presets:
+  beesharp-environments:
+  beesharp-scripts:
+```
+
+Then:
+
+```sh
+docker compose up -d
+docker compose logs -f beesharp
+```
+
+Open http://localhost:5281.
+
+### Notes
+
+- **Port:** the container listens on plain http on port `8080`. Put TLS on a reverse proxy in front of it
+  (Caddy, Traefik, nginx, cloudflared); the app honours `X-Forwarded-For` and `X-Forwarded-Proto`.
+- **Volumes:** named volumes start with the files that ship in the image (built-in example scripts, presets,
+  an environment) and keep what you add in the UI across updates. Mounting a host folder over `/app/scripts`
+  instead hides the shipped scripts, including the `preflight/` and `shutdown/` subfolders.
+- **Own scripts:** mount single `.cs` files into `/app/scripts/` as shown above, or upload them in the editor.
+  Scripts are compiled when the container starts.
+- **Settings:** every key of `src/Beesharp/appsettings.json` can be set as an environment variable, with `__`
+  between sections, e.g. `Storage__DuckDbPath: data/runs.duckdb`.
+- **Update:** `docker compose pull && docker compose up -d`. Pin a version (`:1.2.3`) instead of `latest` to
+  update on your own schedule.
+
+## Examples
+
+`examples/` holds scenario scripts to copy or mount into the scripts folder:
+
+- `http-health-check.cs`: fetches one URL per run and fails on an error status or a slow answer. A plain
+  scenario without steps.
