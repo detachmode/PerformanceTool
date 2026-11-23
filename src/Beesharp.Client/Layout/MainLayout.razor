@@ -43,13 +43,20 @@
         </nav>
 
         <div class="top-desktop">
-            <button type="button" class="mode-btn @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
-                    aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
-                    title="Switch Live/Fake mode or load a stored run">
-                <i aria-hidden="true"></i>
-                <span>@ModeBtnLabel(compact: false)</span>
-                <span class="caret" aria-hidden="true">▾</span>
-            </button>
+            <div class="dd mode-dd">
+                <button type="button" class="mode-btn @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
+                        aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)"
+                        title="Switch Live/Fake mode or load a stored run">
+                    <i aria-hidden="true"></i>
+                    <span>@ModeBtnLabel(compact: false)</span>
+                    <span class="caret" aria-hidden="true">▾</span>
+                </button>
+                @if (modeMenuOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
+                    <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">@ModeMenuItems</div>
+                }
+            </div>
             <EnvironmentPicker />
             <BuildStamp />
             @if (Asst.Available)
@@ -85,48 +92,12 @@
         </div>
     </header>
 
+    @* Small screens: the menu sits outside the header (fixed; a bottom sheet below 760px) so it can rise above the assistant sheet. *@
     @if (modeMenuOpen)
     {
-        <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
-        <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">
-            <div class="dd-lbl">Data mode</div>
-            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
-                <span class="mode-dot live" aria-hidden="true"></span>
-                <span>@(!DataMode.IsFakeMode && !ApiRun.IsViewingHistory ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
-            </button>
-            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
-                <span class="mode-dot fake" aria-hidden="true"></span>
-                <span>@(DataMode.IsFakeMode ? "✓ " : "")<b>Fake mode</b> <span class="muted">· simulation</span></span>
-            </button>
-            @if (!DataMode.IsFakeMode)
-            {
-                <div class="dd-sep" role="separator"></div>
-                <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
-                @if (Sim.IsRunning)
-                {
-                    <div class="muted" style="padding:.4rem .55rem">Stop the active run to open a past run.</div>
-                }
-                else if (runsLoading)
-                {
-                    <div class="muted" style="padding:.4rem .55rem">Loading…</div>
-                }
-                else if (storedRuns.Count == 0)
-                {
-                    <div class="muted" style="padding:.4rem .55rem">No stored runs yet.</div>
-                }
-                else
-                {
-                    @foreach (var r in storedRuns)
-                    {
-                        var item = r;
-                        var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickRunAsync(item.RunId)" style="flex-direction:column;align-items:flex-start;gap:.1rem">
-                            <span>@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
-                            <span class="muted" style="font-size:.74rem">@Format.Num(item.TotalBees) bees · @(item.FailedBees > 0 ? $"{item.FailedBees} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
-                        </button>
-                    }
-                }
-            }
+        <div class="mode-menu-mobile">
+            <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
+            <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">@ModeMenuItems</div>
         </div>
     }
 
@@ -197,6 +168,47 @@
 @code {
     private bool menuOpen;
     private bool modeMenuOpen;
+    // One menu body, shown under the desktop mode button or as the small-screen sheet.
+    private RenderFragment ModeMenuItems => @<text>
+        <div class="dd-lbl">Data mode</div>
+        <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
+            <span class="mode-dot live" aria-hidden="true"></span>
+            <span>@(!DataMode.IsFakeMode && !ApiRun.IsViewingHistory ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
+        </button>
+        <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
+            <span class="mode-dot fake" aria-hidden="true"></span>
+            <span>@(DataMode.IsFakeMode ? "✓ " : "")<b>Fake mode</b> <span class="muted">· simulation</span></span>
+        </button>
+        @if (!DataMode.IsFakeMode)
+        {
+            <div class="dd-sep" role="separator"></div>
+            <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
+            @if (Sim.IsRunning)
+            {
+                <div class="muted" style="padding:.4rem .55rem">Stop the active run to open a past run.</div>
+            }
+            else if (runsLoading)
+            {
+                <div class="muted" style="padding:.4rem .55rem">Loading…</div>
+            }
+            else if (storedRuns.Count == 0)
+            {
+                <div class="muted" style="padding:.4rem .55rem">No stored runs yet.</div>
+            }
+            else
+            {
+                @foreach (var r in storedRuns)
+                {
+                    var item = r;
+                    var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
+                    <button type="button" class="dd-item" role="menuitem" @onclick="() => PickRunAsync(item.RunId)" style="flex-direction:column;align-items:flex-start;gap:.1rem">
+                        <span>@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
+                        <span class="muted" style="font-size:.74rem">@Format.Num(item.TotalBees) bees · @(item.FailedBees > 0 ? $"{item.FailedBees} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
+                    </button>
+                }
+            }
+        }
+    </text>;
     private bool runsLoading;
     private List<StoredRunSummary> storedRuns = [];
 

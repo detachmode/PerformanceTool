@@ -75,7 +75,9 @@ label { font-size: .74rem; color: var(--muted); }
 
 /* ----- top bar (fixed, YouTube obsidian glass) ----- */
 :root { --top-h: 56px; }
-.top { position: fixed; top: 0; left: 0; right: 0; z-index: 70; height: var(--top-h); display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; padding: 0 1.25rem; background: rgba(15, 14, 13, 0.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid rgba(255, 255, 255, 0.07); box-shadow: none; }
+.top { position: fixed; top: 0; left: 0; right: 0; z-index: 70; height: var(--top-h); display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; padding: 0 1.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.07); box-shadow: none; }
+/* The blur lives on a pseudo-element: backdrop-filter on .top itself would trap fixed children (dropdown backdrops) inside the bar. */
+.top::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(15, 14, 13, 0.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .brand { display: flex; align-items: center; gap: .5rem; color: var(--title); text-decoration: none; font-weight: 700; font-size: .96rem; letter-spacing: -.01em; flex: none; }
 .brand b { color: var(--accent2); font-weight: 700; }
 .brand-hex { transition: transform .18s ease; flex: none; }
@@ -327,7 +329,10 @@ label { font-size: .74rem; color: var(--muted); }
 .offline-banner { position: fixed; top: var(--top-h); left: 0; right: 0; z-index: 68; display: flex; align-items: center; justify-content: center; gap: .6rem; padding: .42rem .9rem; background: rgba(69, 18, 22, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid rgba(240, 82, 82, 0.45); color: #fecaca; font-size: .82rem; font-weight: 500; }
 .offline-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 8px var(--failed); flex: none; }
 .shell:has(.offline-banner) .main { padding-top: calc(var(--top-h) + 3.2rem); }
-.mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
+.mode-dd .dd-menu.mode-runs-menu { min-width: 270px; max-height: 68dvh; }   /* desktop: drops down right under the mode button */
+.mode-menu-mobile .dd-menu.mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); bottom: auto; right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
+@media (min-width: 861px) { .mode-menu-mobile { display: none; } }
+.top:has(.mode-dd .dd-menu) { z-index: 130; }   /* while open, lift the bar so the backdrop and menu also cover the player bar */
 .bento-pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: .16rem .68rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: var(--muted); }
 .bento-pill.bad { color: #f87171; border-color: rgba(240, 82, 82, 0.42); background: rgba(240, 82, 82, 0.08); }
 .bento-pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.42); background: rgba(251, 191, 36, 0.08); }
