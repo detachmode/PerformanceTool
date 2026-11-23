@@ -11,7 +11,7 @@ Desktop first; the phone layouts follow from these.
 - **One bee: B.** The selected bee is always shown in the right-hand column of the scenario page; picking another bee swaps it, ‹ › go through the list. No floating panel.
 
 - **Editor: A's toolbar + B's Try column.** One toolbar above the code (file ▾, Saved, Save, Try, ⋯), the code at full height, and the Try result (passed/failed, its steps, then Logs and Calls tabs) in a column on the right. No script list on the left.
-- **Logs: B, search on top.** A filter column on the left with a count per filter (level, scenario, steps of the chosen scenario; errors per step), and above the log lines a wide, prominent search field at the top right, the active filters as removable chips to its left.
+- **Logs: B with a full-width search.** A filter column on the left with a count per filter (level, scenario, steps of the chosen scenario; errors per step). Above the log lines a full-width search field; under it every active filter as a chip with ✕ to remove it, plus "Clear all", like Kibana / Elastic.
 - **Environment: A.** One centred column: the static values of the selected environment, then the runtime data (run bag, one bag per scenario entry) below.
 
 ## Why
