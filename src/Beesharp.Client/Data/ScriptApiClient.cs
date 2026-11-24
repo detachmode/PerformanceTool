@@ -16,11 +16,12 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         {
             var list = await http.GetFromJsonAsync<List<ScenarioInfoDto>>("api/scenarios", JsonOpts, ct);
             if (list is null) return;
-            var customs = list
-                .Where(s => s.IsCustom)
-                .Select(s => (IScenario)new RemoteSchemaScenario(s.Id, s.Name, s.Description, s.Parameters, s.Steps))
+            // Register every server scenario not already built into the WASM client — both Roslyn scripts (IsCustom=true)
+            // and compiled .csproj host scenarios registered via BeesharpAppBuilder.AddScenario<T>() (IsCustom=false).
+            var remotes = list
+                .Select(s => (IScenario)new RemoteSchemaScenario(s.Id, s.Name, s.Description, s.Parameters, s.Steps, s.ScriptId))
                 .ToList();
-            catalog.ReplaceCustomScenarios(customs);
+            catalog.ReplaceCustomScenarios(remotes);
         }
         catch
         {
@@ -37,7 +38,7 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
         var result = await resp.Content.ReadFromJsonAsync<ScriptCompileResult>(JsonOpts, ct)
             ?? new ScriptCompileResult(false, null, [], $"HTTP {(int)resp.StatusCode}");
         if (result.Success && result.Script is { } s)
-            catalog.RegisterCustom(new RemoteSchemaScenario(s.ScenarioId, s.ScenarioName, s.Description, s.Parameters, s.Steps));
+            catalog.RegisterCustom(new RemoteSchemaScenario(s.ScenarioId, s.ScenarioName, s.Description, s.Parameters, s.Steps, s.ScriptId));
         return result;
     }
 

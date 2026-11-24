@@ -1,4 +1,4 @@
-#:package Beesharp.Core@0.2.3
+#:package Beesharp.Core@0.2.4
 // Example scenario script without steps: every bee runs this body once per entry, top to bottom.
 // Run locally with `dotnet run examples/http-health-check.cs` (or F5 in your IDE), or copy/mount into scripts/.
 

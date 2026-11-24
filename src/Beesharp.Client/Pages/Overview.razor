@@ -316,7 +316,7 @@
                                 <span class="muted" title="@scenario?.Description">@scName</span>
                             }
                             <span class="spacer"></span>
-                            @if (scenario is not null && Catalog.IsCustom(c.ScenarioId))
+                            @if (scenario is RemoteSchemaScenario { ScriptId: not null })
                             {
                                 <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?script={Uri.EscapeDataString(c.ScenarioId)}")' title="View and edit this scenario's .cs file in the Script Editor">Edit .cs</button>
                             }
