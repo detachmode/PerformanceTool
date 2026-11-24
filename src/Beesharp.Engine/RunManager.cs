@@ -166,14 +166,16 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             lastSequence = -1;
             totalLogs = data.TotalLogs;
             runError = data.Error;
-            preflightState = null;
-            preflightScriptName = null;
+            preflightState = data.Preflight?.State;
+            preflightScriptName = data.Preflight?.Name;
             preflightLogs.Clear();
-            preflightError = null;
-            shutdownState = null;
-            shutdownScriptName = null;
+            if (data.Preflight?.Logs is { Count: > 0 } pfLogs) preflightLogs.AddRange(pfLogs);
+            preflightError = data.Preflight?.Error;
+            shutdownState = data.Shutdown?.State;
+            shutdownScriptName = data.Shutdown?.Name;
             shutdownLogs.Clear();
-            shutdownError = null;
+            if (data.Shutdown?.Logs is { Count: > 0 } sdLogs) shutdownLogs.AddRange(sdLogs);
+            shutdownError = data.Shutdown?.Error;
             runData = null;
             storedRuntime = loadedRuntime;
 
@@ -382,6 +384,9 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             var runPersisted = false;
             try
             {
+                storage.EnqueueRunStarted(currentRunId, currentStartedUtc, cloned, runSteps);
+                runPersisted = true;
+
                 if (preflightMeta is not null && preflights is not null)
                 {
                     var preRes = await preflights.ExecuteAsync(
@@ -392,10 +397,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         {
                             lock (sync) preflightLogs.Add(line);
                             var lvl = line.Contains("[ERR]") ? "Error" : line.Contains("[WRN]") ? "Warning" : "Information";
-                            AppendLiveLog(-1, -1, 0, lvl, line);
+                            AppendLiveLog(ProgramLogEntry.Preflight, ProgramLogEntry.Preflight, 0, lvl, line);
                         },
                         ct: runCts.Token);
 
+                    string[] pfSnapshot;
                     if (!preRes.Success)
                     {
                         err = preRes.Error ?? "Preflight failed.";
@@ -403,20 +409,25 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         {
                             preflightState = "Failed";
                             preflightError = err;
+                            pfSnapshot = preflightLogs.ToArray();
+                            totalLogs += pfSnapshot.Length;
                         }
+                        try { await storage.SaveProgramRunAsync(currentRunId, "preflight", new StoredProgramRunDto("Failed", preflightMeta.FileName, err, pfSnapshot)); }
+                        catch (Exception) { }
                         return;
                     }
 
                     lock (sync)
                     {
                         preflightState = "Succeeded";
+                        pfSnapshot = preflightLogs.ToArray();
+                        totalLogs += pfSnapshot.Length;
                         state = "Running";
                         clock.Start();
                     }
+                    try { await storage.SaveProgramRunAsync(currentRunId, "preflight", new StoredProgramRunDto("Succeeded", preflightMeta.FileName, null, pfSnapshot)); }
+                    catch (Exception) { }
                 }
-
-                storage.EnqueueRunStarted(currentRunId, DateTimeOffset.UtcNow, cloned, runSteps);
-                runPersisted = true;
 
                 await runner.RunAsync(
                     cloned,
@@ -551,12 +562,25 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     {
                         shutdownErr = ex.InnerException?.Message ?? ex.Message;
                     }
+                    string[] sdSnapshot;
+                    var sdState = shutdownErr is null ? "Succeeded" : "Failed";
                     lock (sync)
                     {
-                        shutdownState = shutdownErr is null ? "Succeeded" : "Failed";
+                        shutdownState = sdState;
                         shutdownError = shutdownErr;
-                        state = "Finished";
+                        sdSnapshot = shutdownLogs.ToArray();
+                        totalLogs += sdSnapshot.Length;
                     }
+                    if (runPersisted)
+                    {
+                        try
+                        {
+                            await storage.FlushAsync();
+                            await storage.SaveProgramRunAsync(currentRunId, "shutdown", new StoredProgramRunDto(sdState, shutdownMeta.FileName, shutdownErr, sdSnapshot));
+                        }
+                        catch (Exception) { }
+                    }
+                    lock (sync) state = "Finished";
                 }
 
                 if (runPersisted)

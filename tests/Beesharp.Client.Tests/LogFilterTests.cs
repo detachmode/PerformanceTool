@@ -165,12 +165,45 @@ public class LogFilterTests
     }
 
     [Fact]
+    public void A_copied_line_has_the_run_time_and_the_clock_time()
+    {
+        var at = new DateTimeOffset(2026, 11, 24, 14, 2, 7, 312, TimeSpan.Zero);
+        Assert.Equal("[0:05.9 · 14:02:07.312] ERR Checkout B7 GET /a 503\nSystem.Exception: bad",
+            LogText.CopyLine(5.96, at, "Error", "GET /a 503", "System.Exception: bad", "Checkout", 6, TimeZoneInfo.Utc));
+        Assert.Equal("[1:05.0] INF hello", LogText.CopyLine(65, null, "Information", "hello", null));
+    }
+
+    [Fact]
     public void A_line_reads_like_the_console_and_all_lines_join()
     {
         var (_, lines) = Run();
         Assert.Equal("[0:00.0] ERR Checkout B1 GET /a 503\nSystem.Exception: bad", LogText.Line(lines[1], "Checkout"));
         Assert.Equal("[0:00.0] INF B2 hello", LogText.Line(lines[4], ""));
+        Assert.Equal("[0:00.0] INF Preflight ready", LogText.Line(Line(ProgramLogEntry.Preflight, ProgramLogEntry.Preflight, "Information", "ready"), "Preflight"));
         Assert.Equal(2, LogText.All(lines.Take(2), _ => "S").Split("] ").Length - 1 );
+    }
+
+    [Fact]
+    public void Preflight_and_shutdown_entries_round_trip_in_the_address_and_count_without_negative_indexing()
+    {
+        var pf = LogFilter.None.WithEntry(ProgramLogEntry.Preflight);
+        Assert.Equal("scenario=preflight", pf.ToQueryString());
+        Assert.Equal(ProgramLogEntry.Preflight, LogFilter.FromQuery("preflight", "1", null, null, null, null).Entry);
+        Assert.Null(LogFilter.FromQuery("preflight", "1", null, null, null, null).Step);
+
+        var sd = LogFilter.None.WithEntry(ProgramLogEntry.Shutdown);
+        Assert.Equal("scenario=shutdown", sd.ToQueryString());
+        Assert.Equal(ProgramLogEntry.Shutdown, LogFilter.FromQuery("shutdown", null, null, null, null, null).Entry);
+
+        var (store, lines) = Run();
+        lines.Insert(0, Line(ProgramLogEntry.Preflight, ProgramLogEntry.Preflight, "Information", "warmup ok"));
+        lines.Add(Line(ProgramLogEntry.Shutdown, ProgramLogEntry.Shutdown, "Warning", "cleanup slow"));
+
+        var facets = LogCounts.Count(lines, LogFilter.None, store);
+        Assert.Equal(8, facets.Total);
+        Assert.Equal(1, facets.Preflight);
+        Assert.Equal(1, facets.Shutdown);
+        Assert.Equal([5L, 1L], facets.Entries);
     }
 
     [Fact]

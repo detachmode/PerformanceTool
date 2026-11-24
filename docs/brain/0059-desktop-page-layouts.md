@@ -54,4 +54,4 @@ Screenshots: `docs/screenshots/2026-11-24-logs-editor-environment/`.
 
 ## Update (user, 2026-11-24): run time or clock time in the logs
 A toggle in the Logs toolbar ("Run time" / "Clock time") shows each line's time as time into the run (0:05.9) or as the clock time it was written
-(14:02:07.3, browser time zone). The choice is remembered in the browser (`pt.log-time`) and Copy all uses it too (`LogText.Stamp`, `LogTimeMode`).
+(14:02:07.3, browser time zone). The choice is remembered in the browser (`pt.log-time`) not the clipboard: every copy-logs button in the app copies both times, `[0:05.9 · 14:02:07.312] ERR Checkout B7 …` (`LogText.CopyLine`, user); a source without a clock time (the assistant's stored log rows) copies the run time, raw program output (preflight, shutdown) is copied as written.

@@ -55,7 +55,7 @@ public sealed record LogFilter
 
     public LogFilter WithLevels(IEnumerable<string> levels) => this with { Levels = levels.Distinct().OrderBy(FakeLogEntry.Rank).ToList() };
     public LogFilter WithEntry(int? entry) => this with { Entry = entry, Step = entry == Entry ? Step : null };
-    public LogFilter WithStep(int? step) => this with { Step = Entry is null ? null : step };
+    public LogFilter WithStep(int? step) => this with { Step = Entry is >= 0 ? step : null };
     public LogFilter WithBee(int? bee) => this with { Bee = bee };
     public LogFilter WithOutcome(BeeShow outcome) => this with { Outcome = outcome };
     public LogFilter WithSearch(string? search) => this with { Search = search ?? "" };
@@ -75,6 +75,7 @@ public sealed record LogFilter
         if (levels && Levels.Count > 0 && !Levels.Contains(l.Level)) return false;
         if (Outcome != BeeShow.All)
         {
+            if (l.Sequence < 0) return false;
             var o = store.OutcomeOf(l.Sequence);
             if (Outcome == BeeShow.Failed ? o != BeeOutcome.Failed : o != BeeOutcome.Slow) return false;
         }
@@ -82,7 +83,7 @@ public sealed record LogFilter
         if (text.Length > 0
             && !l.Message.Contains(text, StringComparison.OrdinalIgnoreCase)
             && (l.Exception is null || !l.Exception.Contains(text, StringComparison.OrdinalIgnoreCase))
-            && !$"B{l.Sequence + 1}".Contains(text, StringComparison.OrdinalIgnoreCase)) return false;
+            && !(l.Sequence >= 0 && $"B{l.Sequence + 1}".Contains(text, StringComparison.OrdinalIgnoreCase))) return false;
         return true;
     }
 
@@ -92,8 +93,9 @@ public sealed record LogFilter
     public IReadOnlyList<KeyValuePair<string, string>> ToQuery()
     {
         var q = new List<KeyValuePair<string, string>>();
-        if (Entry is { } e) q.Add(new("scenario", (e + 1).ToString()));
-        if (Step is { } s && Entry is not null) q.Add(new("step", (s + 1).ToString()));
+        if (Entry is { } e)
+            q.Add(new("scenario", e == ProgramLogEntry.Preflight ? "preflight" : e == ProgramLogEntry.Shutdown ? "shutdown" : (e + 1).ToString()));
+        if (Step is { } s && Entry is >= 0) q.Add(new("step", (s + 1).ToString()));
         if (Bee is { } b) q.Add(new("bee", (b + 1).ToString()));
         if (Levels.Count > 0) q.Add(new("level", string.Join(',', Levels.Select(l => l.ToLowerInvariant()))));
         if (Outcome != BeeShow.All) q.Add(new("bees", Outcome == BeeShow.Failed ? "failed" : "slow"));
@@ -110,13 +112,18 @@ public sealed record LogFilter
     public static LogFilter FromQuery(string? scenario, string? step, string? bee, string? level, string? bees, string? q)
     {
         static int? Number(string? s) => int.TryParse(s, out var n) && n >= 1 ? n - 1 : null;
-        var entry = Number(scenario);
+        int? entry = scenario?.Trim().ToLowerInvariant() switch
+        {
+            "preflight" => ProgramLogEntry.Preflight,
+            "shutdown" => ProgramLogEntry.Shutdown,
+            _ => Number(scenario),
+        };
         var levels = (level ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(LevelName).Where(l => l is not null).Select(l => l!);
         return None with
         {
             Entry = entry,
-            Step = entry is null ? null : Number(step),
+            Step = entry is >= 0 ? Number(step) : null,
             Bee = Number(bee),
             Levels = levels.Distinct().OrderBy(FakeLogEntry.Rank).ToList(),
             Outcome = (bees ?? "").ToLowerInvariant() switch { "failed" => BeeShow.Failed, "slow" => BeeShow.Slow, _ => BeeShow.All },

@@ -70,6 +70,20 @@ public sealed record LiveRunStatusDto(
     IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null,
     int NextBeeIndex = 0);
 
+/// <summary>Reserved negative entry indices for run-level program logs (preflight / shutdown) in <see cref="StoredLogRow.Entry"/>.</summary>
+public static class ProgramLogEntry
+{
+    public const int Preflight = -1;
+    public const int Shutdown = -2;
+}
+
+/// <summary>Persisted result and log lines of a run's preflight or shutdown program.</summary>
+public sealed record StoredProgramRunDto(
+    string State,
+    string Name,
+    string? Error,
+    IReadOnlyList<string> Logs);
+
 public sealed record StoredRunSummary(
     string RunId,
     DateTimeOffset StartedUtc,
@@ -129,6 +143,8 @@ public sealed record LogFacets(
     long Total,
     IReadOnlyDictionary<string, long> Levels,
     IReadOnlyList<long> Entries,
-    IReadOnlyList<LogStepCount> Steps);
+    IReadOnlyList<LogStepCount> Steps,
+    long Preflight = 0,
+    long Shutdown = 0);
 
 public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);

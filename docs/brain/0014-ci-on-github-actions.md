@@ -23,3 +23,11 @@ Runs on the same ref cancel each other (`concurrency`); the token is read-only (
 ## Update (2026-11-20)
 CI runs only on **pushes to `main`** and on **pull requests** (build validation), plus manual dispatch. It no
 longer runs on pushes to other branches (user decision).
+
+## Update (2026-11-24)
+Unified the separate CI, Docker, Pages, and tag-triggered NuGet workflows into one ordered pipeline in
+`.github/workflows/ci.yml` (`.github/workflows/nuget.yml` stays callable via `workflow_call` and manual
+`workflow_dispatch` for dry-runs/ad-hoc releases):
+`build-test` -> (`docker-build` -> `e2e` on amd64 + arm64 -> `docker-push` / `nuget-publish`) and
+`build-test` -> (`pages-build` -> `pages-deploy` on `main`).
+Nothing deploys to GitHub Pages, GHCR, or NuGet.org unless `build-test` (and `e2e` for Docker/NuGet) passes first.
