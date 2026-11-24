@@ -88,6 +88,34 @@ public sealed class BeesharpAppBuilder
         return this;
     }
 
+    /// <summary>Registers a compiled preflight program in DI so constructor injection of shared services works naturally.</summary>
+    public BeesharpAppBuilder AddPreflight<TPreflight>() where TPreflight : class, IPreflightProgram
+    {
+        Services.AddPreflight<TPreflight>();
+        return this;
+    }
+
+    /// <summary>Registers an inline delegate preflight program.</summary>
+    public BeesharpAppBuilder AddPreflight(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
+    {
+        Services.AddSingleton<IPreflightProgram>(new DelegatePreflightProgram(id, name, execute));
+        return this;
+    }
+
+    /// <summary>Registers a compiled shutdown program in DI so constructor injection of shared services works naturally.</summary>
+    public BeesharpAppBuilder AddShutdown<TShutdown>() where TShutdown : class, IShutdownProgram
+    {
+        Services.AddShutdown<TShutdown>();
+        return this;
+    }
+
+    /// <summary>Registers an inline delegate shutdown program.</summary>
+    public BeesharpAppBuilder AddShutdown(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
+    {
+        Services.AddSingleton<IShutdownProgram>(new DelegateShutdownProgram(id, name, execute));
+        return this;
+    }
+
     /// <summary>Registers the built-in HTTP scenarios (idempotent).</summary>
     public BeesharpAppBuilder AddBuiltInScenarios()
     {
@@ -294,13 +322,15 @@ public sealed class BeesharpApp : IAsyncDisposable
         var workspace = Services.GetRequiredService<PlanWorkspace>();
         if (presetBuilders.Count > 0)
         {
+            var preflights = Services.GetServices<IPreflightProgram>().ToList();
+            var shutdowns = Services.GetServices<IShutdownProgram>().ToList();
             var builtPresets = new List<Preset>(presetBuilders.Count);
             var now = DateTimeOffset.UtcNow;
             foreach (var (name, configure) in presetBuilders)
             {
                 var planBuilder = new PlanBuilder();
                 configure(planBuilder);
-                builtPresets.Add(new Preset(name, now, planBuilder.Build(catalog)));
+                builtPresets.Add(new Preset(name, now, planBuilder.Build(catalog, preflights, shutdowns)));
             }
             workspace.RegisterCodePresets(builtPresets);
         }

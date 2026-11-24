@@ -264,4 +264,205 @@ public class BeesharpHostTests : IDisposable
         Assert.Equal(10, state.Plan.Scenarios.Count);
         Assert.Empty(state.Plan.Validate(catalog));
     }
+
+    private sealed class ProgramTrace
+    {
+        public List<string> Events { get; } = [];
+        public string? ScenarioObservedSeed { get; set; }
+        public string? ShutdownObservedSeed { get; set; }
+        public bool ShouldFailPreflight { get; set; }
+    }
+
+    private sealed class SeedDataPreflight(ProgramTrace trace) : PreflightProgram
+    {
+        public override Task ExecuteAsync(ProgramContext context, CancellationToken cancellationToken)
+        {
+            trace.Events.Add("preflight");
+            context.Log("Seeding test data");
+            if (trace.ShouldFailPreflight)
+                context.Fail("Preflight intentionally aborted");
+            context.Data["SeedKey"] = "seeded-value-42";
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CleanupDataShutdown(ProgramTrace trace) : ShutdownProgram
+    {
+        public override Task ExecuteAsync(ProgramContext context, CancellationToken cancellationToken)
+        {
+            trace.Events.Add("shutdown");
+            trace.ShutdownObservedSeed = context.Data.Get<string>("SeedKey");
+            context.Log("Cleaning up test data");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BagReadingScenario(ProgramTrace trace) : Scenario<OrderHistoryParams>
+    {
+        public override string Id => "bag-reader";
+        public override string Name => "Bag Reader";
+        public override string Description => "Reads a key written by preflight from RunBag.";
+
+        protected override Task<ScenarioOutcome> ExecuteAsync(OrderHistoryParams parameters, ScenarioContext context, CancellationToken cancellationToken)
+        {
+            trace.Events.Add("scenario");
+            var value = context.RunBag.Get<string>("SeedKey");
+            trace.ScenarioObservedSeed = value;
+            if (value != "seeded-value-42")
+                throw new InvalidOperationException($"Expected seeded value, got '{value}'.");
+            return Task.FromResult(new ScenarioOutcome(200, value.Length));
+        }
+    }
+
+    [Fact]
+    public async Task Compiled_preflight_and_shutdown_programs_work_via_api_and_headless_run()
+    {
+        var builder = BeesharpApp.CreateBuilder();
+        builder.WebApplicationBuilder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.WebApplicationBuilder.Environment.ContentRootPath = root;
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "Memory",
+            ["Presets:Directory"] = Path.Combine(root, "presets"),
+            ["Environments:Directory"] = Path.Combine(root, "environments"),
+            ["Scripts:Directory"] = Path.Combine(root, "scripts"),
+        });
+
+        builder.Services.AddSingleton<ProgramTrace>();
+        builder.AddScenario<BagReadingScenario>();
+        builder.AddPreflight<SeedDataPreflight>();
+        builder.AddShutdown<CleanupDataShutdown>();
+        builder.AddPreset("WithPrograms", plan => plan
+            .Duration(TimeSpan.FromSeconds(1))
+            .Preflight<SeedDataPreflight>()
+            .Shutdown<CleanupDataShutdown>()
+            .Add<BagReadingScenario>(ratePerMinute: 120))
+            .AsDefault();
+
+        await using var app = builder.Build();
+        await app.InitializeAsync();
+        await app.WebApplication.StartAsync();
+
+        try
+        {
+            var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+            using var http = new HttpClient { BaseAddress = new Uri(addresses.Addresses.First()) };
+
+            var preflights = await http.GetFromJsonAsync<List<PreflightScriptSummary>>("/api/preflights", Json);
+            var seed = Assert.Single(preflights!, p => p.ScriptId == "seed-data");
+            Assert.Equal("Seed data", seed.Name);
+            Assert.Equal("SeedDataPreflight.cs", seed.FileName);
+
+            var shutdowns = await http.GetFromJsonAsync<List<PreflightScriptSummary>>("/api/shutdowns", Json);
+            var cleanup = Assert.Single(shutdowns!, s => s.ScriptId == "cleanup-data");
+            Assert.Equal("Cleanup data", cleanup.Name);
+            Assert.Equal("CleanupDataShutdown.cs", cleanup.FileName);
+
+            // Compiled programs cannot be deleted via API
+            var deleteResp = await http.DeleteAsync("/api/preflights/seed-data");
+            Assert.Equal(HttpStatusCode.NotFound, deleteResp.StatusCode);
+
+            // Test-run endpoint executes the compiled preflight
+            var testRunResp = await http.PostAsJsonAsync("/api/preflights/seed-data/test-run", new TestRunPreflightRequest(null, 30), Json);
+            testRunResp.EnsureSuccessStatusCode();
+            var testRun = await testRunResp.Content.ReadFromJsonAsync<PreflightRunResult>(Json);
+            Assert.NotNull(testRun);
+            Assert.True(testRun!.Success);
+            Assert.Contains(testRun.Logs, l => l.Contains("Seeding test data"));
+        }
+        finally
+        {
+            await app.WebApplication.StopAsync();
+        }
+
+        // Now verify full execution order and RunBag sharing via headless run
+        var trace = app.Services.GetRequiredService<ProgramTrace>();
+        trace.Events.Clear();
+
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await app.RunHeadlessAsync(["run", "--preset", "WithPrograms", "--duration", "1", "--progress", "0"], output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("", error.ToString());
+        Assert.Equal("preflight", trace.Events.First());
+        Assert.Contains("scenario", trace.Events);
+        Assert.Equal("shutdown", trace.Events.Last());
+        Assert.Equal("seeded-value-42", trace.ScenarioObservedSeed);
+        Assert.Equal("seeded-value-42", trace.ShutdownObservedSeed);
+    }
+
+    [Fact]
+    public async Task Failing_compiled_preflight_aborts_scenarios_but_still_runs_compiled_shutdown()
+    {
+        var builder = BeesharpApp.CreateBuilder(["run", "--preset", "Abort", "--duration", "1"]);
+        builder.WebApplicationBuilder.Environment.ContentRootPath = root;
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "Memory",
+            ["Presets:Directory"] = Path.Combine(root, "presets"),
+            ["Environments:Directory"] = Path.Combine(root, "environments"),
+            ["Scripts:Directory"] = Path.Combine(root, "scripts"),
+        });
+
+        builder.Services.AddSingleton(new ProgramTrace { ShouldFailPreflight = true });
+        builder.AddScenario<BagReadingScenario>();
+        builder.AddPreflight<SeedDataPreflight>();
+        builder.AddShutdown<CleanupDataShutdown>();
+        builder.AddPreset("Abort", plan => plan
+            .Duration(TimeSpan.FromSeconds(1))
+            .Preflight<SeedDataPreflight>()
+            .Shutdown<CleanupDataShutdown>()
+            .Add<BagReadingScenario>(ratePerMinute: 120));
+
+        await using var app = builder.Build();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await app.RunHeadlessAsync(["run", "--preset", "Abort", "--duration", "1", "--progress", "0"], output, error);
+
+        Assert.NotEqual(0, exitCode);
+        var trace = app.Services.GetRequiredService<ProgramTrace>();
+        Assert.Equal(["preflight", "shutdown"], trace.Events);
+    }
+
+    [Fact]
+    public async Task Inline_delegate_preflight_and_shutdown_execute_in_headless_run()
+    {
+        var events = new List<string>();
+        var builder = BeesharpApp.CreateBuilder(["run", "--preset", "Inline", "--duration", "1"]);
+        builder.WebApplicationBuilder.Environment.ContentRootPath = root;
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "Memory",
+            ["Presets:Directory"] = Path.Combine(root, "presets"),
+            ["Environments:Directory"] = Path.Combine(root, "environments"),
+            ["Scripts:Directory"] = Path.Combine(root, "scripts"),
+        });
+
+        builder.AddScenario<OrderHistoryScenario>();
+        builder.AddPreflight("inline-pre", "Inline Pre", (ctx, _) =>
+        {
+            events.Add("inline-pre");
+            ctx.Data["FromInline"] = "ok";
+            return Task.CompletedTask;
+        });
+        builder.AddShutdown("inline-shut", "Inline Shut", (ctx, _) =>
+        {
+            events.Add("inline-shut:" + ctx.Data.Get<string>("FromInline"));
+            return Task.CompletedTask;
+        });
+        builder.AddPreset("Inline", plan => plan
+            .Duration(TimeSpan.FromSeconds(1))
+            .Preflight("inline-pre")
+            .Shutdown("inline-shut")
+            .Add<OrderHistoryScenario>(ratePerMinute: 120));
+
+        await using var app = builder.Build();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await app.RunHeadlessAsync(["run", "--preset", "Inline", "--duration", "1", "--progress", "0"], output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["inline-pre", "inline-shut:ok"], events);
+    }
 }

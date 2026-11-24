@@ -1,4 +1,4 @@
-#:package Beesharp.Core@0.2.1
+#:package Beesharp.Core@0.2.2
 // Example C# 15 union step-machine scenario using IAsyncEnumerable + yield return (brain 0056).
 // Runs out of the box without an external server: uses simulated calls + ILogger so you can test the
 // chronological stepper, captured step data, dynamic repeats, retries, and per-step failure filtering.
