@@ -9,14 +9,16 @@ var builder = BeesharpApp.CreateBuilder(args, new BeesharpAppOptions
 // Plain .NET DI for shared cross-cutting concerns (no special Beesharp interface needed).
 builder.Services.AddSingleton<DemoTokenCache>();
 
-// Compiled scenarios with constructor injection.
+// Compiled scenarios and preflight/shutdown programs with constructor injection.
 builder.AddScenario<ShopCheckoutScenario>();
+builder.AddPreflight<WarmupPreflight>();
 
 // Strongly typed preset — pre-loaded in the UI so clicking Play runs immediately.
 builder.AddPreset("Smoke", plan => plan
     .Duration(TimeSpan.FromMinutes(1))
     .MaxConcurrency(20)
     .Timeout(TimeSpan.FromSeconds(15))
+    .Preflight<WarmupPreflight>()
     .Add<ShopCheckoutScenario>(new ShopCheckoutParams(Query: "honey", DelayMs: 40), ratePerMinute: 60))
     .AsDefault();
 

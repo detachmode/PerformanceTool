@@ -10,7 +10,6 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageId>Beesharp.Core</PackageId>
-    <Version>0.1.0</Version>
     <Authors>detachmode</Authors>
     <Description>Core scenario, parameter, step-machine and runtime APIs for Beesharp load tests.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

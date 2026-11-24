@@ -464,7 +464,7 @@
                 <section class="card card-add-open" aria-label="Add scenario">
                     <div class="detail-head">
                         <b>Add scenario</b>
-                        <span class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</span>
+                        <span class="muted">@plan.Scenarios.Count</span>
                         <span class="spacer"></span>
                         <button type="button" class="icon-btn" @onclick="() => addOpen = false" aria-label="Close">✕</button>
                     </div>
@@ -479,8 +479,8 @@
             }
             else
             {
-                <button class="card card-add" @onclick="ToggleAdd" disabled="@(locked || plan.Scenarios.Count >= LoadPlan.MaxEntries)" aria-haspopup="true" aria-expanded="false">
-                    <span class="plus">+</span><span>Add scenario</span><small class="muted">@plan.Scenarios.Count / @LoadPlan.MaxEntries</small>
+                <button class="card card-add" @onclick="ToggleAdd" disabled="@locked" aria-haspopup="true" aria-expanded="false">
+                    <span class="plus">+</span><span>Add scenario</span>
                 </button>
             }
         </div>
@@ -535,6 +535,7 @@
     }
     else
     {
+        <PreflightStrip Run="s.Preflight" />
         <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
         <div class="grid" aria-label="Scenarios">
             @for (var i = 0; i < s.Count; i++)

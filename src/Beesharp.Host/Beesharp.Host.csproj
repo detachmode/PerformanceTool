@@ -13,7 +13,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <IsPackable>true</IsPackable>
     <PackageId>Beesharp.Host</PackageId>
-    <Version>0.1.0</Version>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeInternalBeesharpAssemblies</TargetsForTfmSpecificBuildOutput>
     <Authors>detachmode</Authors>
     <Description>Embedded Beesharp load-testing host with REST API, DuckDB/memory storage, and Blazor WebAssembly UI.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -24,14 +24,26 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Public NuGet dependency: shared by single-file scripts and host consumers. -->
     <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
-    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
-    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
-    <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
-    <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
-    <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" />
+
+    <!-- Internal modules bundled directly inside Beesharp.Host.nupkg so NuGet.org only ships Beesharp.Core + Beesharp.Host. -->
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Third-party dependencies of the bundled internal modules, declared here so they flow as normal NuGet dependencies. -->
+    <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.6.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.12.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -60,6 +72,19 @@
       <None Include="@(_ClientUiFiles)"
             Pack="true"
             PackagePath="beesharp-ui/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Include the 7 internal Beesharp.* DLLs in lib/net11.0/ of Beesharp.Host.nupkg. -->
+  <Target Name="IncludeInternalBeesharpAssemblies">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Contracts.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.Contracts.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.DuckDb.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.dll" />
     </ItemGroup>
   </Target>
 

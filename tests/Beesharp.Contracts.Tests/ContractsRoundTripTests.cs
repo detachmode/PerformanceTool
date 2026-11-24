@@ -66,10 +66,16 @@ public class ContractsRoundTripTests
     {
         var row = RoundTrip(new StoredLogRow(1, 2, "B3", 0, 0.5, "Error", "bad", null, 0, 2, true, false, Step: 3));
         Assert.Equal(3, row.Step);
-        var facets = RoundTrip(new LogFacets(7, new Dictionary<string, long> { ["Error"] = 4, ["Information"] = 3 }, [5, 2], [new LogStepCount(0, 3, 0), new LogStepCount(1, 4, 4)]));
+        var facets = RoundTrip(new LogFacets(7, new Dictionary<string, long> { ["Error"] = 4, ["Information"] = 3 }, [5, 2], [new LogStepCount(0, 3, 0), new LogStepCount(1, 4, 4)], Preflight: 2, Shutdown: 1));
         Assert.Equal(4, facets.Levels["Error"]);
         Assert.Equal([5L, 2L], facets.Entries);
         Assert.Equal(new LogStepCount(1, 4, 4), facets.Steps[1]);
+        Assert.Equal(2, facets.Preflight);
+        Assert.Equal(1, facets.Shutdown);
+
+        var prog = RoundTrip(new StoredProgramRunDto("Succeeded", "WarmupPreflight.cs", null, ["[12:00:00] [INF] Ready"]));
+        Assert.Equal("WarmupPreflight.cs", prog.Name);
+        Assert.Single(prog.Logs);
     }
 
     [Fact]

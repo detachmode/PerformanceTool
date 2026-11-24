@@ -17,10 +17,12 @@ public static class ScriptingRegistration
             sp.GetRequiredService<EnvironmentStore>()));
         services.AddSingleton(sp => new PreflightStore(
             Path.Combine(sp.GetRequiredService<BeesharpDirectories>().ResolveScripts(), "preflight"),
-            sp.GetRequiredService<EnvironmentStore>()));
+            sp.GetRequiredService<EnvironmentStore>(),
+            sp.GetServices<IPreflightProgram>()));
         services.AddSingleton(sp => new ShutdownStore(
             Path.Combine(sp.GetRequiredService<BeesharpDirectories>().ResolveScripts(), "shutdown"),
-            sp.GetRequiredService<EnvironmentStore>()));
+            sp.GetRequiredService<EnvironmentStore>(),
+            sp.GetServices<IShutdownProgram>()));
         return services;
     }
 }

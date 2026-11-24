@@ -154,7 +154,31 @@ public class LogFilterTests
         var (_, lines) = Run();
         Assert.Equal("[0:00.0] ERR Checkout B1 GET /a 503\nSystem.Exception: bad", LogText.Line(lines[1], "Checkout"));
         Assert.Equal("[0:00.0] INF B2 hello", LogText.Line(lines[4], ""));
+        Assert.Equal("[0:00.0] INF Preflight ready", LogText.Line(Line(ProgramLogEntry.Preflight, ProgramLogEntry.Preflight, "Information", "ready"), "Preflight"));
         Assert.Equal(2, LogText.All(lines.Take(2), _ => "S").Split("] ").Length - 1 );
+    }
+
+    [Fact]
+    public void Preflight_and_shutdown_entries_round_trip_in_the_address_and_count_without_negative_indexing()
+    {
+        var pf = LogFilter.None.WithEntry(ProgramLogEntry.Preflight);
+        Assert.Equal("scenario=preflight", pf.ToQueryString());
+        Assert.Equal(ProgramLogEntry.Preflight, LogFilter.FromQuery("preflight", "1", null, null, null, null).Entry);
+        Assert.Null(LogFilter.FromQuery("preflight", "1", null, null, null, null).Step);
+
+        var sd = LogFilter.None.WithEntry(ProgramLogEntry.Shutdown);
+        Assert.Equal("scenario=shutdown", sd.ToQueryString());
+        Assert.Equal(ProgramLogEntry.Shutdown, LogFilter.FromQuery("shutdown", null, null, null, null, null).Entry);
+
+        var (store, lines) = Run();
+        lines.Insert(0, Line(ProgramLogEntry.Preflight, ProgramLogEntry.Preflight, "Information", "warmup ok"));
+        lines.Add(Line(ProgramLogEntry.Shutdown, ProgramLogEntry.Shutdown, "Warning", "cleanup slow"));
+
+        var facets = LogCounts.Count(lines, LogFilter.None, store);
+        Assert.Equal(8, facets.Total);
+        Assert.Equal(1, facets.Preflight);
+        Assert.Equal(1, facets.Shutdown);
+        Assert.Equal([5L, 1L], facets.Entries);
     }
 
     [Fact]

@@ -88,6 +88,34 @@ public sealed class BeesharpAppBuilder
         return this;
     }
 
+    /// <summary>Registers a compiled preflight program in DI so constructor injection of shared services works naturally.</summary>
+    public BeesharpAppBuilder AddPreflight<TPreflight>() where TPreflight : class, IPreflightProgram
+    {
+        Services.AddPreflight<TPreflight>();
+        return this;
+    }
+
+    /// <summary>Registers an inline delegate preflight program.</summary>
+    public BeesharpAppBuilder AddPreflight(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
+    {
+        Services.AddSingleton<IPreflightProgram>(new DelegatePreflightProgram(id, name, execute));
+        return this;
+    }
+
+    /// <summary>Registers a compiled shutdown program in DI so constructor injection of shared services works naturally.</summary>
+    public BeesharpAppBuilder AddShutdown<TShutdown>() where TShutdown : class, IShutdownProgram
+    {
+        Services.AddShutdown<TShutdown>();
+        return this;
+    }
+
+    /// <summary>Registers an inline delegate shutdown program.</summary>
+    public BeesharpAppBuilder AddShutdown(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
+    {
+        Services.AddSingleton<IShutdownProgram>(new DelegateShutdownProgram(id, name, execute));
+        return this;
+    }
+
     /// <summary>Registers the built-in HTTP scenarios (idempotent).</summary>
     public BeesharpAppBuilder AddBuiltInScenarios()
     {
@@ -135,12 +163,14 @@ public sealed class BeesharpAppBuilder
         });
 
         // "Storage:Provider" is DuckDb (default) or Memory; anything else fails with a message naming the supported ones.
-        Services.AddBeesharpStorage(new StorageOptions
+        var storageOptions = new StorageOptions
         {
             Provider = config["Storage:Provider"] ?? StorageOptions.DuckDb,
             DuckDbPath = config["Storage:DuckDbPath"],
             Root = contentRoot,
-        });
+        };
+        Services.AddBeesharpStorage(storageOptions);
+        var savedToPath = storageOptions.ResolveProvider() == StorageOptions.Memory ? null : storageOptions.ResolveDuckDbPath();
 
         if (options.IncludeAiAssistant)
         {
@@ -190,7 +220,7 @@ public sealed class BeesharpAppBuilder
         // Everything else is a client-side route of the WebAssembly app (/editor, ...): index.html with its asset placeholders filled.
         app.MapClientIndex();
 
-        return new BeesharpApp(app, presetBuilders, codeDefaultPreset, codeDefaultEnvironment, headlessArgs);
+        return new BeesharpApp(app, presetBuilders, codeDefaultPreset, codeDefaultEnvironment, headlessArgs, savedToPath);
     }
 
     private static void MapStaticAssetsIfAvailable(WebApplication app)
@@ -250,6 +280,7 @@ public sealed class BeesharpApp : IAsyncDisposable
     private readonly string? codeDefaultPreset;
     private readonly string? codeDefaultEnvironment;
     private readonly string[]? headlessArgs;
+    private readonly string? savedToPath;
     private bool initialized;
 
     internal BeesharpApp(
@@ -257,13 +288,15 @@ public sealed class BeesharpApp : IAsyncDisposable
         List<(string Name, Action<PlanBuilder> Configure)> presetBuilders,
         string? codeDefaultPreset,
         string? codeDefaultEnvironment,
-        string[]? headlessArgs)
+        string[]? headlessArgs,
+        string? savedToPath = null)
     {
         WebApplication = webApplication;
         this.presetBuilders = presetBuilders;
         this.codeDefaultPreset = codeDefaultPreset;
         this.codeDefaultEnvironment = codeDefaultEnvironment;
         this.headlessArgs = headlessArgs;
+        this.savedToPath = savedToPath;
     }
 
     public static BeesharpAppBuilder CreateBuilder(string[]? args = null, BeesharpAppOptions? options = null) =>
@@ -289,13 +322,15 @@ public sealed class BeesharpApp : IAsyncDisposable
         var workspace = Services.GetRequiredService<PlanWorkspace>();
         if (presetBuilders.Count > 0)
         {
+            var preflights = Services.GetServices<IPreflightProgram>().ToList();
+            var shutdowns = Services.GetServices<IShutdownProgram>().ToList();
             var builtPresets = new List<Preset>(presetBuilders.Count);
             var now = DateTimeOffset.UtcNow;
             foreach (var (name, configure) in presetBuilders)
             {
                 var planBuilder = new PlanBuilder();
                 configure(planBuilder);
-                builtPresets.Add(new Preset(name, now, planBuilder.Build(catalog)));
+                builtPresets.Add(new Preset(name, now, planBuilder.Build(catalog, preflights, shutdowns)));
             }
             workspace.RegisterCodePresets(builtPresets);
         }
@@ -328,44 +363,41 @@ public sealed class BeesharpApp : IAsyncDisposable
         return 0;
     }
 
-    /// <summary>Executes headless <c>run</c> mode against this host's registered scenarios, DI services, presets and storage.</summary>
+    /// <summary>Executes headless <c>run</c> mode against this host's registered scenarios, DI services, presets and storage using the shared <see cref="HeadlessRunner"/>.</summary>
     public async Task<int> RunHeadlessAsync(string[] args, TextWriter output, TextWriter error, CancellationToken ct = default)
     {
-        await InitializeAsync(ct);
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
-        string? presetArg = null;
-        string? envArg = null;
-        int? durationOverride = null;
-
-        for (var i = 1; i < args.Length; i++)
+        var startIndex = args.Length > 0 && string.Equals(args[0], "run", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        var parsed = HeadlessArgumentParser.ParseRunOptions(args, startIndex, allowRootAndStorage: false, requirePreset: false);
+        if (parsed.IsHelp)
         {
-            var arg = args[i];
-            if ((arg is "--preset" or "-p") && i + 1 < args.Length)
-                presetArg = args[++i];
-            else if ((arg is "--env" or "-e") && i + 1 < args.Length)
-                envArg = args[++i];
-            else if ((arg is "--duration" or "-d") && i + 1 < args.Length && int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var secs))
-                durationOverride = secs;
-            else
-            {
-                error.WriteLine($"beesharp: unknown or incomplete option '{arg}'. Usage: run [--preset <name>] [--env <name>] [--duration <seconds>]");
-                return 2;
-            }
+            output.WriteLine(HeadlessArgumentParser.HostRunUsage);
+            return HeadlessExitCodes.Ok;
+        }
+        if (parsed.Error is not null)
+        {
+            error.WriteLine($"beesharp: {parsed.Error}");
+            error.WriteLine("Run \"dotnet run -- run --help\" for usage.");
+            return HeadlessExitCodes.CouldNotRun;
         }
 
+        await InitializeAsync(ct);
+
+        var options = parsed.Options!;
         var workspace = Services.GetRequiredService<PlanWorkspace>();
         LoadPlan plan;
         string planLabel;
 
-        if (!string.IsNullOrWhiteSpace(presetArg))
+        if (!string.IsNullOrWhiteSpace(options.Preset))
         {
-            var loaded = await workspace.LoadPresetAsync(presetArg, ct);
+            var loaded = await workspace.LoadPresetAsync(options.Preset, ct);
             if (loaded is null)
             {
                 var available = await workspace.ListPresetsAsync(ct);
                 var names = available.Count == 0 ? "none" : string.Join(", ", available.Select(p => $"\"{p.Name}\""));
-                error.WriteLine($"beesharp: preset '{presetArg}' was not found (available: {names}).");
-                return 2;
+                error.WriteLine($"beesharp: preset '{options.Preset}' was not found (available: {names}).");
+                return HeadlessExitCodes.CouldNotRun;
             }
             plan = loaded.Plan;
             planLabel = loaded.PresetName;
@@ -377,59 +409,21 @@ public sealed class BeesharpApp : IAsyncDisposable
             planLabel = state.PresetName;
         }
 
-        if (durationOverride is { } secsOverride)
+        if (options.DurationSeconds is { } secsOverride)
             plan.DurationSeconds = secsOverride;
 
-        var catalog = Services.GetRequiredService<ScenarioCatalog>();
-        var planErrors = plan.Validate(catalog);
-        if (planErrors.Count > 0)
+        var envName = string.IsNullOrWhiteSpace(options.Environment) ? workspace.DefaultEnvironment : options.Environment.Trim();
+
+        var request = new HeadlessRunRequest
         {
-            error.WriteLine($"beesharp: plan '{planLabel}' cannot run: {string.Join("; ", planErrors)}");
-            return 2;
-        }
+            Plan = plan,
+            PresetName = planLabel,
+            EnvironmentName = envName,
+            Options = options,
+            SavedToPath = savedToPath,
+        };
 
-        var envName = string.IsNullOrWhiteSpace(envArg) ? workspace.DefaultEnvironment : envArg.Trim();
-        if (!string.IsNullOrWhiteSpace(envName))
-        {
-            var env = await Services.GetRequiredService<EnvironmentStore>().GetAsync(envName, ct);
-            if (env is null)
-            {
-                error.WriteLine($"beesharp: environment '{envName}' was not found.");
-                return 2;
-            }
-        }
-
-        var runs = Services.GetRequiredService<RunManager>();
-        output.WriteLine($"beesharp run: plan \"{planLabel}\"{(string.IsNullOrWhiteSpace(envName) ? "" : $", environment {envName}")} ({plan.Scenarios.Count} entries, {plan.DurationSeconds}s)");
-
-        try
-        {
-            await runs.StartAsync(plan, envName, ct);
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            error.WriteLine($"beesharp: {ex.Message}");
-            return 2;
-        }
-
-        var stopped = false;
-        using var reg = ct.Register(() =>
-        {
-            stopped = true;
-            _ = runs.StopAsync();
-        });
-
-        await runs.WaitUntilFinishedAsync();
-
-        var status = runs.GetCurrent(afterSeq: int.MaxValue);
-        var totalDone = status.Scenarios.Sum(s => s.Finished);
-        var totalFailed = status.Scenarios.Sum(s => s.Failed);
-        output.WriteLine($"beesharp run finished ({status.State}): {totalDone} bees finished, {totalFailed} failed, elapsed {status.ElapsedSeconds:F1}s (run {status.RunId})");
-
-        if (stopped || totalFailed > 0 || status.PreflightState == "Failed" || status.ShutdownState == "Failed" || status.Error is not null)
-            return 1;
-
-        return 0;
+        return await HeadlessRunner.RunAsync(request, Services, output, error, ct);
     }
 
     public ValueTask DisposeAsync() => WebApplication.DisposeAsync();

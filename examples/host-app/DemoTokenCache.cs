@@ -15,6 +15,28 @@ public sealed class DemoTokenCache
     private DateTimeOffset expiresAt;
     private int refreshCount;
 
+    public async Task<string> WarmupAsync(ILogger logger, string environmentName, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (token is not null && cachedEnv == environmentName && DateTimeOffset.UtcNow < expiresAt)
+                return token;
+
+            await Task.Delay(25, ct);
+            refreshCount++;
+            token = $"tok-{refreshCount:000}-{Random.Shared.Next(1000, 9999)}";
+            cachedEnv = environmentName;
+            expiresAt = DateTimeOffset.UtcNow.AddMinutes(4);
+            logger.LogInformation("Warmed up shared auth token #{RefreshCount}: {Token}", refreshCount, token);
+            return token;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async Task<string> GetTokenAsync(ScenarioContext ctx, CancellationToken ct)
     {
         var env = ctx.Environment.Name;

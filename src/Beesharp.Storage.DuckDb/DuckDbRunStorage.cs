@@ -93,6 +93,13 @@ public sealed class DuckDbRunStorage : IRunStorage
                     json VARCHAR NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS run_programs (
+                    run_id VARCHAR NOT NULL,
+                    kind VARCHAR NOT NULL,
+                    json VARCHAR NOT NULL,
+                    PRIMARY KEY (run_id, kind)
+                );
+
                 CREATE TABLE IF NOT EXISTS bees (
                     run_id VARCHAR NOT NULL,
                     sequence INTEGER NOT NULL,
@@ -211,6 +218,74 @@ public sealed class DuckDbRunStorage : IRunStorage
             cmd.Parameters.Add(new DuckDBParameter(runId));
             return Task.FromResult(cmd.ExecuteScalar() as string);
         }
+    }
+
+    public Task SaveProgramRunAsync(string runId, string kind, StoredProgramRunDto program, CancellationToken ct = default)
+    {
+        var (normalized, entry, beeName) = ProgramLogHelper.ResolveKind(kind);
+        var json = JsonSerializer.Serialize(program, JsonOpts);
+        var isFailed = string.Equals(program.State, "Failed", StringComparison.OrdinalIgnoreCase);
+        var outcome = isFailed ? 2 : 0;
+
+        lock (dbLock)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = """
+                    DELETE FROM run_programs WHERE run_id = $1 AND kind = $2;
+                    INSERT INTO run_programs(run_id, kind, json) VALUES ($1, $2, $3);
+                    """;
+                cmd.Parameters.Add(new DuckDBParameter(runId));
+                cmd.Parameters.Add(new DuckDBParameter(normalized));
+                cmd.Parameters.Add(new DuckDBParameter(json));
+                cmd.ExecuteNonQuery();
+            }
+
+            using (var del = conn.CreateCommand())
+            {
+                del.CommandText = "DELETE FROM logs WHERE run_id = $1 AND entry = $2;";
+                del.Parameters.Add(new DuckDBParameter(runId));
+                del.Parameters.Add(new DuckDBParameter(entry));
+                del.ExecuteNonQuery();
+            }
+
+            if (program.Logs.Count > 0)
+            {
+                var atSeconds = 0.0;
+                if (normalized == "shutdown")
+                {
+                    using var eCmd = conn.CreateCommand();
+                    eCmd.CommandText = "SELECT elapsed_seconds FROM runs WHERE run_id = $1;";
+                    eCmd.Parameters.Add(new DuckDBParameter(runId));
+                    if (eCmd.ExecuteScalar() is double elapsed) atSeconds = elapsed;
+                }
+
+                using var logApp = conn.CreateAppender("logs");
+                foreach (var raw in program.Logs)
+                {
+                    var (level, message) = ProgramLogHelper.ParseLine(raw);
+                    var row = logApp.CreateRow();
+                    row.AppendValue(Interlocked.Increment(ref nextLogId))
+                       .AppendValue(runId)
+                       .AppendValue(entry)
+                       .AppendValue(beeName)
+                       .AppendValue(entry)
+                       .AppendValue(atSeconds)
+                       .AppendValue(LevelRank(level))
+                       .AppendValue(level)
+                       .AppendValue(message)
+                       .AppendValue((string?)null)
+                       .AppendValue((int?)null)
+                       .AppendValue(outcome)
+                       .AppendValue(isFailed)
+                       .AppendValue(false)
+                       .AppendValue(0)
+                       .AppendValue(0)
+                       .EndRow();
+                }
+            }
+        }
+        return Task.CompletedTask;
     }
 
     public Task FlushAsync(CancellationToken ct = default)
@@ -517,7 +592,25 @@ public sealed class DuckDbRunStorage : IRunStorage
                 }
             }
 
-            return Task.FromResult<StoredRunData?>(new StoredRunData(runId, startedUtc, state, elapsedSeconds, plan, bees, totalLogs, error, steps));
+            StoredProgramRunDto? preflight = null;
+            StoredProgramRunDto? shutdownProgram = null;
+            using (var pCmd = conn.CreateCommand())
+            {
+                pCmd.CommandText = "SELECT kind, json FROM run_programs WHERE run_id = $1;";
+                pCmd.Parameters.Add(new DuckDBParameter(runId));
+                using var pr = pCmd.ExecuteReader();
+                while (pr.Read())
+                {
+                    var pKind = pr.GetString(0);
+                    var pJson = pr.GetString(1);
+                    if (string.Equals(pKind, "preflight", StringComparison.OrdinalIgnoreCase))
+                        preflight = JsonSerializer.Deserialize<StoredProgramRunDto>(pJson, JsonOpts);
+                    else if (string.Equals(pKind, "shutdown", StringComparison.OrdinalIgnoreCase))
+                        shutdownProgram = JsonSerializer.Deserialize<StoredProgramRunDto>(pJson, JsonOpts);
+                }
+            }
+
+            return Task.FromResult<StoredRunData?>(new StoredRunData(runId, startedUtc, state, elapsedSeconds, plan, bees, totalLogs, error, steps, preflight, shutdownProgram));
         }
     }
 
@@ -652,6 +745,8 @@ public sealed class DuckDbRunStorage : IRunStorage
         lock (dbLock)
         {
             long total;
+            long preflightCount = 0;
+            long shutdownCount = 0;
             var levelCounts = new Dictionary<string, long>();
             var entryCounts = new List<long>();
             var stepCounts = new List<LogStepCount>();
@@ -666,18 +761,24 @@ public sealed class DuckDbRunStorage : IRunStorage
             Read($"SELECT entry, COUNT(*) FROM logs {enWhere} GROUP BY entry ORDER BY entry;", enArgs, r =>
             {
                 var entry = r.GetInt32(0);
-                while (entryCounts.Count <= entry) entryCounts.Add(0);
-                entryCounts[entry] = r.GetInt64(1);
+                var count = r.GetInt64(1);
+                if (entry == ProgramLogEntry.Preflight) preflightCount = count;
+                else if (entry == ProgramLogEntry.Shutdown) shutdownCount = count;
+                else if (entry >= 0)
+                {
+                    while (entryCounts.Count <= entry) entryCounts.Add(0);
+                    entryCounts[entry] = count;
+                }
             });
 
-            if (query.Entry is not null)
+            if (query.Entry is >= 0)
             {
                 var (stWhere, stArgs) = BuildLogWhere(runId, query, entry: true, step: false, levels: false);
                 Read($"SELECT COALESCE(step, 0) AS s, COUNT(*), COUNT(*) FILTER (WHERE level = 'Error') FROM logs {stWhere} GROUP BY s ORDER BY s;", stArgs,
                     r => stepCounts.Add(new LogStepCount(r.GetInt32(0), r.GetInt64(1), r.GetInt64(2))));
             }
 
-            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts));
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts, preflightCount, shutdownCount));
         }
     }
 

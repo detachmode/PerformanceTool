@@ -10,7 +10,6 @@ namespace Beesharp.Services;
 /// </summary>
 public sealed class LoadPlan
 {
-    public const int MaxEntries = 7;
     public const double MaxRatePerMinute = 60_000;
     public const int MaxBeesPerBurst = 1000;
 
@@ -37,7 +36,6 @@ public sealed class LoadPlan
     {
         var errors = new List<string>();
         if (Scenarios.Count == 0) errors.Add("Add at least one scenario.");
-        if (Scenarios.Count > MaxEntries) errors.Add($"At most {MaxEntries} scenarios per plan.");
         if (DurationSeconds is < 1 or > 24 * 3600) errors.Add("Duration must be between 1 second and 24 hours.");
         if (MaxConcurrency is < 1 or > 1000) errors.Add("Max in-flight must be between 1 and 1000.");
         if (TimeoutSeconds is < 1 or > 300) errors.Add("Timeout must be between 1 and 300 seconds.");
