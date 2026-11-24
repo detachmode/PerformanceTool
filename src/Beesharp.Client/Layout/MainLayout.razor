@@ -10,9 +10,60 @@
 @inject ScriptApiClient ScriptApi
 @inject NavigationManager Nav
 @inject Beesharp.Client.Assistant.AssistantState Asst
+@inject PhoneState Phone
 
 @{ var scnIndex = ScenarioLink.IndexOf(Nav.ToBaseRelativePath(Nav.Uri)); }
-<div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
+<div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "") @(Phone.IsPhone ? "shell-phone" : "")">
+    @if (Phone.IsPhone)
+    {
+        @* The phone's top bar (brain 0059): logo or back arrow, the page title, mode in a compact form and ⋯ (environment, settings, assistant, build). The tabs are the bottom bar. *@
+        var phoneTitle = PhoneTitle(scnIndex);
+        <header class="top top-phone">
+            @if (scnIndex is not null)
+            {
+                <a class="top-back" href="" aria-label="Back to the overview"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+            }
+            else
+            {
+                <a class="brand" href="" aria-label="Beesharp, overview">@BrandHex</a>
+            }
+            <h1 class="top-title" title="@phoneTitle">@phoneTitle</h1>
+            <button type="button" class="mode-btn compact @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
+                    aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)" title="Switch Live/Fake mode or load a stored run">
+                <i aria-hidden="true"></i>
+                <span>@ModeBtnLabel(compact: true)</span>
+                <span class="caret" aria-hidden="true">▾</span>
+            </button>
+            <button type="button" class="icon-btn top-more" @onclick="() => { modeMenuOpen = false; moreOpen = true; }" aria-label="More" aria-haspopup="dialog" title="Environment, settings and more">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+            </button>
+        </header>
+        <Sheet Open="moreOpen" OnClose="() => moreOpen = false" Label="More">
+            <div class="more-sheet">
+                <div class="drawer-sec">
+                    <span class="drawer-lbl">Environment</span>
+                    <button type="button" class="more-row @(Envs.ActiveName is null ? "on" : "")" @onclick="() => PickEnv(null)"><i aria-hidden="true">@(Envs.ActiveName is null ? "✓" : "")</i>No environment</button>
+                    @foreach (var env in Envs.Environments)
+                    {
+                        var envName = env.Name;
+                        <button type="button" class="more-row @(envName == Envs.ActiveName ? "on" : "")" @onclick="() => PickEnv(envName)"><i aria-hidden="true">@(envName == Envs.ActiveName ? "✓" : "")</i>@envName</button>
+                    }
+                    <button type="button" class="more-row" @onclick="OpenEnvsFromMore">Configure environments…</button>
+                </div>
+                <div class="drawer-sec">
+                    @if (Asst.Available)
+                    {
+                        <button type="button" class="more-row" @onclick="() => { moreOpen = false; Asst.Toggle(); }">Assistant</button>
+                    }
+                    <button type="button" class="more-row" @onclick="OpenScriptsFromMenu">Custom scripts (.cs)</button>
+                    <button type="button" class="more-row" @onclick="() => { moreOpen = false; Settings.Open(); }">Settings</button>
+                </div>
+                <div class="drawer-foot"><BuildStamp /></div>
+            </div>
+        </Sheet>
+    }
+    else
+    {
     <header class="top">
         <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseNavAsync">
             <svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
@@ -97,6 +148,7 @@
             </button>
         </div>
     </header>
+    }
 
     @* Small screens: the menu sits outside the header (fixed; a bottom sheet below 760px) so it can rise above the assistant sheet. *@
     @if (modeMenuOpen)
@@ -146,6 +198,7 @@
 
     <main class="main">@Body</main>
     <PlayerBar />
+    @if (Phone.IsPhone) { <TabBar /> }
     <AssistantPanel />
 </div>
 
@@ -167,7 +220,31 @@
 }
 
 @code {
-    private bool menuOpen;
+    private bool menuOpen, moreOpen;
+
+    private string PhoneTitle(int? scenario)
+    {
+        if (scenario is { } i) return i < Sim.Current.Labels.Count ? Sim.Current.Labels[i] : "Scenario " + (i + 1);
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        var q = path.IndexOfAny(['?', '#']);
+        if (q >= 0) path = path[..q];
+        return path.Trim('/').ToLowerInvariant() switch { "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
+    }
+
+    private void PickEnv(string? name) { Envs.SetActive(name); moreOpen = false; }
+    private void OpenEnvsFromMore() { moreOpen = false; EnvPopup.Show(); }
+
+    private RenderFragment BrandHex => @<svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
+        <defs><clipPath id="bsharp-hex-p"><path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z"/></clipPath></defs>
+        <g clip-path="url(#bsharp-hex-p)">
+            <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z" fill="#F5B700"/>
+            <path d="M32 32L57 17.5V46.5L32 61L7 46.5Z" fill="#D99B00"/>
+            <path d="M32 32L57 46.5L32 61L7 46.5Z" fill="#B87D00"/>
+        </g>
+        <path d="M32 3.8L56.2 17.9V46.1L32 60.2L7.8 46.1V17.9L32 3.8Z" stroke="#FDE68A" stroke-opacity="0.45" stroke-width="1.5"/>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M15 19H27.5C32.2 19 35.2 21.4 35.2 25.4C35.2 28.2 33.6 30.2 31.1 31.1C34.2 32 36.2 34.4 36.2 37.8C36.2 42.3 32.8 45 27.6 45H15V19ZM20.8 29.4H26.4C28.4 29.4 29.6 28.3 29.6 26.5C29.6 24.7 28.4 23.7 26.4 23.7H20.8V29.4ZM20.8 40.3H26.9C29.2 40.3 30.5 39.2 30.5 37.2C30.5 35.2 29.2 34.1 26.9 34.1H20.8V40.3Z" fill="#110F0C"/>
+        <path d="M43.4 22L41.8 41M49.6 22L48 41M39.2 28.2H52.2M38.5 34.8H51.5" stroke="#110F0C" stroke-width="3.2" stroke-linecap="round"/>
+    </svg>;
     private bool modeMenuOpen;
     // One menu body, shown under the desktop mode button or as the small-screen sheet.
     private RenderFragment ModeMenuItems => @<text>
@@ -260,6 +337,7 @@
         ApiRun.Changed += OnChanged;
         Envs.Changed += OnChanged;
         Asst.Changed += OnChanged;
+        Phone.Changed += OnChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -275,7 +353,7 @@
     private void CloseMenu() { menuOpen = false; modeMenuOpen = false; }
     private async Task CloseNavAsync() { menuOpen = false; modeMenuOpen = false; await Asst.CloseIfMobileAsync(); }
     private void OpenEnvsFromMenu() { menuOpen = false; EnvPopup.Show(); }
-    private async Task OpenScriptsFromMenu() { menuOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("editor"); }
+    private async Task OpenScriptsFromMenu() { menuOpen = false; moreOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("editor"); }
     private void OpenSettingsFromMenu() { menuOpen = false; Settings.Open(); }
 
     private void OnChanged()
@@ -292,5 +370,6 @@
         ApiRun.Changed -= OnChanged;
         Envs.Changed -= OnChanged;
         Asst.Changed -= OnChanged;
+        Phone.Changed -= OnChanged;
     }
 }

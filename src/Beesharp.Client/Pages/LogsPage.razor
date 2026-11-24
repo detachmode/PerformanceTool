@@ -11,6 +11,7 @@
 @inject ApiRunSource ApiRun
 @inject LogsLinks Links
 @inject NavigationManager Nav
+@inject PhoneState Phone
 @inject IJSRuntime JS
 
 <PageTitle>Logs · Beesharp</PageTitle>
@@ -25,7 +26,8 @@
 }
 
 <div class="logs-page">
-    <aside class="lg-filters @(filtersOpen ? "open" : "")" id="lg-filters" aria-label="Log filters">
+    @{
+        RenderFragment filterGroups = @<text>
         <div class="lg-group" role="group" aria-label="Level">
             <h2>Level</h2>
             <button type="button" class="lg-opt @(filter.Levels.Count == 0 ? "on" : "")" aria-pressed="@Aria.Bool(filter.Levels.Count == 0)" @onclick="() => Apply(filter.WithLevels([]))">
@@ -86,7 +88,27 @@
                 }
             </div>
         }
-    </aside>
+    </text>;
+    }
+    @if (Phone.IsPhone)
+    {
+        @* The phone (brain 0059): the same filters and counts in a bottom sheet; "Show N lines" closes it. How the lines look (time, wrapping) sits here too. *@
+        <Sheet Open="filtersOpen" OnClose="() => filtersOpen = false" Label="Filter the logs" Class="filter-sheet">
+            <div class="lg-filters in-sheet" id="lg-filters" aria-label="Log filters">
+                @filterGroups
+                <div class="lg-group" role="group" aria-label="Lines">
+                    <h2>Lines</h2>
+                    <button type="button" class="lg-opt" @onclick="ToggleTimeModeAsync"><span>Time</span><span class="n">@(timeMode == LogTimeMode.Run ? "Run time" : "Clock time")</span></button>
+                    <button type="button" class="lg-opt" aria-pressed="@Aria.Bool(wrap)" @onclick="() => wrap = !wrap"><span>Wrap long lines</span><span class="n">@(wrap ? "On" : "Off")</span></button>
+                </div>
+                <button type="button" class="btn primary lg-show" @onclick="() => filtersOpen = false">Show @Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")</button>
+            </div>
+        </Sheet>
+    }
+    else
+    {
+        <aside class="lg-filters @(filtersOpen ? "open" : "")" id="lg-filters" aria-label="Log filters">@filterGroups</aside>
+    }
 
     <section class="lg-main" aria-label="Log lines">
         <div class="lg-searchrow">
@@ -102,11 +124,14 @@
                     <button type="button" class="lg-search-x" aria-label="Clear the search" title="Clear the search" @onclick="ClearSearch">✕</button>
                 }
             </div>
+            @if (!Phone.IsPhone)
+            {
             <button type="button" class="btn ghost small lg-timemode" aria-pressed="@Aria.Bool(timeMode == LogTimeMode.Clock)" @onclick="ToggleTimeModeAsync"
                     title="@(timeMode == LogTimeMode.Run ? "Showing time into the run (0:05.9). Click for the clock time." : "Showing the clock time (14:02:07.3). Click for the time into the run.")">
                 @(timeMode == LogTimeMode.Run ? "Run time" : "Clock time")
             </button>
             <WrapToggleButton @bind-Wrapped="wrap" />
+            }
             <CopyButton GetTextAsync="CopyAllAsync" Disabled="@(total == 0)" Title="@($"Copy all {Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")} to the clipboard")" />
         </div>
 
@@ -244,6 +269,7 @@
     {
         Sim.Changed += OnChanged;
         DataMode.Changed += OnChanged;
+        Phone.Changed += OnChanged;
         loopCts = new CancellationTokenSource();
         _ = RefreshLoopAsync(loopCts.Token);
     }
@@ -552,6 +578,7 @@
         gen++;
         Sim.Changed -= OnChanged;
         DataMode.Changed -= OnChanged;
+        Phone.Changed -= OnChanged;
         searchDebounce?.Cancel();
         searchDebounce?.Dispose();
         loopCts?.Cancel();

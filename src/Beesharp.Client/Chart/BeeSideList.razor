@@ -1,7 +1,8 @@
 @* The bees of the visible time frame, bees in flight first, then failed, slow, successful, each by time (brain 0028, 0023 update 3, 0059).
    One row per bee: its number in the outcome colour, duration, start time and one quiet line (the error, the slow call, or the step it is in).
    A virtualised list (brain 0021, 0022), also on a phone. Clicking a row selects the bee. *@
-<VirtualList Class="bee-list side-virtual" Items="Rows" RowHeight="34" ScrollToIndex="RevealIndex" ResetKey="@ResetKey" Label="Bees in view" Role="list">
+@inject PhoneState Phone
+<VirtualList Class="bee-list side-virtual" Items="Rows" RowHeight="@(Phone.IsPhone ? 44 : 34)" ScrollToIndex="RevealIndex" ResetKey="@ResetKey" Label="Bees in view" Role="list">
     <ItemContent Context="a">
         @Row(a)
     </ItemContent>

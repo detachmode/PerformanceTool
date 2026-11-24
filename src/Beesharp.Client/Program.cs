@@ -21,6 +21,7 @@ builder.Services.AddSingleton(sp => new HttpClient { BaseAddress = new Uri(build
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<LogsLinks>();
 builder.Services.AddSingleton<ViewSettings>();
+builder.Services.AddSingleton<PhoneState>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
 builder.Services.AddSingleton<ScriptApiClient>();
 builder.Services.AddSingleton<Beesharp.Client.Assistant.AssistantClient>();
