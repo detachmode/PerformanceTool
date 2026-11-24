@@ -52,7 +52,7 @@ public sealed partial class AssistantToolbox
     }
 
     [AssistantTool("add_scenario_entry")]
-    [Description("Adds a scenario entry to the plan (at most 7). Optionally sets its label, rate and parameters right away. Parameters are merged into the defaults; use get_scenario to see which exist.")]
+    [Description("Adds a scenario entry to the plan. Optionally sets its label, rate and parameters right away. Parameters are merged into the defaults; use get_scenario to see which exist.")]
     public object AddScenarioEntry(
         [Description("Scenario id, e.g. http-get")] string scenarioId,
         [Description("Name of this entry in the plan, e.g. Checkout")] string? label = null,

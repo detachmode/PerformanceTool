@@ -100,7 +100,6 @@ public sealed class ApiRunSource : IRunSource
 
     public void AddEntry(IScenario scenario)
     {
-        if (Plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
         var config = ScenarioRunConfig.CreateFor(scenario);
         var same = Plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
         config.Label = same == 0 ? scenario.Name : $"{scenario.Name} #{same + 1}";

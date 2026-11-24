@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Beesharp.Cli;
+using Beesharp.Services;
 using Beesharp.Services.Storage;
 using Xunit;
 
@@ -388,5 +389,103 @@ public sealed class CliTests : IDisposable
         Assert.Equal(50, RunSummary.Percentile(sorted, 0.5));
         Assert.Equal(100, RunSummary.Percentile(sorted, 0.95));
         Assert.Equal(7, RunSummary.Percentile([7], 0.95));
+    }
+
+    // ---- live failures, --logs, --json stdout, --export ----
+
+    [Fact]
+    public void New_options_short_flags_logs_json_stdout_and_export_parse_correctly()
+    {
+        var p = CliArguments.Parse(["run", "-p", "Smoke", "-e", "Staging", "-d", "4", "--logs", "debug", "--json", "--export", "/tmp/out.json", "--export-format", "JSON"]);
+        Assert.Equal(CliCommand.Run, p.Command);
+        var o = p.Run!;
+        Assert.Equal("Smoke", o.Preset);
+        Assert.Equal("Staging", o.Environment);
+        Assert.Equal(4, o.DurationSeconds);
+        Assert.Equal("Debug", o.LogsLevel);
+        Assert.True(o.JsonToStdout);
+        Assert.Null(o.JsonFile);
+        Assert.Equal("/tmp/out.json", o.ExportPath);
+        Assert.Equal("json", o.ExportFormat);
+
+        var defaultLogs = CliArguments.Parse(["run", "--preset", "Smoke", "--logs"]).Run!;
+        Assert.Equal("Information", defaultLogs.LogsLevel);
+
+        Assert.Equal(CliCommand.Invalid, CliArguments.Parse(["run", "--preset", "Smoke", "--logs", "bogus"]).Command);
+        Assert.Equal(CliCommand.Invalid, CliArguments.Parse(["run", "--preset", "Smoke", "--export-format", "xml"]).Command);
+    }
+
+    [Theory]
+    [InlineData("out.duckdb", "DuckDb", "duckdb")]
+    [InlineData("out.json", "DuckDb", "json")]
+    [InlineData("out.csv", "DuckDb", "csv")]
+    [InlineData("out.csv.zip", "DuckDb", "csv")]
+    [InlineData("out.zip", "DuckDb", "parquet")]
+    [InlineData("out.parquet", "DuckDb", "parquet")]
+    [InlineData("exports/", "DuckDb", "parquet")]
+    [InlineData("exports/", "Memory", "json")]
+    public void Export_format_is_inferred_from_path_and_storage(string path, string provider, string expected)
+    {
+        Assert.Equal(expected, HeadlessArgumentParser.InferExportFormat(path, provider));
+    }
+
+    [Fact]
+    public async Task Failing_bees_print_immediate_FAIL_lines_live()
+    {
+        var r = await Run("Failing bees");
+        Assert.Equal(ExitCodes.BeesFailed, r.Exit);
+        Assert.Contains("FAIL [Quick work] bee #", r.Out);
+        Assert.Contains("quick work failed on purpose", r.Out);
+    }
+
+    [Fact]
+    public async Task Logs_flag_streams_live_scenario_logs()
+    {
+        var r = await Run("Passing", "Staging", "--logs");
+        Assert.Equal(ExitCodes.Ok, r.Exit);
+        Assert.Contains("INF [Quick work]", r.Out);
+        Assert.Contains("hello staging from quick work", r.Out);
+
+        // Filtering to error level hides Info scenario logs
+        var errOnly = await Run("Passing", "Staging", "--logs", "error");
+        Assert.Equal(ExitCodes.Ok, errOnly.Exit);
+        Assert.DoesNotContain("hello staging from quick work", errOnly.Out);
+    }
+
+    [Fact]
+    public async Task Json_without_file_writes_valid_json_only_to_stdout()
+    {
+        var r = await Run("Passing", "Staging", "--json");
+        Assert.Equal(ExitCodes.Ok, r.Exit);
+        var doc = JsonSerializer.Deserialize<JsonElement>(r.Out);
+        Assert.Equal(0, doc.GetProperty("exitCode").GetInt32());
+        Assert.Equal("Passing", doc.GetProperty("preset").GetString());
+        Assert.True(doc.GetProperty("bees").GetInt32() > 0);
+        var entry = doc.GetProperty("entries")[0];
+        Assert.True(entry.GetProperty("minMs").GetDouble() >= 0);
+        Assert.True(entry.GetProperty("avgMs").GetDouble() >= 0);
+        Assert.True(entry.GetProperty("maxMs").GetDouble() >= 0);
+    }
+
+    [Fact]
+    public async Task Export_writes_file_with_memory_storage_and_directory_with_duckdb_storage()
+    {
+        // Memory storage -> explicit file path (nested directory created automatically)
+        var memExport = Path.Combine(root, "nested", "exports", "run-export.json");
+        var rMem = await Run("Passing", "Staging", "--export", memExport);
+        Assert.Equal(ExitCodes.Ok, rMem.Exit);
+        Assert.True(File.Exists(memExport));
+        Assert.Contains("Exported to", rMem.Out);
+        var memJson = JsonSerializer.Deserialize<JsonElement>(await File.ReadAllTextAsync(memExport));
+        Assert.True(memJson.TryGetProperty("run", out _));
+
+        // DuckDB storage -> directory target infers parquet zip
+        var duckDir = Path.Combine(root, "duck-exports") + Path.DirectorySeparatorChar;
+        var rDuck = await Cli(["run", "--preset", "Passing", "--env", "Staging", "--root", root, "--progress", "0", "--export", duckDir]);
+        Assert.Equal(ExitCodes.Ok, rDuck.Exit);
+        Assert.Contains("Exported to", rDuck.Out);
+        var files = Directory.GetFiles(Path.Combine(root, "duck-exports"), "*-parquet.zip");
+        var exportedZip = Assert.Single(files);
+        Assert.True(new FileInfo(exportedZip).Length > 0);
     }
 }

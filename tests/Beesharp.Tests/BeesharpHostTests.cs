@@ -196,7 +196,72 @@ public class BeesharpHostTests : IDisposable
 
         Assert.Equal(0, exitCode);
         Assert.Equal("", error.ToString());
-        Assert.Contains("beesharp run finished", output.ToString());
+        var text = output.ToString();
+        Assert.Contains("Summary", text);
+        Assert.Contains("#1 Checkout", text);
+        Assert.Contains("Result: all ", text);
         Assert.True(app.Services.GetRequiredService<TestTokenCache>().Hits >= 1);
+    }
+
+    [Fact]
+    public async Task Embedded_host_headless_run_supports_help_json_and_export()
+    {
+        var builder = BeesharpApp.CreateBuilder(["run", "--preset", "Smoke", "--duration", "1"]);
+        builder.WebApplicationBuilder.Environment.ContentRootPath = root;
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "Memory",
+            ["Presets:Directory"] = Path.Combine(root, "presets"),
+            ["Environments:Directory"] = Path.Combine(root, "environments"),
+            ["Scripts:Directory"] = Path.Combine(root, "scripts"),
+        });
+
+        builder.Services.AddSingleton<TestTokenCache>();
+        builder.AddScenario<CheckoutScenario>();
+        builder.AddPreset("Smoke", plan => plan
+            .Duration(TimeSpan.FromSeconds(1))
+            .Add<CheckoutScenario>(new CheckoutParams(OpenCount: 2), ratePerMinute: 120))
+            .AsDefault();
+
+        await using var app = builder.Build();
+
+        // --help prints usage and exits 0
+        using (var helpOut = new StringWriter())
+        using (var helpErr = new StringWriter())
+        {
+            var helpCode = await app.RunHeadlessAsync(["run", "--help"], helpOut, helpErr);
+            Assert.Equal(0, helpCode);
+            Assert.Contains("--export", helpOut.ToString());
+            Assert.Contains("--logs", helpOut.ToString());
+            Assert.Equal("", helpErr.ToString());
+        }
+
+        // --json + --export writes valid JSON to stdout and exports run file
+        var exportFile = Path.Combine(root, "exports", "host-run.json");
+        using var jsonOut = new StringWriter();
+        using var jsonErr = new StringWriter();
+        var exitCode = await app.RunHeadlessAsync(["run", "--duration", "1", "--progress", "0", "--json", "--export", exportFile], jsonOut, jsonErr);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("", jsonErr.ToString());
+        var summaryDoc = JsonSerializer.Deserialize<JsonElement>(jsonOut.ToString());
+        Assert.Equal(0, summaryDoc.GetProperty("exitCode").GetInt32());
+        Assert.Equal(exportFile, summaryDoc.GetProperty("exportedTo").GetString());
+        Assert.True(summaryDoc.GetProperty("exportedBytes").GetInt64() > 0);
+        Assert.True(File.Exists(exportFile));
+    }
+
+    [Fact]
+    public void LoadPlan_and_PlanWorkspace_allow_more_than_7_scenarios()
+    {
+        var catalog = new ScenarioCatalog([new OrderHistoryScenario()]);
+        var workspace = new PlanWorkspace(catalog, new PresetStore(Path.Combine(root, "presets")));
+
+        for (var i = 0; i < 10; i++)
+            workspace.AddEntry("order-history");
+
+        var state = workspace.GetState();
+        Assert.Equal(10, state.Plan.Scenarios.Count);
+        Assert.Empty(state.Plan.Validate(catalog));
     }
 }
