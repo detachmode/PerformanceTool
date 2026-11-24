@@ -46,4 +46,6 @@ Screenshots: `docs/screenshots/2026-11-24-logs-editor-environment/`.
 ## Phone (user, 2026-11-24, drafts `docs/screenshots/2026-11-24-phone-layout-drafts/`)
 - **App frame: A.** The tabs move to a bottom tab bar (Overview, Editor, Logs, Env); while a run goes a slim run bar sits above it (pause, time, active, failed; ⌃ opens the full run). The top bar keeps the page title and mode/environment.
 - **Overview: A.** Full cards one under the other, each with all its steps, like the desktop card.
-- Open: one scenario (tabs or one long page), one bee (own screen or bottom sheet), editor (Try below the code or a Try tab). Logs (filters in a sheet) and Environment (key above value) have one proposal each.
+- **One scenario: A.** Three tabs Steps · Chart · Bees under the title; a count in Steps jumps to Bees, filtered; while a run goes the Steps tab shows Now/Failed.
+- **One bee: B.** A bottom sheet over the bee list (half height, drag up for full height, swipe down to close), with ‹ › for the previous/next bee and tabs Steps · Logs · Calls.
+- Open: editor (Try below the code or a Try tab). Logs (filters in a sheet) and Environment (key above value) have one proposal each.
