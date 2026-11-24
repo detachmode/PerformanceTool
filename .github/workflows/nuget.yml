@@ -85,21 +85,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
-          for proj in \
-            src/Beesharp.Core/Beesharp.Core.csproj \
-            src/Beesharp.Contracts/Beesharp.Contracts.csproj \
-            src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj \
-            src/Beesharp.Storage/Beesharp.Storage.csproj \
-            src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj \
-            src/Beesharp.Scripting/Beesharp.Scripting.csproj \
-            src/Beesharp.Engine/Beesharp.Engine.csproj \
-            src/Beesharp.Ai/Beesharp.Ai.csproj; do
-            dotnet pack "$proj" \
-              -c Release \
-              -o artifacts/nuget \
-              -p:Version="$VERSION" \
-              -p:ContinuousIntegrationBuild=true
-          done
+          dotnet pack src/Beesharp.Core/Beesharp.Core.csproj \
+            -c Release \
+            -o artifacts/nuget \
+            -p:Version="$VERSION" \
+            -p:ContinuousIntegrationBuild=true
           dotnet pack src/Beesharp.Host/Beesharp.Host.csproj \
             -c Release \
             -o artifacts/nuget \
@@ -137,16 +127,7 @@ jobs:
             exit 1
           fi
           VERSION="${{ steps.ver.outputs.version }}"
-          for pkg in \
-            Beesharp.Core \
-            Beesharp.Contracts \
-            Beesharp.Ai.Contracts \
-            Beesharp.Storage \
-            Beesharp.Storage.DuckDb \
-            Beesharp.Scripting \
-            Beesharp.Engine \
-            Beesharp.Ai \
-            Beesharp.Host; do
+          for pkg in Beesharp.Core Beesharp.Host; do
             dotnet nuget push "artifacts/nuget/${pkg}.${VERSION}.nupkg" \
               --source https://api.nuget.org/v3/index.json \
               --api-key "$API_KEY" \
@@ -161,5 +142,5 @@ jobs:
             echo "### Beesharp NuGet"
             echo "- **Version:** \`${{ steps.ver.outputs.version }}\`"
             echo "- **Dry run:** \`${{ inputs.dry_run == true }}\`"
-            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Contracts\`, \`Beesharp.Ai.Contracts\`, \`Beesharp.Storage\`, \`Beesharp.Storage.DuckDb\`, \`Beesharp.Scripting\`, \`Beesharp.Engine\`, \`Beesharp.Ai\`, \`Beesharp.Host\`"
+            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Host\`"
           } >> "$GITHUB_STEP_SUMMARY"
