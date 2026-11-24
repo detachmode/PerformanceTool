@@ -107,17 +107,21 @@
     var rowSeqs = sideRows.Select(r => r.Sequence).ToList();
     var revealAt = selSeq is { } rsq ? sideRows.FindIndex(r => r.Sequence == rsq) : -1;
     var runBy = runningRaw.Count == 0 ? null : runningRaw.ToDictionary(r => r.Sequence);
-    var phone = Phone.IsPhone && !Selection;   // the phone layouts (brain 0059): three tabs, the bee in a bottom sheet
+    var phone = Phone.IsPhone && !Selection;
+    var shownTab = !hasSteps && tab == PhoneTab.Steps ? PhoneTab.Chart : tab;   // a scenario without steps has no Steps tab   // the phone layouts (brain 0059): three tabs, the bee in a bottom sheet
     var selSequence = selSeq;
 }
 
-<div class="scn @(Selection ? "scn-set" : "") @(phone ? "scn-phone" : "")" data-tab="@(phone ? tab.ToString().ToLowerInvariant() : null)" tabindex="-1" @ref="root" @onkeydown="OnKey" role="presentation">
+<div class="scn @(Selection ? "scn-set" : "") @(phone ? "scn-phone" : "")" data-tab="@(phone ? shownTab.ToString().ToLowerInvariant() : null)" tabindex="-1" @ref="root" @onkeydown="OnKey" role="presentation">
     @if (phone)
     {
         <div class="scn-tabs" role="tablist" aria-label="Scenario view">
-            <button type="button" role="tab" class="scn-tab @(tab == PhoneTab.Steps ? "on" : "")" aria-selected="@Aria.Bool(tab == PhoneTab.Steps)" @onclick="() => SetTab(PhoneTab.Steps)">Steps</button>
-            <button type="button" role="tab" class="scn-tab @(tab == PhoneTab.Chart ? "on" : "")" aria-selected="@Aria.Bool(tab == PhoneTab.Chart)" @onclick="() => SetTab(PhoneTab.Chart)">Chart</button>
-            <button type="button" role="tab" class="scn-tab @(tab == PhoneTab.Bees ? "on" : "")" aria-selected="@Aria.Bool(tab == PhoneTab.Bees)" @onclick="() => SetTab(PhoneTab.Bees)">Bees<span class="n">@Format.Num(sideRows.Count)</span></button>
+            @if (hasSteps)
+            {
+                <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Steps ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Steps)" @onclick="() => SetTab(PhoneTab.Steps)">Steps</button>
+            }
+            <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Chart ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Chart)" @onclick="() => SetTab(PhoneTab.Chart)">Chart</button>
+            <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Bees ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Bees)" @onclick="() => SetTab(PhoneTab.Bees)">Bees<span class="n">@Format.Num(sideRows.Count)</span></button>
             <span class="spacer"></span>
             <div class="scn-tools">@ToolButtons</div>
         </div>

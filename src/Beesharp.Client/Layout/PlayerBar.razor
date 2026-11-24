@@ -9,6 +9,7 @@
 @inject ApiRunSource ApiRun
 @inject IJSRuntime JS
 @inject PhoneState Phone
+@inject NavigationManager Nav
 
 @{
     var s = Sim.Current;
@@ -110,7 +111,9 @@
     private DotNetObjectReference<PlayerBar>? self;
     private IJSObjectReference? module;
 
-    protected override void OnInitialized() { Sim.Changed += OnChanged; Phone.Changed += OnChanged; }
+    protected override void OnInitialized() { Sim.Changed += OnChanged; Phone.Changed += OnChanged; Nav.LocationChanged += OnLocation; }
+
+    private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) { if (open) { open = false; OnChanged(); } }
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
@@ -145,7 +148,7 @@
     /// <summary>Called by the space bar handler (player-bar.js) when focus is not in an input.</summary>
     [JSInvokable] public void ToggleFromKey() => Toggle();
 
-    public void Dispose() { Sim.Changed -= OnChanged; Phone.Changed -= OnChanged; }
+    public void Dispose() { Sim.Changed -= OnChanged; Phone.Changed -= OnChanged; Nav.LocationChanged -= OnLocation; }
 
     public async ValueTask DisposeAsync()
     {

@@ -619,8 +619,6 @@ label { font-size: .74rem; color: var(--muted); }
 
 /* ----- small screens ----- */
 @media (max-width: 760px) {
-    .brand-name { display: none; }
-    .main { padding: calc(var(--top-h) + .9rem) .9rem 8rem; }
     .field { width: 100%; }
     .ed-spawn-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: .5rem .6rem; }
     .ed-burst-pair { grid-column: 1 / -1; max-width: none; }
@@ -712,32 +710,6 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .more-btn { display: none; }
 @media (prefers-reduced-motion: reduce) { .state-lamp.run i { animation: none; } .gauge i, .play .disc { transition: none; } }
 @media (max-width: 1100px) { .play-label { display: none; } .inst { padding: .1rem .8rem; min-width: 0; } .state-lamp { min-width: 0; } .inst.clock { min-width: 9rem; } .pl-main { padding-right: .9rem; } }
-@media (max-width: 760px) {
-    .player { flex-wrap: wrap; row-gap: .5rem; padding: .6rem 1rem calc(.6rem + env(safe-area-inset-bottom)); }
-    .pl-main { gap: .6rem; padding-right: .5rem; }
-    .play { padding: 0; }
-    .play .disc { width: 48px; height: 48px; }
-    .state-lamp { display: none; }
-    .player.open .state-lamp { display: flex; }
-    .inst { padding: .1rem .5rem; }
-    .inst.clock { flex: 1 1 auto; min-width: 0; max-width: none; }
-    .inst.clock .lbl { display: none; }
-    .inst .val { font-size: 1rem; }
-    .inst .lbl { font-size: .56rem; letter-spacing: .04em; }
-    .inst.clock .val em { display: none; }
-    .player:not(.open) .play .disc { width: 42px; height: 42px; }
-    .player:not(.open) .stop-btn { width: 30px; height: 30px; }
-    .player:not(.open) .pl-main { gap: .4rem; padding-right: .35rem; }
-    .player:not(.open) .inst { padding: .1rem .4rem; }
-    .more-btn { padding: .25rem .6rem; font-size: 1rem; line-height: 1; }
-    .inst.extra, .logs-btn { display: none; }
-    .more-btn { display: inline-block; }
-    .pl-end { margin-left: auto; padding-left: .1rem; flex: none; }
-    .player.open .inst.extra { display: flex; }
-    .player.open .logs-btn { display: inline-block; }
-    .player.open .pl-end { flex-basis: 100%; justify-content: flex-end; padding: 0; }
-    .player.open .inst.extra { border-left: 0; padding-left: 0; padding-right: 1.2rem; }
-}
 
 /* Stable clicking on a live chart (brain 0026): calm badge while the chart is held still */
 .chart-wrap { position: relative; }
@@ -1006,9 +978,6 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .hl-cmt  { color: #78716c; font-style: italic; }
 
 @media (max-width: 760px) {
-    .script-fullscreen { height: calc(100dvh - var(--top-h)); }
-    .shell:has(.player) .script-fullscreen { height: calc(100dvh - var(--top-h) - 62px); }
-    .script-bar { padding: .35rem .5rem; gap: .35rem; }
     .cs-gutter { width: 2.35rem; padding: .65rem .35rem .65rem .15rem; font-size: .8rem; }
     .cs-hl, .cs-ta { padding: .65rem .75rem; font-size: .8rem; }
 }
@@ -1296,14 +1265,6 @@ button.asst-open:hover { color: var(--accent); background: var(--panel2); }
 .rt-row.fresh .rt-val { animation: rt-fresh 1.4s ease-out; }
 @keyframes rt-fresh { from { background: color-mix(in srgb, var(--text) 18%, transparent); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .rt-row.fresh .rt-val { animation: none; } }
-@media (max-width: 600px) {
-    .rt-line { grid-template-columns: minmax(0, 1fr); gap: .05rem; }
-    .rt-filter { width: 100%; }
-}
-@media (max-width: 430px) {
-    .nav-item { padding: 0 .3rem; font-size: .76rem; }
-    .top { gap: .2rem; }
-}
 
 /* ----- scenario steps (brain 0056): the vertical stepper of a bee, the steps strip of the scenario popup, the quiet card line ----- */
 .stepper { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -1490,11 +1451,6 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
     .bp-body { overflow: visible; }
     .bs-dlg { overflow-y: auto; max-height: 92dvh; }
 }
-@media (max-width: 600px) {
-    .scn-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: .1rem; }
-    .scn-filters::-webkit-scrollbar { display: none; }
-    .scn-filters > * { flex: none; }
-}
 /* ----- logs, editor, environment (brain 0059) ----- */
 /* logs page: a filter column with counts, a full-width search, the active filters as chips, the virtualised lines */
 .main:has(.logs-page) { max-width: none; padding: var(--top-h) 0 0; }
@@ -1556,16 +1512,6 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .lg-latest:hover { background: #fff; }
 .lg-note { margin: 0; padding: .3rem 0 .5rem; }
 .btn.copy-fail { color: var(--bad); }
-@media (max-width: 760px) {
-    .logs-page { display: flex; flex-direction: column; }
-    .lg-main { flex: 1 1 auto; }
-    .shell:has(.player) .logs-page { height: calc(100dvh - var(--top-h) - 62px); }
-    .lg-filters { display: none; flex: none; border-right: 0; border-bottom: 1px solid var(--border); max-height: 48dvh; }
-    .lg-filters.open { display: flex; }
-    .lg-filter-btn { display: inline-flex; }
-    .lg-main { padding: .6rem .7rem 0; }
-    .lg-lines { font-size: .7rem; }
-}
 
 /* editor: the code at full height, the Try result in a column on the right */
 .ed-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
@@ -1614,7 +1560,6 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .env-card .rt-bag-head .rt-link.rt-bag-name { margin: 0; text-decoration: none; }
 .env-card .rt-bag-head .rt-link.rt-bag-name:hover { text-decoration: underline; }
 .env-card .rt-rows { margin-top: 0; }
-@media (max-width: 600px) { .env-page { max-width: none; } .env-card { padding: .1rem .45rem; } }
 
 /* ----- phone layouts (brain 0059) ----- */
 /* html.phone is set by the script in index.html: up to 760 px wide, or a phone turned sideways. Desktop rules above are untouched; everything below only applies on a phone. */
@@ -1726,7 +1671,6 @@ html.phone .scn-phone .scn-list { flex: 1 1 auto; height: auto; min-height: 12re
 html.phone .scn-phone .scn-line { font-size: .95rem; margin-bottom: .8rem; }
 html.phone .scn-phone .scn-fig { min-height: 32px; }
 html.phone .scn-phone .sls-row { min-height: 44px; }
-html.phone .scn-phone .sls-num { min-width: 44px; min-height: 40px; display: inline-flex; align-items: center; justify-content: flex-end; }
 html.phone .scn-phone .scn-left .sls-row { grid-template-columns: 1.6rem minmax(0, 1fr) 4.4rem; }
 html.phone .scn-phone .scn-left .sls.live .sls-row { grid-template-columns: 1.6rem minmax(0, 1fr) 3.4rem 4.4rem; }
 html.phone .scn-phone .sls-col { white-space: nowrap; }
@@ -1782,8 +1726,8 @@ html.phone .lg-show { display: block; position: sticky; bottom: 0; flex: none; w
 html.phone .shell .script-fullscreen { height: calc(100dvh - var(--top-h) - var(--bot)); }
 html.phone .script-bar { flex-wrap: nowrap; gap: .35rem; padding: .35rem max(.6rem, env(safe-area-inset-right)) .35rem max(.6rem, env(safe-area-inset-left)); }
 html.phone .script-bar .btn { min-height: 40px; }
-html.phone .script-bar .script-file-btn { flex: 0 1 auto; min-width: 0; max-width: 46vw; }
-html.phone .script-bar .script-status { flex: 1 1 0; min-width: 0; }
+html.phone .script-bar .script-file-btn { flex: 0 1 auto; min-width: 0; max-width: 36vw; }
+html.phone .script-bar .script-status { flex: 0 1 auto; min-width: 0; font-size: .75rem; }
 html.phone .script-bar .chip { display: none; }   /* "Switch to Live": the mode button and the Try tab say it */
 html.phone .ed-body { display: flex; flex-direction: column; }
 html.phone .ed-body[data-tab="code"] > .ed-try, html.phone .ed-body[data-tab="try"] > .ed-code { display: none; }
@@ -1801,6 +1745,7 @@ html.phone .rt-val, html.phone .rt-key { white-space: normal; overflow-wrap: any
 html.phone .rt-reveal { min-height: 44px; min-width: 56px; }
 html.phone .rt-filter { width: 100%; min-height: 44px; }
 html.phone .env-head .btn { min-height: 40px; }
+html.phone .env-card { padding: .1rem .45rem; }
 
 /* touch: every control reaches 40 px */
 html.phone .btn, html.phone .btn.small { min-height: 40px; }
@@ -1808,3 +1753,24 @@ html.phone .icon-btn { min-width: 40px; min-height: 40px; }
 html.phone .dd-item { min-height: 44px; }
 html.phone .page-head .btn { min-height: 40px; }
 html.phone .overlay.settings .icon-btn { min-width: 44px; min-height: 44px; }
+
+/* menus and dialogs sit above the bars and sheets, and the menu sheet clears the tab bar */
+html.phone .dd-backdrop, html.phone .env-backdrop { z-index: 146; }
+html.phone .dd-menu, html.phone .dd-menu.right, html.phone .env-menu { z-index: 147; }
+html.phone .dd-menu, html.phone .dd-menu.right { bottom: calc(var(--bot) + .5rem); max-height: calc(100dvh - var(--top-h) - var(--bot) - 1.5rem); }
+html.phone .mode-menu-mobile .dd-menu.mode-runs-menu { bottom: auto; z-index: 147; }
+html.phone .overlay, html.phone .overlay.logs, html.phone .overlay.settings, html.phone .overlay.envs { z-index: 150; }
+html.phone .shell.asst-open .overlay, html.phone .shell.asst-open ~ .overlay { z-index: 150; }
+
+/* small figures that drill down keep their look, their touch area is bigger (an invisible 40 px target) */
+html.phone :is(.sc-count, .sc-link, .sls-col.sls-num, .scn-fig, .lg-bee, .dz-readout.sel, .bp-fail, .bp-ratio, .link-btn) { position: relative; }
+html.phone :is(.sc-count, .sc-link, .sls-col.sls-num, .scn-fig, .lg-bee, .bp-fail, .bp-ratio, .link-btn)::after { content: ""; position: absolute; inset: -8px -6px; }
+html.phone .lg-bee::after { inset: -5px -8px; }
+html.phone .icon-toggle { min-width: 40px; }
+html.phone .script-bar .btn { min-width: 40px; }
+html.phone .slider input[type=range], html.phone input[type=range] { height: 40px; }
+html.phone .slider-num, html.phone .slider output { min-height: 40px; }
+html.phone .rt-bag-head, html.phone .rt-count-btn { min-height: 44px; }
+html.phone .card .icon-btn, html.phone .sc-head .icon-btn { min-width: 40px; min-height: 40px; }
+html.phone .overlay.settings { background: rgba(8, 7, 6, 0.6); padding-top: calc(var(--top-h) + .4rem); }
+html.phone .btn[aria-label] { min-width: 40px; }

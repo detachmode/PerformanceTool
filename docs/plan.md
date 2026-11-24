@@ -59,6 +59,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (Y1, user decision 0059):** the scenario as its own page `/scenario/{n}` (three columns: steps, chart and bees, the selected bee on the right) instead of the popup; the assistant's bee set keeps a dialog around the same view; Live mode no longer loses bees that finish out of order; screenshots `docs/screenshots/2026-11-24-scenario-page/`. Phone layout still to be drafted.
 - **Done (Y2, user decision 0059):** Logs page (filter column with counts, full-width search, removable filter chips; Fake, live, finished and stored runs, server-side paging, counts and step filter via `GET /api/runs/{id}/logs/facets`), Editor (toolbar + Try column), Environment (one centred column), and a copy-all-logs button wherever logs show; screenshots `docs/screenshots/2026-11-24-logs-editor-environment/`. The logs popup is gone (entry points link to `/logs?...`). Follow-up: preflight and shutdown output is not stored with a run, so a stored run shows no program output (see 0059 implementation notes).
 
+- **Done (Y3, user decision 0059):** the phone layouts (up to 760 px wide, or a phone turned sideways): bottom tab bar, slim run bar above it (sheet with the full player), top bar with title and mode, ⋯ for environment/settings; overview full cards; scenario page as tabs Steps · Chart · Bees (`?tab=`), the bee as a bottom sheet (`?sheet=1`, Back closes it); Logs with search, chips and a filter sheet; Editor as tabs Code · Try; Environment in one column. Screenshots `docs/screenshots/2026-11-25-phone-layouts/`.
+
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 
 ## Done
