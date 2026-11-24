@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version to publish (leave empty to use Beesharp.Core.csproj, e.g. 0.1.0)'
+        description: 'Package version to publish (leave empty to use Directory.Build.props, e.g. 0.1.1)'
         required: false
         type: string
       dry_run:
@@ -62,7 +62,7 @@ jobs:
           elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Beesharp.Core/Beesharp.Core.csproj | head -n 1)
+            VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved package version: $VERSION"

@@ -35,7 +35,7 @@
           AfterTargets="Build"
           Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipPackBeesharpCoreSdk)' != 'true' and '$(RuntimeIdentifier)' == ''"
           Inputs="$(OutputPath)Beesharp.Core.dll;$(MSBuildProjectDirectory)/../Beesharp.Core/buildTransitive/Beesharp.Core.props"
-          Outputs="$(OutputPath)sdk/Beesharp.Core.0.1.0.nupkg">
+          Outputs="$(OutputPath)sdk/Beesharp.Core.$(Version).nupkg">
     <Exec Command="dotnet pack &quot;$(MSBuildProjectDirectory)/../Beesharp.Core/Beesharp.Core.csproj&quot; -c $(Configuration) --no-build --no-restore -o &quot;$(OutputPath)sdk&quot; /nologo -v:q" />
   </Target>
 

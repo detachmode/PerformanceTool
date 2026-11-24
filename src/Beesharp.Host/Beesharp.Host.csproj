@@ -13,7 +13,6 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <IsPackable>true</IsPackable>
     <PackageId>Beesharp.Host</PackageId>
-    <Version>0.1.0</Version>
     <Authors>detachmode</Authors>
     <Description>Embedded Beesharp load-testing host with REST API, DuckDB/memory storage, and Blazor WebAssembly UI.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
