@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <PackageId>Beesharp.Storage</PackageId>
+    <Description>Run storage abstractions, in-memory storage, and JSON preset/environment stores for Beesharp.</Description>
+    <PackageTags>beesharp;load-testing;performance;storage</PackageTags>
   </PropertyGroup>
 
   <!-- ILogger and IServiceCollection: from .NET 11 the SDK provides them itself (see Beesharp.Core.csproj); older SDKs still need the packages. -->

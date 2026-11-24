@@ -288,7 +288,6 @@ label { font-size: .74rem; color: var(--muted); }
 .sls-headrow { min-height: 1.5rem; color: var(--faint); font-size: .72rem; font-weight: 500; }
 .sls-headrow .sls-col { justify-content: flex-end; }
 .sls-headrow .sls-col.run { color: var(--running); gap: .35rem; }
-.sls-headrow .sls-col.bad { color: color-mix(in oklch, var(--failed) 75%, var(--muted)); }
 .sls-no { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #2a2825; color: var(--muted); font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sls-headrow .sls-no { background: none; }
 .sls-name { min-width: 0; color: var(--text); font-size: .84rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

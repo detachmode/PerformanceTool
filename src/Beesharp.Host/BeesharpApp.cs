@@ -8,6 +8,8 @@ using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
 using Beesharp.Services.Storage;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
 
 namespace Beesharp;
 
@@ -197,12 +199,44 @@ public sealed class BeesharpAppBuilder
         if (File.Exists(appManifest))
         {
             app.MapStaticAssets();
-            return;
+        }
+        else
+        {
+            var hostManifest = Path.Combine(AppContext.BaseDirectory, "Beesharp.Host.staticwebassets.endpoints.json");
+            if (File.Exists(hostManifest))
+                app.MapStaticAssets(hostManifest);
         }
 
-        var hostManifest = Path.Combine(AppContext.BaseDirectory, "Beesharp.Host.staticwebassets.endpoints.json");
-        if (File.Exists(hostManifest))
-            app.MapStaticAssets(hostManifest);
+        // NuGet consumer case: Beesharp.Host ships the published Blazor WASM UI under beesharp-ui/
+        // when the consumer does not have index.html in its own WebRootFileProvider.
+        if (!app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists)
+        {
+            var bundledUi = Path.Combine(AppContext.BaseDirectory, "beesharp-ui");
+            if (Directory.Exists(bundledUi))
+            {
+                app.UseStaticFiles(new StaticFileOptions
+                {
+                    FileProvider = new PhysicalFileProvider(bundledUi),
+                    ContentTypeProvider = CreateUiContentTypeProvider(),
+                });
+            }
+        }
+    }
+
+    private static FileExtensionContentTypeProvider CreateUiContentTypeProvider()
+    {
+        var provider = new FileExtensionContentTypeProvider();
+        provider.Mappings[".wasm"] = "application/wasm";
+        provider.Mappings[".dat"] = "application/octet-stream";
+        provider.Mappings[".blat"] = "application/octet-stream";
+        provider.Mappings[".json"] = "application/json";
+        provider.Mappings[".js"] = "text/javascript";
+        provider.Mappings[".mjs"] = "text/javascript";
+        provider.Mappings[".css"] = "text/css";
+        provider.Mappings[".svg"] = "image/svg+xml";
+        provider.Mappings[".ico"] = "image/x-icon";
+        provider.Mappings[".woff2"] = "font/woff2";
+        return provider;
     }
 }
 

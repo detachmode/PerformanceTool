@@ -1,6 +1,7 @@
 name: NuGet
 
-# Packs and publishes Beesharp.Core to NuGet.org on version tags (v*) or manual dispatch.
+# Packs and publishes Beesharp.Host (and its Beesharp.* library dependencies) to NuGet.org
+# on version tags (v*) or manual dispatch.
 # Supports either NuGet Trusted Publishing (OIDC: set repository variable NUGET_USER)
 # or a classic API key (set repository secret NUGET_API_KEY).
 on:
@@ -34,7 +35,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -66,23 +67,52 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved package version: $VERSION"
 
-      - name: Test Core and Scripting
+      - name: Test Core, Scripting and Host
         run: |
           dotnet test tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj -c Release
           dotnet test tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj -c Release
+          dotnet test tests/Beesharp.Tests/Beesharp.Tests.csproj -c Release
 
-      - name: Pack Beesharp.Core
+      - name: Publish Beesharp.Client UI
         run: >
-          dotnet pack src/Beesharp.Core/Beesharp.Core.csproj
+          dotnet publish src/Beesharp.Client/Beesharp.Client.csproj
           -c Release
-          -o artifacts/nuget
-          -p:Version=${{ steps.ver.outputs.version }}
-          -p:ContinuousIntegrationBuild=true
+          -o artifacts/client-ui
+          -p:BuildSha=${{ github.sha }}
 
-      - name: Upload package artifact
+      - name: Pack Beesharp packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          for proj in \
+            src/Beesharp.Core/Beesharp.Core.csproj \
+            src/Beesharp.Contracts/Beesharp.Contracts.csproj \
+            src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj \
+            src/Beesharp.Storage/Beesharp.Storage.csproj \
+            src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj \
+            src/Beesharp.Scripting/Beesharp.Scripting.csproj \
+            src/Beesharp.Engine/Beesharp.Engine.csproj \
+            src/Beesharp.Ai/Beesharp.Ai.csproj; do
+            dotnet pack "$proj" \
+              -c Release \
+              -o artifacts/nuget \
+              -p:Version="$VERSION" \
+              -p:ContinuousIntegrationBuild=true
+          done
+          dotnet pack src/Beesharp.Host/Beesharp.Host.csproj \
+            -c Release \
+            -o artifacts/nuget \
+            -p:Version="$VERSION" \
+            -p:BuildSha="${{ github.sha }}" \
+            -p:BeesharpClientWwwroot="$(pwd)/artifacts/client-ui/wwwroot" \
+            -p:ContinuousIntegrationBuild=true
+          ls -lh artifacts/nuget/*.nupkg
+
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: beesharp-core-${{ steps.ver.outputs.version }}
+          name: beesharp-nuget-${{ steps.ver.outputs.version }}
           path: artifacts/nuget/*.nupkg
 
       # Option 1 (recommended): NuGet Trusted Publishing via OIDC (no long-lived API key secret).
@@ -98,23 +128,38 @@ jobs:
         env:
           SECRET_API_KEY: ${{ secrets.NUGET_API_KEY }}
           OIDC_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        shell: bash
         run: |
+          set -euo pipefail
           API_KEY="${SECRET_API_KEY:-$OIDC_API_KEY}"
           if [ -z "$API_KEY" ]; then
             echo "::error::Neither secrets.NUGET_API_KEY nor vars.NUGET_USER (NuGet Trusted Publishing) is configured."
             exit 1
           fi
-          dotnet nuget push "artifacts/nuget/Beesharp.Core.*.nupkg" \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key "$API_KEY" \
-            --skip-duplicate
+          VERSION="${{ steps.ver.outputs.version }}"
+          for pkg in \
+            Beesharp.Core \
+            Beesharp.Contracts \
+            Beesharp.Ai.Contracts \
+            Beesharp.Storage \
+            Beesharp.Storage.DuckDb \
+            Beesharp.Scripting \
+            Beesharp.Engine \
+            Beesharp.Ai \
+            Beesharp.Host; do
+            dotnet nuget push "artifacts/nuget/${pkg}.${VERSION}.nupkg" \
+              --source https://api.nuget.org/v3/index.json \
+              --api-key "$API_KEY" \
+              --skip-duplicate
+          done
 
       - name: Publish summary
         if: always()
         shell: bash
         run: |
           {
-            echo "### Beesharp.Core NuGet"
+            echo "### Beesharp NuGet"
             echo "- **Version:** \`${{ steps.ver.outputs.version }}\`"
             echo "- **Dry run:** \`${{ inputs.dry_run == true }}\`"
+            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Contracts\`, \`Beesharp.Ai.Contracts\`, \`Beesharp.Storage\`, \`Beesharp.Storage.DuckDb\`, \`Beesharp.Scripting\`, \`Beesharp.Engine\`, \`Beesharp.Ai\`, \`Beesharp.Host\`"
           } >> "$GITHUB_STEP_SUMMARY"

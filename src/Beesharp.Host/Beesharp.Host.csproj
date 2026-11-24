@@ -11,9 +11,10 @@
     <RootNamespace>Beesharp</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>true</IsPackable>
     <PackageId>Beesharp.Host</PackageId>
     <Version>0.1.0</Version>
-    <Authors>Dennis</Authors>
+    <Authors>detachmode</Authors>
     <Description>Embedded Beesharp load-testing host with REST API, DuckDB/memory storage, and Blazor WebAssembly UI.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>beesharp;load-testing;performance;host;blazor</PackageTags>
@@ -29,12 +30,37 @@
     <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
     <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
     <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" />
-    <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
+    <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Beesharp.Contracts" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="buildTransitive/Beesharp.Host.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+
+  <!-- Publish Beesharp.Client (Release, trimmed, fingerprinted) only during `dotnet pack` so normal builds/tests stay fast. -->
+  <Target Name="BundleBeesharpClientUi"
+          BeforeTargets="_GetPackageFiles;GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <_ClientUiDir>$([System.IO.Path]::GetFullPath('$(IntermediateOutputPath)client-ui\'))</_ClientUiDir>
+      <_ClientUiWwwroot Condition="'$(BeesharpClientWwwroot)' != ''">$([System.IO.Path]::GetFullPath('$(BeesharpClientWwwroot)'))</_ClientUiWwwroot>
+      <_ClientUiWwwroot Condition="'$(_ClientUiWwwroot)' == ''">$(_ClientUiDir)wwwroot</_ClientUiWwwroot>
+    </PropertyGroup>
+    <RemoveDir Directories="$(_ClientUiDir)" Condition="'$(BeesharpClientWwwroot)' == ''" />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)/../Beesharp.Client/Beesharp.Client.csproj&quot; -c Release -o &quot;$(_ClientUiDir)&quot; -p:BuildSha=$(BuildSha) /nologo -v:m"
+          Condition="'$(BeesharpClientWwwroot)' == ''" />
+    <ItemGroup>
+      <_ClientUiFiles Include="$(_ClientUiWwwroot)\**\*"
+                      Exclude="$(_ClientUiWwwroot)\**\*.br;$(_ClientUiWwwroot)\**\*.gz" />
+      <None Include="@(_ClientUiFiles)"
+            Pack="true"
+            PackagePath="beesharp-ui/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

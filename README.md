@@ -63,7 +63,8 @@ Open http://localhost:5281.
 
 ## Examples
 
-`examples/` holds standalone .NET 11 file-based scenario scripts (`#:package Beesharp.Core@0.1.0`) that you can open directly in your IDE for IntelliSense, debug locally with `dotnet run examples/<name>.cs`, or copy/mount into `/app/scripts/`:
+`examples/` holds standalone .NET 11 file-based scenario scripts (`#:package Beesharp.Core@0.1.0`) and a full Aspire-style host project:
 
 - `http-health-check.cs`: fetches one URL per run and fails on an error status or a slow answer. A plain scenario without steps.
 - `checkout-steps.cs`: C# 15 `union` step-machine scenario (`Log in → Search → Open product → Add to cart → Pay`) with dynamic repeats, retries, and simulated calls.
+- `host-app/HostExample.csproj`: Aspire-style `Beesharp.Host` project with embedded Blazor UI, plain .NET DI (`DemoTokenCache`), a compiled `Scenario<TParams, TStep>`, and a strongly typed default preset (`dotnet run --project examples/host-app` for the UI, or `dotnet run --project examples/host-app -- run --preset Smoke --duration 5` headless).

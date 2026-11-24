@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp.Ai</RootNamespace>
+    <PackageId>Beesharp.Ai</PackageId>
+    <Description>AI assistant module for Beesharp built on Microsoft.Extensions.AI.</Description>
+    <PackageTags>beesharp;load-testing;performance;ai</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

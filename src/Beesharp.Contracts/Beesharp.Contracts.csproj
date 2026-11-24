@@ -9,6 +9,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp.Contracts</RootNamespace>
+    <PackageId>Beesharp.Contracts</PackageId>
+    <Description>Shared REST wire DTOs for Beesharp hosts and clients.</Description>
+    <PackageTags>beesharp;load-testing;performance;contracts</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

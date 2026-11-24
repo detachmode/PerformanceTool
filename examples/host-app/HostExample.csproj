@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Example Aspire-style Beesharp load-test project (brain 0058).
+       Run `dotnet run` (or F5 in your IDE) for the embedded Blazor UI + breakpoints,
+       or pass `run` args for headless CI execution. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Beesharp.Host/Beesharp.Host.csproj" />
+  </ItemGroup>
+
+</Project>
