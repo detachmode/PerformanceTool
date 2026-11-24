@@ -100,7 +100,6 @@ public sealed class ApiRunSource : IRunSource
 
     public void AddEntry(IScenario scenario)
     {
-        if (Plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
         var config = ScenarioRunConfig.CreateFor(scenario);
         var same = Plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
         config.Label = same == 0 ? scenario.Name : $"{scenario.Name} #{same + 1}";
@@ -404,7 +403,7 @@ public sealed class ApiRunSource : IRunSource
     {
         var sb = new System.Text.StringBuilder();
         if (f.Entry is { } e) sb.Append("&entry=").Append(e);
-        if (f.Step is { } st && f.Entry is not null) sb.Append("&step=").Append(st);
+        if (f.Step is { } st && f.Entry is >= 0) sb.Append("&step=").Append(st);
         if (f.EffectiveBee is { } b) sb.Append("&bee=").Append(b);
         if (f.Outcome == Beesharp.Client.Chart.BeeShow.Failed) sb.Append("&failed=true");
         if (f.Outcome == Beesharp.Client.Chart.BeeShow.Slow) sb.Append("&slow=true");

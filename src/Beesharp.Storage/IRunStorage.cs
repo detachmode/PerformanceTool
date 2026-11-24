@@ -37,7 +37,9 @@ public sealed record StoredRunData(
     IReadOnlyList<StoredBeeSummary> Bees,
     long TotalLogs,
     string? Error,
-    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null);
+    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null,
+    StoredProgramRunDto? Preflight = null,
+    StoredProgramRunDto? Shutdown = null);
 
 public sealed record RunExportResult(
     string FileName,
@@ -64,6 +66,12 @@ public interface IRunStorage : IAsyncDisposable
 
     /// <summary>The final runtime data of a run as JSON, or null when the run kept none.</summary>
     Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores a run-level program's result and log lines (<paramref name="kind"/> is <c>"preflight"</c> or <c>"shutdown"</c>)
+    /// and writes its log lines into the run's log stream so they are queryable on the Logs page.
+    /// </summary>
+    Task SaveProgramRunAsync(string runId, string kind, StoredProgramRunDto program, CancellationToken ct = default);
 
     /// <summary>Waits until all currently queued writes are committed to storage.</summary>
     Task FlushAsync(CancellationToken ct = default);

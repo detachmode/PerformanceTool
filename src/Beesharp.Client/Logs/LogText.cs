@@ -24,7 +24,8 @@ public static class LogText
     /// <summary>The line as plain text (several lines when it has an exception).</summary>
     public static string Line(FakeLogEntry l, string scenario)
     {
-        var head = $"[{Time(l.AtSeconds)}] {Tag(l.Level)} {(scenario.Length > 0 ? scenario + " " : "")}B{l.Sequence + 1} {l.Message}";
+        var bee = l.Sequence >= 0 ? $"B{l.Sequence + 1} " : "";
+        var head = $"[{Time(l.AtSeconds)}] {Tag(l.Level)} {(scenario.Length > 0 ? scenario + " " : "")}{bee}{l.Message}";
         return string.IsNullOrEmpty(l.Exception) ? head : head + "\n" + l.Exception;
     }
 
