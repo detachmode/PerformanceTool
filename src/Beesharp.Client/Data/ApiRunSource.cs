@@ -35,6 +35,10 @@ public sealed class ApiRunSource : IRunSource
     private DateTimeOffset activeStartedUtc = DateTimeOffset.UtcNow;
     private RunStore activeStore = new(0);
     private int lastSequence = -1;
+    /// <summary>How many bees of the run the client has received, in the server's finishing order (bees finish out of sequence order, so the sequence is no cursor).</summary>
+    private int receivedBees;
+
+    private string StatusUrl() => $"api/runs/current?afterSeq={lastSequence}&afterIndex={receivedBees}" + (activeRunId is null ? "" : "&runId=" + Uri.EscapeDataString(activeRunId));
     private readonly HashSet<int> loadedDetails = [];
     private readonly HashSet<int> loadingDetails = [];
 
@@ -302,7 +306,7 @@ public sealed class ApiRunSource : IRunSource
     {
         try
         {
-            var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts);
+            var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts);
             SetReachable(true);
             if (dto is not null && dto.Plan.Scenarios.Count > 0)
             {
@@ -358,19 +362,22 @@ public sealed class ApiRunSource : IRunSource
     /// <summary>Lazily fetches one bee's full calls and logs from run storage on demand.</summary>
     public async Task EnsureBeeDetailLoadedAsync(int sequence, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(activeRunId) || loadedDetails.Contains(sequence) || !loadingDetails.Add(sequence))
-            return;
+        if (string.IsNullOrEmpty(activeRunId) || loadedDetails.Contains(sequence)) return;
+        // A bee whose detail is not there yet (the server writes it a moment after the bee finished) is asked again after a few seconds, not on every refresh.
+        if (detailMissedAt.TryGetValue(sequence, out var missedAt) && Environment.TickCount64 - missedAt < 3000) return;
+        if (!loadingDetails.Add(sequence)) return;
         try
         {
             var detail = await http.GetFromJsonAsync<StoredBeeDetail>(
                 $"api/runs/{Uri.EscapeDataString(activeRunId)}/bees/{sequence}", JsonOpts, ct);
-            if (detail is null) return;
+            if (detail is null) { detailMissedAt[sequence] = Environment.TickCount64; return; }
+            detailMissedAt.Remove(sequence);
             var beeDetail = RemoteBeeDetail.Build(detail, activeStore, activeStartedUtc, detail.Entry);
             activeStore.ReplaceDetail(beeDetail);
             loadedDetails.Add(sequence);
             Changed?.Invoke();
         }
-        catch { }
+        catch { detailMissedAt[sequence] = Environment.TickCount64; }
         finally { loadingDetails.Remove(sequence); }
     }
 
@@ -464,7 +471,7 @@ public sealed class ApiRunSource : IRunSource
                 try
                 {
                     await Task.Delay(PreflightState == "Running" ? 250 : 300, ct);
-                    var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts, ct);
+                    var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts, ct);
                     if (dto is not null)
                     {
                         ApplyStatus(dto);
@@ -485,6 +492,7 @@ public sealed class ApiRunSource : IRunSource
     }
 
     private readonly HashSet<int> seenSequences = [];
+    private readonly Dictionary<int, long> detailMissedAt = [];
 
     private void ApplyStatus(LiveRunStatusDto dto)
     {
@@ -495,9 +503,11 @@ public sealed class ApiRunSource : IRunSource
             activeStartedUtc = dto.StartedUtc;
             activeStore = new RunStore(count);
             lastSequence = -1;
+            receivedBees = 0;
             seenSequences.Clear();
             loadedDetails.Clear();
             loadingDetails.Clear();
+            detailMissedAt.Clear();
             PreflightDismissed = false;
             runtime = null;
             runtimeVersion = -1;
@@ -523,6 +533,7 @@ public sealed class ApiRunSource : IRunSource
             if (a.Sequence > lastSequence) lastSequence = a.Sequence;
         }
         if (dto.LastSequence > lastSequence) lastSequence = dto.LastSequence;
+        if (dto.NextBeeIndex > receivedBees) receivedBees = dto.NextBeeIndex;
 
         var labels = dto.Plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
         var views = new ScenarioView[count];

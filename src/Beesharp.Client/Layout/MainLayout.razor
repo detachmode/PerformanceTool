@@ -11,6 +11,7 @@
 @inject NavigationManager Nav
 @inject Beesharp.Client.Assistant.AssistantState Asst
 
+@{ var scnIndex = ScenarioLink.IndexOf(Nav.ToBaseRelativePath(Nav.Uri)); }
 <div class="shell @(Asst.Available && Asst.IsOpen ? "asst-open" : "")">
     <header class="top">
         <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseNavAsync">
@@ -35,11 +36,17 @@
             <span class="brand-name">Bee<b>sharp</b></span>
         </a>
         <nav class="nav" aria-label="Main">
-            <NavLink class="nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Overview</NavLink>
+            <NavLink class="@(scnIndex is not null ? "nav-item active" : "nav-item")" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Overview</NavLink>
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
             <NavLink class="nav-item" href="environment" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Environment</NavLink>
         </nav>
+        @* The scenario page (brain 0057): "Overview › name"; the Overview tab above stays the active one and leads back. *@
+        @if (scnIndex is { } crumbAt)
+        {
+            var crumbLabel = crumbAt < Sim.Current.Labels.Count ? Sim.Current.Labels[crumbAt] : "Scenario " + (crumbAt + 1);
+            <span class="crumb" aria-label="You are here"><i aria-hidden="true">›</i><b title="@crumbLabel">@crumbLabel</b></span>
+        }
 
         <div class="top-desktop">
             <div class="dd mode-dd">

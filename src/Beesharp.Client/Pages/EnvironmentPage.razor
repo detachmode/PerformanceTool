@@ -152,11 +152,6 @@
     </section>
 </div>
 
-@if (openEntry is { } oe && oe < s.Count)
-{
-    <ScenarioDetailDialog @key="(oe, openBee)" Index="oe" Snapshot="s" InitialBee="openBee" OnClose="CloseDialog" />
-}
-
 @if (openProgram is { } kind)
 {
     var isShutdown = kind == DataWriterKind.Shutdown;
@@ -170,8 +165,7 @@
     private bool openRun = true;
     private readonly HashSet<int> openEntries = [];
     private readonly HashSet<string> expanded = [], revealed = [];
-    private int? openEntry, openBee;
-
+    
     // Live values (brain 0052): a value that was written since the last update gets a short, neutral fade. Its element is re-created per write (@key = the value).
     private readonly Dictionary<string, RuntimeValue> previous = [];
     private readonly HashSet<RuntimeValue> fresh = new(ReferenceEqualityComparer.Instance);
@@ -234,8 +228,8 @@
     private void ToggleEntry(int entry) { if (!openEntries.Remove(entry)) openEntries.Add(entry); }
     private void Toggle(string id) { if (!expanded.Remove(id)) expanded.Add(id); }
     private void ToggleReveal(string id) { if (!revealed.Remove(id)) revealed.Add(id); }
-    private void OpenEntry(int entry, int? bee) { openEntry = entry; openBee = bee; }
-    private void CloseDialog() { openEntry = null; openBee = null; }
+    /// <summary>A value's writer opens its scenario page (brain 0057), at the bee when it was a bee.</summary>
+    private void OpenEntry(int entry, int? bee) => Nav.NavigateTo(ScenarioLink.Href(entry, new(Bee: bee)));
 
     private void OpenWriter(DataWriter w)
     {

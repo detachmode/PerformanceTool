@@ -28,7 +28,8 @@ public class ContractsRoundTripTests
             7, 3, "DuckDb", null, PreflightState: "Done",
             RunningBees: [new LiveRunningBeeDto(8, 0, 11.9, Step: 1, Rep: 2)],
             RuntimeVersion: 4,
-            Steps: [[new StepInfo("Log in"), new StepInfo("Pay")]]);
+            Steps: [[new StepInfo("Log in"), new StepInfo("Pay")]],
+            NextBeeIndex: 12);
         var json = JsonSerializer.Serialize(dto, Web);
         var node = JsonNode.Parse(json)!.AsObject();
         Assert.Equal("r1", (string?)node["runId"]);
@@ -36,6 +37,7 @@ public class ContractsRoundTripTests
         Assert.Equal(7, (int?)node["lastSequence"]);
         Assert.NotNull(node["newBees"]);
         Assert.Equal(4, (long?)node["runtimeVersion"]);
+        Assert.Equal(12, (int?)node["nextBeeIndex"]);   // the cursor of the live bee poll (afterIndex)
         var back = RoundTrip(dto);
         Assert.Equal(dto.NewBees[0], back.NewBees[0]);
         Assert.Equal(dto.RunningBees![0], back.RunningBees![0]);

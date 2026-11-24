@@ -93,6 +93,8 @@
                     }
                     @if (stepLiveLogs.Count > 0 || stepLogs.Count > 0 || (step.State == StepState.Current && LiveLogs is not null))
                     {
+                        <div class="stp-consolewrap">
+                        <div class="stp-copy"><CopyButton GetText="@(() => ConsoleText(step))" Disabled="@(stepLiveLogs.Count == 0 && stepLogs.Count == 0)" Title="Copy all logs of this step to the clipboard" /></div>
                         <div class="sl-console compact stp-console wrap" role="log" aria-label="Console output of @step.Name">
                             @if (stepLiveLogs.Count > 0)
                             {
@@ -112,6 +114,7 @@
                             {
                                 <div class="sl-empty" style="padding:.2rem 0">Waiting for output…</div>
                             }
+                        </div>
                         </div>
                     }
                 }
@@ -174,6 +177,22 @@
         if (LiveLogs is not { Count: > 0 }) return [];
         var rep = step.VisitNumber > 0 ? step.VisitNumber - 1 : -1;
         return LiveLogs.Where(l => l.Step == step.Index && (rep < 0 || l.Rep == rep)).ToList();
+    }
+
+    /// <summary>ALL log lines of a step (live or stored), one per line, for the copy button of its console.</summary>
+    private string ConsoleText(StepView step)
+    {
+        var live = LiveLogsFor(step);
+        var lines = live.Count > 0
+            ? live.Select(l => Plain(l.Timestamp, l.Level, l.Message, l.Exception))
+            : LogsFor(step).Select(l => Plain(l.Timestamp, l.Level, l.Message, l.Exception));
+        return string.Join("\n", lines);
+    }
+
+    private static string Plain(DateTimeOffset ts, string level, string message, string? exception)
+    {
+        var tag = level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        return $"[{ts.ToLocalTime():HH:mm:ss.fff} {tag}] " + (string.IsNullOrEmpty(exception) ? message : $"{message}\n{exception}");
     }
 
     private static string Css(StepView s) => s.State switch { StepState.Done => "done", StepState.Failed => "failed", StepState.Current => "current", _ => "pending" };

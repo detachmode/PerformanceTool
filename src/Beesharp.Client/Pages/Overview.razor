@@ -1,5 +1,5 @@
 @* Unified Overview & Editor (brain 0020, 0024, 0046):
-   - View mode (default): shows live/finished run cards, run summary, Run History picker (DuckDB), and opens ScenarioDetailDialog on click.
+   - View mode (default): shows live/finished run cards, run summary, Run History picker (DuckDB), and opens the scenario page (/scenario/n) on click.
    - Edit mode (toggled via "Edit"): shows plan settings, presets, scripts, and switches each scenario box into the inline editor card + "Add scenario" tile.
    - Starting a run automatically exits Edit mode so live results are immediately visible. *@
 @page "/"
@@ -13,6 +13,7 @@
 @inject ScriptApiClient ScriptApi
 @inject LogsLinks Logs
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
 
@@ -542,23 +543,18 @@
                 <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
                               Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" IsLive="s.Running && !s.Paused"
                               ScenarioType="@(Catalog.Find(s.Plan.Scenarios[idx].ScenarioId)?.Name)"
-                              OnOpen="i => { open = i; openFilter = DetailFilter.All; openStep = null; openStepNow = null; }"
-                              OnOpenFiltered="t => { open = t.Index; openFilter = t.Filter; openStep = null; openStepNow = null; }"
+                              OnOpen="i => OpenScenario(i)"
+                              OnOpenFiltered="t => OpenScenario(t.Index, new(t.Filter))"
                               OnOpenLogs="i => Logs.Show(entry: i)"
                               OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
                               Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
                               InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
-                              OnOpenStep="t => { open = t.Index; openFilter = DetailFilter.All; openStep = t.Step; openStepNow = null; }"
-                              OnOpenStepInFlight="t => { open = t.Index; openFilter = DetailFilter.All; openStep = null; openStepNow = t.Step; }" />
+                              OnOpenStep="t => OpenScenario(t.Index, new(FailedStep: t.Step))"
+                              OnOpenStepInFlight="t => OpenScenario(t.Index, new(NowStep: t.Step))" />
             }
         </div>
     }
 </div>
-
-@if (!editMode && open is { } o && o < s.Count)
-{
-    <ScenarioDetailDialog Index="o" Snapshot="s" InitialShow="openFilter" InitialFailedStep="openStep" InitialInFlightStep="openStepNow" OnClose="() => { open = null; openStep = null; openStepNow = null; }" />
-}
 
 @code {
     private sealed record EntryProblems(string? Rate, string? Burst, string? BurstRate, string? MaxInFlight, Dictionary<string, List<string>> Fields)
@@ -570,10 +566,19 @@
     private static readonly BeeRecord[] NoBees = [];
 
     // Overview state
-    private int? open;
-    private DetailFilter openFilter;
-    private int? openStep;
-    private int? openStepNow;
+    /// <summary>Opens the scenario page (brain 0057); the overview's scroll position is remembered so the way back lands on the same card.</summary>
+    private async Task OpenScenario(int index, ScenarioFilter filter = default)
+    {
+        try
+        {
+            scrollMemory ??= await JS.InvokeAsync<IJSObjectReference>("import", "./scroll-memory.js");
+            await scrollMemory.InvokeVoidAsync("save", "overview");
+        }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+        Nav.NavigateTo(ScenarioLink.Href(index, filter));
+    }
+    private IJSObjectReference? scrollMemory;
     private bool viewMenuOpen;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
@@ -604,6 +609,19 @@
         if (editMode || Sim.IsRunning || Nav.Uri == handledEditUri || !Nav.Uri.Contains("?edit=", StringComparison.Ordinal)) return;
         handledEditUri = Nav.Uri;
         EnterEditMode();
+    }
+
+    /// <summary>Coming back from a scenario page: the overview scrolls to where it was (brain 0057).</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            scrollMemory ??= await JS.InvokeAsync<IJSObjectReference>("import", "./scroll-memory.js");
+            await scrollMemory.InvokeAsync<bool>("restore", "overview");
+        }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
     }
 
     protected override void OnInitialized()
@@ -675,7 +693,6 @@
     {
         if (Sim.IsRunning) return;
         viewMenuOpen = false;
-        open = null;
         editMode = true;
         selected = -1;
         addOpen = false;

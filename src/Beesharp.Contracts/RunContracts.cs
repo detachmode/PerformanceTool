@@ -67,7 +67,8 @@ public sealed record LiveRunStatusDto(
     IReadOnlyList<string>? ShutdownLogs = null,
     string? ShutdownError = null,
     long RuntimeVersion = 0,
-    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null);
+    IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null,
+    int NextBeeIndex = 0);
 
 public sealed record StoredRunSummary(
     string RunId,
