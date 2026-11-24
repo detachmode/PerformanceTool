@@ -614,7 +614,7 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
-    /// <summary>The WHERE clause of a log query; a facet leaves out the filter of its own group (brain 0057).</summary>
+    /// <summary>The WHERE clause of a log query; a facet leaves out the filter of its own group (brain 0059).</summary>
     private static (string Where, List<object> Args) BuildLogWhere(string runId, LogQuery query, bool entry, bool step, bool levels)
     {
         var where = new StringBuilder("WHERE run_id = $1");

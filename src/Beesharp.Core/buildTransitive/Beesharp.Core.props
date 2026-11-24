@@ -1,0 +1,25 @@
+<Project>
+  <!-- Global usings and defaults matching Beesharp's Roslyn script compiler (ScriptCompiler + ScriptScenarioStore)
+       so .NET 11 file-based app scripts (#:package Beesharp.Core@1.0.0) work with zero boilerplate (brain 0057). -->
+  <PropertyGroup>
+    <!-- File-based apps enable PublishAot by default, which disables System.Text.Json reflection needed by ParameterSpec and StepDataCapture. -->
+    <PublishAot>false</PublishAot>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.Collections.Concurrent" />
+    <Using Include="System.ComponentModel" />
+    <Using Include="System.ComponentModel.DataAnnotations" />
+    <Using Include="System.Net.Http.Headers" />
+    <Using Include="System.Net.Http.Json" />
+    <Using Include="System.Text" />
+    <Using Include="System.Text.Json" />
+    <Using Include="System.Text.Json.Nodes" />
+    <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="Beesharp.Services.Environments" />
+    <Using Include="Beesharp.Services.Runtime" />
+    <Using Include="Beesharp.Services.Scenarios" />
+    <Using Include="Beesharp.Services.Scenarios.Spec" />
+  </ItemGroup>
+</Project>

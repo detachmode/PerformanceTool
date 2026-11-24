@@ -41,7 +41,7 @@
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
             <NavLink class="nav-item" href="environment" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Environment</NavLink>
         </nav>
-        @* The scenario page (brain 0057): "Overview › name"; the Overview tab above stays the active one and leads back. *@
+        @* The scenario page (brain 0059): "Overview › name"; the Overview tab above stays the active one and leads back. *@
         @if (scnIndex is { } crumbAt)
         {
             var crumbLabel = crumbAt < Sim.Current.Labels.Count ? Sim.Current.Labels[crumbAt] : "Scenario " + (crumbAt + 1);

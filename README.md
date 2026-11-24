@@ -63,7 +63,7 @@ Open http://localhost:5281.
 
 ## Examples
 
-`examples/` holds scenario scripts to copy or mount into the scripts folder:
+`examples/` holds standalone .NET 11 file-based scenario scripts (`#:package Beesharp.Core@0.1.0`) that you can open directly in your IDE for IntelliSense, debug locally with `dotnet run examples/<name>.cs`, or copy/mount into `/app/scripts/`:
 
-- `http-health-check.cs`: fetches one URL per run and fails on an error status or a slow answer. A plain
-  scenario without steps.
+- `http-health-check.cs`: fetches one URL per run and fails on an error status or a slow answer. A plain scenario without steps.
+- `checkout-steps.cs`: C# 15 `union` step-machine scenario (`Log in → Search → Open product → Add to cart → Pay`) with dynamic repeats, retries, and simulated calls.

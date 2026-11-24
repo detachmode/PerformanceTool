@@ -1,4 +1,4 @@
-@* The scenario as its own page (brain 0057, 0020, 0017, 0021): three columns. Left: the name, one quiet line and the steps (they steer the rest). Middle: the filter chips,
+@* The scenario as its own page (brain 0059, 0020, 0017, 0021): three columns. Left: the name, one quiet line and the steps (they steer the rest). Middle: the filter chips,
    one bounded bee chart (a bar per bee, or per time bucket when there are many) and the bee list. Right: the selected bee (BeePanel), always there.
    Also used by the assistant's bee-set dialog (Selection): then there is no left column. *@
 @using System.Globalization
@@ -91,7 +91,7 @@
     var stats = StatsFor(allBees, view.Finished, from, to);   // of the run (or the zoomed time frame), not of the step filter: the chips say what the whole run holds
     var activeBucket = bucketed ? bucket : null;
     var sideRows = SideRows(bees, fin, runningNow, show, from, to, activeBucket, width);
-    // Nothing picked yet (or the filter changed): the first bee of the list is the selected one, and stays so (brain 0057). A bee in flight that finishes turns into its record below.
+    // Nothing picked yet (or the filter changed): the first bee of the list is the selected one, and stays so (brain 0059). A bee in flight that finishes turns into its record below.
     if (selected is null && selRunning is null && sideRows.Count > 0)
     {
         var first = sideRows[0];
@@ -335,7 +335,7 @@
     [Parameter] public int? InitialInFlightStep { get; set; }
     /// <summary>The assistant's short reason per picked bee (sequence to text), shown in the bee panel.</summary>
     [Parameter] public IReadOnlyDictionary<int, string>? Notes { get; set; }
-    /// <summary>The filter, the step filter or the picked bee changed (brain 0057): the page keeps them in its address, so a reload or a link comes back to the same view.</summary>
+    /// <summary>The filter, the step filter or the picked bee changed (brain 0059): the page keeps them in its address, so a reload or a link comes back to the same view.</summary>
     [Parameter] public EventCallback<ScenarioFilter> OnFilterChanged { get; set; }
     /// <summary>Escape with nothing left to clear (the assistant's dialog closes on it).</summary>
     [Parameter] public EventCallback OnEscape { get; set; }
@@ -516,7 +516,7 @@
         }
     }
 
-    /// <summary>The state worth keeping in the address: the list filter, the step filter and the picked bee (brain 0057).</summary>
+    /// <summary>The state worth keeping in the address: the list filter, the step filter and the picked bee (brain 0059).</summary>
     private ScenarioFilter Current() => new(
         tailMs is not null ? DetailFilter.Slowest5Pct : show switch { BeeShow.Failed => DetailFilter.Failed, BeeShow.Slow => DetailFilter.Slow, _ => DetailFilter.All },
         stepFilter is { InFlight: false } f ? f.Step : null,
@@ -553,7 +553,7 @@
         await Task.CompletedTask;
     }
 
-    /// <summary>Escape (brain 0057): back out of the narrowest thing first: the zoom, then the filters; in the assistant's dialog the last Escape closes it.</summary>
+    /// <summary>Escape (brain 0059): back out of the narrowest thing first: the zoom, then the filters; in the assistant's dialog the last Escape closes it.</summary>
     private void OnKey(KeyboardEventArgs e)
     {
         if (e.Key != "Escape") return;
@@ -584,7 +584,7 @@
         if (stepFilter is not null) { stepFilter = null; ToggleReset(); }
     }
 
-    /// <summary>The line after a bee in the list (brain 0057): the error and failing step, the slow call, or the step a bee in flight is in.</summary>
+    /// <summary>The line after a bee in the list (brain 0059): the error and failing step, the slow call, or the step a bee in flight is in.</summary>
     private static string? RowInfo(BeeRow row, IReadOnlyList<BeeRecord> bees, Dictionary<int, RunningBee>? running, ScenarioSteps steps, double elapsed, RunStore store)
     {
         if (row.IsRunning) return running is not null && running.TryGetValue(row.Sequence, out var r) ? BeeLine.Of(r, steps, elapsed) : null;
@@ -627,7 +627,7 @@
     private void ZoomTo(double from, double to) { win = new Win(from, to, false); bucket = null; fz = null; tailMs = null; }
     private void ResetZoom() { win = null; bucket = null; fz = null; tailMs = null; }
 
-    /// <summary>A row of the bee list was picked: that bee is the selected one (the same click again keeps it, there is always one, brain 0057).</summary>
+    /// <summary>A row of the bee list was picked: that bee is the selected one (the same click again keeps it, there is always one, brain 0059).</summary>
     private void SelectRow(BeeRow row)
     {
         revealPanel = true;
@@ -649,7 +649,7 @@
         var stale = key != sideKey || (countKey != sideCountKey && !(listHover && Snapshot.Running) && Environment.TickCount64 - sideAt > 700);
         if (!stale) return sideCache;
         sideCache = BeeOrder.Rows(bees, count, running, sh, lo, hi, tailMs ?? 0);
-        if (running.Count > 0) sideCache = sideCache.Where(r => r.IsRunning).Concat(sideCache.Where(r => !r.IsRunning)).ToList();   // bees in flight first (brain 0057)
+        if (running.Count > 0) sideCache = sideCache.Where(r => r.IsRunning).Concat(sideCache.Where(r => !r.IsRunning)).ToList();   // bees in flight first (brain 0059)
         if (groupSel is { } gf) sideCache = sideCache.Where(r => r.Sequence >= gf.Lo && r.Sequence <= gf.Hi).ToList();
         sideKey = key; sideCountKey = countKey; sideAt = Environment.TickCount64;
         sideReset = $"{lo}|{hi}|{sh}|{tailMs}|{groupSel}";

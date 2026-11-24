@@ -1383,7 +1383,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* ----- scenario page (brain 0057) ----- */
+/* ----- scenario page (brain 0059) ----- */
 /* Three columns on a full-width page: steps (left), filters + chart + bee list (middle), the selected bee (right). Each column scrolls by itself; below 960px they stack. */
 :root { --scn-player: 5.2rem; --scn-left: 260px; --scn-right: clamp(340px, 28vw, 420px); }
 .main:has(.scn) { max-width: none; padding: var(--top-h) 0 0; }
@@ -1496,7 +1496,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
     .scn-filters::-webkit-scrollbar { display: none; }
     .scn-filters > * { flex: none; }
 }
-/* ----- logs, editor, environment (brain 0057) ----- */
+/* ----- logs, editor, environment (brain 0059) ----- */
 /* logs page: a filter column with counts, a full-width search, the active filters as chips, the virtualised lines */
 .main:has(.logs-page) { max-width: none; padding: var(--top-h) 0 0; }
 .logs-page { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }

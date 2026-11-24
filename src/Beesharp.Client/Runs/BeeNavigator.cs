@@ -1,6 +1,6 @@
 namespace Beesharp.Client.Runs;
 
-/// <summary>Which bee comes before or after the selected one in the bee list of the scenario page (brain 0057, the ‹ › buttons of the bee column).</summary>
+/// <summary>Which bee comes before or after the selected one in the bee list of the scenario page (brain 0059, the ‹ › buttons of the bee column).</summary>
 public static class BeeNavigator
 {
     /// <summary>

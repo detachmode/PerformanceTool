@@ -24,9 +24,12 @@ public static class ClientIndexEndpoints
         string? html = null;
 
         // The client asks for build-info.json to notice a newer deploy (brain 0025). On Pages the workflow writes the file;
-        // here the host answers with its own build sha, which the Docker build shares with the client.
-        var buildSha = typeof(ClientIndexEndpoints).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(a => a.Key == "BuildSha")?.Value;
+        // here the host answers with the entry assembly's build sha (which the Docker build shares with the client),
+        // falling back to this library's assembly metadata.
+        var buildSha = Assembly.GetEntryAssembly()?.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "BuildSha")?.Value
+            ?? typeof(ClientIndexEndpoints).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => a.Key == "BuildSha")?.Value;
         app.MapGet("/build-info.json", (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";

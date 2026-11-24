@@ -62,13 +62,56 @@ internal static class ScriptCompiler
             .WithEmitDebugInformation(true)
             .WithFilePath(debugFile)
             .WithFileEncoding(System.Text.Encoding.UTF8);
-        var script = CSharpScript.Create(LegacyScriptNamespaces.Upgrade(code), withDebug, globalsType);
+        var processed = LegacyScriptNamespaces.Upgrade(StripFileBasedAppDirectives(code));
+        var script = CSharpScript.Create(processed, withDebug, globalsType);
         var mapped = script.Compile(ct)
             .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning)
             .Select(ToDiagnosticDto)
             .ToList();
         return (mapped.Any(d => d.Severity == "Error") ? null : script, mapped);
     }
+
+    /// <summary>
+    /// Strips .NET 10/11 file-based app directives (<c>#:package</c>, <c>#:project</c>, <c>#:sdk</c>, <c>#:property</c>)
+    /// by replacing each directive line with an empty line so Roslyn diagnostic and stack-trace line numbers stay exact (brain 0057).
+    /// </summary>
+    internal static string StripFileBasedAppDirectives(string code)
+    {
+        if (!code.Contains("#:", StringComparison.Ordinal)) return code;
+
+        var sb = new System.Text.StringBuilder(code.Length);
+        var i = 0;
+        while (i < code.Length)
+        {
+            var lineStart = i;
+            while (i < code.Length && code[i] != '\n' && code[i] != '\r') i++;
+            var lineEnd = i;
+            var eolStart = i;
+            if (i < code.Length && code[i] == '\r') i++;
+            if (i < code.Length && code[i] == '\n') i++;
+
+            var trimmed = code.AsSpan(lineStart, lineEnd - lineStart).TrimStart(" \t");
+            if (IsFileBasedAppDirective(trimmed))
+                sb.Append(code, eolStart, i - eolStart);
+            else
+                sb.Append(code, lineStart, i - lineStart);
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsFileBasedAppDirective(ReadOnlySpan<char> trimmedLine)
+    {
+        if (!trimmedLine.StartsWith("#:", StringComparison.Ordinal)) return false;
+        var rest = trimmedLine[2..].TrimStart(" \t");
+        return HasDirectiveKeyword(rest, "package")
+            || HasDirectiveKeyword(rest, "project")
+            || HasDirectiveKeyword(rest, "sdk")
+            || HasDirectiveKeyword(rest, "property");
+    }
+
+    private static bool HasDirectiveKeyword(ReadOnlySpan<char> rest, string keyword) =>
+        rest.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
+        && (rest.Length == keyword.Length || char.IsWhiteSpace(rest[keyword.Length]));
 
     public static ScriptDiagnosticDto ToDiagnosticDto(Diagnostic d)
     {

@@ -25,7 +25,8 @@ public static class RunEndpoints
             {
                 // No plan in the body = start the server's Live plan. A plan in the body becomes the Live plan.
                 if (body?.Plan is { } given) workspace.SetPlan(given);
-                return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), body?.EnvironmentName, ct));
+                var envName = string.IsNullOrWhiteSpace(body?.EnvironmentName) ? workspace.DefaultEnvironment : body.EnvironmentName;
+                return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), envName, ct));
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
@@ -62,7 +63,7 @@ public static class RunEndpoints
             IRunStorage storage,
             CancellationToken ct) =>
             storage.QueryLogsAsync(runId, LogFilter(entry, step, bee, beeName, outcome, failed, slow, levels, search, offset ?? 0, limit ?? 200), ct));
-        // The counts behind the Logs page's filter column (brain 0057): the same filters as the log list.
+        // The counts behind the Logs page's filter column (brain 0059): the same filters as the log list.
         app.MapGet("/api/runs/{runId}/logs/facets", (
             string runId,
             int? entry,

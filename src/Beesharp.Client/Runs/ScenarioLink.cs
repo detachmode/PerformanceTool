@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Beesharp.Client.Runs;
 
 /// <summary>
-/// What the scenario page shows when it opens (brain 0057): the list filter, a step filter, and a bee. The numbers are the ones the user reads
+/// What the scenario page shows when it opens (brain 0059): the list filter, a step filter, and a bee. The numbers are the ones the user reads
 /// in the UI (step 1 is the first step, bee 7 is B7), not zero-based indexes. <see cref="Default"/> is "all bees, nothing picked".
 /// </summary>
 public readonly record struct ScenarioFilter(DetailFilter Show = DetailFilter.All, int? FailedStep = null, int? NowStep = null, int? Bee = null)
@@ -12,7 +12,7 @@ public readonly record struct ScenarioFilter(DetailFilter Show = DetailFilter.Al
 }
 
 /// <summary>
-/// The address of the scenario page and its query string (brain 0057): <c>scenario/2?show=failed</c>, <c>?failedStep=3</c>, <c>?nowStep=2</c>, <c>?bee=7</c>.
+/// The address of the scenario page and its query string (brain 0059): <c>scenario/2?show=failed</c>, <c>?failedStep=3</c>, <c>?nowStep=2</c>, <c>?bee=7</c>.
 /// Scenario entries count from 1 like everywhere in the UI. One place maps filter to address and back, so the overview cards, the page and deep links agree.
 /// </summary>
 public static class ScenarioLink

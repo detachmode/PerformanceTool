@@ -1,4 +1,4 @@
-@* The Environment page (brain 0057, 0052): one centred column. The selected environment's static values (fixed during a run), then the runtime data below: the run bag and one
+@* The Environment page (brain 0059, 0052): one centred column. The selected environment's static values (fixed during a run), then the runtime data below: the run bag and one
    entry bag per scenario entry; a finished run shows the final values. Calm UI (0016): flat panels, thin rows, details (the full value, who wrote it and when) only on expand.
    Every figure drills down (0029): counts expand, writers open the bee or the scenario entry. Colour carries meaning (0018), so runtime data stays neutral. *@
 @page "/environment"
@@ -228,7 +228,7 @@
     private void ToggleEntry(int entry) { if (!openEntries.Remove(entry)) openEntries.Add(entry); }
     private void Toggle(string id) { if (!expanded.Remove(id)) expanded.Add(id); }
     private void ToggleReveal(string id) { if (!revealed.Remove(id)) revealed.Add(id); }
-    /// <summary>A value's writer opens its scenario page (brain 0057), at the bee when it was a bee.</summary>
+    /// <summary>A value's writer opens its scenario page (brain 0059), at the bee when it was a bee.</summary>
     private void OpenEntry(int entry, int? bee) => Nav.NavigateTo(ScenarioLink.Href(entry, new(Bee: bee)));
 
     private void OpenWriter(DataWriter w)

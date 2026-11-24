@@ -1,47 +1,10 @@
+#:package Beesharp.Core@0.1.0
 // Example C# 15 union step-machine scenario using IAsyncEnumerable + yield return (brain 0056).
 // Runs out of the box without an external server: uses simulated calls + ILogger so you can test the
-// chronological stepper, captured step data, dynamic repeats, retries, and per-step failure filtering in Live mode.
-// Token and CartId are stored in scenario runtime data (ctx.State) rather than repeated on every step record.
+// chronological stepper, captured step data, dynamic repeats, retries, and per-step failure filtering.
+// Run locally with `dotnet run examples/checkout-steps.cs` (or F5 in your IDE), or copy/mount into scripts/.
 
-record CheckoutStepsParams(
-    [property: Description("Search query logged on the Search step")]
-    string Query = "honey",
-    [property: Description("How many products each bee opens")]
-    [property: Range(1, 10)]
-    int OpenCount = 4,
-    [property: Description("Chance (%) that an opened product is added to the cart")]
-    [property: Range(0, 100)]
-    int AddToCartPercent = 50,
-    [property: Description("Minimum random delay (ms) per step")]
-    [property: Range(10, 5000)]
-    int MinDelayMs = 200,
-    [property: Description("Maximum random delay (ms) per step")]
-    [property: Range(10, 10000)]
-    int MaxDelayMs = 1200,
-    [property: Description("Chance (%) that opening a product fails (404 / stock error)")]
-    [property: Range(0, 100)]
-    int OpenFailPercent = 10,
-    [property: Description("Chance (%) that payment retries once before succeeding or failing")]
-    [property: Range(0, 100)]
-    int PayRetryPercent = 35,
-    [property: Description("Chance (%) that payment ultimately fails")]
-    [property: Range(0, 100)]
-    int PayFailPercent = 15
-);
-
-// 1. Each step record carries only step-specific data (Token and CartId live in ctx.State).
-//    PascalCase names auto-format ("LogIn" -> "Log in"); [Display] overrides when needed.
-record LogIn;
-record Search;
-record OpenProduct(string ProductId);
-record AddToCart(string ProductId);
-record Pay(int Attempt = 1);
-
-// 2. The C# 15 union declares the ordered step list up front (reflected once when the script compiles).
-union CheckoutStep(LogIn, Search, OpenProduct, AddToCart, Pay);
-
-// 3. Register the step machine. Each step yields zero, one, or many follow-up steps (depth-first).
-Scenario.DefineSteps<CheckoutStepsParams, CheckoutStep>(
+var scenario = Scenario.DefineSteps<CheckoutStepsParams, CheckoutStep>(
     "Checkout (Union Steps)",
     start: _ => new LogIn(),
     run: (step, p, ctx) => step switch
@@ -53,6 +16,8 @@ Scenario.DefineSteps<CheckoutStepsParams, CheckoutStep>(
         Pay pay => PayAsync(pay, p, ctx),
     })
     .WithDescription("C# 15 union step-machine demo with yield return: Log in -> Search -> Open product (randomly yields Add to cart) -> Pay (with retry).");
+
+await scenario.DebugRunAsync(args);
 
 Task RandomDelayAsync(CheckoutStepsParams p, ScenarioContext ctx)
 {
@@ -142,3 +107,40 @@ async IAsyncEnumerable<CheckoutStep> PayAsync(Pay pay, CheckoutStepsParams p, Sc
     if (retry)
         yield return pay with { Attempt = pay.Attempt + 1 };
 }
+
+// --- Parameters & C# 15 union steps ---
+record CheckoutStepsParams(
+    [property: Description("Search query logged on the Search step")]
+    string Query = "honey",
+    [property: Description("How many products each bee opens")]
+    [property: Range(1, 10)]
+    int OpenCount = 4,
+    [property: Description("Chance (%) that an opened product is added to the cart")]
+    [property: Range(0, 100)]
+    int AddToCartPercent = 50,
+    [property: Description("Minimum random delay (ms) per step")]
+    [property: Range(10, 5000)]
+    int MinDelayMs = 200,
+    [property: Description("Maximum random delay (ms) per step")]
+    [property: Range(10, 10000)]
+    int MaxDelayMs = 1200,
+    [property: Description("Chance (%) that opening a product fails (404 / stock error)")]
+    [property: Range(0, 100)]
+    int OpenFailPercent = 10,
+    [property: Description("Chance (%) that payment retries once before succeeding or failing")]
+    [property: Range(0, 100)]
+    int PayRetryPercent = 35,
+    [property: Description("Chance (%) that payment ultimately fails")]
+    [property: Range(0, 100)]
+    int PayFailPercent = 15
+);
+
+// Each step record carries only step-specific data (Token and CartId live in ctx.State).
+// PascalCase names auto-format ("LogIn" -> "Log in"); [Display] overrides when needed.
+record LogIn;
+record Search;
+record OpenProduct(string ProductId);
+record AddToCart(string ProductId);
+record Pay(int Attempt = 1);
+
+union CheckoutStep(LogIn, Search, OpenProduct, AddToCart, Pay);

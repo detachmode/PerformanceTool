@@ -10,7 +10,8 @@ WORKDIR /src
 
 COPY . .
 RUN dotnet publish src/Beesharp/Beesharp.csproj -c Release -a $TARGETARCH -o /app \
-      -p:BuildSha="$BUILD_SHA" \
+      -p:BuildSha="$BUILD_SHA" -p:SkipPackBeesharpCoreSdk=true \
+ && dotnet pack src/Beesharp.Core/Beesharp.Core.csproj -c Release -o /app/sdk \
  && cp -r src/Beesharp/scripts /app/scripts \
  && mkdir -p /app/data
 

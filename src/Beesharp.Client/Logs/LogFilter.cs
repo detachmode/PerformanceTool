@@ -5,7 +5,7 @@ using Beesharp.Client.Runs;
 namespace Beesharp.Client.Logs;
 
 /// <summary>
-/// What the Logs page shows (brain 0057): levels, one scenario entry, one step of it, one bee, an outcome of the bee and a search text. Immutable;
+/// What the Logs page shows (brain 0059): levels, one scenario entry, one step of it, one bee, an outcome of the bee and a search text. Immutable;
 /// every choice returns a new filter. A search that is only a bee number ("B199") filters by that bee instead of searching the text.
 /// It reads from and writes to the address of the page (<see cref="ToQuery"/>, <see cref="FromQuery"/>), so entry points are plain links. Entries, steps
 /// and bees are numbered from 1 there, like everywhere the user reads them.

@@ -1,4 +1,4 @@
-// Remembers the page scroll position for one key (the overview, brain 0057): saved when a card opens the scenario page, restored when the overview shows again
+// Remembers the page scroll position for one key (the overview, brain 0059): saved when a card opens the scenario page, restored when the overview shows again
 // (the browser's back button or the Overview tab). The position is used once.
 export function save(key) {
     try { sessionStorage.setItem("scroll:" + key, String(Math.round(window.scrollY))); } catch { }

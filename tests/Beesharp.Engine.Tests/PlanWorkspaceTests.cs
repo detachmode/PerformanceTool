@@ -149,4 +149,140 @@ public class PlanWorkspaceTests : IDisposable
         ws.SeedIfEmpty(new LoadPlan { DurationSeconds = 5, Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get" }] });
         Assert.Equal(77, ws.GetPlan().DurationSeconds);
     }
+
+    [Fact]
+    public async Task Code_presets_list_load_and_are_overridden_by_disk_saves()
+    {
+        var ws = Create();
+        var codePlan = new LoadPlan
+        {
+            DurationSeconds = 90,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "Code GET", RatePerMinute = 30 }],
+        };
+        ws.RegisterCodePreset(new Preset("Smoke", DateTimeOffset.UtcNow, codePlan));
+
+        var list = await ws.ListPresetsAsync();
+        Assert.Equal(["Smoke"], list.Select(p => p.Name));
+        Assert.Equal(90, list[0].Plan.DurationSeconds);
+
+        var loaded = await ws.LoadPresetAsync("smoke");
+        Assert.NotNull(loaded);
+        Assert.Equal("Smoke", loaded!.PresetName);
+        Assert.Equal(90, loaded.Plan.DurationSeconds);
+        Assert.False(loaded.HasUnsavedChanges);
+
+        // Saving edits to disk overrides the code preset by name.
+        var edited = ws.GetPlan();
+        edited.DurationSeconds = 180;
+        await ws.SavePresetAsync("Smoke", edited);
+
+        var overridden = await ws.ListPresetsAsync();
+        Assert.Single(overridden);
+        Assert.Equal(180, overridden[0].Plan.DurationSeconds);
+
+        // Deleting the disk override falls back to the code preset.
+        Assert.True(await ws.DeletePresetAsync("Smoke"));
+        var reverted = await ws.ListPresetsAsync();
+        Assert.Single(reverted);
+        Assert.Equal(90, reverted[0].Plan.DurationSeconds);
+    }
+
+    [Fact]
+    public async Task ApplyDefaultPlan_loads_default_preset_and_sets_default_environment()
+    {
+        var ws = Create();
+        var smoke = new PlanBuilder()
+            .Duration(TimeSpan.FromMinutes(2))
+            .MaxConcurrency(20)
+            .Timeout(TimeSpan.FromSeconds(15))
+            .Add<HttpGetScenario>(new HttpGetParameters { Url = "https://example.test/health" }, ratePerMinute: 30)
+            .AddBurst<HttpGetScenario>(beesPerBurst: 5, burstsPerMinute: 2, label: "Burst GET")
+            .Build(new ScenarioCatalog([new HttpGetScenario()]));
+        ws.RegisterCodePreset(new Preset("Smoke", DateTimeOffset.UtcNow, smoke));
+
+        var applied = await ws.ApplyDefaultPlanAsync(new DefaultPlanOptions
+        {
+            DefaultPreset = "Smoke",
+            DefaultEnvironment = "staging",
+        });
+
+        Assert.True(applied);
+        Assert.Equal("staging", ws.DefaultEnvironment);
+        var state = ws.GetState();
+        Assert.Equal("Smoke", state.PresetName);
+        Assert.False(state.HasUnsavedChanges);
+        Assert.Equal(120, state.Plan.DurationSeconds);
+        Assert.Equal(20, state.Plan.MaxConcurrency);
+        Assert.Equal(15, state.Plan.TimeoutSeconds);
+        Assert.Equal(2, state.Plan.Scenarios.Count);
+        Assert.Equal("https://example.test/health", state.Plan.Scenarios[0].Parameters["url"]?.GetValue<string>());
+        Assert.Equal(30, state.Plan.Scenarios[0].RatePerMinute);
+        Assert.Equal(SpawningPattern.Bursts, state.Plan.Scenarios[1].Pattern);
+        Assert.Equal(5, state.Plan.Scenarios[1].BeesPerBurst);
+        Assert.Equal(2, state.Plan.Scenarios[1].BurstsPerMinute);
+    }
+
+    [Fact]
+    public async Task ApplyDefaultPlan_seeds_from_inline_config_and_normalizes_parameters()
+    {
+        var ws = Create();
+        var applied = await ws.ApplyDefaultPlanAsync(new DefaultPlanOptions
+        {
+            DurationSeconds = 45,
+            MaxConcurrency = 12,
+            TimeoutSeconds = 10,
+            Scenarios =
+            [
+                new DefaultScenarioEntryOptions
+                {
+                    ScenarioId = "http-get",
+                    Label = "Health",
+                    RatePerMinute = 24,
+                    Parameters = new System.Text.Json.Nodes.JsonObject { ["url"] = "https://example.test/ping" },
+                },
+            ],
+        });
+
+        Assert.True(applied);
+        var state = ws.GetState();
+        Assert.Equal(PlanWorkspace.DefaultPresetName, state.PresetName);
+        Assert.False(state.HasUnsavedChanges);
+        Assert.Equal(45, state.Plan.DurationSeconds);
+        Assert.Equal(12, state.Plan.MaxConcurrency);
+        Assert.Equal(10, state.Plan.TimeoutSeconds);
+        Assert.Single(state.Plan.Scenarios);
+        Assert.Equal("Health", state.Plan.Scenarios[0].Label);
+        Assert.Equal(24, state.Plan.Scenarios[0].RatePerMinute);
+        Assert.Equal("https://example.test/ping", state.Plan.Scenarios[0].Parameters["url"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task ApplyDefaultPlan_respects_restored_run_unless_ForceDefault_is_true()
+    {
+        var ws = Create();
+        var restored = new LoadPlan
+        {
+            DurationSeconds = 60,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "Restored" }],
+        };
+        ws.SeedIfEmpty(restored);
+
+        ws.RegisterCodePreset(new Preset("Default", DateTimeOffset.UtcNow, new LoadPlan
+        {
+            DurationSeconds = 120,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "FromDefault" }],
+        }));
+
+        // Restored run wins when ForceDefault is false.
+        var skipped = await ws.ApplyDefaultPlanAsync(new DefaultPlanOptions { DefaultPreset = "Default" });
+        Assert.False(skipped);
+        Assert.Equal("Restored", ws.GetPlan().Scenarios[0].Label);
+
+        // ForceDefault overrides the restored run.
+        var forced = await ws.ApplyDefaultPlanAsync(new DefaultPlanOptions { DefaultPreset = "Default", ForceDefault = true });
+        Assert.True(forced);
+        Assert.Equal("Default", ws.GetState().PresetName);
+        Assert.Equal("FromDefault", ws.GetPlan().Scenarios[0].Label);
+        Assert.Equal(120, ws.GetPlan().DurationSeconds);
+    }
 }

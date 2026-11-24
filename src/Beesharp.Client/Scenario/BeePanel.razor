@@ -1,5 +1,5 @@
-@* The selected bee of the scenario page (brain 0057): the right-hand column, always there. Its number and outcome, one quiet line, ‹ › to the bee above or below in the bee list,
-   and the tabs Steps / Logs / Calls. A bee in flight updates live and its logs stream (Live mode). Copy buttons copy ALL logs of the bee (user rule, brain 0057). *@
+@* The selected bee of the scenario page (brain 0059): the right-hand column, always there. Its number and outcome, one quiet line, ‹ › to the bee above or below in the bee list,
+   and the tabs Steps / Logs / Calls. A bee in flight updates live and its logs stream (Live mode). Copy buttons copy ALL logs of the bee (user rule, brain 0059). *@
 @using System.Globalization
 @implements IAsyncDisposable
 @inject DataModeState DataMode
@@ -204,7 +204,7 @@
     private bool disposed;
     private int? lastSeq;
 
-    /// <summary>Steps first when the scenario has them, otherwise Logs (brain 0057).</summary>
+    /// <summary>Steps first when the scenario has them, otherwise Logs (brain 0059).</summary>
     private Tab ShownTab() => tab is { } t && (t != Tab.Steps || Steps.Any) ? t : Steps.Any ? Tab.Steps : Tab.Logs;
 
     protected override void OnParametersSet()

@@ -1,4 +1,4 @@
-# 0057. Desktop page layouts: top tabs, cards, the scenario as its own page, editor with a Try column, logs with a filter column
+# 0059. Desktop page layouts: top tabs, cards, the scenario as its own page, editor with a Try column, logs with a filter column
 
 - Status: Accepted (user, from the layout drafts in `docs/screenshots/2026-11-23-layout-drafts/`)
 - Date: 2026-11-23

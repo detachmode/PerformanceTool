@@ -389,7 +389,7 @@ public sealed class ApiRunSource : IRunSource
         return await http.GetFromJsonAsync<LogPageResult>(url, JsonOpts, ct);
     }
 
-    /// <summary>The counts behind the Logs page's filter column for the loaded run (brain 0057).</summary>
+    /// <summary>The counts behind the Logs page's filter column for the loaded run (brain 0059).</summary>
     public async Task<LogFacets?> QueryLogFacetsAsync(LogFilter filter, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(activeRunId)) return new LogFacets(0, new Dictionary<string, long>(), [], []);

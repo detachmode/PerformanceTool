@@ -4,7 +4,7 @@ using Beesharp.Client.Chart;
 namespace Beesharp.Client.Logs;
 
 /// <summary>
-/// How the rest of the app gets to the Logs page (brain 0057): the figures and buttons that used to open the logs popup navigate to <c>/logs</c> with the filter
+/// How the rest of the app gets to the Logs page (brain 0059): the figures and buttons that used to open the logs popup navigate to <c>/logs</c> with the filter
 /// in the address instead. Also remembers the filter of the last visit, so the page is as you left it when you come back from another page.
 /// </summary>
 public sealed class LogsLinks(NavigationManager nav)

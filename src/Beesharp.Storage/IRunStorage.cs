@@ -74,7 +74,7 @@ public interface IRunStorage : IAsyncDisposable
     Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default);
 
     /// <summary>
-    /// The counts behind the Logs page's filter column (brain 0057) for the filters in <paramref name="query"/> (offset and limit are ignored): how many lines per level,
+    /// The counts behind the Logs page's filter column (brain 0059) for the filters in <paramref name="query"/> (offset and limit are ignored): how many lines per level,
     /// per scenario entry, and, when the query names an entry, per step with its error lines. Each group ignores its own filter, so the other choices show what they would give.
     /// </summary>
     Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery query, CancellationToken ct = default);

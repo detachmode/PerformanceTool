@@ -4,7 +4,7 @@ using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Tests;
 
-/// <summary>The Logs page's filter, counts and text (brain 0057): public behaviour only.</summary>
+/// <summary>The Logs page's filter, counts and text (brain 0059): public behaviour only.</summary>
 public class LogFilterTests
 {
     private static readonly IReadOnlyDictionary<string, string> NoScope = new Dictionary<string, string>();

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <!-- ASP.NET Core host (brain 0015, 0054): wiring only. REST endpoints in Api/; the modules (Engine, Scripting, Storage, Ai) are composed in Program.cs. It also serves the WebAssembly client. -->
+  <!-- Standalone Beesharp executable / Docker host (brain 0015, 0054, 0058): delegates everything to Beesharp.Host. -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -15,14 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
-    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
-    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
-    <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
-    <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
-    <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" />
-    <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
-    <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" />
+    <ProjectReference Include="../Beesharp.Host/Beesharp.Host.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,5 +29,14 @@
       <_Parameter2>$(BuildSha)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <!-- Pack Beesharp.Core into $(OutputPath)sdk so local runs auto-drop the SDK into scripts/.beesharp/ (brain 0057). -->
+  <Target Name="PackBeesharpCoreSdk"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipPackBeesharpCoreSdk)' != 'true' and '$(RuntimeIdentifier)' == ''"
+          Inputs="$(OutputPath)Beesharp.Core.dll;$(MSBuildProjectDirectory)/../Beesharp.Core/buildTransitive/Beesharp.Core.props"
+          Outputs="$(OutputPath)sdk/Beesharp.Core.0.1.0.nupkg">
+    <Exec Command="dotnet pack &quot;$(MSBuildProjectDirectory)/../Beesharp.Core/Beesharp.Core.csproj&quot; -c $(Configuration) --no-build --no-restore -o &quot;$(OutputPath)sdk&quot; /nologo -v:q" />
+  </Target>
 
 </Project>

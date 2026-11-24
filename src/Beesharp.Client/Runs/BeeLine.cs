@@ -3,7 +3,7 @@ using Beesharp.Client.Shared;
 namespace Beesharp.Client.Runs;
 
 /// <summary>
-/// The one quiet line after a bee in the bee list of the scenario page (brain 0057, 0016): the error of a failed bee and the step it failed at, the slow call of a slow bee,
+/// The one quiet line after a bee in the bee list of the scenario page (brain 0059, 0016): the error of a failed bee and the step it failed at, the slow call of a slow bee,
 /// and "Step 3 of 5 · Open product" for a bee in flight. A successful bee says nothing.
 /// </summary>
 public static class BeeLine

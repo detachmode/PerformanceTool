@@ -3,7 +3,7 @@ using Beesharp.Services.Storage;
 
 namespace Beesharp.Storage.Tests;
 
-/// <summary>The step filter and the counts behind the Logs page's filter column (brain 0057), the same for both providers.</summary>
+/// <summary>The step filter and the counts behind the Logs page's filter column (brain 0059), the same for both providers.</summary>
 public sealed class LogFacetsTests
 {
     public static TheoryData<string> Providers => new() { "memory", "duckdb" };

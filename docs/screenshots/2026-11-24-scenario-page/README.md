@@ -1,4 +1,4 @@
-# The scenario as its own page (brain 0057, Y1)
+# The scenario as its own page (brain 0059, Y1)
 
 `/scenario/{n}`: steps on the left, filters, chart and bee list in the middle, the selected bee on the right. Fake data, 1440 × 900 at 2x (the phone shot 390 px wide).
 
