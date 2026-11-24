@@ -37,3 +37,9 @@ look (no glow-heavy or skeuomorphic styling).
 - Play/Pause is a 54px round disc (violet idle/paused/finished, blue running, hover/active/focus states) with a short desktop label ("Start run", "Pause", "Resume", "Run again"; hidden below 1100px). Stop is a smaller round secondary button with a red hover.
 - Bar surface: lighter top edge plus soft shadow, more spacing, recessed progress track with ticks.
 - Brain 0029: Running, Errors and Slow readouts are buttons opening the Logs popup (Errors pre-filtered to Failed, Slow to Slow, Running all logs). Calm affordance: faint background and underlined label on hover/focus. LogsPopupState.Show got an optional ActorShow outcome, read by LogsDialog on init. Actors/min and the clock are not drill-down yet.
+
+## Update (user, 2026-11-24): pause in Live mode
+Pause in Live mode used to stop (cancel) the run. Now it is what this record says: `RunClock` (Engine) is the run time and stands still while
+paused; `LoadRunner` schedules bees by it, so a paused run starts no new bees and bees in flight finish normally; `RunManager.Pause/Resume`
+(state "Paused"), `POST /api/runs/pause` and `/api/runs/resume`; the client's `ApiRunSource.Pause/Resume` call them. Stop still cancels the run,
+also a paused one. Tests: `PauseRunTests` (Engine).

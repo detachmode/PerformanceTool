@@ -80,7 +80,7 @@ public sealed class ApiRunSource : IRunSource
     private long runtimeVersion = -1;
     private bool runtimeFetching;
 
-    private static bool IsActiveState(string state) => state is "Running" or "Preflight" or "Shutdown";
+    private static bool IsActiveState(string state) => state is "Running" or "Paused" or "Preflight" or "Shutdown";
 
     public RunSnapshot Current { get; private set; }
     public bool IsRunning => Current.Running;
@@ -418,8 +418,19 @@ public sealed class ApiRunSource : IRunSource
         _ = StartRemoteAsync();
     }
 
-    public void Pause() => Stop();
-    public void Resume() => Start();
+    // Pause only holds the run on the server (no new bees, bees in flight finish); Stop ends it (brain 0027).
+    public void Pause() => _ = PostControlAsync("api/runs/pause");
+    public void Resume() => _ = PostControlAsync("api/runs/resume");
+
+    private async Task PostControlAsync(string url)
+    {
+        try
+        {
+            var resp = await http.PostAsync(url, null);
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts) is { } dto) ApplyStatus(dto);
+        }
+        catch { }
+    }
 
     public void Stop() => _ = StopRemoteAsync();
 
@@ -546,6 +557,7 @@ public sealed class ApiRunSource : IRunSource
         var state = dto.State switch
         {
             "Running" or "Preflight" or "Shutdown" => FakeRunState.Running,
+            "Paused" => FakeRunState.Paused,
             "Finished" => FakeRunState.Finished,
             _ => FakeRunState.Idle,
         };
