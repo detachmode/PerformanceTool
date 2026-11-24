@@ -18,10 +18,6 @@
     <ProjectReference Include="../Beesharp.Host/Beesharp.Host.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Using Include="Beesharp.Contracts" />
-  </ItemGroup>
-
   <!-- The same build sha as the client (the Dockerfile passes -p:BuildSha to the whole publish), served as /build-info.json (brain 0025). -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
