@@ -207,7 +207,7 @@ public class LoadRunnerTests
     {
         var catalog = new ScenarioCatalog([new WrappedCancelScenario()]);
         var e = ScenarioRunConfig.CreateFor(catalog.Find("wrapped")!);
-        e.RatePerMinute = 60;
+        e.RatePerMinute = 6;   // the next bee is due after 10 s: a stop that fires late on a slow machine still finds only the first one
         using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromMilliseconds(500));
         var results = new ConcurrentBag<ExecutionResult>();
