@@ -43,7 +43,6 @@ Screenshots: `docs/screenshots/2026-11-24-logs-editor-environment/`.
 - **Environment:** the environment's name is the heading with Configure… on the right, its values in one flat card (long keys and values end in an ellipsis, the full text is the tooltip and shows on expand); Runtime data below with the run bag and one row per entry bag. The key filter only shows with eight or more keys.
 - **Not done / open:** preflight and shutdown output is not stored with a run (only live in the run status), so a stored run shows none; "open that bee" from a log line filters the page to the bee until the scenario page (Y1) exists; Logs, Editor and Environment phone layouts are a first version (filter column folds behind "Filter", Try column below the code).
 
-<<<<<<< HEAD
 ## Phone (user, 2026-11-24, drafts `docs/screenshots/2026-11-24-phone-layout-drafts/`)
 - **App frame: A.** The tabs move to a bottom tab bar (Overview, Editor, Logs, Env); while a run goes a slim run bar sits above it (pause, time, active, failed; ⌃ opens the full run). The top bar keeps the page title and mode/environment.
 - **Overview: A.** Full cards one under the other, each with all its steps, like the desktop card.
@@ -52,8 +51,7 @@ Screenshots: `docs/screenshots/2026-11-24-logs-editor-environment/`.
 - **Editor: B.** Tabs Code · Try under the toolbar; ▶ Try switches to the Try tab and shows the result full height (steps, then Logs and Calls).
 - **Logs** (one proposal, taken): the search on top with the active filters as removable chips under it; "Filter" opens the filter column with its counts as a bottom sheet ("Show N lines" closes it); copy all next to the search.
 - **Environment** (one proposal, taken): one column, each key above its value.
-=======
+
 ## Update (user, 2026-11-24): run time or clock time in the logs
 A toggle in the Logs toolbar ("Run time" / "Clock time") shows each line's time as time into the run (0:05.9) or as the clock time it was written
 (14:02:07.3, browser time zone). The choice is remembered in the browser (`pt.log-time`) and Copy all uses it too (`LogText.Stamp`, `LogTimeMode`).
->>>>>>> origin/logs-time-toggle
