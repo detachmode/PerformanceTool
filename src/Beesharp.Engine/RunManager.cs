@@ -204,9 +204,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
 
     /// <summary>
     /// Returns current run status plus only compact bees with <c>Sequence &gt; afterSeq</c> (up to <paramref name="maxBees"/>).
+    /// Bees finish out of sequence order, so a client that must not miss any passes <paramref name="afterIndex"/> instead: the number of bees it has already
+    /// received (<see cref="LiveRunStatusDto.NextBeeIndex"/> of the last answer) and the run it got them from (<paramref name="forRunId"/>; another run means start from the first bee); then the bees in finishing order from that position on are returned.
     /// Full calls and logs live in <see cref="IRunStorage"/> and are fetched lazily on demand.
     /// </summary>
-    public LiveRunStatusDto GetCurrent(int afterSeq = -1, int maxBees = 2000)
+    public LiveRunStatusDto GetCurrent(int afterSeq = -1, int maxBees = 2000, int? afterIndex = null, string? forRunId = null)
     {
         maxBees = Math.Clamp(maxBees, 1, 10_000);
         lock (sync)
@@ -253,7 +255,15 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             }
 
             var delta = new List<LiveBeeDto>();
-            if (bees.Count > 0)
+            var nextBee = 0;
+            if (afterIndex is { } from)
+            {
+                if (forRunId is not null && !string.Equals(forRunId, runId, StringComparison.Ordinal)) from = 0;
+                from = Math.Clamp(from, 0, bees.Count);
+                for (var i = from; i < bees.Count && delta.Count < maxBees; i++) delta.Add(bees[i]);
+                nextBee = from + delta.Count;
+            }
+            else if (bees.Count > 0)
             {
                 // Bees arrive mostly in sequence order; scan from the end or filter cleanly.
                 for (var i = 0; i < bees.Count && delta.Count < maxBees; i++)
@@ -284,7 +294,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 shutdownLogs.Count > 0 ? shutdownLogs.ToArray() : null,
                 shutdownError,
                 runData?.Version ?? (storedRuntime is null ? 0 : 1),
-                runSteps.Any(s => s.Count > 0) ? runSteps : null);
+                runSteps.Any(s => s.Count > 0) ? runSteps : null,
+                nextBee);
         }
     }
 

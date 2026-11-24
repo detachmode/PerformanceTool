@@ -10,8 +10,8 @@ public static class RunEndpoints
     {
         app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) =>
             storage.ListRunsAsync(limit ?? 50, ct));
-        app.MapGet("/api/runs/current", (int? afterSeq, int? maxBees, RunManager runs) =>
-            runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000));
+        app.MapGet("/api/runs/current", (int? afterSeq, int? afterIndex, string? runId, int? maxBees, RunManager runs) =>
+            runs.GetCurrent(afterSeq ?? -1, maxBees ?? 2000, afterIndex, runId));
         // Runtime data (brain 0052): the run bag and the entry bags of the active run (live), or the final values of a stored run.
         app.MapGet("/api/runs/current/runtime", (RunManager runs) =>
             runs.GetCurrentRuntime() is { } rt ? Results.Ok(rt) : Results.NoContent());

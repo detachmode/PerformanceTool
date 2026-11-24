@@ -39,6 +39,8 @@
     [Parameter] public object? ResetKey { get; set; }
     /// <summary>Raised when the visible window approaches the end of <see cref="Items"/>, for lazy-loading pages.</summary>
     [Parameter] public EventCallback OnNearEnd { get; set; }
+    /// <summary>Keep this row in view (e.g. the selected one): the list scrolls to it only when it is not fully visible. Null = nothing to reveal.</summary>
+    [Parameter] public int? ScrollToIndex { get; set; }
 
     private sealed class Box { public double H; }
 
@@ -108,6 +110,7 @@
     }
 
     private int nearEndNotifiedAt = -1;
+    private int? lastReveal;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -126,6 +129,14 @@
                 await module.InvokeVoidAsync("scrollToTop", root);
             }
             else if (pendingScrollTo is { } to) { pendingScrollTo = null; await module.InvokeVoidAsync("scrollTo", root, to); }
+            if (ScrollToIndex is not { } reveal) lastReveal = null;
+            else if (reveal != lastReveal)
+            {
+                lastReveal = reveal;
+                var y = Offset(reveal);
+                var rowH = Variable ? Offset(reveal + 1) - y : RowHeight;
+                if (y < top || y + rowH > top + height) await module.InvokeVoidAsync("scrollTo", root, Math.Max(0, y - height / 2 + rowH / 2));
+            }
             if (Variable) await Measure();
         }
         catch (JSDisconnectedException) { }

@@ -1,63 +1,32 @@
-@* The bees of the visible time frame, failed first, then slow, then successful, each by time (brain 0028, 0023 update 3).
-   Wide screens: a virtualised list at the side of the popup. Narrow screens: the same rows below the chart, shown a page at a time, so the popup
-   never holds a second scrolling list (CSS shows one of the two). Clicking a row selects the bee. *@
-@{
-    var visible = Math.Min(Rows.Count, pageCount * PageSize);
-}
-
-<VirtualList Class="bee-list side-virtual" Items="Rows" RowHeight="34" ResetKey="@ResetKey" Label="Bees in view" Role="list">
+@* The bees of the visible time frame, bees in flight first, then failed, slow, successful, each by time (brain 0028, 0023 update 3, 0057).
+   One row per bee: its number in the outcome colour, duration, start time and one quiet line (the error, the slow call, or the step it is in).
+   A virtualised list (brain 0021, 0022), also on a phone. Clicking a row selects the bee. *@
+<VirtualList Class="bee-list side-virtual" Items="Rows" RowHeight="34" ScrollToIndex="RevealIndex" ResetKey="@ResetKey" Label="Bees in view" Role="list">
     <ItemContent Context="a">
         @Row(a)
     </ItemContent>
     <Empty><p class="muted empty">@EmptyText</p></Empty>
 </VirtualList>
 
-<div class="side-paged" role="list" aria-label="Bees in view">
-    @for (var i = 0; i < visible; i++)
-    {
-        var a = Rows[i];
-        @Row(a)
-    }
-    @if (Rows.Count == 0) { <p class="muted empty">@EmptyText</p> }
-    @if (visible < Rows.Count)
-    {
-        <button class="btn ghost small side-more" @onclick="() => pageCount++">Show @Math.Min(PageSize, Rows.Count - visible) more (@Format.Num(Rows.Count - visible) left)</button>
-    }
-</div>
-
 @code {
-    private const int PageSize = 25;
-    private int pageCount = 1;
-    private object? lastKey;
 
     [Parameter, EditorRequired] public IReadOnlyList<BeeRow> Rows { get; set; } = [];
     [Parameter] public int? SelectedSequence { get; set; }
     [Parameter] public EventCallback<BeeRow> OnSelect { get; set; }
     [Parameter] public object? ResetKey { get; set; }
-    /// <summary>For a bee in flight of a scenario with steps: its step as "2/4", shown quietly next to "active" (brain 0056).</summary>
-    [Parameter] public Func<int, string?>? RunningStep { get; set; }
+    /// <summary>The quiet line after a row: the error, the slow call, or "Step 3 of 5 · Open product" for a bee in flight (<see cref="BeeLine"/>).</summary>
+    [Parameter] public Func<BeeRow, string?>? Info { get; set; }
+    /// <summary>The row to keep in view (the selected bee, e.g. after ‹ ›): the list scrolls only when it is out of sight.</summary>
+    [Parameter] public int? RevealIndex { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No bees in this time frame.";
-
-    protected override void OnParametersSet()
-    {
-        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; pageCount = 1; }
-    }
 
     private RenderFragment Row(BeeRow a) => @<button class="bee-row @(SelectedSequence == a.Sequence ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(SelectedSequence == a.Sequence)" @onclick="() => OnSelect.InvokeAsync(a)">
         <BeeChip Sequence="a.Sequence" State="a.State" Tint="a.Tint" />
-        <span class="dur" title="@(a.IsRunning && RunningStep?.Invoke(a.Sequence) is { } rsTitle ? "Step " + rsTitle : null)">@(a.IsRunning ? "active" + (RunningStep?.Invoke(a.Sequence) is { } rs ? " · " + rs : "") : Format.Ms(a.DurationMs))</span>
+        <span class="dur">@(a.IsRunning ? "active" : Format.Ms(a.DurationMs))</span>
         <span class="at">@Format.Time(a.StartedAt)</span>
-        @if (a.State == BeeState.Ok)
+        @if (Info?.Invoke(a) is { Length: > 0 } info)
         {
-            <span class="state good bee-ok-state" title="Ok" aria-label="Ok"><HexBadge Kind="ok" Size="16" StrokeWidth="7" /></span>
-        }
-        else if (a.State is BeeState.Failed or BeeState.Slow)
-        {
-            <span class="state @BeeOrder.Css(a.State) bee-ok-state" title="@BeeOrder.Word(a.State)" aria-label="@BeeOrder.Word(a.State)"><HexBadge Kind="@(a.State == BeeState.Failed ? "bad" : "warn")" Size="16" StrokeWidth="7" /></span>
-        }
-        else
-        {
-            <span class="state @BeeOrder.Css(a.State)"></span>
+            <span class="info @(a.State == BeeState.Failed ? "bad" : a.State == BeeState.Slow ? "warn" : "")" title="@info">@info</span>
         }
     </button>;
 }
