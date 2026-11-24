@@ -1,6 +1,6 @@
 # 0058. Embedded `Beesharp.Host` (Aspire-style project) and default load plan
 
-- Status: Proposed
+- Status: Accepted, implemented
 - Date: 2026-11-24
 
 ## What

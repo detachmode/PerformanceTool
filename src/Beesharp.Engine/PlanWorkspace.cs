@@ -17,21 +17,53 @@ public sealed class PlanWorkspace
     private readonly Lock sync = new();
     private readonly ScenarioCatalog catalog;
     private readonly PresetStore presets;
+    private readonly Dictionary<string, Preset> codePresets = new(StringComparer.OrdinalIgnoreCase);
     private LoadPlan plan = NewPlan();
     private LoadPlan saved = NewPlan();
     private string presetName = DefaultPresetName;
+    private string? defaultEnvironment;
     private long version = 1;
 
-    public PlanWorkspace(ScenarioCatalog catalog, PresetStore presets)
+    public PlanWorkspace(ScenarioCatalog catalog, PresetStore presets, IEnumerable<Preset>? codePresets = null)
     {
         this.catalog = catalog;
         this.presets = presets;
+        if (codePresets is not null) RegisterCodePresets(codePresets);
     }
 
     /// <summary>Raised after every real change (outside the lock). Handlers must not block.</summary>
     public event Action<PlanWorkspaceState>? Changed;
 
     public long Version { get { lock (sync) return version; } }
+
+    /// <summary>Default environment name configured at startup (brain 0058). Used when a run starts without an explicit environment.</summary>
+    public string? DefaultEnvironment { get { lock (sync) return defaultEnvironment; } }
+
+    public void SetDefaultEnvironment(string? name)
+    {
+        lock (sync) defaultEnvironment = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+    }
+
+    /// <summary>Registers code-defined presets (brain 0058). Disk presets with the same name override these if the user saves edits.</summary>
+    public void RegisterCodePresets(IEnumerable<Preset> presetsToRegister)
+    {
+        ArgumentNullException.ThrowIfNull(presetsToRegister);
+        lock (sync)
+        {
+            foreach (var preset in presetsToRegister)
+            {
+                var name = preset.Name.Trim();
+                if (name.Length == 0) continue;
+                codePresets[name] = new Preset(name, preset.SavedAt, preset.Plan.Clone());
+            }
+        }
+    }
+
+    public void RegisterCodePreset(Preset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        RegisterCodePresets([preset]);
+    }
 
     public PlanWorkspaceState GetState() { lock (sync) return Snapshot(); }
 
@@ -107,9 +139,107 @@ public sealed class PlanWorkspace
         });
     }
 
+    /// <summary>
+    /// Applies startup default plan configuration (brain 0058): sets <see cref="DefaultEnvironment"/> when provided,
+    /// then loads <see cref="DefaultPlanOptions.DefaultPreset"/> or seeds from <see cref="DefaultPlanOptions.Scenarios"/>
+    /// when the workspace is empty (or <see cref="DefaultPlanOptions.ForceDefault"/> is true).
+    /// Returns true if a plan was applied.
+    /// </summary>
+    public async Task<bool> ApplyDefaultPlanAsync(DefaultPlanOptions? options, CancellationToken ct = default)
+    {
+        if (options is null) return false;
+
+        if (!string.IsNullOrWhiteSpace(options.DefaultEnvironment))
+            SetDefaultEnvironment(options.DefaultEnvironment);
+
+        bool isEmpty;
+        lock (sync) isEmpty = plan.Scenarios.Count == 0;
+        if (!isEmpty && !options.ForceDefault) return false;
+
+        if (!string.IsNullOrWhiteSpace(options.DefaultPreset))
+        {
+            if (await LoadPresetAsync(options.DefaultPreset, ct) is not null)
+                return true;
+        }
+
+        if (options.Scenarios is { Count: > 0 })
+        {
+            var built = BuildInlinePlan(options);
+            var applied = false;
+            Mutate(() =>
+            {
+                if (!options.ForceDefault && plan.Scenarios.Count > 0) return false;
+                plan = built;
+                saved = built.Clone();
+                presetName = DefaultPresetName;
+                applied = true;
+                return true;
+            });
+            return applied;
+        }
+
+        return false;
+    }
+
+    private LoadPlan BuildInlinePlan(DefaultPlanOptions options)
+    {
+        var built = new LoadPlan
+        {
+            DurationSeconds = options.DurationSeconds ?? 30,
+            MaxConcurrency = options.MaxConcurrency ?? 50,
+            TimeoutSeconds = options.TimeoutSeconds ?? 15,
+            PreflightScriptId = options.PreflightScriptId,
+            ShutdownScriptId = options.ShutdownScriptId,
+        };
+
+        foreach (var entry in options.Scenarios!)
+        {
+            if (string.IsNullOrWhiteSpace(entry.ScenarioId)) continue;
+            var scenario = catalog.Find(entry.ScenarioId);
+            var resolvedId = scenario?.Id ?? entry.ScenarioId.Trim();
+            var defaultName = scenario?.Name ?? resolvedId;
+            var same = built.Scenarios.Count(s => string.Equals(s.ScenarioId, resolvedId, StringComparison.OrdinalIgnoreCase));
+            var label = !string.IsNullOrWhiteSpace(entry.Label)
+                ? entry.Label.Trim()
+                : (same == 0 ? defaultName : $"{defaultName} #{same + 1}");
+
+            var config = new ScenarioRunConfig
+            {
+                ScenarioId = resolvedId,
+                Label = label,
+                RatePerMinute = entry.RatePerMinute ?? 60,
+                Pattern = entry.Pattern ?? SpawningPattern.Linear,
+                BeesPerBurst = entry.BeesPerBurst ?? 10,
+                BurstsPerMinute = entry.BurstsPerMinute ?? 4,
+                MaxInFlight = entry.MaxInFlight,
+                Parameters = entry.Parameters is not null
+                    ? (System.Text.Json.Nodes.JsonObject)entry.Parameters.DeepClone()
+                    : scenario?.Spec.DefaultJson() ?? new System.Text.Json.Nodes.JsonObject(),
+            };
+            if (scenario is not null) config.Normalize(scenario);
+            built.Scenarios.Add(config);
+        }
+
+        return built;
+    }
+
     // ---------- presets ----------
 
-    public Task<IReadOnlyList<Preset>> ListPresetsAsync(CancellationToken ct = default) => presets.ListAsync(ct);
+    public async Task<IReadOnlyList<Preset>> ListPresetsAsync(CancellationToken ct = default)
+    {
+        var disk = await presets.ListAsync(ct);
+        var merged = new Dictionary<string, Preset>(StringComparer.OrdinalIgnoreCase);
+        lock (sync)
+        {
+            foreach (var (name, preset) in codePresets)
+                merged[name] = new Preset(preset.Name, preset.SavedAt, preset.Plan.Clone());
+        }
+        // Disk presets override code presets with the same name (brain 0058).
+        foreach (var preset in disk)
+            merged[preset.Name] = preset;
+
+        return merged.Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     /// <summary>Saves a plan (the current one when <paramref name="source"/> is null) under <paramref name="name"/> and makes it the current preset.</summary>
     public async Task<PlanWorkspaceState> SavePresetAsync(string name, LoadPlan? source = null, CancellationToken ct = default)
@@ -131,7 +261,7 @@ public sealed class PlanWorkspace
     /// <summary>Loads a preset into the workspace. Returns null when there is no preset with that name.</summary>
     public async Task<PlanWorkspaceState?> LoadPresetAsync(string name, CancellationToken ct = default)
     {
-        var preset = (await presets.ListAsync(ct)).FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+        var preset = (await ListPresetsAsync(ct)).FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
         if (preset is null) return null;
         var loaded = preset.Plan.Clone();
         foreach (var entry in loaded.Scenarios)

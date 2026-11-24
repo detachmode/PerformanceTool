@@ -25,7 +25,8 @@ public static class RunEndpoints
             {
                 // No plan in the body = start the server's Live plan. A plan in the body becomes the Live plan.
                 if (body?.Plan is { } given) workspace.SetPlan(given);
-                return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), body?.EnvironmentName, ct));
+                var envName = string.IsNullOrWhiteSpace(body?.EnvironmentName) ? workspace.DefaultEnvironment : body.EnvironmentName;
+                return Results.Ok(await runs.StartAsync(body?.Plan ?? workspace.GetPlan(), envName, ct));
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {

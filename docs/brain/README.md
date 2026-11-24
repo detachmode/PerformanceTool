@@ -95,4 +95,4 @@ What follows from it: limits, things to keep in mind, follow-up work.
 | [0055](0055-warnings-are-errors.md) | Warnings are errors in every project (`Directory.Build.props`); NuGet audit warnings stay warnings (Proposed) | Accepted, implemented |
 | [0056](0056-scenario-steps.md) | Scenario steps: declared up front (enum or names), bee shows "step N of M", failed step and bees failed per step; vertical stepper UI | Proposed (UI draft with fake data in progress) |
 | [0057](0057-script-ide-sdk-autodrop.md) | IDE support for custom scenario scripts via .NET 11 file-based apps (`#:package Beesharp.Core@0.1.0`, `DebugRunAsync`) and automatic `.beesharp/` SDK drop | Accepted, implemented |
-| [0058](0058-embedded-host-and-default-plan.md) | Embedded `Beesharp.Host` (Aspire-style console project with embedded Blazor UI + plain .NET DI) and default load plan via `appsettings.json` / presets | Proposed |
+| [0058](0058-embedded-host-and-default-plan.md) | Embedded `Beesharp.Host` (Aspire-style console project with embedded Blazor UI + plain .NET DI) and default load plan via `appsettings.json` / presets | Accepted, implemented |
