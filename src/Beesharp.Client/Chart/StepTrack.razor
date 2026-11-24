@@ -30,7 +30,8 @@
                 <span class="sls-no" role="columnheader"></span>
                 <span class="sls-name" role="columnheader">@(Compact ? "" : "Step")</span>
                 @if (Live) { <span class="sls-col run" role="columnheader"><i class="yt-live-dot" aria-hidden="true"></i>Now</span> }
-                <span class="sls-col bad" role="columnheader">Failed</span>
+                @* A neutral heading: red is only for real failures, so a scenario without failures says "Failed 0" in grey. *@
+                <span class="sls-col" role="columnheader">@(before == 0 ? "Failed 0" : "Failed")</span>
             </div>
             @foreach (var item in items)
             {
