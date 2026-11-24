@@ -1,4 +1,4 @@
-# 0059. Desktop page layouts: top tabs, cards, the scenario as its own page, editor with a Try column, logs with a filter column
+# 0059. Desktop and phone page layouts: top tabs, cards, the scenario as its own page, editor with a Try column, logs with a filter column
 
 - Status: Accepted (user, from the layout drafts in `docs/screenshots/2026-11-23-layout-drafts/`)
 - Date: 2026-11-23
@@ -48,4 +48,6 @@ Screenshots: `docs/screenshots/2026-11-24-logs-editor-environment/`.
 - **Overview: A.** Full cards one under the other, each with all its steps, like the desktop card.
 - **One scenario: A.** Three tabs Steps · Chart · Bees under the title; a count in Steps jumps to Bees, filtered; while a run goes the Steps tab shows Now/Failed.
 - **One bee: B.** A bottom sheet over the bee list (half height, drag up for full height, swipe down to close), with ‹ › for the previous/next bee and tabs Steps · Logs · Calls.
-- Open: editor (Try below the code or a Try tab). Logs (filters in a sheet) and Environment (key above value) have one proposal each.
+- **Editor: B.** Tabs Code · Try under the toolbar; ▶ Try switches to the Try tab and shows the result full height (steps, then Logs and Calls).
+- **Logs** (one proposal, taken): the search on top with the active filters as removable chips under it; "Filter" opens the filter column with its counts as a bottom sheet ("Show N lines" closes it); copy all next to the search.
+- **Environment** (one proposal, taken): one column, each key above its value.
