@@ -8,6 +8,8 @@
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
 @inject IJSRuntime JS
+@inject PhoneState Phone
+@inject NavigationManager Nav
 
 @{
     var s = Sim.Current;
@@ -34,7 +36,33 @@
 }
 @if (active || s.Paused)
 {
-<section class="player @(open ? "open" : "")" aria-label="Run player">
+@if (Phone.IsPhone)
+{
+    @* The phone's slim run bar above the tab bar (brain 0059): pause or resume, the time, a progress line, the bees active (blue) and failed (red). Tapping the bar or ⌃ opens the full
+       player (below, as a sheet) with every figure; the figures drill down from there like on desktop. *@
+    <section class="runbar" aria-label="Run">
+        <button type="button" class="rb-play" @onclick="Toggle" disabled="@shuttingDown" aria-label="@playLabel">
+            @if (s.State == FakeRunState.Running)
+            {
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2" fill="currentColor"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2" fill="currentColor"/></svg>
+            }
+            else
+            {
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z" fill="currentColor"/></svg>
+            }
+        </button>
+        <button type="button" class="rb-open" @onclick="() => open = true" aria-label="Open the run details. @stateText, @Format.Time(s.Elapsed), @Format.Num(inFlight) active, @Format.Num(failed) failed" aria-haspopup="dialog">
+            <span class="rb-time tnum">@Format.Time(s.Elapsed)</span>
+            <span class="rb-gauge" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)pct)"><i style="width:@pct.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
+            <span class="rb-fig run tnum" title="Active">@Format.Num(inFlight)</span>
+            <span class="rb-fig tnum @(failed > 0 ? "bad" : "zero")" title="Failed">@Format.Num(failed)</span>
+            <span class="rb-chev" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></span>
+        </button>
+        <span class="visually-hidden" role="status" aria-live="polite">Run @stateText.ToLowerInvariant()</span>
+    </section>
+    @if (open) { <div class="sheet-backdrop run-backdrop" @onclick="() => open = false" role="presentation"></div> }
+}
+<section class="player @(open ? "open" : "")" aria-label="Run player" role="@(Phone.IsPhone && open ? "dialog" : null)">
     <div class="pl-main">
  <button class="play @stateCss" @onclick="Toggle" disabled="@shuttingDown" aria-label="@playLabel" title="@playLabel (space)">
             <span class="disc">
@@ -83,7 +111,9 @@
     private DotNetObjectReference<PlayerBar>? self;
     private IJSObjectReference? module;
 
-    protected override void OnInitialized() => Sim.Changed += OnChanged;
+    protected override void OnInitialized() { Sim.Changed += OnChanged; Phone.Changed += OnChanged; Nav.LocationChanged += OnLocation; }
+
+    private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) { if (open) { open = false; OnChanged(); } }
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
@@ -100,6 +130,7 @@
 
     private void OnChanged()
     {
+        if (open && !Sim.Current.Running && !Sim.Current.Paused) open = false;   // the details sheet goes with the run
         try { _ = InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
@@ -117,7 +148,7 @@
     /// <summary>Called by the space bar handler (player-bar.js) when focus is not in an input.</summary>
     [JSInvokable] public void ToggleFromKey() => Toggle();
 
-    public void Dispose() => Sim.Changed -= OnChanged;
+    public void Dispose() { Sim.Changed -= OnChanged; Phone.Changed -= OnChanged; Nav.LocationChanged -= OnLocation; }
 
     public async ValueTask DisposeAsync()
     {

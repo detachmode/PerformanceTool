@@ -149,6 +149,31 @@ public class LogFilterTests
     public void Time_has_a_tenth_of_a_second(double seconds, string expected) => Assert.Equal(expected, LogText.Time(seconds));
 
     [Fact]
+    public void Clock_time_is_the_wall_clock_time_of_the_line_with_a_tenth_of_a_second()
+    {
+        var at = new DateTimeOffset(2026, 11, 24, 14, 2, 7, 360, TimeSpan.Zero);
+        Assert.Equal("14:02:07.3", LogText.Clock(at, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void A_line_shows_the_run_time_or_the_clock_time_as_chosen()
+    {
+        var line = new FakeLogEntry(65.4, new DateTimeOffset(2026, 11, 24, 9, 30, 0, 500, TimeSpan.Zero), "Information", "hello", null, 0, 6,
+            new Dictionary<string, string>(), -1);
+        Assert.Equal("[1:05.4] INF B7 hello", LogText.Line(line, "", LogTimeMode.Run));
+        Assert.Equal("[09:30:00.5] INF B7 hello", LogText.Line(line, "", LogTimeMode.Clock, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void A_copied_line_has_the_run_time_and_the_clock_time()
+    {
+        var at = new DateTimeOffset(2026, 11, 24, 14, 2, 7, 312, TimeSpan.Zero);
+        Assert.Equal("[0:05.9 · 14:02:07.312] ERR Checkout B7 GET /a 503\nSystem.Exception: bad",
+            LogText.CopyLine(5.96, at, "Error", "GET /a 503", "System.Exception: bad", "Checkout", 6, TimeZoneInfo.Utc));
+        Assert.Equal("[1:05.0] INF hello", LogText.CopyLine(65, null, "Information", "hello", null));
+    }
+
+    [Fact]
     public void A_line_reads_like_the_console_and_all_lines_join()
     {
         var (_, lines) = Run();

@@ -1,0 +1,80 @@
+@* A bottom sheet for the phone layouts (brain 0059): a backdrop, a grab handle and the content. Half height first; with Resizable the handle (or the header) is dragged up
+   for full height, and a swipe down or a tap on the backdrop closes it. Where it settles is decided by SheetSnap; the drag itself is wwwroot/sheet.js. The caller owns "open". *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (Open)
+{
+    <div class="sheet-backdrop" @onclick="CloseAsync" role="presentation"></div>
+    <div class="sheet @(Resizable ? (Full ? "full" : "half") : "auto") @Class" role="dialog" aria-modal="true" aria-label="@Label" @ref="el" @onkeydown="OnKey">
+        <div class="sheet-grab" aria-hidden="true"><i></i></div>
+        <div class="sheet-body">@ChildContent</div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Full height instead of half (the sheet can grow when <see cref="Resizable"/>).</summary>
+    [Parameter] public bool Full { get; set; }
+    [Parameter] public EventCallback<bool> FullChanged { get; set; }
+    [Parameter] public bool Resizable { get; set; }
+    [Parameter] public string Label { get; set; } = "Sheet";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private ElementReference el;
+    private DotNetObjectReference<Sheet>? self;
+    private IJSObjectReference? module, handle;
+    private bool attached;
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && !attached)
+        {
+            attached = true;
+            try
+            {
+                module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./sheet.js");
+                self ??= DotNetObjectReference.Create(this);
+                handle = await module.InvokeAsync<IJSObjectReference>("attach", el, self, Resizable);
+            }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
+        else if (!Open && attached) await DetachAsync();
+    }
+
+    private async Task DetachAsync()
+    {
+        attached = false;
+        var h = handle;
+        handle = null;
+        if (h is null) return;
+        try { await h.InvokeVoidAsync("dispose"); await h.DisposeAsync(); }
+        catch (Exception) { }
+    }
+
+    [JSInvokable]
+    public async Task<string> DragEnd(double height, double velocityUp, double half, double full)
+    {
+        var stop = SheetSnap.Decide(height, velocityUp, half, full, Resizable);
+        if (stop == SheetStop.Closed) await OnClose.InvokeAsync();
+        else if (Resizable && (stop == SheetStop.Full) != Full) await FullChanged.InvokeAsync(stop == SheetStop.Full);
+        return stop.ToString();
+    }
+
+    [JSInvokable]
+    public async Task Toggle() { if (Resizable) await FullChanged.InvokeAsync(!Full); }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+        self?.Dispose();
+        if (module is not null) { try { await module.DisposeAsync(); } catch (Exception) { } }
+    }
+}

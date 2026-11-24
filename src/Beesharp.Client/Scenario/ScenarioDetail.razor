@@ -8,6 +8,7 @@
 @inject ScenarioCatalog Catalog
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PhoneState Phone
 
 @{
     var s = Snapshot;
@@ -106,9 +107,25 @@
     var rowSeqs = sideRows.Select(r => r.Sequence).ToList();
     var revealAt = selSeq is { } rsq ? sideRows.FindIndex(r => r.Sequence == rsq) : -1;
     var runBy = runningRaw.Count == 0 ? null : runningRaw.ToDictionary(r => r.Sequence);
+    var phone = Phone.IsPhone && !Selection;
+    var shownTab = !hasSteps && tab == PhoneTab.Steps ? PhoneTab.Chart : tab;   // a scenario without steps has no Steps tab   // the phone layouts (brain 0059): three tabs, the bee in a bottom sheet
+    var selSequence = selSeq;
 }
 
-<div class="scn @(Selection ? "scn-set" : "")" tabindex="-1" @ref="root" @onkeydown="OnKey" role="presentation">
+<div class="scn @(Selection ? "scn-set" : "") @(phone ? "scn-phone" : "")" data-tab="@(phone ? shownTab.ToString().ToLowerInvariant() : null)" tabindex="-1" @ref="root" @onkeydown="OnKey" role="presentation">
+    @if (phone)
+    {
+        <div class="scn-tabs" role="tablist" aria-label="Scenario view">
+            @if (hasSteps)
+            {
+                <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Steps ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Steps)" @onclick="() => SetTab(PhoneTab.Steps)">Steps</button>
+            }
+            <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Chart ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Chart)" @onclick="() => SetTab(PhoneTab.Chart)">Chart</button>
+            <button type="button" role="tab" class="scn-tab @(shownTab == PhoneTab.Bees ? "on" : "")" aria-selected="@Aria.Bool(shownTab == PhoneTab.Bees)" @onclick="() => SetTab(PhoneTab.Bees)">Bees<span class="n">@Format.Num(sideRows.Count)</span></button>
+            <span class="spacer"></span>
+            <div class="scn-tools">@ToolButtons</div>
+        </div>
+    }
     @if (!Selection)
     {
         var dlgActive = s.Running || view.InFlight > 0;
@@ -117,31 +134,23 @@
         var settingsLine = (scnTypeName is not null && !string.Equals(scnTypeName, label, StringComparison.OrdinalIgnoreCase) ? scnTypeName + " · " : "")
             + (shape.Length > 0 ? $"Bursts · {shape}" : $"Linear · {Format.Rate(target)} {Terms.PerMinuteShort}");
         <aside class="scn-left" aria-label="Scenario @label">
-            <div class="scn-namerow">
-                <h1 id="scn-title" title="@label">@label</h1>
-                <div class="scn-tools">
-                    <button type="button" class="icon-btn sm" @onclick="() => Logs.Show(entry: Index)" title="Open logs filtered to @label" aria-label="Open logs of @label">
-                        <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9M7.5 13h6M7.5 16h3.5" /></svg>
-                    </button>
-                    @if (Index < s.Plan.Scenarios.Count && Catalog.Find(s.Plan.Scenarios[Index].ScenarioId) is RemoteSchemaScenario { ScriptId: not null })
-                    {
-                        var scriptScnId = s.Plan.Scenarios[Index].ScenarioId;
-                        <button type="button" class="icon-btn sm" @onclick="() => EditScript(scriptScnId)" title="Open this scenario's .cs file in the Script Editor" aria-label="Edit script">
-                            <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5" /><path d="m16 7 5 5-5 5" /></svg>
-                        </button>
-                    }
+            @if (!phone)
+            {
+                <div class="scn-namerow">
+                    <h1 id="scn-title" title="@label">@label</h1>
+                    <div class="scn-tools">@ToolButtons</div>
                 </div>
-            </div>
+            }
             <p class="scn-line" title="@settingsLine">
                 @if (dlgActive)
                 {
-                    <button type="button" class="scn-fig run" @onclick="() => SetShow(BeeShow.All)" title="Show the bees in flight first"><i class="yt-live-dot" aria-hidden="true"></i>@Format.Num(view.InFlight) active</button>
+                    <button type="button" class="scn-fig run" @onclick="() => { SetShow(BeeShow.All); GoToBees(); }" title="Show the bees in flight first"><i class="yt-live-dot" aria-hidden="true"></i>@Format.Num(view.InFlight) active</button>
                     <span class="scn-sep" aria-hidden="true">·</span>
                     <span class="tnum">@Format.Time(s.Elapsed)@(s.Plan.DurationSeconds > 0 ? $" / {Format.Time(s.Plan.DurationSeconds)}" : "")</span>
                 }
                 else
                 {
-                    <button type="button" class="scn-fig" @onclick="() => SetShow(BeeShow.All)" title="Show all bees">@Format.Plural(view.Finished, "bee", "bees")</button>
+                    <button type="button" class="scn-fig" @onclick="() => { SetShow(BeeShow.All); GoToBees(); }" title="Show all bees">@Format.Plural(view.Finished, "bee", "bees")</button>
                     @if (view.Finished > 0)
                     {
                         <span class="scn-sep" aria-hidden="true">·</span>
@@ -160,7 +169,7 @@
                 var inFlightPer = StepLogic.InFlightCounts(stepsDecl, runningRaw, s.Elapsed);
                 <StepTrack Steps="stepsDecl" FailedPer="failedPer" InFlightPer="inFlightPer" Finished="view.Finished" Live="dlgActive"
                            Selected="stepFilter?.Step" SelectedInFlight="@(stepFilter?.InFlight ?? false)"
-                           OnFailed="st => ToggleStepFilter(st, false)" OnInFlight="st => ToggleStepFilter(st, true)" AriaLabel="@("Steps of " + label)" />
+                           OnFailed="st => { ToggleStepFilter(st, false); GoToBees(); }" OnInFlight="st => { ToggleStepFilter(st, true); GoToBees(); }" AriaLabel="@("Steps of " + label)" />
             }
             else
             {
@@ -307,12 +316,23 @@
         </div>
     </section>
 
-    <aside class="scn-right" aria-label="Selected bee" @ref="rightEl">
-        <BeePanel Snapshot="s" Index="Index" Steps="stepsDecl" Selection="Selection" Bee="selected" Running="panelRunning" Notes="Notes"
+    @{
+        RenderFragment beePanel = @<BeePanel Snapshot="s" Index="Index" Steps="stepsDecl" Selection="Selection" Bee="selected" Running="panelRunning" Notes="Notes"
                   EnsureDetail="EnsureDetail" OpenLogs="OpenLogs"
-                  CanPrev="@(BeeNavigator.Neighbour(rowSeqs, selSeq, -1) is not null)" CanNext="@(BeeNavigator.Neighbour(rowSeqs, selSeq, 1) is not null)"
-                  OnStep="StepBee" OnStepFilter="st => ToggleStepFilter(st, false)" />
-    </aside>
+                  CanPrev="@(BeeNavigator.Neighbour(rowSeqs, selSequence, -1) is not null)" CanNext="@(BeeNavigator.Neighbour(rowSeqs, selSequence, 1) is not null)"
+                  OnStep="StepBee" OnStepFilter="st => { ToggleStepFilter(st, false); GoToBees(); }" />;
+    }
+    @if (phone)
+    {
+        @* The phone: the bee is a bottom sheet over the list (half height, drag up for full, swipe down or Back to close). *@
+        <Sheet Open="sheetOpen" Resizable="true" Full="sheetFull" FullChanged="v => sheetFull = v" OnClose="CloseSheet" Label="Selected bee" Class="bee-sheet">
+            <aside class="scn-right" aria-label="Selected bee">@beePanel</aside>
+        </Sheet>
+    }
+    else
+    {
+        <aside class="scn-right" aria-label="Selected bee" @ref="rightEl">@beePanel</aside>
+    }
 </div>
 
 
@@ -339,8 +359,52 @@
     [Parameter] public EventCallback<ScenarioFilter> OnFilterChanged { get; set; }
     /// <summary>Escape with nothing left to clear (the assistant's dialog closes on it).</summary>
     [Parameter] public EventCallback OnEscape { get; set; }
+    /// <summary>The phone's tab and whether its bee sheet is open, from the address (brain 0059); changes the page makes itself are reported back, so the address follows.</summary>
+    [Parameter] public PhoneTab Tab { get; set; }
+    [Parameter] public bool Sheet { get; set; }
+    [Parameter] public EventCallback<PhoneTab> OnTabChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnSheetChanged { get; set; }
 
     private ElementReference root;
+    private PhoneTab tab, lastTabParam;
+    private bool sheetOpen, sheetFull, lastSheetParam;
+
+    private RenderFragment ToolButtons => @<text>
+        <button type="button" class="icon-btn sm" @onclick="() => Logs.Show(entry: Index)" title="Open logs filtered to @Snapshot.Labels[Index]" aria-label="Open logs of @Snapshot.Labels[Index]">
+            <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9M7.5 13h6M7.5 16h3.5" /></svg>
+        </button>
+        @if (Index < Snapshot.Plan.Scenarios.Count && Catalog.IsCustom(Snapshot.Plan.Scenarios[Index].ScenarioId))
+        {
+            var scriptScnId = Snapshot.Plan.Scenarios[Index].ScenarioId;
+            <button type="button" class="icon-btn sm" @onclick="() => EditScript(scriptScnId)" title="Open this scenario's .cs file in the Script Editor" aria-label="Edit script">
+                <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5" /><path d="m16 7 5 5-5 5" /></svg>
+            </button>
+        }
+    </text>;
+
+    private void SetTab(PhoneTab t)
+    {
+        if (tab == t) return;
+        tab = t;
+        _ = OnTabChanged.InvokeAsync(t);
+    }
+
+    /// <summary>A count in the steps (or a figure) leads to the bees behind it: on a phone that is the Bees tab.</summary>
+    private void GoToBees() { if (Phone.IsPhone && !Selection) SetTab(PhoneTab.Bees); }
+
+    private void OpenSheet()
+    {
+        if (Selection || !Phone.IsPhone || sheetOpen) return;
+        sheetOpen = true; sheetFull = false;
+        _ = OnSheetChanged.InvokeAsync(true);
+    }
+
+    private void CloseSheet()
+    {
+        if (!sheetOpen) return;
+        sheetOpen = false;
+        _ = OnSheetChanged.InvokeAsync(false);
+    }
     private BeeShow show = BeeShow.All;
     /// <summary>Scenario steps (brain 0056): the active filter (failed at / in flight in a step), and the finished bees as filtered at the last render.</summary>
     private StepFilter? stepFilter;
@@ -413,7 +477,7 @@
     private void SelectIndex(int index)
     {
         var bees = Snapshot.Store.Bees(Index);   // the statistics are computed on the whole list of the scenario
-        if (index >= 0 && index < bees.Count) { selRunning = null; lastSelectedRunning = null; selected = bees[index]; }
+        if (index >= 0 && index < bees.Count) { selRunning = null; lastSelectedRunning = null; selected = bees[index]; OpenSheet(); }
     }
 
     private void TailOnly(double ms) { tailMs = tailMs is null ? ms : null; show = BeeShow.All; bucket = null; selected = null; selRunning = null; lastSelectedRunning = null; }
@@ -449,6 +513,9 @@
     protected override void OnInitialized()
     {
         Settings.Changed += OnSettingsChanged;
+        Phone.Changed += OnPhoneChanged;
+        tab = lastTabParam = Tab;
+        sheetOpen = lastSheetParam = Sheet;
         var all = Snapshot.Store.Bees(Index);
         if (InitialBee is { } initialBee)
         {
@@ -469,6 +536,13 @@
         notified = Current();
     }
 
+    private void OnPhoneChanged()
+    {
+        fz = null;
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
     private void OnSettingsChanged()
     {
         fz = null;
@@ -481,6 +555,8 @@
     // so the bee column never empties during an active run.
     protected override void OnParametersSet()
     {
+        if (Tab != lastTabParam) { lastTabParam = Tab; tab = Tab; }
+        if (Sheet != lastSheetParam) { lastSheetParam = Sheet; sheetOpen = Sheet; if (!Sheet) sheetFull = false; }
         if (selRunning is { } seq)
         {
             var running = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index] : [];
@@ -630,10 +706,10 @@
     /// <summary>A row of the bee list was picked: that bee is the selected one (the same click again keeps it, there is always one, brain 0059).</summary>
     private void SelectRow(BeeRow row)
     {
-        revealPanel = true;
-        if (row.IsRunning) { selected = null; selRunning = row.Sequence; lastSelectedRunning = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index].FirstOrDefault(x => x.Sequence == row.Sequence) : null; return; }
+        revealPanel = !Phone.IsPhone;   // stacked tablet layout scrolls to the bee; the phone opens its sheet
+        if (row.IsRunning) { selected = null; selRunning = row.Sequence; lastSelectedRunning = Snapshot.BeesInFlight is { } rn && Index < rn.Length ? rn[Index].FirstOrDefault(x => x.Sequence == row.Sequence) : null; OpenSheet(); return; }
         var bees = curBees;   // rows index the (possibly step-filtered) list of the last render
-        if (row.Index >= 0 && row.Index < bees.Count) { selRunning = null; lastSelectedRunning = null; selected = bees[row.Index]; }
+        if (row.Index >= 0 && row.Index < bees.Count) { selRunning = null; lastSelectedRunning = null; selected = bees[row.Index]; OpenSheet(); }
     }
 
     /// <summary>
@@ -697,16 +773,16 @@
         {
             var same = groupSel is { } g0 && g0.Slot == bar.Slot && g0.Lo == bar.GroupLo && g0.Hi == bar.GroupHi;
             bucket = null; selected = null; selRunning = null;
-            if (!same) groupSel = (bar.Slot, bar.GroupLo, bar.GroupHi);
+            if (!same) { groupSel = (bar.Slot, bar.GroupLo, bar.GroupHi); GoToBees(); }
         }
-        else if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; }
-        else if (bar.IsRunningBee) { groupSel = null; selected = null; selRunning = bar.Sequence; lastSelectedRunning = Snapshot.BeesInFlight is { } rb && Index < rb.Length ? rb[Index].FirstOrDefault(x => x.Sequence == bar.Sequence) : null; }
+        else if (bar.IsBucket) { bucket = bucket == bar.BucketStart ? null : bar.BucketStart; selected = null; selRunning = null; if (bucket is not null) GoToBees(); }
+        else if (bar.IsRunningBee) { groupSel = null; selected = null; selRunning = bar.Sequence; lastSelectedRunning = Snapshot.BeesInFlight is { } rb && Index < rb.Length ? rb[Index].FirstOrDefault(x => x.Sequence == bar.Sequence) : null; OpenSheet(); }
         else
         {
             var bees = Snapshot.Store.Bees(Index);
             groupSel = null;
             for (var i = 0; i < Snapshot.Scenarios[Index].Finished; i++)
-                if (bees[i].Sequence == bar.Sequence) { selRunning = null; selected = bees[i]; revealPanel = true; break; }
+                if (bees[i].Sequence == bar.Sequence) { selRunning = null; selected = bees[i]; revealPanel = !Phone.IsPhone; OpenSheet(); break; }
         }
     }
     /// <summary>
@@ -881,5 +957,5 @@
         return line.Length > 84 ? line[..83] + "…" : line;
     }
 
-    public void Dispose() { Settings.Changed -= OnSettingsChanged; if (scrollMod is not null) _ = scrollMod.DisposeAsync().AsTask(); }
+    public void Dispose() { Settings.Changed -= OnSettingsChanged; Phone.Changed -= OnPhoneChanged; if (scrollMod is not null) _ = scrollMod.DisposeAsync().AsTask(); }
 }

@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Beesharp — Load Testing Dashboard</title>
     <!-- No stale builds (brain 0025). GitHub Pages sends its own headers; these metas are best effort. -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -13,6 +13,22 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+        // Phone layouts (brain 0059): up to 760 px wide, or a phone turned sideways (touch and at most 500 px high). The class "phone" on <html> switches the CSS;
+        // "kb" is set while a text field has the keyboard, so the fixed bars do not float above it.
+        (() => {
+            const q = matchMedia('(max-width: 760px), (pointer: coarse) and (max-height: 500px)');
+            const apply = () => document.documentElement.classList.toggle('phone', q.matches);
+            apply();
+            window.beesharpPhone = {
+                is: () => q.matches,
+                listen: ref => q.addEventListener('change', e => { apply(); ref.invokeMethodAsync('OnChanged', e.matches); }),
+            };
+            const isText = t => t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button', 'submit'].includes(t.type)) || t.isContentEditable);
+            document.addEventListener('focusin', e => { if (isText(e.target)) document.documentElement.classList.add('kb'); });
+            document.addEventListener('focusout', () => document.documentElement.classList.remove('kb'));
+        })();
+    </script>
     <script type="importmap"></script>
     <link rel="stylesheet" href="app.css" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />

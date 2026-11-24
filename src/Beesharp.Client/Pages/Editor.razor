@@ -15,6 +15,7 @@
 @inject IEnvironmentSource Envs
 @inject DataModeState DataMode
 @inject IJSRuntime JS
+@inject PhoneState Phone
 
 <PageTitle>@fileName · Beesharp</PageTitle>
 
@@ -103,7 +104,7 @@
 
         <span class="spacer"></span>
 
-        <WrapToggleButton @bind-Wrapped="wordWrap" />
+        @if (!Phone.IsPhone) { <WrapToggleButton @bind-Wrapped="wordWrap" /> }
 
         <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || DataMode.IsFakeMode || string.IsNullOrWhiteSpace(scriptCode))"
                 title="@(DataMode.IsFakeMode ? "Scripts are compiled and saved on the server: switch to Live" : "Compile and save the script")">
@@ -124,6 +125,10 @@
             {
                 <div class="dd-backdrop" @onclick="() => moreOpen = false"></div>
                 <div class="dd-menu right" role="menu" aria-label="More script actions">
+                    @if (Phone.IsPhone)
+                    {
+                        <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; wordWrap = !wordWrap; }">@(wordWrap ? "Don't wrap lines" : "Wrap long lines")</button>
+                    }
                     <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; renameOpen = true; }">Rename file…</button>
                     @if (!isPreflight)
                     {
@@ -150,7 +155,16 @@
         </form>
     }
 
-    <div class="ed-body">
+    @if (Phone.IsPhone)
+    {
+        @* The phone (brain 0059): Code and Try are two tabs under the toolbar; ▶ Try switches to the Try tab, the result takes the full height. *@
+        <div class="ed-phone-tabs" role="tablist" aria-label="Editor view">
+            <button type="button" role="tab" class="scn-tab @(edTab == EdTab.Code ? "on" : "")" aria-selected="@Aria.Bool(edTab == EdTab.Code)" @onclick="() => edTab = EdTab.Code">Code</button>
+            <button type="button" role="tab" class="scn-tab @(edTab == EdTab.Try ? "on" : "")" aria-selected="@Aria.Bool(edTab == EdTab.Try)" @onclick="() => edTab = EdTab.Try">Try@(TryState is { } ts ? " · " + ts : "")</button>
+        </div>
+    }
+
+    <div class="ed-body" data-tab="@(Phone.IsPhone ? edTab.ToString().ToLowerInvariant() : null)">
         <div class="ed-code">
             <div class="script-editor-fill">
                 <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# script" />
@@ -204,6 +218,9 @@
     private bool wordWrap = true;
     private bool filesOpen;
     private bool moreOpen;
+    private enum EdTab { Code, Try }
+    private EdTab edTab;
+    private string? TryState => liveTest is { } lt ? (lt.Running ? "running" : lt.Success ? "passed" : "failed") : preflightResult is { } pr ? (pr.Success ? "passed" : "failed") : testing ? "running" : null;
     private bool renameOpen;
     private List<ScriptDiagnosticDto> diagnostics = [];
     private LiveTestRunStatusDto? liveTest;
@@ -276,6 +293,7 @@
     {
         DataMode.Changed += OnStateChanged;
         Sim.Changed += OnStateChanged;
+        Phone.Changed += OnStateChanged;
         await ReloadAllAsync();
     }
 
@@ -521,6 +539,7 @@
     private async Task RunTest()
     {
         if (!canTry) return;
+        if (Phone.IsPhone) edTab = EdTab.Try;
         StopLiveTestPolling();
         testing = true;
         statusMessage = null;
@@ -663,6 +682,7 @@
         StopLiveTestPolling();
         DataMode.Changed -= OnStateChanged;
         Sim.Changed -= OnStateChanged;
+        Phone.Changed -= OnStateChanged;
         return ValueTask.CompletedTask;
     }
 }

@@ -11,6 +11,12 @@ public readonly record struct ScenarioFilter(DetailFilter Show = DetailFilter.Al
     public static readonly ScenarioFilter Default = new();
 }
 
+/// <summary>The phone's view of the scenario page (brain 0059): the tab (<c>?tab=chart|bees</c>, Steps is the default and not written) and whether the bee sheet is open (<c>?sheet=1</c>).</summary>
+public readonly record struct PhoneView(PhoneTab Tab = PhoneTab.Steps, bool Sheet = false)
+{
+    public static readonly PhoneView Default = new();
+}
+
 /// <summary>
 /// The address of the scenario page and its query string (brain 0059): <c>scenario/2?show=failed</c>, <c>?failedStep=3</c>, <c>?nowStep=2</c>, <c>?bee=7</c>.
 /// Scenario entries count from 1 like everywhere in the UI. One place maps filter to address and back, so the overview cards, the page and deep links agree.
@@ -48,7 +54,7 @@ public static class ScenarioLink
             {
                 var eq = pair.IndexOf('=');
                 var key = Uri.UnescapeDataString(eq < 0 ? pair : pair[..eq]).ToLowerInvariant();
-                if (key is not ("show" or "failedstep" or "nowstep" or "bee")) kept.Add(pair);
+                if (key is not ("show" or "failedstep" or "nowstep" or "bee")) kept.Add(pair);   // the phone's tab and sheet stay
             }
         }
         var href = Href(index, filter);
@@ -83,6 +89,52 @@ public static class ScenarioLink
         }
         if (failed is not null) now = null;   // one step filter at a time
         return new ScenarioFilter(show, failed, now, bee);
+    }
+
+    /// <summary>The same address with the phone's view replaced (<paramref name="view"/>); the filter and every other query part stay.</summary>
+    public static string WithView(string uri, PhoneView view)
+    {
+        var index = IndexOf(uri) ?? 0;
+        var q = uri.IndexOf('?');
+        var kept = new List<string>();
+        if (q >= 0)
+        {
+            var rest = uri[(q + 1)..];
+            var hash = rest.IndexOf('#');
+            if (hash >= 0) rest = rest[..hash];
+            foreach (var pair in rest.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=');
+                var key = Uri.UnescapeDataString(eq < 0 ? pair : pair[..eq]).ToLowerInvariant();
+                if (key is not ("tab" or "sheet")) kept.Add(pair);
+            }
+        }
+        if (view.Tab != PhoneTab.Steps) kept.Add("tab=" + view.Tab.ToString().ToLowerInvariant());
+        if (view.Sheet) kept.Add("sheet=1");
+        var path = "scenario/" + (index + 1).ToString(CultureInfo.InvariantCulture);
+        return kept.Count == 0 ? path : path + "?" + string.Join("&", kept);
+    }
+
+    /// <summary>The phone's view encoded in a query string or address. Unknown values mean the default (Steps, no sheet).</summary>
+    public static PhoneView ParseView(string? query)
+    {
+        if (string.IsNullOrEmpty(query)) return PhoneView.Default;
+        var q = query;
+        var mark = q.IndexOf('?');
+        q = mark >= 0 ? q[(mark + 1)..] : "";
+        var hash = q.IndexOf('#');
+        if (hash >= 0) q = q[..hash];
+        var tab = PhoneTab.Steps;
+        var sheet = false;
+        foreach (var pair in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            var key = Uri.UnescapeDataString(eq < 0 ? pair : pair[..eq]).ToLowerInvariant();
+            var value = eq < 0 ? "" : Uri.UnescapeDataString(pair[(eq + 1)..]).ToLowerInvariant();
+            if (key == "tab") tab = value switch { "chart" => PhoneTab.Chart, "bees" => PhoneTab.Bees, _ => PhoneTab.Steps };
+            else if (key == "sheet") sheet = value is "1" or "true";
+        }
+        return new PhoneView(tab, sheet);
     }
 
     /// <summary>The scenario number of a path like <c>/scenario/2</c> (zero-based result), or null when it is not a scenario address.</summary>
