@@ -34,6 +34,9 @@ public static class RunEndpoints
             }
         });
         app.MapPost("/api/runs/stop", (RunManager runs) => runs.StopAsync());
+        // Pause holds the run (no new bees, the run time stands still, bees in flight finish); resume goes on; stop ends it (brain 0027).
+        app.MapPost("/api/runs/pause", (RunManager runs) => runs.Pause());
+        app.MapPost("/api/runs/resume", (RunManager runs) => runs.Resume());
         app.MapPost("/api/runs/{runId}/load", async (string runId, RunManager runs, CancellationToken ct) =>
         {
             try

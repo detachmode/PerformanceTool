@@ -24,7 +24,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private string runId = "";
     private string state = "Idle";
     private DateTimeOffset startedUtc;
-    private Stopwatch clock = new();
+    // The run time (brain 0027): it stands still while the run is paused; LoadRunner schedules bees by it.
+    private RunClock clock = new();
     private double finalElapsed;
     private LoadPlan activePlan = new();
     private int[] starts = [];
@@ -58,7 +59,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private RunData? runData;
     private RuntimeDataSnapshot? storedRuntime;
 
-    private bool IsActive => state is "Running" or "Preflight" or "Shutdown";
+    private bool IsActive => state is "Running" or "Paused" or "Preflight" or "Shutdown";
 
     /// <summary>
     /// The runtime data (run bag and entry bags) of the active run: live while it runs, the final values afterwards. Null when there is none (e.g. an old stored run).
@@ -146,7 +147,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             runId = data.RunId;
             state = data.State == "Running" ? "Finished" : data.State;
             startedUtc = data.StartedUtc;
-            clock = new Stopwatch();
+            clock = new RunClock();
             finalElapsed = data.ElapsedSeconds;
             activePlan = data.Plan.Clone();
             starts = new int[count];
@@ -213,7 +214,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         maxBees = Math.Clamp(maxBees, 1, 10_000);
         lock (sync)
         {
-            var elapsed = state == "Running" ? clock.Elapsed.TotalSeconds : finalElapsed;
+            var elapsed = state is "Running" or "Paused" ? clock.Elapsed.TotalSeconds : finalElapsed;
             var inFlightByStep = runSteps.Select(s => s.Count > 0 ? new int[s.Count] : null).ToArray();
             LiveRunningBeeDto[]? runningSnapshot = null;
             if (activeBees.Count > 0)
@@ -323,6 +324,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
 
         CancellationTokenSource runCts;
         RunData data;
+        RunClock runClock;
         LoadPlan cloned;
         string currentRunId;
         DateTimeOffset currentStartedUtc;
@@ -339,7 +341,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             runId = currentRunId;
             state = preflightMeta is not null ? "Preflight" : "Running";
             startedUtc = currentStartedUtc;
-            clock = preflightMeta is not null ? new Stopwatch() : Stopwatch.StartNew();
+            clock = new RunClock();
+            if (preflightMeta is null) clock.Start();   // with a preflight the run time starts when the scenarios do
             finalElapsed = 0;
             activePlan = cloned;
             starts = new int[cloned.Scenarios.Count];
@@ -367,7 +370,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             shutdownLogs.Clear();
             shutdownError = null;
             storedRuntime = null;
-            var runClock = clock;
+            runClock = clock;
             data = runData = new RunData(cloned.Scenarios.Count, () => runClock.Elapsed.TotalSeconds);
             runCts = new CancellationTokenSource();
             cts = runCts;
@@ -408,7 +411,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     {
                         preflightState = "Succeeded";
                         state = "Running";
-                        clock.Restart();
+                        clock.Start();
                     }
                 }
 
@@ -492,7 +495,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     onBeeContext: (seq, _, bctx) =>
                     {
                         lock (sync) activeBeeContexts[seq] = bctx;
-                    });
+                    },
+                    clock: runClock);
             }
             catch (OperationCanceledException)
             {
@@ -509,7 +513,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 {
                     elapsed = clock.Elapsed.TotalSeconds;
                     finalElapsed = elapsed;
-                    clock.Stop();
+                    clock.Pause();   // the run time stops at the end
                     for (var i = 0; i < inFlight.Length; i++) inFlight[i] = 0;
                     activeBees.Clear();
                     activeBeeContexts.Clear();
@@ -577,6 +581,25 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         await storage.FlushAsync();
     }
 
+    /// <summary>
+    /// Pauses the run (brain 0027): no new bees start and the run time stands still; bees already in flight finish. Only a running run can
+    /// be paused (not during the preflight or the shutdown program). Stop still ends a paused run.
+    /// </summary>
+    public LiveRunStatusDto Pause()
+    {
+        lock (sync)
+            if (state == "Running" && clock.Pause()) state = "Paused";
+        return GetCurrent();
+    }
+
+    /// <summary>Resumes a paused run: the run time goes on from where it stood and the remaining bees of the plan start on schedule.</summary>
+    public LiveRunStatusDto Resume()
+    {
+        lock (sync)
+            if (state == "Paused" && clock.Resume()) state = "Running";
+        return GetCurrent();
+    }
+
     public async Task<LiveRunStatusDto> StopAsync()
     {
         CancellationTokenSource? toCancel;
@@ -596,7 +619,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (DateTime.UtcNow < deadline && !toAwait.IsCompleted)
             {
-                lock (sync) if (state is not ("Running" or "Preflight")) break;
+                lock (sync) if (state is not ("Running" or "Paused" or "Preflight")) break;
                 await Task.Delay(20);
             }
         }
