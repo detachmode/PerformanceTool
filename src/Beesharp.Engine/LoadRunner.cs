@@ -24,7 +24,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         EnvironmentDefinition? environment = null,
         Action<LiveLogEvent>? onLiveLog = null,
         RunData? data = null,
-        Action<int, int, ScenarioContext>? onBeeContext = null)
+        Action<int, int, ScenarioContext>? onBeeContext = null,
+        RunClock? clock = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
@@ -52,8 +53,10 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
         // Runtime data (brain 0052): the run bag and one entry bag per entry. A caller that wants to read them (RunManager) passes its own.
-        Stopwatch? runClock = null;
-        data ??= new RunData(plan.Scenarios.Count, () => runClock?.Elapsed.TotalSeconds ?? 0);
+        // The run time (brain 0027): a caller that pauses and resumes the run (RunManager) passes its own clock.
+        clock ??= new RunClock();
+        var runClock = clock;
+        data ??= new RunData(plan.Scenarios.Count, () => runClock.Elapsed.TotalSeconds);
         var entryGates = entryLimits.Select(limit => new SemaphoreSlim(limit, limit)).ToArray();
         var inFlight = new List<Task>();
         var inFlightByEntry = new int[plan.Scenarios.Count]; // executions running right now, per entry (brain 0008)
@@ -90,8 +93,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 startedEntries.Add(i);
             }
 
-            var clock = Stopwatch.StartNew();
-            runClock = clock;
+            clock.Start();
 
             async Task ScheduleEntry(int entry)
             {
@@ -108,12 +110,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 {
                     var due = TimeSpan.FromTicks((long)Math.Round(n * ticksPerRun)); // absolute schedule: no drift
                     if (due >= duration || ct.IsCancellationRequested) return;
-                    var wait = due - clock.Elapsed;
-                    if (wait > TimeSpan.Zero)
-                    {
-                        try { await Task.Delay(wait, ct); }
-                        catch (OperationCanceledException) { return; }
-                    }
+                    // Waits through a pause: a paused run starts no new bees (brain 0027).
+                    try { await clock.WaitUntilAsync(due, ct); }
+                    catch (OperationCanceledException) { return; }
 
                     var gate = entryGates[entry];
                     for (var k = 0; k < perTick; k++)
@@ -160,7 +159,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 }
             }
 
-            async Task ExecuteOne(IScenario scenario, int entry, int seq, object parameters, Stopwatch clockRef)
+            async Task ExecuteOne(IScenario scenario, int entry, int seq, object parameters, RunClock clockRef)
             {
                 using var execCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 execCts.CancelAfter(timeout);
