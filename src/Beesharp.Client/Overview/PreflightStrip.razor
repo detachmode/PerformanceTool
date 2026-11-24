@@ -1,0 +1,50 @@
+@* The completed preflight program of the run, above the scenario cards. Calm UI (0016): while preflight runs or when it failed,
+   Overview shows the prominent console; once it succeeded it collapses to one quiet line and its output opens on demand ("Logs", brain 0029). *@
+
+@if (Run is { State: "Succeeded" })
+{
+    var showLogs = userOpen ?? false;
+    <section class="preflight-view shutdown-strip done" aria-label="Preflight program">
+        <div class="preflight-head">
+            <span class="pf-badge ok">Preflight done</span>
+            <b class="mono">@Run.Name</b>
+            <span class="spacer"></span>
+            <CopyButton GetText="@(() => string.Join("\n", Run.Logs))" Disabled="@(Run.Logs.Count == 0)" />
+            <button type="button" class="btn ghost small" aria-expanded="@Aria.Bool(showLogs)" @onclick="() => userOpen = !showLogs"
+                    title="@(showLogs ? "Hide the output" : "Show the output of the preflight program")">
+                Logs · @Run.Logs.Count
+            </button>
+        </div>
+        @if (showLogs)
+        {
+            <div class="sl-console shutdown-console" role="log" aria-live="polite">
+                @if (Run.Logs.Count == 0)
+                {
+                    <div class="muted">No preflight output.</div>
+                }
+                else
+                {
+                    @foreach (var line in Run.Logs)
+                    {
+                        <SerilogLine Raw="@line" />
+                    }
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public ProgramRun? Run { get; set; }
+
+    private bool? userOpen;
+    private string? lastState;
+    private string? lastName;
+
+    protected override void OnParametersSet()
+    {
+        if (lastState != Run?.State || lastName != Run?.Name) userOpen = null;
+        lastState = Run?.State;
+        lastName = Run?.Name;
+    }
+}

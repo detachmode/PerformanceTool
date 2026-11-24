@@ -83,4 +83,50 @@ public sealed class LogFacetsTests
         Assert.Equal(1, f.Levels["Error"]);
         Assert.Equal([1L], f.Entries);
     });
+
+    [Theory, MemberData(nameof(Providers))]
+    public Task Preflight_and_shutdown_programs_persist_and_appear_in_log_queries_and_facets(string provider) => WithRunAsync(provider, async storage =>
+    {
+        await storage.SaveProgramRunAsync("r", "preflight", new StoredProgramRunDto(
+            "Succeeded", "WarmupPreflight.cs", null,
+            ["[12:00:00.000] [INF] Priming cache", "[12:00:00.100] [WRN] Slow DNS"]));
+        await storage.SaveProgramRunAsync("r", "shutdown", new StoredProgramRunDto(
+            "Failed", "CleanupShutdown.cs", "cleanup error",
+            ["[12:00:10.000] [ERR] Could not delete tenant"]));
+
+        var run = await storage.GetRunAsync("r");
+        Assert.NotNull(run);
+        Assert.Equal("Succeeded", run!.Preflight?.State);
+        Assert.Equal("WarmupPreflight.cs", run.Preflight?.Name);
+        Assert.Equal(2, run.Preflight?.Logs.Count);
+        Assert.Equal("Failed", run.Shutdown?.State);
+        Assert.Equal("CleanupShutdown.cs", run.Shutdown?.Name);
+        Assert.Equal("cleanup error", run.Shutdown?.Error);
+        Assert.Single(run.Shutdown!.Logs);
+
+        var facets = await storage.GetLogFacetsAsync("r", new LogQuery());
+        Assert.Equal(9, facets.Total);
+        Assert.Equal(2, facets.Preflight);
+        Assert.Equal(1, facets.Shutdown);
+        Assert.Equal([5L, 1L], facets.Entries);
+
+        var pfPage = await storage.QueryLogsAsync("r", new LogQuery(Entry: ProgramLogEntry.Preflight));
+        Assert.Equal(2, pfPage.TotalCount);
+        Assert.Equal("Preflight", pfPage.Items[0].BeeName);
+        Assert.Equal("Information", pfPage.Items[0].Level);
+        Assert.Equal("Priming cache", pfPage.Items[0].Message);
+        Assert.Equal("Warning", pfPage.Items[1].Level);
+        Assert.Equal("Slow DNS", pfPage.Items[1].Message);
+
+        var sdPage = await storage.QueryLogsAsync("r", new LogQuery(Entry: ProgramLogEntry.Shutdown));
+        Assert.Equal(1, sdPage.TotalCount);
+        Assert.Equal("Shutdown", sdPage.Items[0].BeeName);
+        Assert.Equal("Error", sdPage.Items[0].Level);
+        Assert.Equal("Could not delete tenant", sdPage.Items[0].Message);
+
+        // Filtering by preflight leaves steps empty (no scenario steps on program runs)
+        var pfFacets = await storage.GetLogFacetsAsync("r", new LogQuery(Entry: ProgramLogEntry.Preflight));
+        Assert.Equal(2, pfFacets.Total);
+        Assert.Empty(pfFacets.Steps);
+    });
 }

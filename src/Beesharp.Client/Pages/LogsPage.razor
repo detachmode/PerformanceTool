@@ -44,6 +44,13 @@
 
         <div class="lg-group" role="group" aria-label="Scenario">
             <h2>Scenario</h2>
+            @if (facets.Preflight > 0 || filter.Entry == ProgramLogEntry.Preflight)
+            {
+                var on = filter.Entry == ProgramLogEntry.Preflight;
+                <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleEntry(ProgramLogEntry.Preflight))" title="@(on ? "Remove" : "Show only") Preflight">
+                    <span class="lg-opt-name">Preflight</span><span class="n">@Format.Num(facets.Preflight)</span>
+                </button>
+            }
             @for (var i = 0; i < s.Count; i++)
             {
                 var entry = i;
@@ -52,7 +59,14 @@
                     <span class="lg-opt-name">@s.Labels[entry]</span><span class="n">@Format.Num(facets.Entries.ElementAtOrDefault(entry))</span>
                 </button>
             }
-            @if (s.Count == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
+            @if (facets.Shutdown > 0 || filter.Entry == ProgramLogEntry.Shutdown)
+            {
+                var on = filter.Entry == ProgramLogEntry.Shutdown;
+                <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleEntry(ProgramLogEntry.Shutdown))" title="@(on ? "Remove" : "Show only") Shutdown">
+                    <span class="lg-opt-name">Shutdown</span><span class="n">@Format.Num(facets.Shutdown)</span>
+                </button>
+            }
+            @if (s.Count == 0 && facets.Preflight == 0 && facets.Shutdown == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
         </div>
 
         @if (stepsOfEntry.Any)
@@ -193,7 +207,13 @@
     private string LinesClass => wrap ? "lg-lines wrap" : "lg-lines nowrap";
     private bool UseServerOrLocal => DataMode.IsFakeMode || UseServer;
     private IReadOnlyList<FakeLogEntry> Items => UseServer ? (IReadOnlyList<FakeLogEntry>?)paged ?? [] : local;
-    private string ScenarioOf(int entry) { var s = Sim.Current; return entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : ""; }
+    private string ScenarioOf(int entry)
+    {
+        if (entry == ProgramLogEntry.Preflight) return "Preflight";
+        if (entry == ProgramLogEntry.Shutdown) return "Shutdown";
+        var s = Sim.Current;
+        return entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : "";
+    }
     private string CurrentRunKey() => DataMode.IsFakeMode ? "fake:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Sim.Current.Store) : "live:" + ApiRun.CurrentRunId;
 
     // ---------- the address ----------
@@ -247,7 +267,14 @@
         var chips = new List<(string, Func<LogFilter, LogFilter>)>();
         if (filter.Levels.Count > 0)
             chips.Add(($"Level: {string.Join(", ", filter.Levels.Select(l => LevelRows.First(r => r.Name == l).Label))}", f => f.WithLevels([])));
-        if (filter.Entry is { } e) chips.Add(($"Scenario: {(e < s.Labels.Count ? s.Labels[e] : $"#{e + 1}")}", f => f.WithEntry(null)));
+        if (filter.Entry is { } e)
+        {
+            var label = e == ProgramLogEntry.Preflight ? "Preflight"
+                : e == ProgramLogEntry.Shutdown ? "Shutdown"
+                : e >= 0 && e < s.Labels.Count ? s.Labels[e]
+                : $"#{e + 1}";
+            chips.Add(($"Scenario: {label}", f => f.WithEntry(null)));
+        }
         if (filter.Step is { } st && filter.Entry is { } se) chips.Add(($"Step: {(s.StepsOf(se).Any ? s.StepsOf(se).Name(st) : $"#{st + 1}")}", f => f.WithStep(null)));
         if (filter.Bee is { } b) chips.Add(($"Bee: B{b + 1}", f => f.WithBee(null).WithSearch(f.SearchParts.Bee == b ? "" : f.Search)));
         if (filter.Outcome != BeeShow.All) chips.Add(($"Bees: {(filter.Outcome == BeeShow.Failed ? "failed" : "slow")}", f => f.WithOutcome(BeeShow.All)));

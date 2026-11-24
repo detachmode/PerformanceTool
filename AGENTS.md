@@ -68,19 +68,19 @@ Client alone (fake data): `dotnet run --project src/Beesharp.Client`. Server plu
 dotnet run --project src/Beesharp
 ```
 **Warnings are errors** in every project (`Directory.Build.props`, brain 0055): build without warnings. Copy `Directory.Build.props` into the scratch copy too. .NET 11 (CI) reports more than the .NET 10 copy (e.g. Blazor BL0016: give every JS interop call its own try/catch; BL0012: no `StateHasChanged()` at the end of an event handler), so watch CI.
-CI: `.github/workflows/ci.yml` runs restore, build and test (Release) on pushes to `main` and on PRs (brain 0014). Keep `dotnet test` green.
-**Docker and end-to-end test:** `.github/workflows/docker.yml` builds and pushes the image for `linux/amd64` and `linux/arm64` in one job (cross-published, no emulation) under the final tags; afterwards the `e2e` job starts the pushed image on each platform and runs `tests/e2e/smoke.mjs` (Playwright: the client boots on `/` and `/editor` without 404s or script errors, `/api/scenarios` answers). The smoke test does not block the push (for now); a failure marks the run red. Locally: `docker build -t beesharp:e2e . && docker run -d -p 8080:8080 beesharp:e2e`, then `cd tests/e2e && npm ci && npx playwright install chromium && npm run smoke`.
+CI/CD: `.github/workflows/ci.yml` runs an ordered pipeline (brain 0014): `build-test` (restore, Release build, `dotnet test`) -> `docker-build` (multi-arch `linux/amd64,linux/arm64` into GHA cache) -> `e2e` (native amd64 + arm64 Playwright `tests/e2e/smoke.mjs`), and only after those pass does it push Docker images (`docker-push` on `main`/`v*`) or publish NuGet packages (`nuget-publish` on `v*` via `.github/workflows/nuget.yml`). GitHub Pages (`pages-build` -> `pages-deploy`) runs on `main` after `build-test`. Keep `dotnet test` green.
+Locally for Docker e2e: `docker build -t beesharp:e2e . && docker run -d -p 8080:8080 beesharp:e2e`, then `cd tests/e2e && npm ci && npx playwright install chromium && npm run smoke`.
 **index.html in the host:** when the host publishes the client, the SDK leaves `#[.{fingerprint}]` and the empty importmap in `wwwroot/index.html`; `Api/ClientIndexEndpoints.cs` fills them at runtime from the static asset endpoints (`MapClientIndex()`, instead of `MapFallbackToFile`). It also answers `/build-info.json` with the host's own `BuildSha` (the Dockerfile passes it to the whole publish), so the Docker image offers the same "new version" reload as Pages.
 If only an older SDK is available (the cloud agent environment has .NET 10), copy `src/`, `tests/`, the
 `.slnx` and `Directory.Build.props` to a scratch folder, change every `net11.0` to `net10.0` there, and build and test the copy. Don't change
 the committed `net11.0` targets (also change `Microsoft.AspNetCore.Components.WebAssembly` `11.0.*-*` to `10.0.*` in the copy).
 
-**GitHub Pages:** `.github/workflows/pages.yml` publishes the client (Release, trimmed) on every push to `main` and on manual dispatch, rewrites
+**GitHub Pages:** `.github/workflows/ci.yml` (`pages-build` / `pages-deploy`) publishes the client (Release, trimmed) on every push to `main` and on manual dispatch after `build-test` passes, rewrites
 `<base href>` to `/PerformanceTool/`, copies `index.html` to `404.html` (deep links like `/editor`) and adds `.nojekyll`. Site: https://detachmode.github.io/PerformanceTool/
 (fake data only). The repo setting Pages > Source must be "GitHub Actions". To test locally, publish, apply the same rewrite and serve under a `/PerformanceTool/` path.
 **Build info and cache (brain 0025):** the workflow publishes with `-p:BuildSha=${{ github.sha }} -p:BuildTime=<UTC>` (shown by `Layout/BuildStamp.razor`),
 writes `build-info.json` (the page fetches it to offer "New version available, reload"), and adds `?v=<sha>` to `app.css` and `favicon.svg`. Blazor fingerprints `_framework/*` and the
-JS modules via the importmap in `index.html`. Pages allows no custom HTTP headers. When you add a stylesheet or icon to `index.html`, add it to the `?v=` sed in `pages.yml` too.
+JS modules via the importmap in `index.html`. Pages allows no custom HTTP headers. When you add a stylesheet or icon to `index.html`, add it to the `?v=` sed in `ci.yml` too.
 
 ## UX bar
 The UI must be interactive with a really good UX (brain 0006): every data element can be clicked to inspect

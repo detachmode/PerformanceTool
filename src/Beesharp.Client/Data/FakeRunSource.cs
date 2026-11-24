@@ -141,7 +141,6 @@ public sealed class FakeRunSource : IRunSource
 
     public void AddEntry(IScenario scenario)
     {
-        if (Plan.Scenarios.Count >= LoadPlan.MaxEntries) return;
         var config = ScenarioRunConfig.CreateFor(scenario);
         var same = Plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
         if (same > 0) config.Label += $" #{same + 1}";
