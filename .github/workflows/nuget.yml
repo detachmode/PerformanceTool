@@ -1,12 +1,11 @@
 name: NuGet
 
-# Packs and publishes Beesharp.Host (and its Beesharp.* library dependencies) to NuGet.org
-# on version tags (v*) or manual dispatch.
+# Packs and publishes Beesharp.Core and Beesharp.Host to NuGet.org.
+# Called by ci.yml on version tags (v*) after build-test and e2e pass, or triggered manually via workflow_dispatch.
 # Supports either NuGet Trusted Publishing (OIDC: set repository variable NUGET_USER)
 # or a classic API key (set repository secret NUGET_API_KEY).
 on:
-  push:
-    tags: ['v*']
+  workflow_call:
   workflow_dispatch:
     inputs:
       version:
@@ -68,6 +67,7 @@ jobs:
           echo "Resolved package version: $VERSION"
 
       - name: Test Core, Scripting and Host
+        if: github.event_name != 'workflow_call'
         run: |
           dotnet test tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj -c Release
           dotnet test tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj -c Release

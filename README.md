@@ -4,7 +4,7 @@ A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scr
 
 ## Run with Docker Compose
 
-The image is published to the GitHub Container Registry for `linux/amd64` and `linux/arm64` (see `.github/workflows/docker.yml`); after the push, CI starts it on both architectures for an end-to-end smoke test.
+The image is published to the GitHub Container Registry for `linux/amd64` and `linux/arm64` (see `.github/workflows/ci.yml`), gated by unit/integration tests and an end-to-end smoke test on both architectures.
 It runs on Linux, and on Windows and macOS through Docker Desktop.
 
 Create a `compose.yaml`:

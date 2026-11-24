@@ -16,6 +16,10 @@
 
   <ItemGroup>
     <ProjectReference Include="../Beesharp.Host/Beesharp.Host.csproj" />
+    <!-- Beesharp.Host marks Beesharp.Client as PrivateAssets="all" so the NuGet package bundles the
+         published UI instead of depending on a Client package; reference it directly here so MSBuild
+         flows the Blazor static web assets into this standalone host's build and publish output. -->
+    <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" />
   </ItemGroup>
 
   <!-- The same build sha as the client (the Dockerfile passes -p:BuildSha to the whole publish), served as /build-info.json (brain 0025). -->

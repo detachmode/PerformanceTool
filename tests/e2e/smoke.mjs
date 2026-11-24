@@ -12,7 +12,7 @@ const indexRes = await fetch(`${base}/`);
 const index = await indexRes.text();
 check(indexRes.ok, `GET / -> ${indexRes.status}`);
 check(!index.includes('{fingerprint}'), 'index.html has no #[.{fingerprint}] placeholder left');
-check(!index.includes('<script type="importmap"></script>'), 'index.html has a filled importmap');
+check(!index.includes('<script type="importmap"></script>') && !index.includes('"imports":{}'), 'index.html has a filled importmap');
 
 const api = await fetch(`${base}/api/scenarios`);
 check(api.ok, `GET /api/scenarios -> ${api.status}`);

@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Beesharp.Host/Beesharp.Host.csproj" />
+    <!-- Only needed for in-repo ProjectReference; NuGet consumers get the UI bundled inside Beesharp.Host.nupkg. -->
+    <ProjectReference Include="../../src/Beesharp.Client/Beesharp.Client.csproj" />
   </ItemGroup>
 
 </Project>
