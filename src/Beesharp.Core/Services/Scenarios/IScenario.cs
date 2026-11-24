@@ -27,6 +27,9 @@ public interface IScenario
     /// <summary>Declared steps of this scenario, in order (brain 0056). Empty for scenarios without steps.</summary>
     IReadOnlyList<StepInfo> Steps => [];
 
+    /// <summary>Optional scenario-wide and per-endpoint slow thresholds (brain 0060). Default: automatic <c>2× typical</c>.</summary>
+    CallThresholds SlowThresholds => CallThresholds.None;
+
     /// <summary>
     /// Lifecycle hook called once per scenario entry before any bees start.
     /// Use <see cref="ScenarioContext.State"/> and <see cref="ScenarioContext.RunBackground"/> to share state or
@@ -60,6 +63,8 @@ public abstract class Scenario<TParameters> : IScenario where TParameters : clas
     public ParameterSpec Spec { get; } = ParameterSpec.For(typeof(TParameters));
 
     public virtual IReadOnlyList<StepInfo> Steps => [];
+
+    public virtual CallThresholds SlowThresholds => CallThresholds.None;
 
     Task IScenario.StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         StartupAsync((TParameters)parameters, context, cancellationToken);
@@ -137,6 +142,7 @@ public sealed class ScenarioBackgroundHost : IAsyncDisposable
 public sealed class ScenarioContext
 {
     private static readonly AsyncLocal<ScenarioContext?> currentContext = new();
+    private static readonly AsyncLocal<CallScopeOverride?> currentCallScope = new();
 
     private readonly ScenarioBackgroundHost? background;
     private readonly Action<RecordedCall>? callSink;
@@ -145,25 +151,50 @@ public sealed class ScenarioContext
     private readonly Func<double> runSeconds;
     private readonly Stopwatch beeClock;
     private readonly Func<bool>? runStopped;
+    private readonly CallThresholds thresholds;
     private int currentCallIndex = -1;
     private int currentStep = -1;
     private int currentRep;
     private readonly List<RecordedStepVisit> liveVisits = [];
 
-    /// <summary>The <see cref="ScenarioContext"/> active on the current async flow, used by <see cref="RecordingHttpHandler"/>.</summary>
+    /// <summary>The <see cref="ScenarioContext"/> active on the current async flow, used by <see cref="RecordingHttpHandler"/> and <see cref="HttpCallDiagnosticTracker"/>.</summary>
     public static ScenarioContext? Current => currentContext.Value;
 
-    /// <summary>Binds this context to <see cref="Current"/> for the duration of the bee so <see cref="Http"/> calls are recorded automatically.</summary>
+    internal CallScopeOverride? CurrentCallScope => currentCallScope.Value;
+
+    /// <summary>Binds this context to <see cref="Current"/> for the duration of the bee so HTTP calls are recorded automatically.</summary>
     public IDisposable Activate()
     {
+        HttpCallDiagnosticTracker.EnsureInstalled();
         var previous = currentContext.Value;
         currentContext.Value = this;
         return new ActivationScope(previous);
     }
 
+    /// <summary>
+    /// Temporarily names or sets a slow threshold for HTTP calls and measured steps executed inside the returned scope
+    /// (works for typed clients, Refit, SDKs, or raw <see cref="HttpClient"/> calls, brain 0060).
+    /// </summary>
+    public IDisposable CallScope(string? name = null, TimeSpan? slowAbove = null)
+    {
+        if (slowAbove is { } s && s <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(slowAbove), "Slow threshold must be greater than zero.");
+
+        var previous = currentCallScope.Value;
+        var cleanName = string.IsNullOrWhiteSpace(name) ? previous?.Name : name.Trim();
+        var thresholdMs = slowAbove?.TotalMilliseconds ?? previous?.SlowThresholdMs;
+        currentCallScope.Value = new CallScopeOverride(cleanName, thresholdMs);
+        return new CallScopeGuard(previous);
+    }
+
     private sealed class ActivationScope(ScenarioContext? previous) : IDisposable
     {
         public void Dispose() => currentContext.Value = previous;
+    }
+
+    private sealed class CallScopeGuard(CallScopeOverride? previous) : IDisposable
+    {
+        public void Dispose() => currentCallScope.Value = previous;
     }
 
     /// <summary>Zero-based index of the step this bee is currently executing, or -1 before the first step (or when the scenario has no steps).</summary>
@@ -193,7 +224,52 @@ public sealed class ScenarioContext
     internal void RecordHttpCall(string name, double offsetMs, double durationMs, int? statusCode, long bytes, string? error)
     {
         Interlocked.Increment(ref currentCallIndex);
-        callSink?.Invoke(new RecordedCall(name, offsetMs, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep));
+        var endpoint = EndpointNormalizer.NormalizeCallName(name);
+        var method = EndpointNormalizer.TryExtractMethod(name);
+        var thresholdMs = thresholds.ResolveMs(endpoint, name, method);
+        callSink?.Invoke(new RecordedCall(name, offsetMs, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs));
+    }
+
+    internal void RecordHttpRequest(
+        HttpRequestMessage request,
+        double offsetMs,
+        double durationMs,
+        int? statusCode,
+        long bytes,
+        string? error,
+        int step,
+        int rep,
+        CallScopeOverride? scope = null)
+    {
+        Interlocked.Increment(ref currentCallIndex);
+        var norm = EndpointNormalizer.NormalizeHttp(request.Method, request.RequestUri);
+        string? explicitName = null;
+        if (request.Options.TryGetValue(HttpRequestCallExtensions.CallNameKey, out var optName) && !string.IsNullOrWhiteSpace(optName))
+            explicitName = optName;
+        else if (!string.IsNullOrWhiteSpace(scope?.Name))
+            explicitName = scope.Name;
+
+        var endpoint = explicitName ?? norm.Endpoint;
+        var rawName = explicitName ?? norm.RawName;
+
+        double? thresholdMs = request.Options.TryGetValue(HttpRequestCallExtensions.SlowThresholdMsKey, out var optMs) && optMs > 0
+            ? optMs
+            : scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, norm.Method);
+
+        callSink?.Invoke(new RecordedCall(
+            rawName,
+            offsetMs,
+            durationMs,
+            statusCode,
+            bytes,
+            error,
+            step,
+            rep,
+            endpoint,
+            norm.Method,
+            norm.Host,
+            thresholdMs,
+            norm.Url));
     }
 
     public ScenarioContext(
@@ -208,10 +284,12 @@ public sealed class ScenarioContext
         Func<double>? runSeconds = null,
         BagAccess? runBag = null,
         Func<bool>? runStopped = null,
-        Action<RecordedStepVisit>? stepVisitSink = null)
+        Action<RecordedStepVisit>? stepVisitSink = null,
+        CallThresholds? thresholds = null)
     {
         this.runStopped = runStopped;
         this.stepVisitSink = stepVisitSink;
+        this.thresholds = thresholds ?? CallThresholds.None;
         Http = http;
         Environment = environment ?? EnvironmentValues.None;
         CancellationToken = cancellationToken;
@@ -288,32 +366,44 @@ public sealed class ScenarioContext
     public void Log(string message) => Logger.LogInformation("{Message}", message);
 
     /// <summary>Records one call/step inside this bee (for multi-step scenarios or simulated calls without HTTP).</summary>
-    public void RecordCall(string name, double durationMs, int? statusCode = 200, long bytes = 0, string? error = null, double? offsetMs = null)
+    public void RecordCall(string name, double durationMs, int? statusCode = 200, long bytes = 0, string? error = null, double? offsetMs = null, TimeSpan? slowAbove = null)
     {
+        if (slowAbove is { } s && s <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(slowAbove), "Slow threshold must be greater than zero.");
+        var scope = CurrentCallScope;
         var off = offsetMs ?? Math.Max(0, beeClock.Elapsed.TotalMilliseconds - durationMs);
-        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep));
+        var endpoint = scope?.Name ?? EndpointNormalizer.NormalizeCallName(name);
+        var method = EndpointNormalizer.TryExtractMethod(name);
+        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, name, method);
+        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs));
     }
 
     /// <summary>Measures an async step as a named call, recording its offset, duration and any failure.</summary>
-    public async Task MeasureCallAsync(string name, Func<Task> work, int? statusCode = 200, long bytes = 0)
+    public async Task MeasureCallAsync(string name, Func<Task> work, int? statusCode = 200, long bytes = 0, TimeSpan? slowAbove = null)
     {
+        if (slowAbove is { } s && s <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(slowAbove), "Slow threshold must be greater than zero.");
         var idx = Interlocked.Increment(ref currentCallIndex);
         var step = Math.Max(0, CurrentStep);
         var rep = CurrentRep;
+        var scope = CurrentCallScope;
+        var endpoint = scope?.Name ?? EndpointNormalizer.NormalizeCallName(name);
+        var method = EndpointNormalizer.TryExtractMethod(name);
+        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, name, method);
         var offsetMs = beeClock.Elapsed.TotalMilliseconds;
         var sw = Stopwatch.StartNew();
         try
         {
             await work();
             sw.Stop();
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep));
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep, endpoint, method, SlowThresholdMs: thresholdMs));
         }
         catch (Exception ex)
         {
             sw.Stop();
             // A call cut off because the user stopped the run is kept as failed with the time it ran until the stop (brain 0053).
             var error = ex is OperationCanceledException && runStopped?.Invoke() == true ? ExecutionResult.CanceledError : ex.Message;
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep));
+            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, endpoint, method, SlowThresholdMs: thresholdMs));
             throw;
         }
         finally

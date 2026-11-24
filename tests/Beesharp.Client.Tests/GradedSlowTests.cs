@@ -1,5 +1,6 @@
 using Beesharp.Client.Chart;
 using Beesharp.Client.Runs;
+using Beesharp.Services;
 
 
 namespace Beesharp.Client.Tests;

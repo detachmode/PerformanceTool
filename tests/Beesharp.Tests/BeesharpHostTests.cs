@@ -465,4 +465,99 @@ public class BeesharpHostTests : IDisposable
         Assert.Equal(0, exitCode);
         Assert.Equal(["inline-pre", "inline-shut:ok"], events);
     }
+
+    private sealed class TypedApiStubHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath.Contains("/slow", StringComparison.Ordinal) == true)
+                await Task.Delay(60, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    private sealed class TypedShopClient(HttpClient http)
+    {
+        public Task GetProductAsync(int id, CancellationToken ct) => http.GetAsync($"/api/products/{id}", ct);
+        public Task GetSlowAsync(CancellationToken ct) => http.GetAsync("/api/slow", ct);
+    }
+
+    private sealed class TypedClientScenario(TypedShopClient client) : Scenario<OrderHistoryParams>
+    {
+        public override string Id => "typed-client";
+        public override string Name => "Typed Client";
+        public override string Description => "Exercises DI typed HttpClient with custom primary handler.";
+
+        public override CallThresholds SlowThresholds { get; } = new CallThresholds()
+            .For("GET /api/slow", TimeSpan.FromMilliseconds(30));
+
+        protected override async Task<ScenarioOutcome> ExecuteAsync(OrderHistoryParams p, ScenarioContext ctx, CancellationToken ct)
+        {
+            await client.GetProductAsync(Random.Shared.Next(10, 99), ct);
+            await client.GetSlowAsync(ct);
+            return new ScenarioOutcome(200, 0);
+        }
+    }
+
+    [Fact]
+    public async Task Embedded_host_automatically_tracks_DI_typed_HttpClient_with_custom_handler_and_serves_calls_endpoints()
+    {
+        var builder = BeesharpApp.CreateBuilder();
+        builder.WebApplicationBuilder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.WebApplicationBuilder.Environment.ContentRootPath = root;
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "Memory",
+            ["Presets:Directory"] = Path.Combine(root, "presets"),
+            ["Environments:Directory"] = Path.Combine(root, "environments"),
+            ["Scripts:Directory"] = Path.Combine(root, "scripts"),
+        });
+
+        builder.Services.AddHttpClient<TypedShopClient>(c => c.BaseAddress = new Uri("https://typed.example.test"))
+            .ConfigurePrimaryHttpMessageHandler(() => new TypedApiStubHandler());
+        builder.AddScenario<TypedClientScenario>();
+        builder.AddPreset("TypedTest", plan => plan
+            .Duration(TimeSpan.FromSeconds(1))
+            .Add<TypedClientScenario>(ratePerMinute: 120))
+            .AsDefault();
+
+        await using var app = builder.Build();
+        await app.InitializeAsync();
+        await app.WebApplication.StartAsync();
+
+        try
+        {
+            var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+            using var http = new HttpClient { BaseAddress = new Uri(addresses.Addresses.First()) };
+
+            var started = await http.PostAsJsonAsync("/api/runs/start", new StartRunRequest(), Json);
+            started.EnsureSuccessStatusCode();
+
+            var runManager = app.Services.GetRequiredService<RunManager>();
+            await runManager.WaitUntilFinishedAsync();
+            var runId = runManager.GetCurrent().RunId;
+
+            var endpoints = await http.GetFromJsonAsync<CallEndpointsResult>($"/api/runs/{runId}/calls/endpoints", Json);
+            Assert.NotNull(endpoints);
+            Assert.Equal(2, endpoints!.Endpoints.Count);
+            Assert.Contains(endpoints.Endpoints, e => e.Endpoint == "GET /api/products/{id}");
+
+            var slowEp = Assert.Single(endpoints.Endpoints, e => e.Endpoint == "GET /api/slow");
+            Assert.True(slowEp.HasCustomThreshold);
+            Assert.Equal(30, slowEp.SlowThresholdMs);
+            Assert.True(slowEp.SlowCount > 0);
+
+            var detail = await http.GetFromJsonAsync<CallEndpointDetailDto>(
+                $"/api/runs/{runId}/calls/detail?endpoint={Uri.EscapeDataString("GET /api/products/{id}")}", Json);
+            Assert.NotNull(detail);
+            Assert.All(detail!.Calls, c => Assert.StartsWith("https://typed.example.test/api/products/", c.Url));
+        }
+        finally
+        {
+            await app.WebApplication.StopAsync();
+        }
+    }
 }

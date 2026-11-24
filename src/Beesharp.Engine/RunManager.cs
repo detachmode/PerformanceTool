@@ -16,8 +16,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private const int ShutdownTimeoutSeconds = 120;
-    private const double SlowThresholdMs = 1500;
     private readonly Lock sync = new();
+    private CallTypicals typicals = new();
     private CancellationTokenSource? cts;
     private Task? runningTask;
 
@@ -60,6 +60,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     private RuntimeDataSnapshot? storedRuntime;
 
     private bool IsActive => state is "Running" or "Paused" or "Preflight" or "Shutdown";
+
+    public bool IsCurrent(string targetRunId)
+    {
+        lock (sync) return !string.IsNullOrEmpty(runId) && string.Equals(runId, targetRunId, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// The runtime data (run bag and entry bags) of the active run: live while it runs, the final values afterwards. Null when there is none (e.g. an old stored run).
@@ -163,6 +168,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             activeBees.Clear();
             activeBeeContexts.Clear();
             liveLogs.Clear();
+            typicals = new CallTypicals();
             lastSequence = -1;
             totalLogs = data.TotalLogs;
             runError = data.Error;
@@ -360,6 +366,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             activeBees.Clear();
             activeBeeContexts.Clear();
             liveLogs.Clear();
+            typicals = new CallTypicals();
             lastSequence = -1;
             totalLogs = 0;
             runError = null;
@@ -433,22 +440,26 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     cloned,
                     onResult: res =>
                     {
-                        var beeSlowCalls = CountSlowCalls(res);
-                        var outcome = res.Error is not null ? 2 : beeSlowCalls > 0 ? 1 : 0;
-                        var compact = new LiveBeeDto(
-                            res.Sequence,
-                            res.Entry,
-                            res.StartedAtSeconds,
-                            res.ElapsedMs,
-                            res.StatusCode,
-                            res.Bytes,
-                            res.Error,
-                            beeSlowCalls,
-                            res.FailedStep,
-                            res.FailedRep);
-
+                        int beeSlowCalls;
+                        int outcome;
                         lock (sync)
                         {
+                            byte ratioCode;
+                            (beeSlowCalls, ratioCode) = EvaluateCallsLocked(res);
+                            outcome = res.Error is not null ? 2 : beeSlowCalls > 0 ? 1 : 0;
+                            var compact = new LiveBeeDto(
+                                res.Sequence,
+                                res.Entry,
+                                res.StartedAtSeconds,
+                                res.ElapsedMs,
+                                res.StatusCode,
+                                res.Bytes,
+                                res.Error,
+                                beeSlowCalls,
+                                res.FailedStep,
+                                res.FailedRep,
+                                ratioCode);
+
                             if (res.Entry >= 0 && res.Entry < finished.Length)
                             {
                                 finished[res.Entry]++;
@@ -664,10 +675,22 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         return result;
     }
 
-    private static int CountSlowCalls(ExecutionResult res)
+    private (int SlowCalls, byte RatioCode) EvaluateCallsLocked(ExecutionResult res)
     {
-        if (res.Calls is { Count: > 0 })
-            return res.Calls.Count(c => c.Error is null && c.DurationMs >= SlowThresholdMs);
-        return 0;
+        if (res.Calls is not { Count: > 0 } calls) return (0, 0);
+        var slow = 0;
+        var worst = 1.0;
+        foreach (var c in calls)
+        {
+            if (c.Error is not null) continue;
+            var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
+            var typical = typicals.Typical(ep);
+            var isSlow = SlowCallRule.IsSlow(c.DurationMs, typical, c.SlowThresholdMs);
+            var ratio = SlowCallRule.Ratio(c.DurationMs, typical, c.SlowThresholdMs);
+            typicals.Add(ep, c.DurationMs);
+            if (isSlow) slow++;
+            if (ratio > worst) worst = ratio;
+        }
+        return (slow, SlowCallRule.Encode(worst));
     }
 }

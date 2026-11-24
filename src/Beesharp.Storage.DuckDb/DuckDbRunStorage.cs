@@ -16,7 +16,7 @@ namespace Beesharp.Services.Storage;
 /// </summary>
 public sealed class DuckDbRunStorage : IRunStorage
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
@@ -141,11 +141,22 @@ public sealed class DuckDbRunStorage : IRunStorage
                     bytes BIGINT NOT NULL,
                     error VARCHAR,
                     step INTEGER NOT NULL DEFAULT 0,
-                    rep INTEGER NOT NULL DEFAULT 0
+                    rep INTEGER NOT NULL DEFAULT 0,
+                    endpoint VARCHAR,
+                    method VARCHAR,
+                    host VARCHAR,
+                    url VARCHAR,
+                    slow_threshold_ms DOUBLE
                 );
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS step INTEGER DEFAULT 0;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS rep INTEGER DEFAULT 0;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS endpoint VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS method VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS host VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS url VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS slow_threshold_ms DOUBLE;
                 CREATE INDEX IF NOT EXISTS idx_calls_run_seq ON calls(run_id, sequence);
+                CREATE INDEX IF NOT EXISTS idx_calls_run_endpoint ON calls(run_id, endpoint);
 
                 CREATE TABLE IF NOT EXISTS logs (
                     id BIGINT NOT NULL,
@@ -437,6 +448,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 for (var i = 0; i < calls.Count; i++)
                 {
                     var c = calls[i];
+                    var endpoint = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
                     var row = callApp.CreateRow();
                     row.AppendValue(Interlocked.Increment(ref nextCallId))
                        .AppendValue(a.RunId)
@@ -450,6 +462,11 @@ public sealed class DuckDbRunStorage : IRunStorage
                        .AppendValue(c.Error)
                        .AppendValue(c.Step)
                        .AppendValue(c.Rep)
+                       .AppendValue(endpoint)
+                       .AppendValue(c.Method)
+                       .AppendValue(c.Host)
+                       .AppendValue(c.Url)
+                       .AppendValue(c.SlowThresholdMs)
                        .EndRow();
                 }
             }
@@ -655,7 +672,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             {
                 callCmd.CommandText = """
                     SELECT name, offset_ms, duration_ms, status_code, bytes, error,
-                           COALESCE(step, 0), COALESCE(rep, 0)
+                           COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms
                     FROM calls
                     WHERE run_id = $1 AND sequence = $2
                     ORDER BY call_index;
@@ -673,7 +690,12 @@ public sealed class DuckDbRunStorage : IRunStorage
                         cr.GetInt64(4),
                         cr.IsDBNull(5) ? null : cr.GetString(5),
                         cr.GetInt32(6),
-                        cr.GetInt32(7)));
+                        cr.GetInt32(7),
+                        cr.IsDBNull(8) ? null : cr.GetString(8),
+                        cr.IsDBNull(9) ? null : cr.GetString(9),
+                        cr.IsDBNull(10) ? null : cr.GetString(10),
+                        cr.IsDBNull(12) ? null : cr.GetDouble(12),
+                        cr.IsDBNull(11) ? null : cr.GetString(11)));
                 }
             }
 
@@ -856,6 +878,74 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        lock (dbLock)
+        {
+            facts = LoadCallFacts(runId);
+        }
+        return Task.FromResult(CallAnalytics.BuildEndpoints(facts, query.Entry, query.SlowOnly, query.FailedOnly, query.MinMs, query.Search));
+    }
+
+    public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        double elapsed;
+        lock (dbLock)
+        {
+            using var rCmd = conn.CreateCommand();
+            rCmd.CommandText = "SELECT elapsed_seconds FROM runs WHERE run_id = $1;";
+            rCmd.Parameters.Add(new DuckDBParameter(runId));
+            if (rCmd.ExecuteScalar() is not double el)
+                return Task.FromResult<CallEndpointDetailDto?>(null);
+            elapsed = el;
+            facts = LoadCallFacts(runId);
+        }
+        return Task.FromResult(CallAnalytics.BuildEndpointDetail(
+            facts, query.Endpoint, elapsed, query.Entry, query.Show, query.MinMs, query.MaxMs,
+            query.FromSec, query.ToSec, query.Sort, query.Offset, query.Limit, query.MaxPoints));
+    }
+
+    private List<CallFact> LoadCallFacts(string runId)
+    {
+        var facts = new List<CallFact>();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT c.id, c.sequence, b.entry, COALESCE(c.step, 0), COALESCE(c.rep, 0), b.started_at,
+                   c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name, c.url,
+                   c.endpoint, c.method, c.host, c.slow_threshold_ms
+            FROM calls c
+            JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence
+            WHERE c.run_id = $1
+            ORDER BY c.id;
+            """;
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            facts.Add(new CallFact(
+                r.GetInt64(0),
+                r.GetInt32(1),
+                r.GetInt32(2),
+                r.GetInt32(3),
+                r.GetInt32(4),
+                r.GetDouble(5),
+                r.GetDouble(6),
+                r.GetDouble(7),
+                r.IsDBNull(8) ? null : r.GetInt32(8),
+                r.GetInt64(9),
+                r.IsDBNull(10) ? null : r.GetString(10),
+                r.GetString(11),
+                r.IsDBNull(12) ? null : r.GetString(12),
+                r.IsDBNull(13) ? null : r.GetString(13),
+                r.IsDBNull(14) ? null : r.GetString(14),
+                r.IsDBNull(15) ? null : r.GetString(15),
+                r.IsDBNull(16) ? null : r.GetDouble(16)));
+        }
+        return facts;
+    }
+
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         await FlushAsync(ct);
@@ -1026,7 +1116,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var calls = new List<object>();
             using (var cCmd = conn.CreateCommand())
             {
-                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0) FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
+                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
                 cCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var cr = cCmd.ExecuteReader();
                 while (cr.Read())
@@ -1043,6 +1133,11 @@ public sealed class DuckDbRunStorage : IRunStorage
                         error = cr.IsDBNull(7) ? null : cr.GetString(7),
                         step = cr.GetInt32(8),
                         rep = cr.GetInt32(9),
+                        endpoint = cr.IsDBNull(10) ? null : cr.GetString(10),
+                        method = cr.IsDBNull(11) ? null : cr.GetString(11),
+                        host = cr.IsDBNull(12) ? null : cr.GetString(12),
+                        url = cr.IsDBNull(13) ? null : cr.GetString(13),
+                        slowThresholdMs = cr.IsDBNull(14) ? (double?)null : cr.GetDouble(14),
                     });
                 }
             }

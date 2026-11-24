@@ -23,6 +23,7 @@
                     <p class="muted">Ask about the runs, bees and logs, or tell me what to change in the plan.</p>
                     <div class="asst-suggest">
                         <button type="button" class="chip" @onclick='() => SendAsync("How did the last run go?")'>How did the last run go?</button>
+                        <button type="button" class="chip" @onclick='() => SendAsync("Which endpoints have slow calls?")'>Which endpoints have slow calls?</button>
                         <button type="button" class="chip" @onclick='() => SendAsync("Show the failed bees on a time line.")'>Show the failed bees on a time line</button>
                         <button type="button" class="chip" @onclick='() => SendAsync("What is in the plan right now?")'>What is in the plan?</button>
                     </div>
@@ -169,6 +170,7 @@
     private static string LinkTitle(ChipLinkDto link) => link.Target switch
     {
         "editor" => "Open the editor",
+        "calls" => "Open Calls analysis",
         "scripts" => "Open the scripts",
         "environments" => "Open the environments",
         "logs" => "Open these logs",

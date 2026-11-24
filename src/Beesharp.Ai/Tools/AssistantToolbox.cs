@@ -83,4 +83,7 @@ public sealed partial class AssistantToolbox
 
     private ChipLinkDto? RunLink(string? runId = null, int? entry = null, int? bee = null) =>
         new("run", new ViewQueryDto(RunId: runId, Entry: entry, Bee: bee));
+
+    private static ChipLinkDto CallsLink(string? runId = null, int? entry = null, string? endpoint = null, string? outcome = null, double? minMs = null) =>
+        new("calls", new ViewQueryDto(RunId: runId, Entry: entry, Outcome: outcome, Endpoint: endpoint, MinMs: minMs));
 }

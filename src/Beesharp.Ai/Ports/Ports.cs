@@ -59,9 +59,41 @@ public sealed record BeeInfo(int Sequence, int Entry, double StartedAt, double D
     public string Outcome => Error is not null ? "failed" : SlowCalls > 0 ? "slow" : "ok";
 }
 
-public sealed record BeeCallInfo(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error, int Step = 0, int Rep = 0);
+public sealed record BeeCallInfo(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error, int Step = 0, int Rep = 0, string? Endpoint = null, bool IsSlow = false);
 public sealed record BeeLogInfo(double AtSeconds, string Level, string Message, string? Exception, int? CallIndex);
 public sealed record BeeDetailInfo(BeeInfo Bee, IReadOnlyList<BeeCallInfo> Calls, IReadOnlyList<BeeLogInfo> Logs);
+
+public sealed record CallEndpointInfo(
+    string Endpoint,
+    string Method,
+    long TotalCount,
+    long SlowCount,
+    long FailedCount,
+    double TypicalMs,
+    double P95Ms,
+    double MaxMs,
+    double SlowThresholdMs,
+    bool HasCustomThreshold);
+
+public sealed record CallEndpointsPage(long TotalCalls, long TotalSlowCalls, long TotalFailedCalls, IReadOnlyList<CallEndpointInfo> Endpoints);
+
+public sealed record CallSampleInfo(
+    int Sequence,
+    int Entry,
+    double AtSeconds,
+    double DurationMs,
+    int? StatusCode,
+    string? Error,
+    bool IsSlow,
+    double? TypicalMs,
+    double? SlowThresholdMs,
+    string Url);
+
+public sealed record CallEndpointDetailInfo(
+    CallEndpointInfo Summary,
+    long MatchingCalls,
+    int Offset,
+    IReadOnlyList<CallSampleInfo> Calls);
 
 public sealed record BeePage(long Total, IReadOnlyList<BeeInfo> Items);
 
@@ -92,6 +124,8 @@ public interface IRunHistoryPort
     Task<IReadOnlyList<BeeInfo>> GetBeesAsync(string runId, IReadOnlyList<int> sequences, CancellationToken ct);
     Task<BeeDetailInfo?> GetBeeAsync(string runId, int sequence, CancellationToken ct);
     Task<LogPageInfo> QueryLogsAsync(string runId, LogFilter filter, CancellationToken ct);
+    Task<CallEndpointsPage> ListCallEndpointsAsync(string runId, int? entry, bool slowOnly, bool failedOnly, double? minMs, string? search, CancellationToken ct);
+    Task<CallEndpointDetailInfo?> GetCallEndpointDetailAsync(string runId, string endpoint, int? entry, string? show, double? minMs, double? maxMs, string? sort, int offset, int limit, CancellationToken ct);
 }
 
 /// <summary>An environment as the assistant may see it. Secret-looking values are masked by the adapter's caller, not here.</summary>

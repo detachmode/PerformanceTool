@@ -86,6 +86,49 @@ public static class RunEndpoints
             var export = await storage.ExportRunAsync(runId, format ?? "parquet", ct);
             return export is null ? Results.NotFound() : Results.File(export.Content, export.ContentType, export.FileName);
         });
+        app.MapGet("/api/runs/{runId}/calls/endpoints", async (
+            string runId,
+            int? entry,
+            bool? slowOnly,
+            bool? failedOnly,
+            double? minMs,
+            string? search,
+            RunManager runs,
+            IRunStorage storage,
+            CancellationToken ct) =>
+        {
+            if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
+            return Results.Ok(await storage.GetCallEndpointsAsync(
+                runId,
+                new CallEndpointsQuery(entry, slowOnly ?? false, failedOnly ?? false, minMs, search),
+                ct));
+        });
+        app.MapGet("/api/runs/{runId}/calls/detail", async (
+            string runId,
+            string? endpoint,
+            int? entry,
+            string? show,
+            double? minMs,
+            double? maxMs,
+            double? fromSec,
+            double? toSec,
+            string? sort,
+            int? offset,
+            int? limit,
+            int? maxPoints,
+            RunManager runs,
+            IRunStorage storage,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+                return Results.BadRequest(new { error = "endpoint query parameter is required." });
+            if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
+            var detail = await storage.GetCallEndpointDetailAsync(
+                runId,
+                new CallDetailQuery(endpoint, entry, show, minMs, maxMs, fromSec, toSec, sort, offset ?? 0, limit ?? 200, maxPoints ?? 240),
+                ct);
+            return detail is null ? Results.NotFound() : Results.Ok(detail);
+        });
         return app;
     }
 

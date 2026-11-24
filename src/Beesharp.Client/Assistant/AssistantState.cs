@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Beesharp.Ai.Contracts;
+using Beesharp.Client.Calls;
 using Beesharp.Client.Chart;
 using Beesharp.Client.Data;
 using Beesharp.Client.Logs;
@@ -37,14 +38,16 @@ public sealed class AssistantState : IDisposable
     private readonly ApiEnvironmentSource environments;
     private readonly ScriptApiClient scripts;
     private readonly LogsLinks logs;
+    private readonly CallsLinks calls;
     private readonly EnvironmentsPopupState environmentsPopup;
     private readonly NavigationManager nav;
     private readonly IJSRuntime? js;
     private AssistantStatusDto? status;
+    private bool checkingStatus;
     private CancellationTokenSource? sending;
 
     public AssistantState(AssistantClient client, DataModeState mode, ApiRunSource api, ApiEnvironmentSource environments, ScriptApiClient scripts,
-        LogsLinks logs, EnvironmentsPopupState environmentsPopup, NavigationManager nav, IJSRuntime? js = null)
+        LogsLinks logs, CallsLinks calls, EnvironmentsPopupState environmentsPopup, NavigationManager nav, IJSRuntime? js = null)
     {
         this.client = client;
         this.mode = mode;
@@ -52,10 +55,12 @@ public sealed class AssistantState : IDisposable
         this.environments = environments;
         this.scripts = scripts;
         this.logs = logs;
+        this.calls = calls;
         this.environmentsPopup = environmentsPopup;
         this.nav = nav;
         this.js = js;
         mode.Changed += OnModeChanged;
+        api.Changed += OnApiChanged;
         if (!mode.IsFakeMode) _ = CheckStatusAsync();
     }
 
@@ -76,9 +81,17 @@ public sealed class AssistantState : IDisposable
 
     public async Task CheckStatusAsync()
     {
-        if (mode.IsFakeMode) return;
-        status = await client.GetStatusAsync();
-        Changed?.Invoke();
+        if (mode.IsFakeMode || checkingStatus) return;
+        checkingStatus = true;
+        try
+        {
+            status = await client.GetStatusAsync();
+            Changed?.Invoke();
+        }
+        finally
+        {
+            checkingStatus = false;
+        }
     }
 
     private void OnModeChanged()
@@ -89,6 +102,12 @@ public sealed class AssistantState : IDisposable
             Changed?.Invoke();
         }
         else _ = CheckStatusAsync();
+    }
+
+    private void OnApiChanged()
+    {
+        if (!mode.IsFakeMode && api.IsServerReachable && status is null && !checkingStatus)
+            _ = CheckStatusAsync();
     }
 
     public void Toggle()
@@ -197,6 +216,9 @@ public sealed class AssistantState : IDisposable
             case "logs":
                 if (link.Query is { } lq) await OpenLogsAsync("Logs", lq);
                 break;
+            case "calls":
+                await OpenCallsAsync(link.Query ?? new ViewQueryDto());
+                break;
             case "run":
                 if (link.Query is { Bee: { } bee, RunId: { } runId }) OpenBees(new BeeSetRequest($"Bee B{bee}", runId, [bee - 1], null, null, bee - 1, null));
                 else
@@ -250,6 +272,26 @@ public sealed class AssistantState : IDisposable
     }
 
     /// <summary>"Full logs" of a bee in a bee set: the Logs popup, when the run is the loaded one.</summary>
+    /// <summary>Opens the Calls analysis page with optional endpoint/scenario/outcome filters from an assistant chip or card.</summary>
+    public async Task OpenCallsAsync(ViewQueryDto query)
+    {
+        await EnsureRunLoadedAsync(query.RunId);
+        await CloseIfMobileAsync();
+        var outcome = query.Outcome?.Trim().ToLowerInvariant() switch
+        {
+            "failed" => BeeShow.Failed,
+            "slow" => BeeShow.Slow,
+            _ => BeeShow.All,
+        };
+        var filter = CallsFilter.None
+            .WithEndpoint(query.Endpoint)
+            .WithEntry(query.Entry is { } e && e >= 1 ? e - 1 : null)
+            .WithOutcome(outcome)
+            .WithMinMs(query.MinMs)
+            .WithSearch(query.Search);
+        calls.Show(filter);
+    }
+
     public async Task OpenBeeLogsAsync(string runId, int sequence)
     {
         if (await EnsureRunLoadedAsync(runId)) logs.Show(null, sequence);
@@ -258,6 +300,7 @@ public sealed class AssistantState : IDisposable
     public void Dispose()
     {
         mode.Changed -= OnModeChanged;
+        api.Changed -= OnApiChanged;
         sending?.Cancel();
     }
 }

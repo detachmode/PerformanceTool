@@ -1,7 +1,28 @@
+using Beesharp.Contracts;
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Services.Storage;
+
+public sealed record CallEndpointsQuery(
+    int? Entry = null,
+    bool SlowOnly = false,
+    bool FailedOnly = false,
+    double? MinMs = null,
+    string? Search = null);
+
+public sealed record CallDetailQuery(
+    string Endpoint,
+    int? Entry = null,
+    string? Show = null,
+    double? MinMs = null,
+    double? MaxMs = null,
+    double? FromSec = null,
+    double? ToSec = null,
+    string? Sort = null,
+    int Offset = 0,
+    int Limit = 200,
+    int MaxPoints = 240);
 
 public sealed record LogQuery(
     int? Entry = null,
@@ -86,6 +107,12 @@ public interface IRunStorage : IAsyncDisposable
     /// per scenario entry, and, when the query names an entry, per step with its error lines. Each group ignores its own filter, so the other choices show what they would give.
     /// </summary>
     Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery query, CancellationToken ct = default);
+
+    /// <summary>Auto-detected endpoint summaries and aggregate call counts for the Calls analysis page (brain 0060).</summary>
+    Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default);
+
+    /// <summary>Duration-over-time timeline, latency histogram, and paged calls for one endpoint (brain 0060).</summary>
+    Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default);
 
     /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
     Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default);

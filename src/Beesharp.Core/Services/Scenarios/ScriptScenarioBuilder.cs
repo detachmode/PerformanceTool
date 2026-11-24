@@ -360,6 +360,7 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     private readonly IReadOnlyList<StepInfo> steps;
     private Func<TParameters, ScenarioContext, CancellationToken, Task>? startup;
     private Func<TParameters, ScenarioContext, CancellationToken, Task>? teardown;
+    private CallThresholds slowThresholds = CallThresholds.None;
 
     internal ScenarioBuilder(
         string id,
@@ -404,7 +405,21 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
         return this;
     }
 
-    public IScenario Build() => new DelegateScenario<TParameters>(id, name, description, execute, startup, teardown, steps);
+    /// <summary>Sets the default slow-call duration threshold for every call in this scenario (brain 0060).</summary>
+    public ScenarioBuilder<TParameters> SlowAbove(TimeSpan threshold)
+    {
+        slowThresholds = slowThresholds.WithDefault(threshold);
+        return this;
+    }
+
+    /// <summary>Sets a slow-call duration threshold for calls matching <paramref name="endpointPattern"/> (exact or <c>*</c> wildcard, brain 0060).</summary>
+    public ScenarioBuilder<TParameters> SlowAbove(string endpointPattern, TimeSpan threshold)
+    {
+        slowThresholds = slowThresholds.For(endpointPattern, threshold);
+        return this;
+    }
+
+    public IScenario Build() => new DelegateScenario<TParameters>(id, name, description, execute, startup, teardown, steps, slowThresholds);
 
     /// <summary>
     /// Runs a single bee locally when executed as a standalone .NET 11 file-based app (<c>dotnet run my-scenario.cs</c> or IDE F5).
@@ -521,7 +536,8 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
                         var dataSuffix = string.IsNullOrEmpty(v.Data) ? "" : $" {v.Data}";
                         Console.WriteLine($"  --> Step {v.Step + 1}/{scenario.Steps.Count}: {scenario.Steps[v.Step].Name}{repSuffix}{dataSuffix}");
                     }
-                });
+                },
+                thresholds: scenario.SlowThresholds);
 
             using (execCtx.Activate())
                 outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
@@ -614,13 +630,15 @@ public sealed class DelegateScenario<TParameters> : IScenario where TParameters 
         Func<TParameters, ScenarioContext, CancellationToken, Task<ScenarioOutcome>> execute,
         Func<TParameters, ScenarioContext, CancellationToken, Task>? startup = null,
         Func<TParameters, ScenarioContext, CancellationToken, Task>? teardown = null,
-        IReadOnlyList<StepInfo>? steps = null)
+        IReadOnlyList<StepInfo>? steps = null,
+        CallThresholds? slowThresholds = null)
     {
         Id = id;
         Name = name;
         Description = description;
         Spec = ParameterSpec.For(typeof(TParameters));
         Steps = steps ?? [];
+        SlowThresholds = slowThresholds ?? CallThresholds.None;
         this.execute = execute;
         this.startup = startup;
         this.teardown = teardown;
@@ -631,6 +649,7 @@ public sealed class DelegateScenario<TParameters> : IScenario where TParameters 
     public string Description { get; }
     public ParameterSpec Spec { get; }
     public IReadOnlyList<StepInfo> Steps { get; }
+    public CallThresholds SlowThresholds { get; }
 
     public Task StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         startup is null ? Task.CompletedTask : startup((TParameters)parameters, context, cancellationToken);

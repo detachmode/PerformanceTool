@@ -96,4 +96,24 @@ public class ContractsRoundTripTests
         RoundTrip(new TestRunPreflightRequest("env", 9));
         RoundTrip(new AddEntryRequest("scn"));
     }
+
+    [Fact]
+    public void Call_analytics_contracts_round_trip()
+    {
+        var sum = new CallEndpointSummaryDto("POST /pay", "POST", "shop.test", 120, 4, 2, 210, 480, 980, 95, 225, 420, false, [0, 1]);
+        var endpoints = RoundTrip(new CallEndpointsResult([sum], 120, 4, 2));
+        Assert.Single(endpoints.Endpoints);
+
+        var detail = RoundTrip(new CallEndpointDetailDto(
+            sum,
+            30,
+            [new CallTimelinePointDto(1.5, 0, 520, 210, 1, 1, 0, 11, 2, 0, 200, "POST /pay", null)],
+            [new CallHistogramBucketDto(0, 250, 100, 0, 0), new CallHistogramBucketDto(250, 500, 20, 4, 2)],
+            120,
+            0,
+            200,
+            [new CallSampleDto(11, 2, "B3", 0, 1, 0, 1.5, 50, 520, 200, 42, null, "POST /pay", "https://shop.test/pay", "POST /pay", true, 210, 420)]));
+        Assert.Equal("POST /pay", detail.Summary.Endpoint);
+        Assert.Single(detail.Calls);
+    }
 }

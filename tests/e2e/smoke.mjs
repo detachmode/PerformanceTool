@@ -20,7 +20,7 @@ check(api.ok, `GET /api/scenarios -> ${api.status}`);
 // 2. The WebAssembly client boots in a real browser, on / and on a deep link.
 const browser = await chromium.launch();
 try {
-  for (const path of ['/', '/editor']) {
+  for (const path of ['/', '/calls', '/editor']) {
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(`page error: ${e.message}`));

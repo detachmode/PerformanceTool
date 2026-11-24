@@ -17,7 +17,8 @@ public sealed record LiveBeeDto(
     string? Error,
     int SlowCalls,
     int FailedStep = -1,
-    int FailedRep = -1);
+    int FailedRep = -1,
+    byte RatioCode = 0);
 
 public sealed record LiveScenarioViewDto(
     int Starts,

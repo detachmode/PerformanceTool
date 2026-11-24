@@ -1,0 +1,92 @@
+@* Latency distribution histogram for one endpoint (brain 0060): clickable buckets filter the call list to [FromMs, ToMs). *@
+@using System.Globalization
+
+<section class="cl-card cl-hist-card" aria-label="Duration distribution">
+    <div class="cl-card-head">
+        <span class="cl-card-title">Duration distribution</span>
+        <span class="cl-hover-info @(hovered is not null ? "active" : "")">
+            @if (hovered is { } hb)
+            {
+                <text>@Format.Ms(hb.FromMs)–@Format.Ms(hb.ToMs) · @Format.Plural(hb.Count, "call", "calls")@(hb.SlowCount > 0 ? $" · {hb.SlowCount} slow" : "")@(hb.FailedCount > 0 ? $" · {hb.FailedCount} failed" : "")</text>
+            }
+            else if (MinMs is not null && MaxMs is not null)
+            {
+                <text>Filtered: @Format.Ms(MinMs.Value)–@Format.Ms(MaxMs.Value) · click again to clear</text>
+            }
+            else
+            {
+                <text>Click a bar to filter calls by duration range</text>
+            }
+        </span>
+    </div>
+
+    @if (Buckets.Count == 0)
+    {
+        <p class="muted cl-empty">No duration samples in this slice.</p>
+    }
+    else
+    {
+        var maxCount = Math.Max(1, Buckets.Max(x => x.Count));
+        var histLo = Buckets[0].FromMs;
+        var histHi = Buckets[^1].ToMs;
+        var thresholdPct = SlowThresholdMs is { } th && th > histLo && th < histHi && histHi > histLo
+            ? (th - histLo) / (histHi - histLo) * 100.0
+            : (double?)null;
+
+        <div class="cl-hist-plot">
+            @if (thresholdPct is { } tp)
+            {
+                <div class="cl-hist-limit" style="left:@Pct(tp)%" title="Slow threshold: @Format.Ms(SlowThresholdMs!.Value)" aria-hidden="true"></div>
+            }
+            @foreach (var bucket in Buckets)
+            {
+                var b = bucket;
+                var hPct = b.Count == 0 ? 0 : Math.Clamp(b.Count * 100.0 / maxCount, 6, 100);
+                var active = MinMs is { } lo && MaxMs is { } hi && Math.Abs(lo - b.FromMs) < 0.01 && Math.Abs(hi - b.ToMs) < 0.01;
+                var ok = Math.Max(0, b.Count - b.SlowCount - b.FailedCount);
+                <button type="button"
+                        class="cl-hbar-hit @(active ? "on" : "") @(b.Count == 0 ? "zero" : "")"
+                        disabled="@(b.Count == 0)"
+                        aria-pressed="@Aria.Bool(active)"
+                        aria-label="@Format.Ms(b.FromMs) to @Format.Ms(b.ToMs): @Format.Plural(b.Count, "call", "calls")"
+                        @onpointerenter="() => hovered = b"
+                        @onpointerleave="() => { if (hovered == b) hovered = null; }"
+                        @onclick="() => Toggle(b)">
+                    @if (b.Count > 0)
+                    {
+                        <span class="cl-hbar" style="height:@Pct(hPct)%">
+                            @if (b.FailedCount > 0) { <i class="seg-bad" style="flex:@b.FailedCount"></i> }
+                            @if (b.SlowCount > 0) { <i class="seg-warn" style="flex:@b.SlowCount"></i> }
+                            @if (ok > 0) { <i class="seg-good" style="flex:@ok"></i> }
+                        </span>
+                    }
+                </button>
+            }
+        </div>
+        <div class="cl-xaxis" aria-hidden="true">
+            <span>@Format.Ms(histLo)</span>
+            <span>@Format.Ms((histLo + histHi) / 2)</span>
+            <span>@Format.Ms(histHi)</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CallHistogramBucketDto> Buckets { get; set; } = [];
+    [Parameter] public double? SlowThresholdMs { get; set; }
+    [Parameter] public double? MinMs { get; set; }
+    [Parameter] public double? MaxMs { get; set; }
+    [Parameter] public EventCallback<(double? Min, double? Max)> OnSelectBucket { get; set; }
+
+    private CallHistogramBucketDto? hovered;
+
+    private Task Toggle(CallHistogramBucketDto b)
+    {
+        var active = MinMs is { } lo && MaxMs is { } hi && Math.Abs(lo - b.FromMs) < 0.01 && Math.Abs(hi - b.ToMs) < 0.01;
+        return active
+            ? OnSelectBucket.InvokeAsync((null, null))
+            : OnSelectBucket.InvokeAsync((b.FromMs, b.ToMs));
+    }
+
+    private static string Pct(double v) => Math.Clamp(v, 0, 100).ToString("0.##", CultureInfo.InvariantCulture);
+}

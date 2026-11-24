@@ -1,3 +1,6 @@
+using Beesharp.Services;
+using Beesharp.Services.Scenarios;
+
 namespace Beesharp.Client.Runs;
 
 /// <summary>
@@ -13,6 +16,7 @@ public sealed class RunStore
     public const int DetailPerScenario = RunStoreOptions.DefaultMaxDetailedBeesPerScenario;
 
     private readonly List<BeeRecord>[] bees;
+    private readonly Dictionary<int, double> startedAtBySeq = [];
     private readonly Dictionary<int, BeeDetail> details = [];
     // Per scenario one queue per outcome (indexed by BeeOutcome), each oldest first, plus the total kept.
     private readonly Queue<BeeDetail>[][] detailQueues;
@@ -66,6 +70,7 @@ public sealed class RunStore
     public void Complete(BeeRecord record, BeeDetail detail)
     {
         bees[record.Entry].Add(record);
+        startedAtBySeq[record.Sequence] = record.StartedAt;
         if (record.Failed && record.FailedStep >= 0)
         {
             var perStep = failedAtStep[record.Entry];
@@ -138,5 +143,41 @@ public sealed class RunStore
         while (i < tail.Count || j < fresh.Count)
             lines.Add(j >= fresh.Count || (i < tail.Count && tail[i].AtSeconds <= fresh[j].AtSeconds) ? tail[i++] : fresh[j++]);
         return lines;
+    }
+
+    /// <summary>All non-skipped calls across the bees currently kept in detail storage, for client-side Fake-mode call analysis (brain 0060).</summary>
+    public IReadOnlyList<CallFact> AllKeptCalls()
+    {
+        var result = new List<CallFact>();
+        foreach (var d in details.Values)
+        {
+            var startedAt = startedAtBySeq.GetValueOrDefault(d.Sequence);
+            foreach (var c in d.Calls)
+            {
+                if (c.Skipped) continue;
+                var id = ((long)d.Sequence << 20) + c.Index + 1;
+                var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
+                var method = EndpointNormalizer.TryExtractMethod(c.RawUrl is not null ? c.Name : ep);
+                result.Add(new CallFact(
+                    id,
+                    d.Sequence,
+                    d.Entry,
+                    c.Step,
+                    c.Rep,
+                    startedAt,
+                    c.OffsetMs,
+                    c.DurationMs,
+                    c.Status,
+                    0,
+                    c.Error,
+                    c.Name,
+                    c.RawUrl,
+                    ep,
+                    method,
+                    null,
+                    c.SlowThresholdMs));
+            }
+        }
+        return result;
     }
 }

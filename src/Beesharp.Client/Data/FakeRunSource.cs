@@ -13,7 +13,7 @@ namespace Beesharp.Client.Data;
 /// <summary>One call of a story: its name and typical duration. Repeated calls (e.g. five product pages) get their own entry.</summary>
 /// <param name="Pause">Whether the user pauses (think time) before this call; false for calls a page fires together.</param>
 /// <param name="Step">Index into the profile's declared <see cref="FakeProfile.Steps"/> (brain 0056); 0 when the scenario has no steps.</param>
-public sealed record CallSpec(string Name, double MedianMs, double Sigma = 0.15, bool Pause = true, int Step = 0, int Rep = 0);
+public sealed record CallSpec(string Name, double MedianMs, double Sigma = 0.15, bool Pause = true, int Step = 0, int Rep = 0, double? SlowThresholdMs = null);
 
 /// <summary>
 /// How a fake scenario (a whole user story, docs/context.md) behaves: its chained calls with their typical durations, think time
@@ -344,7 +344,9 @@ public sealed class FakeRunSource : IRunSource
         var offset = 0.0;
         for (var i = 0; i < count; i++)
         {
-            if (i >= ran) { calls.Add(new(i, spec[i].Name, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep)); continue; }
+            var (rawName, endpoint, rawUrl) = MaterializeCall(spec[i].Name);
+            var threshold = spec[i].SlowThresholdMs;
+            if (i >= ran) { calls.Add(new(i, rawName, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl)); continue; }
             var gap = i > 0 && spec[i].Pause ? Math.Round(profile.ThinkMs * (0.6 + 0.8 * rng.NextDouble()), 1) : 0;
             offset += gap;
             var d = spec[i].MedianMs * Math.Exp(spec[i].Sigma * Gaussian());
@@ -352,7 +354,7 @@ public sealed class FakeRunSource : IRunSource
             var isFailed = i == failAt;
             if (isFailed && status is null) d = profile.CallTimeoutMs;
             d = Math.Round(Math.Clamp(d, 3, profile.CallTimeoutMs), 1);
-            calls.Add(new(i, spec[i].Name, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep));
+            calls.Add(new(i, rawName, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl));
             offset += d;
         }
         var ms = Math.Round(offset, 1);
@@ -385,12 +387,13 @@ public sealed class FakeRunSource : IRunSource
         foreach (var c in p.Calls)
         {
             if (c.Skipped || c.Failed) { calls.Add(c); continue; }
-            var typical = typicals.Typical(p.Entry, c.Name);
-            var isSlow = SlowCallRule.IsSlow(c.DurationMs, typical);
-            typicals.Add(p.Entry, c.Name, c.DurationMs);
+            var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
+            var typical = typicals.Typical(ep);
+            var isSlow = SlowCallRule.IsSlow(c.DurationMs, typical, c.SlowThresholdMs);
+            typicals.Add(ep, c.DurationMs);
             if (isSlow) slow++;
-            worst = Math.Max(worst, SlowCallRule.Ratio(c.DurationMs, typical));
-            calls.Add(c with { Slow = isSlow, TypicalMs = typical });
+            worst = Math.Max(worst, SlowCallRule.Ratio(c.DurationMs, typical, c.SlowThresholdMs));
+            calls.Add(c with { Slow = isSlow, TypicalMs = typical, Endpoint = ep });
         }
         var record = new BeeRecord(p.Sequence, p.Entry, p.StartedAt, p.ElapsedMs, slow, store.Errors.Intern(p.Error), store.Errors, SlowCallRule.Encode(worst),
             p.Profile.Steps is { Count: > 0 } ? StepLogic.FailedStep(calls) : -1);
@@ -538,6 +541,42 @@ public sealed class FakeRunSource : IRunSource
         Enumerable.Range(1, times).Select(i => new CallSpec($"{name} · {i}", ms));
 
     /// <summary>~24 calls: search, 5 product views (each with images, price and stock), 2 cart adds, the cart.</summary>
+    private static readonly string[] SampleQueries =
+        ["?q=running+shoes", "?q=wireless+headphones", "?q=espresso+maker", "?q=travel+backpack", "?q=mechanical+keyboard"];
+
+    private static readonly string[] SampleSlugs =
+    [
+        "wireless-headphones-pro", "usb-c-charging-cable", "running-shoes-v3", "ergonomic-mouse",
+        "mechanical-keyboard", "standing-desk-mat", "monitor-arm-dual", "travel-backpack-30l",
+        "insulated-flask-1l", "bluetooth-speaker", "noise-canceling-buds", "smart-lamp-rgb",
+        "laptop-sleeve-14", "webcam-4k-hdr", "thunderbolt-hub"
+    ];
+
+    private (string RawName, string Endpoint, string? RawUrl) MaterializeCall(string template)
+    {
+        var raw = template;
+        var repDot = raw.LastIndexOf(" · ", StringComparison.Ordinal);
+        if (repDot > 0 && int.TryParse(raw[(repDot + 3)..], out _))
+            raw = raw[..repDot];
+
+        if (raw.Contains("{slug}", StringComparison.Ordinal))
+            raw = raw.Replace("{slug}", SampleSlugs[rng.Next(SampleSlugs.Length)], StringComparison.Ordinal);
+
+        if (raw.Contains("{id}", StringComparison.Ordinal))
+            raw = raw.Replace("{id}", rng.Next(1001, 9999).ToString(), StringComparison.Ordinal);
+
+        if (raw.Contains("?q=…", StringComparison.Ordinal))
+            raw = raw.Replace("?q=…", SampleQueries[rng.Next(SampleQueries.Length)], StringComparison.Ordinal);
+
+        string? rawUrl = null;
+        var space = raw.IndexOf(' ');
+        if (space > 0 && raw[(space + 1)..].StartsWith('/'))
+            rawUrl = "https://shop.example.com" + raw[(space + 1)..];
+
+        var endpoint = EndpointNormalizer.NormalizeCallName(raw);
+        return (raw, endpoint, rawUrl);
+    }
+
     private static List<CallSpec> SearchStory()
     {
         var l = new List<CallSpec> { new("POST /login", 260), new("GET /search?q=…", 450, 0.2, Step: 1) };
@@ -546,13 +585,13 @@ public sealed class FakeRunSource : IRunSource
             // the step "Open product" runs 5 times in a row (brain 0056): repetition n-1
             l.Add(new($"GET /products/{{id}} · {n}", 240, Step: 2, Rep: n - 1));
             l.Add(new($"GET /products/{{id}}/images · {n}", 140, 0.25, Pause: false, Step: 2, Rep: n - 1));
-            l.Add(new($"GET /products/{{id}}/price · {n}", 70, 0.15, Pause: false, Step: 2, Rep: n - 1));
+            l.Add(new($"GET /products/{{id}}/price · {n}", 70, 0.15, Pause: false, Step: 2, Rep: n - 1, SlowThresholdMs: 150));
             l.Add(new($"GET /products/{{id}}/availability · {n}", 110, 0.25, Pause: false, Step: 2, Rep: n - 1));
         }
         l.Add(new("POST /cart/items · 1", 320, Step: 3));
         l.Add(new("POST /cart/items · 2", 340, Step: 3));
         l.Add(new("GET /cart", 200, 0.15, Pause: false, Step: 3));
-        l.Add(new("POST /payments", 700, 0.25, Step: 4));
+        l.Add(new("POST /payments", 700, 0.25, Step: 4, SlowThresholdMs: 1200));
         return l;
     }
 
@@ -576,7 +615,7 @@ public sealed class FakeRunSource : IRunSource
         Add(Entry("http-post-json", "Guest checkout", 30, "{{BaseUrl}}/api/checkout",
                 j => j["body"] = """{ "cartId": "demo-42", "payment": "card" }"""),
             new("Check out as a guest: cart, address, shipping, payment, confirmation.",
-                [new("GET /cart", 220), new("POST /checkout/address", 380, Step: 1), new("POST /checkout/shipping", 310, Step: 2), new("POST /payments", 900, 0.25, Step: 3), new("GET /orders/{id}/confirmation", 260, Step: 4)],
+                [new("GET /cart", 220), new("POST /checkout/address", 380, Step: 1), new("POST /checkout/shipping", 310, Step: 2), new("POST /payments", 900, 0.25, Step: 3, SlowThresholdMs: 1200), new("GET /orders/{id}/confirmation", 260, Step: 4)],
                 ThinkMs: 300, TailChance: 0.05, ErrorRate: 0.12,
                 Errors: [new(422, "HTTP 422 Payment declined", 3), new(500, "HTTP 500 Internal Server Error on POST /payments", 2), new(null, "Payment provider timed out after 10 s", 1)],
                 FailAtCall: 3, ForceFailOn: 3, Steps: ["Cart", "Address", "Shipping", "Pay", "Confirmation"]));
@@ -584,7 +623,7 @@ public sealed class FakeRunSource : IRunSource
                 urls("{{BaseUrl}}/", "{{BaseUrl}}/categories/12", "{{BaseUrl}}/categories/7", "{{BaseUrl}}/categories/31",
                      "{{BaseUrl}}/categories/31?page=2", "{{BaseUrl}}/products/918", "{{BaseUrl}}/products/204")), 15, 6),
             new("Open the home page, look through 3 categories with pagination, open 2 products.",
-                [new("GET /", 200), .. Repeat("GET /categories/{id}", 3, 260), new("GET /categories/{id}?page=2", 280), new("GET /products/{id} · 1", 240), new("GET /products/{id} · 2", 240)],
+                [new("GET /", 200), .. Repeat("GET /categories/{id}", 3, 260), new("GET /categories/{id}?page=2", 280), new("GET /products/{id} · 1", 240), new("GET /products/{id} · 2", 240), new("GET /catalog/{slug}", 210, 0.28)],
                 ThinkMs: 120, MinCalls: 5, TailChance: 0.12, ErrorRate: 0.0,
                 Errors: [new(503, "HTTP 503 Service Unavailable on GET /categories/{id}", 1)], FailAtCall: 2));
         Add(Entry("http-custom", "Sign up & first order", 20, "{{BaseUrl}}/api/accounts",

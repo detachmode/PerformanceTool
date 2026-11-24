@@ -4,6 +4,7 @@
 @implements IAsyncDisposable
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
+@inject CallsLinks CallsLink
 @inject LogsLinks LogsPopup
 @inject IJSRuntime JS
 
@@ -88,16 +89,16 @@
                     @foreach (var c in detail.Calls)
                     {
                         var call = c;
-                        var callRatio = call.Skipped || call.Failed ? 1 : SlowCallRule.Ratio(call.DurationMs, call.TypicalMs);
+                        var callRatio = call.Skipped || call.Failed ? 1 : SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs);
                         var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : BeeOrder.Good(SlowCallRule.Step(callRatio));
                         <li class="call @cls @(call.Skipped ? "skipped" : "")">
-                            <span class="call-name" title="@call.Name">@call.Name</span>
+                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="Analyse all durations of @(call.Endpoint ?? call.Name)">@call.Name</button>
                             <span class="track"><i style="left:@Pct(call.OffsetMs / Math.Max(1, fb.DurationMs))%;width:@(Math.Max(0.8, call.DurationMs / Math.Max(1, fb.DurationMs) * 100).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                             <span class="call-dur">@(call.Skipped ? "" : Format.Ms(call.DurationMs))</span>
                             <span class="call-status" title="@(call.TypicalMs is { } tyMs && !call.Skipped ? $"Typical for this call: {Format.Ms(tyMs)}" : call.Error)">@CallStatus(call)</span>
-                            @if (showTypicals && !call.Skipped && call.TypicalMs is { } typ)
+                            @if (showTypicals && !call.Skipped && (call.TypicalMs is not null || call.SlowThresholdMs is not null))
                             {
-                                <span class="call-typ muted">typical @Format.Ms(typ)@(Format.OverTypical(callRatio) ? " · " + Format.Times(callRatio) : "")</span>
+                                <span class="call-typ muted">@(call.TypicalMs is { } typ ? $"typical {Format.Ms(typ)}" : $"limit {Format.Ms(call.SlowThresholdMs!.Value)}")@(Format.OverTypical(callRatio) ? " · " + Format.Times(callRatio) : "")</span>
                             }
                         </li>
                     }
@@ -282,6 +283,9 @@
         if (OpenLogs is not null) _ = OpenLogs(sequence);
         else LogsPopup.Show(entry: Index, bee: sequence);
     }
+
+    private void OpenEndpoint(FakeCall call) =>
+        CallsLink.Show(endpoint: string.IsNullOrWhiteSpace(call.Endpoint) ? EndpointNormalizer.NormalizeCallName(call.Name) : call.Endpoint, entry: Index);
 
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 

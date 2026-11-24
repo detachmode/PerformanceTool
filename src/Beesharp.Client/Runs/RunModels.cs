@@ -32,7 +32,10 @@ public sealed record FakeCall(
     double? TypicalMs = null,
     ErrorDictionary? Errors = null,
     int Step = 0,
-    int Rep = 0)
+    int Rep = 0,
+    string? Endpoint = null,
+    double? SlowThresholdMs = null,
+    string? RawUrl = null)
 {
     public string? Error => Errors?.Resolve(ErrorId);
     public bool Failed => !Skipped && ErrorId != ErrorDictionary.None;

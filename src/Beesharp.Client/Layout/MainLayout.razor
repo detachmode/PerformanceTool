@@ -34,6 +34,10 @@
                 <span>@ModeBtnLabel(compact: true)</span>
                 <span class="caret" aria-hidden="true">▾</span>
             </button>
+            @if (Asst.Available)
+            {
+                <button type="button" class="icon-btn asst-toggle @(Asst.IsOpen ? "on" : "")" @onclick="() => { modeMenuOpen = false; moreOpen = false; Asst.Toggle(); }" aria-label="Assistant" aria-pressed="@Aria.Bool(Asst.IsOpen)" title="Assistant"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.5-4.7A8 8 0 1 1 21 12z"/></svg></button>
+            }
             <button type="button" class="icon-btn top-more" @onclick="() => { modeMenuOpen = false; moreOpen = true; }" aria-label="More" aria-haspopup="dialog" title="Environment, settings and more">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
             </button>
@@ -88,6 +92,7 @@
         </a>
         <nav class="nav" aria-label="Main">
             <NavLink class="@(scnIndex is not null ? "nav-item active" : "nav-item")" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Overview</NavLink>
+            <NavLink class="nav-item" href="calls" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Calls</NavLink>
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
             <NavLink class="nav-item" href="environment" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Environment</NavLink>
@@ -228,7 +233,7 @@
         var path = Nav.ToBaseRelativePath(Nav.Uri);
         var q = path.IndexOfAny(['?', '#']);
         if (q >= 0) path = path[..q];
-        return path.Trim('/').ToLowerInvariant() switch { "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
+        return path.Trim('/').ToLowerInvariant() switch { "calls" => "Calls", "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
     }
 
     private void PickEnv(string? name) { Envs.SetActive(name); moreOpen = false; }

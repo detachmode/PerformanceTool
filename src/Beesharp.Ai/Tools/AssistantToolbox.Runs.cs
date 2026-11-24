@@ -186,4 +186,103 @@ public sealed partial class AssistantToolbox
 
     private static ViewQueryDto Query(string runId, int? entry, int? bee, bool? failedBees, bool? slowBees, List<string>? levels, string? search) =>
         new(runId, entry, bee, null, ParseLevels(levels), string.IsNullOrWhiteSpace(search) ? null : search.Trim(), failedBees, slowBees);
+
+    [AssistantTool("list_call_endpoints")]
+    [Description("Lists auto-detected HTTP and measured endpoints of a run sorted by slow call count, with typical (median), slowest 5% (p95), max duration, slow threshold and failed count. Use show_slow_calls when the user should see them as a card.")]
+    public async Task<object> ListCallEndpoints(
+        [Description("Run id; leave out for the current or newest run")] string? runId = null,
+        [Description("Only this scenario entry (number from 1)")] int? entry = null,
+        [Description("Only endpoints that have at least one slow call")] bool? slowOnly = null,
+        [Description("Only endpoints that have at least one failed call")] bool? failedOnly = null,
+        [Description("Minimum max/matching duration in milliseconds")] double? minMs = null,
+        [Description("Filter endpoints whose path or method contains this text")] string? search = null,
+        [Description("How many endpoints to return, 1 to 100 (default 20)")] int? limit = null,
+        CancellationToken ct = default)
+    {
+        var id = await RunIdAsync(runId, ct);
+        var entryIdx = entry is { } e ? ToIndex(e, "Entry") : (int?)null;
+        var lim = Bounds.Limit(limit);
+        var page = await history.ListCallEndpointsAsync(id, entryIdx, slowOnly ?? false, failedOnly ?? false, minMs, string.IsNullOrWhiteSpace(search) ? null : search.Trim(), ct);
+        var items = page.Endpoints.Take(lim).ToList();
+        var outcome = slowOnly == true ? "slow" : failedOnly == true ? "failed" : null;
+        rec.Read($"Looked at {items.Count} of {page.Endpoints.Count} endpoints ({page.TotalSlowCalls} slow calls)", CallsLink(id, entry, outcome: outcome, minMs: minMs));
+        return new
+        {
+            runId = id,
+            totalCalls = page.TotalCalls,
+            totalSlowCalls = page.TotalSlowCalls,
+            totalFailedCalls = page.TotalFailedCalls,
+            totalEndpoints = page.Endpoints.Count,
+            endpoints = items.Select(ep => new
+            {
+                endpoint = ep.Endpoint,
+                method = ep.Method,
+                calls = ep.TotalCount,
+                slow = ep.SlowCount,
+                failed = ep.FailedCount,
+                typicalMs = Math.Round(ep.TypicalMs, 1),
+                p95Ms = Math.Round(ep.P95Ms, 1),
+                maxMs = Math.Round(ep.MaxMs, 1),
+                slowThresholdMs = Math.Round(ep.SlowThresholdMs, 1),
+                hasCustomThreshold = ep.HasCustomThreshold,
+            }).ToList(),
+        };
+    }
+
+    [AssistantTool("get_call_endpoint")]
+    [Description("Inspects individual calls for one endpoint (normalized name like 'GET /orders/{id}'), returning exact URLs, durations, slow ratio, status codes and bee numbers (1-based). Use show_slow_calls to show a card.")]
+    public async Task<object> GetCallEndpoint(
+        [Description("Normalized endpoint name from list_call_endpoints (for example 'GET /orders/{id}')")] string endpoint,
+        [Description("Run id; leave out for the current or newest run")] string? runId = null,
+        [Description("Only this scenario entry (number from 1)")] int? entry = null,
+        [Description("all, slow or failed")] string? show = null,
+        [Description("Only calls slower than this many milliseconds")] double? minMs = null,
+        [Description("slowest, time or failed (default slowest)")] string? sort = null,
+        [Description("Skip this many calls (paging)")] int? offset = null,
+        [Description("How many calls, 1 to 100 (default 20)")] int? limit = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint)) throw new ArgumentException("endpoint is required.");
+        var id = await RunIdAsync(runId, ct);
+        var entryIdx = entry is { } e ? ToIndex(e, "Entry") : (int?)null;
+        var showNorm = ParseEndpointShow(show);
+        var o = Bounds.Offset(offset);
+        var l = Bounds.Limit(limit);
+        var detail = await history.GetCallEndpointDetailAsync(id, endpoint.Trim(), entryIdx, showNorm, minMs, null, sort, o, l, ct)
+            ?? throw new KeyNotFoundException($"Endpoint '{endpoint.Trim()}' has no calls in run {id}.");
+        rec.Read($"Inspected {detail.Summary.Endpoint}: {detail.MatchingCalls} calls", CallsLink(id, entry, detail.Summary.Endpoint, showNorm, minMs));
+        return new
+        {
+            runId = id,
+            endpoint = detail.Summary.Endpoint,
+            typicalMs = Math.Round(detail.Summary.TypicalMs, 1),
+            p95Ms = Math.Round(detail.Summary.P95Ms, 1),
+            maxMs = Math.Round(detail.Summary.MaxMs, 1),
+            slowThresholdMs = Math.Round(detail.Summary.SlowThresholdMs, 1),
+            hasCustomThreshold = detail.Summary.HasCustomThreshold,
+            matching = detail.MatchingCalls,
+            offset = o,
+            hasMore = o + detail.Calls.Count < detail.MatchingCalls,
+            calls = detail.Calls.Select(c => new
+            {
+                bee = c.Sequence + 1,
+                entry = c.Entry + 1,
+                atSeconds = Math.Round(c.AtSeconds, 2),
+                durationMs = Math.Round(c.DurationMs, 1),
+                ratio = c.Error is null && c.TypicalMs is > 0 ? Math.Round(Beesharp.Services.SlowCallRule.Ratio(c.DurationMs, c.TypicalMs, c.SlowThresholdMs), 1) : (double?)null,
+                status = c.StatusCode,
+                isSlow = c.IsSlow,
+                error = c.Error is null ? null : Bounds.Cut(c.Error),
+                url = Bounds.Cut(c.Url, 240),
+            }).ToList(),
+        };
+    }
+
+    private static string? ParseEndpointShow(string? show) => show?.Trim().ToLowerInvariant() switch
+    {
+        null or "" or "all" => null,
+        "slow" => "slow",
+        "failed" or "fail" or "error" => "failed",
+        _ => throw new ArgumentException("show must be all, slow or failed."),
+    };
 }

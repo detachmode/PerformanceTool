@@ -1,0 +1,241 @@
+@* Duration-over-time scatter/bucket chart for one endpoint (brain 0060): shows every call (or time buckets on huge runs),
+   the typical duration line, the active slow threshold line, hover readout, and horizontal drag-to-zoom. *@
+@using System.Globalization
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<section class="cl-card cl-chart-card" aria-label="Call duration over time">
+    <div class="cl-card-head">
+        <span class="cl-card-title">Duration over time</span>
+        <span class="cl-hover-info @(hovered is not null ? "active" : "")">
+            @if (hovered is { } h)
+            {
+                if (h.Count == 1)
+                {
+                    <text>B@((h.Sequence ?? 0) + 1) · @Format.Ms(h.DurationMs) · at @Format.Time(h.AtSeconds) · @(h.Error is not null ? (h.StatusCode?.ToString() ?? "failed") : h.StatusCode?.ToString() ?? "ok")@(!string.IsNullOrEmpty(h.RawName) ? $" · {h.RawName}" : "")</text>
+                }
+                else
+                {
+                    <text>@Format.Plural(h.Count, "call", "calls") at @Format.Time(h.AtSeconds)–@Format.Time(h.AtSeconds + h.BucketWidthSeconds) · typical @Format.Ms(h.TypicalMs) · max @Format.Ms(h.DurationMs)@(h.FailedCount > 0 ? $" · {h.FailedCount} failed" : "")@(h.SlowCount > 0 ? $" · {h.SlowCount} slow" : "")</text>
+                }
+            }
+            else
+            {
+                <text>Click a call to inspect · Drag across chart or click a bucket to zoom</text>
+            }
+        </span>
+        @if (FromSec is not null || ToSec is not null)
+        {
+            <button type="button" class="btn ghost small" @onclick="() => OnZoom.InvokeAsync((null, null))">Reset zoom</button>
+        }
+    </div>
+
+    @if (Timeline.Count == 0)
+    {
+        <p class="muted cl-empty">No calls match the active filters.</p>
+    }
+    else
+    {
+        var yMax = ComputeYMax();
+        var (viewFrom, viewTo) = ViewRange();
+        var span = Math.Max(0.05, viewTo - viewFrom);
+        var thresholdY = Summary.SlowThresholdMs is { } lim && lim > 0 ? Math.Clamp(lim / yMax * 100, 0, 100) : (double?)null;
+        var typicalY = Summary.TypicalMs > 0 ? Math.Clamp(Summary.TypicalMs / yMax * 100, 0, 100) : (double?)null;
+        var minMsY = MinMs is > 0 && MinMs < yMax ? Math.Clamp(MinMs.Value / yMax * 100, 0, 100) : (double?)null;
+
+        <div class="cl-plot-wrap">
+            <div class="cl-yaxis" aria-hidden="true">
+                <span>@Format.Ms(yMax)</span>
+                <span>@Format.Ms(yMax / 2)</span>
+                <span>0</span>
+            </div>
+            <div class="cl-plot" @ref="plotEl" @ondblclick="() => OnZoom.InvokeAsync((null, null))">
+                <div class="cl-grid" aria-hidden="true">
+                    <i style="bottom:100%"></i>
+                    <i style="bottom:50%"></i>
+                    <i style="bottom:0%"></i>
+                </div>
+
+                @if (typicalY is { } ty)
+                {
+                    <div class="cl-ref typical" style="bottom:@Pct(ty)%" aria-hidden="true">
+                        <span>typical @Format.Ms(Summary.TypicalMs)</span>
+                    </div>
+                }
+                @if (thresholdY is { } th)
+                {
+                    <div class="cl-ref threshold" style="bottom:@Pct(th)%" aria-hidden="true">
+                        <span>@(Summary.HasCustomThreshold ? $"limit {Format.Ms(Summary.SlowThresholdMs!.Value)}" : $"slow > {Format.Ms(Summary.SlowThresholdMs!.Value)}")</span>
+                    </div>
+                }
+                @if (minMsY is { } mn)
+                {
+                    <div class="cl-ref filter-line" style="bottom:@Pct(mn)%" aria-hidden="true">
+                        <span>over @Format.Ms(MinMs!.Value)</span>
+                    </div>
+                }
+
+                <div class="cl-brush" aria-hidden="true"></div>
+
+                @foreach (var pt in Timeline)
+                {
+                    var p = pt;
+                    var xPct = Math.Clamp((p.AtSeconds - viewFrom) / span * 100, 0.4, 99.6);
+                    var hPct = Math.Clamp(p.DurationMs / yMax * 100, 1.5, 100);
+                    var isBucket = p.Count > 1;
+                    var cls = PointClass(p);
+                    if (isBucket)
+                    {
+                        var wPct = Math.Clamp(p.BucketWidthSeconds / span * 100, 0.9, 8);
+                        var medPct = Math.Clamp(p.TypicalMs / Math.Max(1, p.DurationMs) * 100, 2, 98);
+                        <button type="button"
+                                class="cl-bucket @cls"
+                                style="left:@Pct(xPct)%;width:@Pct(wPct)%;height:@Pct(hPct)%"
+                                aria-label="@Format.Plural(p.Count, "call", "calls") at @Format.Time(p.AtSeconds), max @Format.Ms(p.DurationMs), typical @Format.Ms(p.TypicalMs)"
+                                @onpointerenter="() => hovered = p"
+                                @onpointerleave="() => { if (hovered == p) hovered = null; }"
+                                @onclick="() => OnZoom.InvokeAsync((p.AtSeconds, p.AtSeconds + p.BucketWidthSeconds))">
+                            <span class="cl-bucket-med" style="bottom:@Pct(medPct)%"></span>
+                        </button>
+                    }
+                    else
+                    {
+                        var selected = SelectedId is { } sid && p.SampleId == sid;
+                        <button type="button"
+                                class="cl-pt @cls @(selected ? "on" : "")"
+                                style="left:@Pct(xPct)%;height:@Pct(hPct)%"
+                                aria-label="B@((p.Sequence ?? 0) + 1) @Format.Ms(p.DurationMs) at @Format.Time(p.AtSeconds)"
+                                aria-pressed="@Aria.Bool(selected)"
+                                @onpointerenter="() => hovered = p"
+                                @onpointerleave="() => { if (hovered == p) hovered = null; }"
+                                @onclick="() => { if (p.SampleId is { } id) OnSelectCall.InvokeAsync(id); }">
+                            <i class="cl-stem"></i>
+                            <i class="cl-dot"></i>
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+        <div class="cl-xaxis" aria-hidden="true">
+            <span>@Format.Time(viewFrom)</span>
+            <span>@Format.Time((viewFrom + viewTo) / 2)</span>
+            <span>@Format.Time(viewTo)</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CallEndpointSummaryDto Summary { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<CallTimelinePointDto> Timeline { get; set; } = [];
+    [Parameter] public double RunElapsedSeconds { get; set; }
+    [Parameter] public double? FromSec { get; set; }
+    [Parameter] public double? ToSec { get; set; }
+    [Parameter] public double? MinMs { get; set; }
+    [Parameter] public long? SelectedId { get; set; }
+    [Parameter] public EventCallback<long> OnSelectCall { get; set; }
+    [Parameter] public EventCallback<(double? From, double? To)> OnZoom { get; set; }
+
+    private ElementReference plotEl;
+    private IJSObjectReference? module;
+    private IJSObjectReference? handle;
+    private DotNetObjectReference<CallDurationChart>? self;
+    private CallTimelinePointDto? hovered;
+    private bool attached;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Timeline.Count == 0)
+        {
+            await DetachAsync();
+            return;
+        }
+        if (attached) return;
+
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./call-chart.js");
+        }
+        catch (JSException) { return; }
+        catch (JSDisconnectedException) { return; }
+        catch (InvalidOperationException) { return; }
+
+        try
+        {
+            self ??= DotNetObjectReference.Create(this);
+            handle = await module.InvokeAsync<IJSObjectReference>("attach", plotEl, self);
+            attached = true;
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    [JSInvokable]
+    public async Task OnBrushRange(double loFrac, double hiFrac)
+    {
+        var (from, to) = ViewRange();
+        var span = Math.Max(0.05, to - from);
+        var nextFrom = Math.Round(from + loFrac * span, 2);
+        var nextTo = Math.Round(from + hiFrac * span, 2);
+        if (nextTo - nextFrom < 0.05) return;
+        await OnZoom.InvokeAsync((nextFrom, nextTo));
+    }
+
+    private (double From, double To) ViewRange()
+    {
+        var minT = Timeline.Count > 0 ? Timeline[0].AtSeconds : 0;
+        var maxT = Timeline.Count > 0 ? Timeline.Max(p => p.AtSeconds + p.BucketWidthSeconds) : Math.Max(1, RunElapsedSeconds);
+        var from = FromSec ?? Math.Min(0, minT);
+        var to = ToSec ?? Math.Max(RunElapsedSeconds, maxT);
+        if (to <= from) to = from + 1;
+        return (from, to);
+    }
+
+    private double ComputeYMax()
+    {
+        double max = 0;
+        foreach (var p in Timeline)
+            if (p.DurationMs > max) max = p.DurationMs;
+        if (Summary.SlowThresholdMs is { } th && th > 0 && th * 1.12 > max && max > th * 0.5)
+            max = th * 1.12;
+        if (max <= 0) return 100;
+        // Round up to a clean figure
+        var mag = Math.Pow(10, Math.Floor(Math.Log10(max)));
+        var norm = max / mag;
+        var nice = norm <= 1.2 ? 1.2 : norm <= 1.5 ? 1.5 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 3 ? 3 : norm <= 5 ? 5 : norm <= 8 ? 8 : 10;
+        return Math.Max(max, nice * mag);
+    }
+
+    private string PointClass(CallTimelinePointDto p)
+    {
+        if (p.FailedCount > 0 || p.Error is not null) return "bad";
+        if (p.SlowCount > 0) return "warn";
+        var dur = p.Count > 1 ? p.TypicalMs : p.DurationMs;
+        var typical = Summary.TypicalMs > 0 ? Summary.TypicalMs : (double?)null;
+        var custom = Summary.HasCustomThreshold ? Summary.SlowThresholdMs : null;
+        var step = SlowCallRule.Step(SlowCallRule.Ratio(dur, typical, custom));
+        return BeeOrder.Good(step);
+    }
+
+    private static string Pct(double v) => Math.Clamp(v, 0, 100).ToString("0.##", CultureInfo.InvariantCulture);
+
+    private async Task DetachAsync()
+    {
+        attached = false;
+        if (handle is null) return;
+        var h = handle;
+        handle = null;
+        try { await h.InvokeVoidAsync("dispose"); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+        try { await h.DisposeAsync(); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DetachAsync();
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+        }
+        self?.Dispose();
+    }
+}

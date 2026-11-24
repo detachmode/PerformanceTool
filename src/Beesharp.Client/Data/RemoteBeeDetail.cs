@@ -1,4 +1,5 @@
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Data;
@@ -13,9 +14,11 @@ public static class RemoteBeeDetail
         for (var i = 0; i < detail.Calls.Count; i++)
         {
             var c = detail.Calls[i];
-            var slow = c.Error is null && c.DurationMs >= 1500;
+            var slow = c.Error is null && SlowCallRule.IsSlow(c.DurationMs, null, c.SlowThresholdMs);
+            var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
             calls.Add(new FakeCall(i, c.Name, c.OffsetMs, c.DurationMs, c.StatusCode,
-                store.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: store.Errors, Step: c.Step, Rep: c.Rep));
+                store.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: store.Errors, Step: c.Step, Rep: c.Rep,
+                Endpoint: ep, SlowThresholdMs: c.SlowThresholdMs, RawUrl: c.Url));
         }
         if (calls.Count == 0)
             calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,

@@ -73,10 +73,76 @@ public sealed partial class AssistantToolbox
         var detail = await history.GetBeeAsync(id, ToIndex(bee, "Bee"), ct) ?? throw new KeyNotFoundException($"Bee {bee} has no stored detail in run {id}.");
         var row = ViewBee(detail.Bee, labels);
         rec.Show(new ViewItemDto(ViewKinds.Bee, $"Bee B{bee}", new ViewQueryDto(id, detail.Bee.Entry + 1, bee), detail.Calls.Count,
-            Bee: new ViewBeeDetailDto(row, detail.Calls.Take(Bounds.MaxList).Select(c => new ViewCallDto(c.Name, Math.Round(c.OffsetMs, 1), Math.Round(c.DurationMs, 1), c.StatusCode, c.Error is null ? null : Bounds.Cut(c.Error))).ToList()),
+            Bee: new ViewBeeDetailDto(row, detail.Calls.Take(Bounds.MaxList).Select(c => new ViewCallDto(c.Name, Math.Round(c.OffsetMs, 1), Math.Round(c.DurationMs, 1), c.StatusCode, c.Error is null ? null : Bounds.Cut(c.Error), c.Endpoint, c.IsSlow)).ToList()),
             EntryLabels: labels));
         return new { shownToUser = $"A bee card for B{bee} ({row.Outcome}) with {detail.Calls.Count} calls.", error = row.Error };
     }
+
+    [AssistantTool("show_slow_calls")]
+    [Description("Shows slow endpoints or individual slow/failing calls of one endpoint to the user as a card with a button to open /calls. Leave endpoint empty for the slowest endpoints overall, or pass an endpoint (e.g. 'POST /payments') for its slowest individual calls.")]
+    public async Task<object> ShowSlowCalls(
+        [Description("Run id; leave out for the current or newest run")] string? runId = null,
+        [Description("Normalized endpoint name (for example 'GET /orders/{id}') to show its individual calls; omit to show endpoints overall")] string? endpoint = null,
+        [Description("Only this scenario entry (number from 1)")] int? entry = null,
+        [Description("all, slow or failed")] string? outcome = null,
+        [Description("Only calls slower than this many milliseconds")] double? minMs = null,
+        [Description("Filter endpoint name when endpoint is omitted")] string? search = null,
+        [Description("Card title, e.g. Slowest endpoints")] string? title = null,
+        CancellationToken ct = default)
+    {
+        var id = await RunIdAsync(runId, ct);
+        var entryIdx = entry is { } e ? ToIndex(e, "Entry") : (int?)null;
+        var outcomeNorm = ParseEndpointShow(outcome);
+        var labels = await EntryLabelsAsync(id, ct);
+
+        if (!string.IsNullOrWhiteSpace(endpoint))
+        {
+            var detail = await history.GetCallEndpointDetailAsync(id, endpoint.Trim(), entryIdx, outcomeNorm, minMs, null, "slowest", 0, Bounds.CardCalls, ct)
+                ?? throw new KeyNotFoundException($"Endpoint '{endpoint.Trim()}' has no calls in run {id}.");
+            var epView = ToViewEndpoint(detail.Summary);
+            var samples = detail.Calls.Select(c =>
+            {
+                var label = c.Entry >= 0 && c.Entry < labels.Count ? labels[c.Entry] : $"Entry {c.Entry + 1}";
+                double? ratio = c.Error is null && c.TypicalMs is > 0
+                    ? Math.Round(Beesharp.Services.SlowCallRule.Ratio(c.DurationMs, c.TypicalMs, c.SlowThresholdMs), 1)
+                    : null;
+                return new ViewCallSampleDto(c.Sequence + 1, c.Entry + 1, label, Math.Round(c.AtSeconds, 2), Math.Round(c.DurationMs, 1), c.StatusCode, c.Error is null ? null : Bounds.Cut(c.Error), c.IsSlow, ratio, Bounds.Cut(c.Url, 200));
+            }).ToList();
+
+            rec.Show(new ViewItemDto(
+                ViewKinds.Calls,
+                title ?? detail.Summary.Endpoint,
+                new ViewQueryDto(id, entry, Outcome: outcomeNorm, Search: search, Endpoint: detail.Summary.Endpoint, MinMs: minMs),
+                detail.MatchingCalls,
+                EntryLabels: labels,
+                CallEndpoints: [epView],
+                CallSamples: samples));
+            return new
+            {
+                shownToUser = $"A calls card for {detail.Summary.Endpoint} showing {samples.Count} of {detail.MatchingCalls} matching calls.",
+                slow = detail.Summary.SlowCount,
+                failed = detail.Summary.FailedCount,
+                typicalMs = Math.Round(detail.Summary.TypicalMs, 1),
+            };
+        }
+
+        var page = await history.ListCallEndpointsAsync(id, entryIdx, outcomeNorm == "slow", outcomeNorm == "failed", minMs, string.IsNullOrWhiteSpace(search) ? null : search.Trim(), ct);
+        var eps = page.Endpoints.Take(Bounds.CardEndpoints).Select(ToViewEndpoint).ToList();
+        rec.Show(new ViewItemDto(
+            ViewKinds.Calls,
+            title ?? (outcomeNorm == "failed" ? "Failing endpoints" : "Slowest endpoints"),
+            new ViewQueryDto(id, entry, Outcome: outcomeNorm, Search: string.IsNullOrWhiteSpace(search) ? null : search.Trim(), MinMs: minMs),
+            page.Endpoints.Count,
+            EntryLabels: labels,
+            CallEndpoints: eps));
+        return new
+        {
+            shownToUser = $"A calls card showing {eps.Count} of {page.Endpoints.Count} endpoints ({page.TotalSlowCalls} slow calls across {page.TotalCalls} calls).",
+        };
+    }
+
+    private static ViewCallEndpointDto ToViewEndpoint(CallEndpointInfo ep) =>
+        new(ep.Endpoint, ep.Method, ep.TotalCount, ep.SlowCount, ep.FailedCount, Math.Round(ep.TypicalMs, 1), Math.Round(ep.P95Ms, 1), Math.Round(ep.MaxMs, 1), Math.Round(ep.SlowThresholdMs, 1), ep.HasCustomThreshold);
 
     [AssistantTool("show_scenario")]
     [Description("Shows one scenario entry of a run as a small card: its figures (started, finished, in flight, failed, slow) and its first bees. Every figure opens the bees behind it.")]

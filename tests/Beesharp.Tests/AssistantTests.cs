@@ -106,6 +106,38 @@ internal sealed class FakeHistoryPort : IRunHistoryPort
         };
         return Task.FromResult(new LogPageInfo(214, lines));
     }
+
+    public Task<CallEndpointsPage> ListCallEndpointsAsync(string runId, int? entry, bool slowOnly, bool failedOnly, double? minMs, string? search, CancellationToken ct)
+    {
+        var items = new List<CallEndpointInfo>
+        {
+            new("POST /pay", "POST", 12, 3, 2, 240, 2400, 3200, 1200, true),
+            new("GET /products/{id}", "GET", 40, 1, 0, 110, 180, 420, 220, false),
+        };
+        if (entry is 0) items = [items[1]];
+        else if (entry is 1) items = [items[0]];
+        if (slowOnly) items = items.Where(e => e.SlowCount > 0).ToList();
+        if (failedOnly) items = items.Where(e => e.FailedCount > 0).ToList();
+        if (minMs is > 0) items = items.Where(e => e.MaxMs >= minMs).ToList();
+        if (!string.IsNullOrWhiteSpace(search)) items = items.Where(e => e.Endpoint.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+        return Task.FromResult(new CallEndpointsPage(items.Sum(e => e.TotalCount), items.Sum(e => e.SlowCount), items.Sum(e => e.FailedCount), items));
+    }
+
+    public Task<CallEndpointDetailInfo?> GetCallEndpointDetailAsync(string runId, string endpoint, int? entry, string? show, double? minMs, double? maxMs, string? sort, int offset, int limit, CancellationToken ct)
+    {
+        if (!string.Equals(endpoint, "POST /pay", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult<CallEndpointDetailInfo?>(null);
+        var summary = new CallEndpointInfo("POST /pay", "POST", 12, 3, 2, 240, 2400, 3200, 1200, true);
+        var samples = new List<CallSampleInfo>
+        {
+            new(2, 1, 3.0, 3200, 500, "HTTP 500 on /pay", false, 240, 1200, "https://shop.example.com/pay"),
+            new(1, 0, 2.0, 2400, 200, null, true, 240, 1200, "https://shop.example.com/pay"),
+        };
+        if (show == "slow") samples = samples.Where(s => s.IsSlow).ToList();
+        else if (show == "failed") samples = samples.Where(s => s.Error is not null).ToList();
+        if (minMs is > 0) samples = samples.Where(s => s.DurationMs >= minMs).ToList();
+        return Task.FromResult<CallEndpointDetailInfo?>(new CallEndpointDetailInfo(summary, samples.Count, offset, samples.Skip(offset).Take(limit).ToList()));
+    }
 }
 
 internal sealed class FakeEnvironmentPort : IEnvironmentPort
@@ -414,9 +446,86 @@ public sealed class AssistantTests : IDisposable
             Assert.False(string.IsNullOrWhiteSpace(tool.Description), tool.Name);
         }
         Assert.Contains(tools, t => t.Name == "start_run");
+        Assert.Contains(tools, t => t.Name == "list_call_endpoints");
+        Assert.Contains(tools, t => t.Name == "get_call_endpoint");
+        Assert.Contains(tools, t => t.Name == "show_slow_calls");
         // Optional arguments must not be required in the schema, or a model that leaves them out fails the call.
-        foreach (var name in new[] { "start_run", "list_runs", "get_run", "stop_run", "get_run_status", "show_run" })
+        foreach (var name in new[] { "start_run", "list_runs", "get_run", "stop_run", "get_run_status", "show_run", "list_call_endpoints", "show_slow_calls" })
             Assert.False(tools.Single(t => t.Name == name).JsonSchema.TryGetProperty("required", out var req) && req.GetArrayLength() > 0, name);
         Assert.DoesNotContain(tools, t => t.GetType().Name.Contains("Approval"));
+    }
+
+    [Fact]
+    public async Task Call_analysis_tools_inspect_endpoints_and_emit_calls_cards()
+    {
+        var model = new ScriptedChatClient(
+            ScriptedChatClient.Call("list_call_endpoints", new() { ["slowOnly"] = true }, callId: "c1"),
+            ScriptedChatClient.Call("get_call_endpoint", new() { ["endpoint"] = "POST /pay", ["show"] = "slow" }, callId: "c2"),
+            ScriptedChatClient.Call("show_slow_calls", new() { ["title"] = "Slow endpoints" }, callId: "c3"),
+            ScriptedChatClient.Call("show_slow_calls", new() { ["endpoint"] = "POST /pay", ["outcome"] = "slow" }, callId: "c4"),
+            ScriptedChatClient.Say("POST /pay has custom threshold > 1200ms and 3 slow calls."));
+
+        var turn = await Service(model).ChatAsync(new AssistantChatRequest(null, "analyze slow calls"), default);
+
+        var readChips = turn.Items.Where(i => i.Tool is not null).Select(i => i.Tool!).ToList();
+        Assert.Equal(["list_call_endpoints", "get_call_endpoint"], readChips.Select(t => t.Name));
+        Assert.All(readChips, c => Assert.Equal("calls", c.Link?.Target));
+        Assert.Equal("POST /pay", readChips[1].Link?.Query?.Endpoint);
+
+        var views = turn.Items.Where(i => i.View is not null).Select(i => i.View!).ToList();
+        Assert.Equal(2, views.Count);
+        Assert.All(views, v => Assert.Equal(ViewKinds.Calls, v.Kind));
+        Assert.Equal(2, views[0].CallEndpoints!.Count);
+        Assert.Null(views[0].CallSamples);
+        Assert.Equal("POST /pay", views[1].Query.Endpoint);
+        Assert.Single(views[1].CallSamples!);
+        Assert.Equal(2, views[1].CallSamples![0].Bee);
+    }
+
+    [Fact]
+    public async Task RunHistoryAdapter_returns_call_endpoints_and_details_from_storage()
+    {
+        var storage = new Beesharp.Services.Storage.InMemoryRunStorage();
+        var catalogWithHttp = new ScenarioCatalog([new HttpGetScenario()]);
+        var runner = new LoadRunner(catalogWithHttp);
+        var envStore = new EnvironmentStore(Path.Combine(root, "envs"));
+        var rm = new RunManager(runner, envStore, storage);
+
+        var startedAt = DateTimeOffset.UtcNow;
+        var runPlan = new LoadPlan
+        {
+            DurationSeconds = 10,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "Orders", RatePerMinute = 60 }],
+        };
+        storage.EnqueueRunStarted("r-calls", startedAt, runPlan);
+        storage.EnqueueBeeCompleted(
+            "r-calls",
+            new ExecutionResult(
+                Sequence: 0,
+                Entry: 0,
+                StartedAtSeconds: 0.2,
+                ElapsedMs: 220,
+                StatusCode: 200,
+                Bytes: 100,
+                Error: null,
+                Calls: [new RecordedCall("GET /orders/42", 0, 220, 200, 100, null, 0, 0, "GET /orders/{id}", "GET", "shop.example.com", 150, "https://shop.example.com/orders/42")],
+                Logs: []),
+            beeOutcome: 1,
+            slowCalls: 1);
+        storage.EnqueueRunFinished("r-calls", startedAt.AddSeconds(1), "Finished", 1, null);
+        await storage.FlushAsync();
+
+        var adapter = new RunHistoryAdapter(rm, storage);
+        var endpoints = await adapter.ListCallEndpointsAsync("r-calls", null, slowOnly: false, failedOnly: false, null, null, default);
+        Assert.Single(endpoints.Endpoints);
+        Assert.Equal("GET /orders/{id}", endpoints.Endpoints[0].Endpoint);
+        Assert.Equal(150, endpoints.Endpoints[0].SlowThresholdMs);
+        Assert.True(endpoints.Endpoints[0].HasCustomThreshold);
+
+        var detail = await adapter.GetCallEndpointDetailAsync("r-calls", "GET /orders/{id}", null, null, null, null, "slowest", 0, 10, default);
+        Assert.NotNull(detail);
+        Assert.Single(detail!.Calls);
+        Assert.Equal("https://shop.example.com/orders/42", detail.Calls[0].Url);
+        Assert.True(detail.Calls[0].IsSlow);
     }
 }

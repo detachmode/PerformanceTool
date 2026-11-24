@@ -1,0 +1,136 @@
+@* Virtualised list of recorded calls for the chosen endpoint + compact inspector for the selected call (exact URL, bee & logs links). *@
+@using System.Globalization
+@inject NavigationManager Nav
+@inject LogsLinks Logs
+
+<section class="cl-card cl-calls-card" aria-label="Recorded calls">
+    @if (Selected is { } sel)
+    {
+        var selRatio = sel.Error is null ? SlowCallRule.Ratio(sel.DurationMs, sel.TypicalMs, sel.SlowThresholdMs) : 1;
+        var selCls = sel.Error is not null ? "bad" : sel.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(selRatio));
+        var stepsDecl = Snapshot.StepsOf(sel.Entry);
+        var scenarioLabel = sel.Entry >= 0 && sel.Entry < Snapshot.Labels.Count ? Snapshot.Labels[sel.Entry] : $"Scenario {sel.Entry + 1}";
+        var rawTarget = !string.IsNullOrWhiteSpace(sel.Url) ? sel.Url : sel.RawName;
+
+        <div class="cl-insp" aria-label="Selected call details">
+            <div class="cl-insp-top">
+                <span class="cl-status @selCls">@StatusText(sel)</span>
+                <b class="cl-insp-dur @selCls tnum">@Format.Ms(sel.DurationMs)</b>
+                @if (sel.Error is null && Format.OverTypical(selRatio))
+                {
+                    <span class="cl-insp-ratio @selCls tnum">@Format.Times(selRatio) typical</span>
+                }
+                <BeeChip Sequence="sel.Sequence" State="@(sel.Error is not null ? BeeState.Failed : sel.IsSlow ? BeeState.Slow : BeeState.Ok)"
+                         Tint="@(sel.Error is null && !sel.IsSlow ? SlowCallRule.Step(selRatio) : 0)"
+                         OnClick="() => OpenBee(sel)" Title="Open this bee on the Scenario page" />
+                <span class="muted tnum">at @Format.Time(sel.AtSeconds) · @scenarioLabel</span>
+                <span class="spacer"></span>
+                <button type="button" class="btn ghost small" @onclick="() => OpenBee(sel)">Open @sel.BeeName</button>
+                <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
+            </div>
+            <div class="cl-insp-url">
+                <code title="@rawTarget">@rawTarget</code>
+                <CopyButton GetText="() => rawTarget" Title="Copy exact call URL / target" />
+            </div>
+            <div class="cl-insp-meta muted tnum">
+                @if (sel.TypicalMs is { } typ)
+                {
+                    <span>Typical @Format.Ms(typ)</span>
+                }
+                @if (sel.SlowThresholdMs is { } lim)
+                {
+                    <span>· @(HasCustomThreshold ? "Threshold" : "Slow above") @Format.Ms(lim)</span>
+                }
+                @if (stepsDecl.Any && sel.Step >= 0 && sel.Step < stepsDecl.Count)
+                {
+                    <span>· Step: @stepsDecl.Name(sel.Step)@(sel.Rep > 0 ? $" (#{sel.Rep + 1})" : "")</span>
+                }
+                @if (sel.Bytes > 0)
+                {
+                    <span>· @Format.Num(sel.Bytes) B</span>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(sel.Error))
+            {
+                <p class="cl-insp-err bad">@sel.Error</p>
+            }
+        </div>
+    }
+
+    <div class="cl-list-head">
+        <span>Calls (@Format.Num(MatchingCalls))</span>
+        <div class="cl-sort-row">
+            <label for="cl-sort" class="visually-hidden">Sort calls</label>
+            <select id="cl-sort" value="@Sort" @onchange="OnSortChanged">
+                <option value="slowest">Slowest first</option>
+                <option value="time">Chronological</option>
+                <option value="failed">Failed first</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="cl-list-wrap">
+        <VirtualList TItem="CallSampleDto" Class="cl-list" RowHeight="38" Items="Calls" ResetKey="@ResetKey" Label="Calls list" Role="list">
+            <ItemContent Context="call">
+                @{
+                    var ratio = call.Error is null ? SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs) : 1;
+                    var cls = call.Error is not null ? "bad" : call.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(ratio));
+                    var active = Selected?.Id == call.Id;
+                    var displayTarget = !string.IsNullOrWhiteSpace(call.Url) ? call.Url : call.RawName;
+                    var scLabel = call.Entry >= 0 && call.Entry < Snapshot.Labels.Count ? Snapshot.Labels[call.Entry] : "";
+                }
+                <button type="button" class="cl-row @(active ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(active)" @onclick="() => OnSelect.InvokeAsync(call)">
+                    <span class="cl-status @cls">@StatusText(call)</span>
+                    <span class="cl-dur @cls tnum">@Format.Ms(call.DurationMs)</span>
+                    <span class="cl-ratio tnum @(call.Error is null && Format.OverTypical(ratio) ? cls : "muted")">@(call.Error is null && Format.OverTypical(ratio) ? Format.Times(ratio) : "—")</span>
+                    <span class="cl-raw" title="@displayTarget">@displayTarget</span>
+                    @if (ShowScenario && scLabel.Length > 0)
+                    {
+                        <span class="cl-scn muted" title="@scLabel">@scLabel</span>
+                    }
+                    <span class="cl-at muted tnum">@Format.Time(call.AtSeconds)</span>
+                    <span class="cl-bee achip @cls">@call.BeeName</span>
+                </button>
+            </ItemContent>
+            <Empty><p class="muted cl-empty">No calls match these filters.</p></Empty>
+        </VirtualList>
+    </div>
+
+    @if (MatchingCalls > Calls.Count && OnLoadMore.HasDelegate)
+    {
+        <div class="cl-more">
+            <button type="button" class="btn ghost small" @onclick="() => OnLoadMore.InvokeAsync()">
+                Load more (@Format.Num(Calls.Count) of @Format.Num(MatchingCalls))
+            </button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<CallSampleDto> Calls { get; set; } = [];
+    [Parameter] public long MatchingCalls { get; set; }
+    [Parameter] public CallSampleDto? Selected { get; set; }
+    [Parameter] public bool HasCustomThreshold { get; set; }
+    [Parameter] public bool ShowScenario { get; set; }
+    [Parameter] public string Sort { get; set; } = "slowest";
+    [Parameter] public object? ResetKey { get; set; }
+    [Parameter] public EventCallback<CallSampleDto> OnSelect { get; set; }
+    [Parameter] public EventCallback<string> OnSortChange { get; set; }
+    [Parameter] public EventCallback OnLoadMore { get; set; }
+
+    private Task OnSortChanged(ChangeEventArgs e) => OnSortChange.InvokeAsync(e.Value?.ToString() ?? "slowest");
+
+    private void OpenBee(CallSampleDto c) =>
+        Nav.NavigateTo(ScenarioLink.Href(c.Entry, new ScenarioFilter(Bee: c.Sequence)));
+
+    private void OpenLogs(CallSampleDto c) =>
+        Logs.Show(entry: c.Entry, bee: c.Sequence);
+
+    private static string StatusText(CallSampleDto c) =>
+        c.Error is null
+            ? c.IsSlow ? $"{c.StatusCode ?? 200}" : (c.StatusCode?.ToString() ?? "ok")
+            : ExecutionResult.IsCanceledError(c.Error)
+                ? "canc"
+                : c.StatusCode?.ToString() ?? "err";
+}

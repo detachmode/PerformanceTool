@@ -398,6 +398,51 @@ public sealed class ApiRunSource : IRunSource
         return await http.GetFromJsonAsync<LogFacets>(url, JsonOpts, ct);
     }
 
+    public async Task<CallEndpointsResult?> QueryCallEndpointsAsync(int? entry, bool slowOnly, bool failedOnly, double? minMs, string? search, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(activeRunId)) return new CallEndpointsResult([], 0, 0, 0);
+        var parts = new List<string>();
+        if (entry is { } e) parts.Add($"entry={e}");
+        if (slowOnly) parts.Add("slowOnly=true");
+        if (failedOnly) parts.Add("failedOnly=true");
+        if (minMs is > 0) parts.Add($"minMs={minMs.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(search)) parts.Add($"search={Uri.EscapeDataString(search.Trim())}");
+        var qs = parts.Count > 0 ? "?" + string.Join('&', parts) : "";
+        return await http.GetFromJsonAsync<CallEndpointsResult>($"api/runs/{Uri.EscapeDataString(activeRunId)}/calls/endpoints{qs}", JsonOpts, ct);
+    }
+
+    public async Task<CallEndpointDetailDto?> QueryCallEndpointDetailAsync(
+        string endpoint,
+        int? entry,
+        string? show,
+        double? minMs,
+        double? maxMs,
+        double? fromSec,
+        double? toSec,
+        string? sort,
+        int offset,
+        int limit,
+        int maxPoints,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(activeRunId) || string.IsNullOrWhiteSpace(endpoint)) return null;
+        var parts = new List<string>
+        {
+            $"endpoint={Uri.EscapeDataString(endpoint)}",
+            $"offset={offset}",
+            $"limit={limit}",
+            $"maxPoints={maxPoints}",
+        };
+        if (entry is { } e) parts.Add($"entry={e}");
+        if (!string.IsNullOrWhiteSpace(show)) parts.Add($"show={Uri.EscapeDataString(show)}");
+        if (minMs is { } lo) parts.Add($"minMs={lo.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        if (maxMs is { } hi) parts.Add($"maxMs={hi.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        if (fromSec is { } fs) parts.Add($"fromSec={fs.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        if (toSec is { } ts) parts.Add($"toSec={ts.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(sort)) parts.Add($"sort={Uri.EscapeDataString(sort)}");
+        return await http.GetFromJsonAsync<CallEndpointDetailDto>($"api/runs/{Uri.EscapeDataString(activeRunId)}/calls/detail?{string.Join('&', parts)}", JsonOpts, ct);
+    }
+
     /// <summary>"&amp;entry=1&amp;level..." parts of the server's log query for a filter.</summary>
     private static string LogFilterParts(LogFilter f)
     {
@@ -536,7 +581,7 @@ public sealed class ApiRunSource : IRunSource
             if (a.Entry < 0 || a.Entry >= count) continue;
             if (!seenSequences.Add(a.Sequence)) continue; // two overlapping polls can deliver the same bee twice
             var errId = activeStore.Errors.Intern(a.Error);
-            var record = new BeeRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.SlowCalls, errId, activeStore.Errors, FailedStep: a.FailedStep, FailedRep: a.FailedRep);
+            var record = new BeeRecord(a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.SlowCalls, errId, activeStore.Errors, RatioCode: a.RatioCode, FailedStep: a.FailedStep, FailedRep: a.FailedRep);
             var placeholderCall = new FakeCall(0, "Loading…", 0, a.DurationMs, a.StatusCode, errId, Skipped: false, ThinkBeforeMs: 0, Slow: a.SlowCalls > 0, TypicalMs: null, Errors: activeStore.Errors, Step: Math.Max(0, a.FailedStep), Rep: Math.Max(0, a.FailedRep));
             var detail = new BeeDetail(a.Sequence, a.Entry, [placeholderCall], () => []);
             activeStore.Complete(record, detail);

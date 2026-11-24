@@ -1,0 +1,739 @@
+@* Calls analysis page (/calls, brain 0060): 2-column master-detail view focused on endpoint durations rather than bees.
+   Left: endpoint list with typical/p95/max/slow/failed counts + scenario & quick filters.
+   Right: duration-over-time chart, clickable latency distribution histogram, custom threshold & ad-hoc filter bar, and slow-first call list. *@
+@page "/calls"
+@layout MainLayout
+@implements IAsyncDisposable
+@using System.Globalization
+@inject IRunSource Sim
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
+@inject CallsLinks Links
+@inject NavigationManager Nav
+@inject PhoneState Phone
+
+<PageTitle>Calls · Beesharp</PageTitle>
+
+@{
+    var s = Sim.Current;
+    var hasRun = DataMode.IsFakeMode || !string.IsNullOrEmpty(ApiRun.CurrentRunId);
+}
+
+<div class="calls-page @(Phone.IsPhone ? "cl-phone" : "")" data-tab="@phoneTab">
+    @if (Phone.IsPhone)
+    {
+        <div class="scn-tabs cl-phone-tabs" role="tablist" aria-label="Calls sections">
+            <button type="button" class="scn-tab @(phoneTab == "endpoints" ? "on" : "")" role="tab" aria-selected="@Aria.Bool(phoneTab == "endpoints")" @onclick='() => phoneTab = "endpoints"'>
+                Endpoints <span class="n">@sortedEndpoints.Count</span>
+            </button>
+            <button type="button" class="scn-tab @(phoneTab == "detail" ? "on" : "")" role="tab" aria-selected="@Aria.Bool(phoneTab == "detail")" @onclick='() => phoneTab = "detail"'>
+                @(detail?.Summary.Endpoint ?? "Details")
+            </button>
+        </div>
+    }
+    <aside class="cl-left" aria-label="Endpoints">
+        <div class="cl-left-top">
+            <div class="cl-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                <input type="text" value="@searchText" placeholder="Filter endpoints…" aria-label="Filter endpoints" autocomplete="off" spellcheck="false"
+                       @oninput="OnSearchInput" />
+                @if (searchText.Length > 0)
+                {
+                    <button type="button" class="cl-search-x" aria-label="Clear endpoint search" @onclick="ClearSearch">✕</button>
+                }
+            </div>
+
+            <div class="cl-left-controls">
+                @if (s.Count > 1)
+                {
+                    <label for="cl-scn-filter" class="visually-hidden">Scenario</label>
+                    <select id="cl-scn-filter" value="@(filter.Entry?.ToString() ?? "")" @onchange="OnScenarioChanged">
+                        <option value="">All scenarios</option>
+                        @for (var i = 0; i < s.Count; i++)
+                        {
+                            var idx = i;
+                            <option value="@idx">@s.Labels[idx]</option>
+                        }
+                    </select>
+                }
+                <div class="cl-ep-chips" role="group" aria-label="Filter endpoints by outcome">
+                    <button type="button" class="yt-chip @(epFilter == 0 ? "on" : "")" @onclick="() => SetEpFilter(0)">All</button>
+                    <button type="button" class="yt-chip warn @(epFilter == 1 ? "on" : "")" @onclick="() => SetEpFilter(1)">Slow</button>
+                    <button type="button" class="yt-chip bad @(epFilter == 2 ? "on" : "")" @onclick="() => SetEpFilter(2)">Failed</button>
+                </div>
+            </div>
+
+            <div class="cl-ep-totals muted tnum">
+                <span>@Format.Plural(endpoints.Endpoints.Count, "endpoint", "endpoints") · @Format.Plural((int)Math.Min(int.MaxValue, endpoints.TotalCalls), "call", "calls")</span>
+                <select class="cl-ep-sort" aria-label="Sort endpoints" value="@epSort" @onchange="OnEpSortChanged">
+                    <option value="slow">Most slow</option>
+                    <option value="p95">Slowest 5%</option>
+                    <option value="max">Slowest max</option>
+                    <option value="count">Most calls</option>
+                    <option value="failed">Most failed</option>
+                    <option value="name">Endpoint</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="cl-ep-list" role="list" aria-label="Detected endpoints">
+            @if (!hasRun)
+            {
+                <p class="muted cl-empty">No run is loaded. Start a run on the Overview or pick one from the history.</p>
+            }
+            else if (endpointsLoading && endpoints.Endpoints.Count == 0)
+            {
+                <p class="muted cl-empty">Loading endpoints…</p>
+            }
+            else if (sortedEndpoints.Count == 0)
+            {
+                <p class="muted cl-empty">No endpoints recorded matching this filter.</p>
+            }
+            else
+            {
+                @foreach (var ep in sortedEndpoints)
+                {
+                    var item = ep;
+                    var on = string.Equals(item.Endpoint, selectedEndpoint, StringComparison.OrdinalIgnoreCase);
+                    <button type="button" class="cl-ep @(on ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(on)" @onclick="() => SelectEndpoint(item.Endpoint)">
+                        <div class="cl-ep-head">
+                            @if (!string.IsNullOrEmpty(item.Method))
+                            {
+                                <span class="cl-method @MethodCss(item.Method)">@item.Method</span>
+                            }
+                            <span class="cl-ep-name" title="@item.Endpoint">@DisplayPath(item)</span>
+                            @if (item.HasCustomThreshold && item.SlowThresholdMs is { } lim)
+                            {
+                                <span class="cl-ep-limit" title="Author slow threshold">@Format.Ms(lim)</span>
+                            }
+                        </div>
+                        <div class="cl-ep-sub tnum">
+                            <span class="muted">typ <b>@Format.Ms(item.TypicalMs)</b> · 5% <b class="@(item.SlowCount > 0 ? "warn" : "")">@Format.Ms(item.P95Ms)</b> · max @Format.Ms(item.MaxMs)</span>
+                            <span class="spacer"></span>
+                            @if (item.FailedCount > 0) { <span class="cl-badge bad">@item.FailedCount</span> }
+                            @if (item.SlowCount > 0) { <span class="cl-badge warn">@item.SlowCount</span> }
+                            <span class="cl-badge n">@Format.Num(item.TotalCount)</span>
+                        </div>
+                    </button>
+                }
+            }
+        </div>
+    </aside>
+
+    <section class="cl-right" aria-label="Endpoint analysis">
+        @if (!hasRun)
+        {
+            <div class="cl-right-empty muted">
+                <p>No run loaded yet. <a href="">Open Overview</a> to start a run.</p>
+            </div>
+        }
+        else if (detail is null)
+        {
+            <div class="cl-right-empty muted">
+                @if (detailLoading)
+                {
+                    <p>Loading endpoint details…</p>
+                }
+                else
+                {
+                    <p>@(endpoints.Endpoints.Count == 0 ? "No HTTP or measured calls recorded in this run yet." : "Select an endpoint on the left to inspect every call duration.")</p>
+                }
+            </div>
+        }
+        else
+        {
+            var sum = detail.Summary;
+            <header class="cl-head">
+                <div class="cl-head-title">
+                    <h1>@sum.Endpoint</h1>
+                    @if (!string.IsNullOrEmpty(sum.Host))
+                    {
+                        <span class="cl-host muted">@sum.Host</span>
+                    }
+                    @if (sum.SlowThresholdMs is { } th)
+                    {
+                        <span class="cl-rule-pill @(sum.HasCustomThreshold ? "custom" : "")" title="@(sum.HasCustomThreshold ? "Configured by scenario author" : "Automatic: 2× typical duration")">
+                            @(sum.HasCustomThreshold ? $"Threshold > {Format.Ms(th)}" : $"Slow > {Format.Ms(th)} (2× typical)")
+                        </span>
+                    }
+                </div>
+
+                <div class="cl-kpis">
+                    <button type="button" class="cl-kpi @(filter.Outcome == BeeShow.All ? "on" : "")" @onclick="() => ApplyFilter(filter.WithOutcome(BeeShow.All))">
+                        <span class="lbl">Calls</span>
+                        <b class="tnum">@Format.Num(sum.TotalCount)</b>
+                    </button>
+                    <div class="cl-kpi static">
+                        <span class="lbl">Typical</span>
+                        <b class="tnum">@Format.Ms(sum.TypicalMs)</b>
+                    </div>
+                    <div class="cl-kpi static">
+                        <span class="lbl">Slowest 5%</span>
+                        <b class="tnum @(sum.SlowCount > 0 ? "warn" : "")">@Format.Ms(sum.P95Ms)</b>
+                    </div>
+                    <div class="cl-kpi static">
+                        <span class="lbl">Max</span>
+                        <b class="tnum">@Format.Ms(sum.MaxMs)</b>
+                    </div>
+                    <button type="button" class="cl-kpi warn @(sum.SlowCount == 0 ? "zero" : "") @(filter.Outcome == BeeShow.Slow ? "on" : "")"
+                            disabled="@(sum.SlowCount == 0)" @onclick="() => ToggleOutcome(BeeShow.Slow)">
+                        <span class="lbl">Slow</span>
+                        <b class="tnum">@Format.Num(sum.SlowCount)</b>
+                    </button>
+                    <button type="button" class="cl-kpi bad @(sum.FailedCount == 0 ? "zero" : "") @(filter.Outcome == BeeShow.Failed ? "on" : "")"
+                            disabled="@(sum.FailedCount == 0)" @onclick="() => ToggleOutcome(BeeShow.Failed)">
+                        <span class="lbl">Failed</span>
+                        <b class="tnum">@Format.Num(sum.FailedCount)</b>
+                    </button>
+                </div>
+
+                <div class="cl-filterbar">
+                    <div class="cl-adhoc">
+                        <label for="cl-minms">Over</label>
+                        <input id="cl-minms" type="number" min="0" step="50" placeholder="0" value="@minMsText" @oninput="OnMinMsInput" />
+                        <span>ms</span>
+                    </div>
+
+                    @if (filter.Entry is { } fe && fe >= 0 && fe < s.Count)
+                    {
+                        <button type="button" class="chip scn-x" @onclick="() => ApplyFilter(filter.WithEntry(null))">@s.Labels[fe] <i aria-hidden="true">✕</i></button>
+                    }
+                    @if (filter.Outcome != BeeShow.All)
+                    {
+                        <button type="button" class="chip scn-x" @onclick="() => ApplyFilter(filter.WithOutcome(BeeShow.All))">@(filter.Outcome == BeeShow.Failed ? "Failed only" : "Slow only") <i aria-hidden="true">✕</i></button>
+                    }
+                    @if (filter.MinMs is not null || filter.MaxMs is not null)
+                    {
+                        var label = filter.MinMs is { } lo && filter.MaxMs is { } hi ? $"{Format.Ms(lo)}–{Format.Ms(hi)}" : $"≥ {Format.Ms(filter.MinMs ?? 0)}";
+                        <button type="button" class="chip scn-x" @onclick="ClearDurationFilter">@label <i aria-hidden="true">✕</i></button>
+                    }
+                    @if (filter.FromSec is not null || filter.ToSec is not null)
+                    {
+                        <button type="button" class="chip scn-x" @onclick="() => ApplyFilter(filter.WithTimeWindow(null, null))">@Format.Time(filter.FromSec ?? 0)–@Format.Time(filter.ToSec ?? detail.RunElapsedSeconds) <i aria-hidden="true">✕</i></button>
+                    }
+                    @if (!filter.IsDefaultDetailFilter)
+                    {
+                        <button type="button" class="link-btn" @onclick="() => { minMsText = string.Empty; ApplyFilter(filter.ClearDetailFilters()); }">Clear filters</button>
+                    }
+                </div>
+            </header>
+
+            <CallDurationChart Summary="detail.Summary"
+                               Timeline="detail.Timeline"
+                               RunElapsedSeconds="detail.RunElapsedSeconds"
+                               FromSec="filter.FromSec"
+                               ToSec="filter.ToSec"
+                               MinMs="filter.MinMs"
+                               SelectedId="selectedCall?.Id"
+                               OnSelectCall="SelectCallById"
+                               OnZoom="OnChartZoom" />
+
+            <CallHistogram Buckets="detail.Histogram"
+                           SlowThresholdMs="detail.Summary.SlowThresholdMs"
+                           MinMs="filter.MinMs"
+                           MaxMs="filter.MaxMs"
+                           OnSelectBucket="OnHistogramBucket" />
+
+            <CallListPanel Snapshot="s"
+                           Calls="detail.Calls"
+                           MatchingCalls="detail.MatchingCalls"
+                           Selected="selectedCall"
+                           HasCustomThreshold="detail.Summary.HasCustomThreshold"
+                           ShowScenario="filter.Entry is null && s.Count > 1"
+                           Sort="@filter.Sort"
+                           ResetKey="@listResetKey"
+                           OnSelect="c => selectedCall = c"
+                           OnSortChange="OnSortChange"
+                           OnLoadMore="LoadMoreAsync" />
+
+            @if (DataMode.IsFakeMode && s.Store.DetailTrimmed)
+            {
+                <p class="muted cl-note">In Fake mode, browser memory keeps detailed calls for the most recent @Format.Num(s.Store.Options.MaxDetailedBeesPerScenario) bees per scenario (failed and slow kept longest). Switch to Live mode for full DuckDB history.</p>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "endpoint")] public string? QEndpoint { get; set; }
+    [SupplyParameterFromQuery(Name = "scenario")] public string? QScenario { get; set; }
+    [SupplyParameterFromQuery(Name = "show")] public string? QShow { get; set; }
+    [SupplyParameterFromQuery(Name = "minMs")] public string? QMinMs { get; set; }
+    [SupplyParameterFromQuery(Name = "maxMs")] public string? QMaxMs { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? QFrom { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? QTo { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? QSort { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
+
+    private CallsFilter filter = CallsFilter.None;
+    private string searchText = "";
+    private string minMsText = "";
+    private int epFilter; // 0=all, 1=slow, 2=failed
+    private string epSort = "slow";
+    private CallEndpointsResult endpoints = new([], 0, 0, 0);
+    private List<CallEndpointSummaryDto> sortedEndpoints = [];
+    private CallEndpointDetailDto? detail;
+    private CallSampleDto? selectedCall;
+    private string? selectedEndpoint;
+    private int callLimit = 200;
+    private string listResetKey = "";
+    private string phoneTab = "endpoints";
+    private bool initialized, disposed, endpointsLoading, detailLoading;
+    private int gen;
+    private string runKey = "";
+    private long localBuiltAt;
+    private bool localScheduled;
+    private CancellationTokenSource? debounceCts;
+    private CancellationTokenSource? liveLoopCts;
+
+    private bool UseServer => !DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId);
+    private string CurrentRunKey() => DataMode.IsFakeMode ? "fake:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Sim.Current.Store) : "live:" + ApiRun.CurrentRunId;
+
+    protected override void OnInitialized()
+    {
+        Sim.Changed += OnChanged;
+        DataMode.Changed += OnChanged;
+        Phone.Changed += OnPhoneChanged;
+        liveLoopCts = new CancellationTokenSource();
+        _ = LiveRefreshLoopAsync(liveLoopCts.Token);
+    }
+
+    private void OnPhoneChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    protected override void OnParametersSet()
+    {
+        var fromUrl = CallsFilter.FromQuery(QEndpoint, QScenario, QShow, QMinMs, QMaxMs, QFrom, QTo, QSort, QSearch);
+        if (!initialized)
+        {
+            initialized = true;
+            var hasUrl = !string.IsNullOrEmpty(fromUrl.ToQueryString());
+            filter = hasUrl ? fromUrl : Links.Last;
+            if (hasUrl && !string.IsNullOrWhiteSpace(filter.Endpoint)) phoneTab = "detail";
+            SyncInputsFromFilter();
+            runKey = CurrentRunKey();
+            if (!hasUrl && !string.IsNullOrEmpty(filter.ToQueryString()))
+                Nav.NavigateTo(filter.Href(), replace: true);
+            _ = ReloadAllAsync();
+        }
+        else if (!fromUrl.SameAs(filter))
+        {
+            filter = fromUrl;
+            if (!string.IsNullOrWhiteSpace(filter.Endpoint)) phoneTab = "detail";
+            SyncInputsFromFilter();
+            Links.Last = filter;
+            _ = ReloadAllAsync();
+        }
+    }
+
+    private void SyncInputsFromFilter()
+    {
+        searchText = filter.Search;
+        selectedEndpoint = filter.Endpoint;
+        minMsText = filter.MinMs is { } lo && filter.MaxMs is null ? lo.ToString("0.##", CultureInfo.InvariantCulture) : "";
+    }
+
+    private void ApplyFilter(CallsFilter next, bool reloadEndpoints = false)
+    {
+        if (next.SameAs(filter) && !reloadEndpoints) return;
+        filter = next;
+        selectedEndpoint = next.Endpoint;
+        callLimit = 200;
+        listResetKey = next.ToQueryString();
+        Links.Last = next;
+        Nav.NavigateTo(next.Href(), replace: true);
+        if (reloadEndpoints) _ = ReloadAllAsync();
+        else _ = ReloadDetailAsync();
+    }
+
+    private void SelectEndpoint(string endpoint)
+    {
+        phoneTab = "detail";
+        if (string.Equals(selectedEndpoint, endpoint, StringComparison.OrdinalIgnoreCase)) return;
+        minMsText = "";
+        ApplyFilter(filter.WithEndpoint(endpoint));
+    }
+
+    private void OnScenarioChanged(ChangeEventArgs e)
+    {
+        int? entry = int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx) && idx >= 0 ? idx : null;
+        ApplyFilter(filter.WithEntry(entry), reloadEndpoints: true);
+    }
+
+    private void SetEpFilter(int mode)
+    {
+        epFilter = mode;
+        _ = ReloadAllAsync();
+    }
+
+    private void OnEpSortChanged(ChangeEventArgs e)
+    {
+        epSort = e.Value?.ToString() ?? "slow";
+        SortEndpoints();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString() ?? "";
+        debounceCts?.Cancel();
+        debounceCts?.Dispose();
+        debounceCts = new CancellationTokenSource();
+        var ct = debounceCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(220, ct);
+                await InvokeAsync(() => ApplyFilter(filter.WithSearch(searchText), reloadEndpoints: true));
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
+        }, CancellationToken.None);
+    }
+
+    private void ClearSearch()
+    {
+        searchText = "";
+        ApplyFilter(filter.WithSearch(""), reloadEndpoints: true);
+    }
+
+    private void OnMinMsInput(ChangeEventArgs e)
+    {
+        minMsText = e.Value?.ToString() ?? "";
+        debounceCts?.Cancel();
+        debounceCts?.Dispose();
+        debounceCts = new CancellationTokenSource();
+        var ct = debounceCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(260, ct);
+                double? parsed = double.TryParse(minMsText, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
+                await InvokeAsync(() => ApplyFilter(filter.WithDurationRange(parsed, null)));
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
+        }, CancellationToken.None);
+    }
+
+    private void ToggleOutcome(BeeShow outcome) =>
+        ApplyFilter(filter.WithOutcome(filter.Outcome == outcome ? BeeShow.All : outcome));
+
+    private void ClearDurationFilter()
+    {
+        minMsText = "";
+        ApplyFilter(filter.WithDurationRange(null, null));
+    }
+
+    private void OnChartZoom((double? From, double? To) range) =>
+        ApplyFilter(filter.WithTimeWindow(range.From, range.To));
+
+    private void OnHistogramBucket((double? Min, double? Max) range)
+    {
+        minMsText = "";
+        ApplyFilter(filter.WithDurationRange(range.Min, range.Max));
+    }
+
+    private void OnSortChange(string sort) =>
+        ApplyFilter(filter.WithSort(sort));
+
+    private void SelectCallById(long id)
+    {
+        if (detail is null) return;
+        selectedCall = detail.Calls.FirstOrDefault(c => c.Id == id);
+    }
+
+    private Task LoadMoreAsync()
+    {
+        callLimit += 200;
+        return ReloadDetailAsync();
+    }
+
+    private void OnChanged()
+    {
+        if (disposed) return;
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                var key = CurrentRunKey();
+                if (key != runKey)
+                {
+                    runKey = key;
+                    if (filter.Entry is { } ent && Sim.Current.Count > 0 && ent >= Sim.Current.Count)
+                        filter = filter.WithEntry(null);
+                    await ReloadAllAsync();
+                    return;
+                }
+                if (!UseServer) ScheduleLocalRefresh();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void ScheduleLocalRefresh()
+    {
+        if (localScheduled) return;
+        var wait = Math.Max(0, 700 - (Environment.TickCount64 - localBuiltAt));
+        localScheduled = true;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay((int)wait);
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    localScheduled = false;
+                    if (!UseServer && !disposed)
+                    {
+                        await ReloadAllAsync();
+                        StateHasChanged();
+                    }
+                });
+            }
+            catch (ObjectDisposedException) { }
+        });
+    }
+
+    private async Task LiveRefreshLoopAsync(CancellationToken ct)
+    {
+        var wasRunning = false;
+        var extra = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(1500, ct);
+                var running = Sim.IsRunning;
+                if (wasRunning && !running) extra = 2;
+                wasRunning = running;
+                if (!UseServer || (!running && extra == 0)) continue;
+                if (!running) extra--;
+                await InvokeAsync(async () =>
+                {
+                    await ReloadAllAsync(preserveSelection: true);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task ReloadAllAsync(bool preserveSelection = false)
+    {
+        var g = ++gen;
+        if (!UseServer)
+        {
+            var s = Sim.Current;
+            var allCalls = s.Store.AllKeptCalls();
+            localBuiltAt = Environment.TickCount64;
+            endpoints = CallAnalytics.BuildEndpoints(
+                allCalls,
+                filter.Entry,
+                slowOnly: epFilter == 1,
+                failedOnly: epFilter == 2,
+                minMs: null,
+                search: filter.Search);
+            SortEndpoints();
+            EnsureSelectedEndpoint();
+            if (selectedEndpoint is not null)
+            {
+                detail = CallAnalytics.BuildEndpointDetail(
+                    allCalls,
+                    selectedEndpoint,
+                    s.Elapsed,
+                    filter.Entry,
+                    ShowName(filter.Outcome),
+                    filter.MinMs,
+                    filter.MaxMs,
+                    filter.FromSec,
+                    filter.ToSec,
+                    filter.Sort,
+                    0,
+                    callLimit);
+            }
+            else
+            {
+                detail = null;
+            }
+            SyncSelectedCall(preserveSelection);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!preserveSelection)
+        {
+            endpoints = new([], 0, 0, 0);
+            sortedEndpoints = [];
+            detail = null;
+            selectedCall = null;
+        }
+        endpointsLoading = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var res = await ApiRun.QueryCallEndpointsAsync(
+                filter.Entry,
+                slowOnly: epFilter == 1,
+                failedOnly: epFilter == 2,
+                minMs: null,
+                search: filter.Search);
+            if (g != gen || disposed) return;
+            endpoints = res ?? new CallEndpointsResult([], 0, 0, 0);
+            SortEndpoints();
+            EnsureSelectedEndpoint();
+        }
+        catch { }
+        finally { endpointsLoading = false; }
+
+        await ReloadDetailAsync(preserveSelection, g);
+    }
+
+    private async Task ReloadDetailAsync(bool preserveSelection = false, int? expectedGen = null)
+    {
+        var g = expectedGen ?? ++gen;
+        if (string.IsNullOrWhiteSpace(selectedEndpoint))
+        {
+            detail = null;
+            selectedCall = null;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!UseServer)
+        {
+            var s = Sim.Current;
+            var allCalls = s.Store.AllKeptCalls();
+            detail = CallAnalytics.BuildEndpointDetail(
+                allCalls,
+                selectedEndpoint,
+                s.Elapsed,
+                filter.Entry,
+                ShowName(filter.Outcome),
+                filter.MinMs,
+                filter.MaxMs,
+                filter.FromSec,
+                filter.ToSec,
+                filter.Sort,
+                0,
+                callLimit);
+            SyncSelectedCall(preserveSelection);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        detailLoading = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var d = await ApiRun.QueryCallEndpointDetailAsync(
+                selectedEndpoint,
+                filter.Entry,
+                ShowName(filter.Outcome),
+                filter.MinMs,
+                filter.MaxMs,
+                filter.FromSec,
+                filter.ToSec,
+                filter.Sort,
+                0,
+                callLimit,
+                240);
+            if (g != gen || disposed) return;
+            detail = d;
+            SyncSelectedCall(preserveSelection);
+        }
+        catch { }
+        finally
+        {
+            detailLoading = false;
+            if (g == gen && !disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void EnsureSelectedEndpoint()
+    {
+        if (sortedEndpoints.Count == 0)
+        {
+            selectedEndpoint = null;
+            return;
+        }
+        if (selectedEndpoint is not null && sortedEndpoints.Any(e => string.Equals(e.Endpoint, selectedEndpoint, StringComparison.OrdinalIgnoreCase)))
+            return;
+        selectedEndpoint = sortedEndpoints[0].Endpoint;
+        filter = filter with { Endpoint = selectedEndpoint };
+    }
+
+    private void SyncSelectedCall(bool preserveSelection)
+    {
+        if (detail is null || detail.Calls.Count == 0)
+        {
+            selectedCall = null;
+            return;
+        }
+        if (preserveSelection && selectedCall is { } prev && detail.Calls.FirstOrDefault(c => c.Id == prev.Id) is { } match)
+        {
+            selectedCall = match;
+            return;
+        }
+        selectedCall = detail.Calls[0];
+    }
+
+    private void SortEndpoints()
+    {
+        sortedEndpoints = [.. endpoints.Endpoints];
+        switch (epSort)
+        {
+            case "p95": sortedEndpoints.Sort((a, b) => b.P95Ms.CompareTo(a.P95Ms)); break;
+            case "max": sortedEndpoints.Sort((a, b) => b.MaxMs.CompareTo(a.MaxMs)); break;
+            case "count": sortedEndpoints.Sort((a, b) => b.TotalCount.CompareTo(a.TotalCount)); break;
+            case "failed": sortedEndpoints.Sort((a, b) => b.FailedCount.CompareTo(a.FailedCount)); break;
+            case "name": sortedEndpoints.Sort((a, b) => string.Compare(a.Endpoint, b.Endpoint, StringComparison.OrdinalIgnoreCase)); break;
+            default: break;
+        }
+    }
+
+    private static string? ShowName(BeeShow s) => s switch
+    {
+        BeeShow.Slow => "slow",
+        BeeShow.Failed => "failed",
+        _ => null,
+    };
+
+    private static string DisplayPath(CallEndpointSummaryDto ep)
+    {
+        if (string.IsNullOrEmpty(ep.Method)) return ep.Endpoint;
+        var prefix = ep.Method + " ";
+        return ep.Endpoint.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? ep.Endpoint[prefix.Length..]
+            : ep.Endpoint;
+    }
+
+    private static string MethodCss(string method) => method.ToUpperInvariant() switch
+    {
+        "GET" => "get",
+        "POST" => "post",
+        "PUT" or "PATCH" => "put",
+        "DELETE" => "del",
+        _ => "",
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        gen++;
+        Sim.Changed -= OnChanged;
+        DataMode.Changed -= OnChanged;
+        Phone.Changed -= OnPhoneChanged;
+        debounceCts?.Cancel();
+        debounceCts?.Dispose();
+        liveLoopCts?.Cancel();
+        liveLoopCts?.Dispose();
+        await Task.CompletedTask;
+    }
+}

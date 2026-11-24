@@ -227,6 +227,52 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return Task.FromResult(new CallEndpointsResult([], 0, 0, 0));
+            facts = ExtractCallFacts(bucket);
+        }
+        return Task.FromResult(CallAnalytics.BuildEndpoints(facts, query.Entry, query.SlowOnly, query.FailedOnly, query.MinMs, query.Search));
+    }
+
+    public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        double elapsed;
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return Task.FromResult<CallEndpointDetailDto?>(null);
+            elapsed = bucket.ElapsedSeconds;
+            facts = ExtractCallFacts(bucket);
+        }
+        return Task.FromResult(CallAnalytics.BuildEndpointDetail(
+            facts, query.Endpoint, elapsed, query.Entry, query.Show, query.MinMs, query.MaxMs,
+            query.FromSec, query.ToSec, query.Sort, query.Offset, query.Limit, query.MaxPoints));
+    }
+
+    private static List<CallFact> ExtractCallFacts(RunBucket bucket)
+    {
+        var facts = new List<CallFact>();
+        foreach (var bee in bucket.Bees.Values)
+        {
+            for (var i = 0; i < bee.Calls.Count; i++)
+            {
+                var c = bee.Calls[i];
+                var id = ((long)bee.Sequence << 20) + i + 1;
+                facts.Add(new CallFact(
+                    id, bee.Sequence, bee.Entry, c.Step, c.Rep, bee.StartedAt,
+                    c.OffsetMs, c.DurationMs, c.StatusCode, c.Bytes, c.Error,
+                    c.Name, c.Url, c.Endpoint, c.Method, c.Host, c.SlowThresholdMs));
+            }
+        }
+        return facts;
+    }
+
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         var runs = await ListRunsAsync(500, ct);

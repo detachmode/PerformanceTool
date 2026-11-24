@@ -24,11 +24,14 @@
                 @if (Count("failed") > 0) { <button type="button" class="asst-fig bad" @onclick='() => Open(show: "failed")' title="Open the failed bees of this set">@Count("failed") failed</button> }
                 @if (Count("slow") > 0) { <button type="button" class="asst-fig warn" @onclick='() => Open(show: "slow")' title="Open the slow bees of this set">@Count("slow") slow</button> }
                 break;
+            case ViewKinds.Calls:
+                <button type="button" class="asst-fig" @onclick="ShowMore" title="Open in Calls">@(v.CallSamples is { Count: > 0 } ? Format.Plural((int)Math.Min(v.Total, int.MaxValue), "call", "calls") : Format.Plural((int)Math.Min(v.Total, int.MaxValue), "endpoint", "endpoints"))</button>
+                break;
             case ViewKinds.PlanChanges:
                 <button type="button" class="asst-fig" @onclick="ShowMore" title="Open the editor">@Format.Plural((int)v.Total, "change", "changes")</button>
                 break;
         }
-        <button type="button" class="btn ghost small" @onclick="ShowMore" title="@MoreTitle">@(v.Kind == ViewKinds.PlanChanges ? "Open editor" : "Show more")</button>
+        <button type="button" class="btn ghost small" @onclick="ShowMore" title="@MoreTitle">@(v.Kind == ViewKinds.PlanChanges ? "Open editor" : v.Kind == ViewKinds.Calls ? "Open Calls" : "Show more")</button>
     </header>
 
     @switch (v.Kind)
@@ -80,14 +83,15 @@
             <ol class="calls" aria-label="Calls of B@(d.Bee.Bee)">
                 @foreach (var c in d.Calls.Take(8))
                 {
-                    var failed = c.Error is not null;
-                    var slow = !failed && c.DurationMs >= 1500;
+                    var callItem = c;
+                    var failed = callItem.Error is not null;
+                    var slow = !failed && callItem.IsSlow;
                     var denom = Math.Max(1, d.Bee.DurationMs);
                     <li class="call @(failed ? "bad" : slow ? "warn" : "good")">
-                        <span class="call-name" title="@c.Name">@c.Name</span>
-                        <span class="track"><i style="left:@Pct(c.OffsetMs / denom)%;width:@Math.Max(0.8, c.DurationMs / denom * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
-                        <span class="call-dur">@Format.Ms(c.DurationMs)</span>
-                        <span class="call-status">@(c.StatusCode?.ToString() ?? (failed ? "failed" : ""))</span>
+                        <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(callItem.Endpoint ?? callItem.Name)" title="@callItem.Name">@callItem.Name</button>
+                        <span class="track"><i style="left:@Pct(callItem.OffsetMs / denom)%;width:@Math.Max(0.8, callItem.DurationMs / denom * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
+                        <span class="call-dur">@Format.Ms(callItem.DurationMs)</span>
+                        <span class="call-status">@(callItem.StatusCode?.ToString() ?? (failed ? "failed" : ""))</span>
                     </li>
                 }
             </ol>
@@ -152,6 +156,69 @@
                 }
             </div>
             break;
+
+        case ViewKinds.Calls:
+            @if (v.CallSamples is { Count: > 0 } samples)
+            {
+                @if (v.CallEndpoints is { Count: > 0 } epHead)
+                {
+                    var sum = epHead[0];
+                    <p class="asst-figs">
+                        <span class="muted tnum">Typical @Format.Ms(sum.TypicalMs) · 5% <b class="@(sum.SlowCount > 0 ? "warn" : "")">@Format.Ms(sum.P95Ms)</b> · max @Format.Ms(sum.MaxMs)</span>
+                        <span class="muted tnum">@(sum.HasCustomThreshold ? $"threshold > {Format.Ms(sum.SlowThresholdMs)}" : $"slow > {Format.Ms(sum.SlowThresholdMs)}")</span>
+                    </p>
+                }
+                <ul class="asst-calls-list">
+                    @foreach (var sample in samples)
+                    {
+                        var sc = sample;
+                        var cls = sc.Error is not null ? "bad" : sc.IsSlow ? "warn" : "good";
+                        <li>
+                            <span class="cl-status @cls">@(sc.StatusCode?.ToString() ?? "err")</span>
+                            <b class="tnum @cls">@Format.Ms(sc.DurationMs)</b>
+                            @if (sc.Ratio is > 1.05) { <span class="tnum muted">@Format.Times(sc.Ratio.Value)</span> }
+                            <button type="button" class="asst-call-url" @onclick="ShowMore" title="@sc.Url">@sc.Url</button>
+                            <BeeChip Sequence="sc.Bee - 1" State="@(sc.Error is not null ? BeeState.Failed : sc.IsSlow ? BeeState.Slow : BeeState.Ok)" OnClick="() => OpenBee(sc.Bee)" Title="Open this bee" />
+                        </li>
+                    }
+                </ul>
+                @if (v.Total > samples.Count)
+                {
+                    <p class="muted card-more">@Format.Num(v.Total - samples.Count) more calls</p>
+                }
+            }
+            else if (v.CallEndpoints is { Count: > 0 } eps)
+            {
+                <ul class="asst-calls-list endpoints">
+                    @foreach (var ep in eps)
+                    {
+                        var item = ep;
+                        <li>
+                            <button type="button" class="asst-ep-row" @onclick="() => OpenEndpoint(item.Endpoint)">
+                                <span class="asst-ep-main">
+                                    @if (!string.IsNullOrEmpty(item.Method)) { <span class="cl-method @MethodCss(item.Method)">@item.Method</span> }
+                                    <span class="cl-ep-name">@DisplayPath(item)</span>
+                                </span>
+                                <span class="asst-ep-meta tnum muted">
+                                    <span>typ <b>@Format.Ms(item.TypicalMs)</b> · max @Format.Ms(item.MaxMs)</span>
+                                    @if (item.FailedCount > 0) { <span class="cl-badge bad">@item.FailedCount</span> }
+                                    @if (item.SlowCount > 0) { <span class="cl-badge warn">@item.SlowCount</span> }
+                                    <span class="cl-badge n">@Format.Num(item.TotalCount)</span>
+                                </span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+                @if (v.Total > eps.Count)
+                {
+                    <p class="muted card-more">@Format.Num(v.Total - eps.Count) more endpoints</p>
+                }
+            }
+            else
+            {
+                <p class="muted card-empty">No matching endpoints or calls.</p>
+            }
+            break;
     }
 </section>
 
@@ -161,6 +228,7 @@
     private string MoreTitle => View.Kind switch
     {
         ViewKinds.Logs => "Open the Logs popup with this filter",
+        ViewKinds.Calls => "Open in Calls analysis",
         ViewKinds.PlanChanges => "Open the editor",
         ViewKinds.Run => "Open the run on the overview",
         _ => "Open the full chart, with its calls and logs",
@@ -174,6 +242,22 @@
 
     private static string Pct(double f) => Math.Clamp(f * 100, 0, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
+    private static string MethodCss(string method) => method.ToUpperInvariant() switch
+    {
+        "GET" => "get",
+        "POST" => "post",
+        "PUT" or "PATCH" => "put",
+        "DELETE" => "del",
+        _ => "",
+    };
+
+    private static string DisplayPath(ViewCallEndpointDto ep)
+    {
+        if (string.IsNullOrEmpty(ep.Method)) return ep.Endpoint;
+        var prefix = ep.Method + " ";
+        return ep.Endpoint.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? ep.Endpoint[prefix.Length..] : ep.Endpoint;
+    }
+
     private static string Raw(ViewLogLineDto l)
     {
         var tag = l.Level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
@@ -183,10 +267,14 @@
     private Task ShowMore() => View.Kind switch
     {
         ViewKinds.Logs => Assistant.OpenLogsAsync(View.Title, View.Query),
+        ViewKinds.Calls => Assistant.OpenCallsAsync(View.Query),
         ViewKinds.PlanChanges => Assistant.OpenLinkAsync(new ChipLinkDto("editor")),
         ViewKinds.Run => Assistant.OpenLinkAsync(new ChipLinkDto("run", new ViewQueryDto(View.Query.RunId))),
         _ => Open(),
     };
+
+    private Task OpenEndpoint(string endpoint) =>
+        Assistant.OpenCallsAsync(View.Query with { Endpoint = endpoint });
 
     private Task Open(string? show = null, int? initialBee = null)
     {

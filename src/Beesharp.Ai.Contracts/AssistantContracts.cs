@@ -56,7 +56,7 @@ public sealed record ToolActivityDto(
     string? OutputJson,
     ChipLinkDto? Link = null);
 
-/// <summary>Where a chip or card leads: <c>editor</c>, <c>logs</c>, <c>bee</c>, <c>run</c> (overview), <c>environments</c> or <c>scripts</c>.</summary>
+/// <summary>Where a chip or card leads: <c>editor</c>, <c>calls</c>, <c>logs</c>, <c>bee</c>, <c>run</c> (overview), <c>environments</c> or <c>scripts</c>.</summary>
 public sealed record ChipLinkDto(string Target, ViewQueryDto? Query = null);
 
 /// <summary>The query behind a card (not a copy of the data): the client re-queries live data with it. Numbers are 1-based like the UI.</summary>
@@ -68,13 +68,16 @@ public sealed record ViewQueryDto(
     IReadOnlyList<string>? Levels = null,
     string? Search = null,
     bool? FailedBees = null,
-    bool? SlowBees = null);
+    bool? SlowBees = null,
+    string? Endpoint = null,
+    double? MinMs = null);
 
 public static class ViewKinds
 {
     public const string Logs = "logs";
     public const string Bees = "bees";
     public const string Bee = "bee";
+    public const string Calls = "calls";
     public const string Scenario = "scenario";
     public const string Run = "run";
     public const string PlanChanges = "plan-changes";
@@ -95,7 +98,9 @@ public sealed record ViewItemDto(
     ViewBeeDetailDto? Bee = null,
     ViewRunDto? Run = null,
     IReadOnlyList<ViewPlanChangeDto>? Changes = null,
-    IReadOnlyList<string>? EntryLabels = null);
+    IReadOnlyList<string>? EntryLabels = null,
+    IReadOnlyList<ViewCallEndpointDto>? CallEndpoints = null,
+    IReadOnlyList<ViewCallSampleDto>? CallSamples = null);
 
 public sealed record ViewLogLineDto(
     int Bee,
@@ -118,7 +123,31 @@ public sealed record ViewBeeDto(
     string? Error,
     string? Note = null);
 
-public sealed record ViewCallDto(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error);
+public sealed record ViewCallDto(string Name, double OffsetMs, double DurationMs, int? StatusCode, string? Error, string? Endpoint = null, bool IsSlow = false);
+
+public sealed record ViewCallEndpointDto(
+    string Endpoint,
+    string Method,
+    long TotalCount,
+    long SlowCount,
+    long FailedCount,
+    double TypicalMs,
+    double P95Ms,
+    double MaxMs,
+    double SlowThresholdMs,
+    bool HasCustomThreshold);
+
+public sealed record ViewCallSampleDto(
+    int Bee,
+    int Entry,
+    string EntryLabel,
+    double AtSeconds,
+    double DurationMs,
+    int? StatusCode,
+    string? Error,
+    bool IsSlow,
+    double? Ratio,
+    string Url);
 
 public sealed record ViewBeeDetailDto(ViewBeeDto Bee, IReadOnlyList<ViewCallDto> Calls);
 

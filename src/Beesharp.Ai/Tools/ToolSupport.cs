@@ -22,6 +22,8 @@ internal static class Bounds
     public const int MaxTimelineBees = 60;
     public const int CardLogs = 6;
     public const int CardBees = 10;
+    public const int CardEndpoints = 8;
+    public const int CardCalls = 8;
 
     public static int Limit(int? limit, int fallback = DefaultList) => Math.Clamp(limit ?? fallback, 1, MaxList);
     public static int Offset(int? offset) => Math.Max(0, offset ?? 0);

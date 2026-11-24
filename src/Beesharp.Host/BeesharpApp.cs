@@ -10,6 +10,7 @@ using Beesharp.Services.Storage;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Http;
 
 namespace Beesharp;
 
@@ -161,6 +162,9 @@ public sealed class BeesharpAppBuilder
             Environments = config["Environments:Directory"] ?? "environments",
             Scripts = config["Scripts:Directory"] ?? "scripts",
         });
+
+        // Automatically attach RecordingHttpHandler to every DI-managed HttpClient (typed, named, Refit, custom primary handlers).
+        Services.AddSingleton<IHttpMessageHandlerBuilderFilter, RecordingHttpMessageHandlerBuilderFilter>();
 
         // "Storage:Provider" is DuckDb (default) or Memory; anything else fails with a message naming the supported ones.
         var storageOptions = new StorageOptions
@@ -427,4 +431,13 @@ public sealed class BeesharpApp : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => WebApplication.DisposeAsync();
+}
+
+internal sealed class RecordingHttpMessageHandlerBuilderFilter : IHttpMessageHandlerBuilderFilter
+{
+    public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+    {
+        next(builder);
+        builder.AdditionalHandlers.Add(new RecordingHttpHandler());
+    };
 }

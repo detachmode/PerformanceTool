@@ -63,10 +63,43 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         var d = await storage.GetBeeDetailAsync(runId, sequence, ct);
         if (d is null) return null;
         return new BeeDetailInfo(
-            new BeeInfo(d.Sequence, d.Entry, d.StartedAt, d.DurationMs, d.StatusCode, d.Bytes, d.Error, d.Calls.Count(c => c.Error is null && c.DurationMs >= 1500), d.FailedStep, d.FailedRep),
-            d.Calls.Select(c => new BeeCallInfo(c.Name, c.OffsetMs, c.DurationMs, c.StatusCode, c.Error, c.Step, c.Rep)).ToList(),
+            new BeeInfo(d.Sequence, d.Entry, d.StartedAt, d.DurationMs, d.StatusCode, d.Bytes, d.Error, d.Calls.Count(c => c.Error is null && SlowCallRule.IsSlow(c.DurationMs, null, c.SlowThresholdMs)), d.FailedStep, d.FailedRep),
+            d.Calls.Select(c => new BeeCallInfo(c.Name, c.OffsetMs, c.DurationMs, c.StatusCode, c.Error, c.Step, c.Rep, c.Endpoint ?? c.Name, c.Error is null && SlowCallRule.IsSlow(c.DurationMs, null, c.SlowThresholdMs))).ToList(),
             d.Logs.Select(l => new BeeLogInfo(l.AtSeconds, l.Level, l.Message, l.Exception, l.CallIndex)).ToList());
     }
+
+    public async Task<CallEndpointsPage> ListCallEndpointsAsync(string runId, int? entry, bool slowOnly, bool failedOnly, double? minMs, string? search, CancellationToken ct)
+    {
+        if (IsCurrent(runId)) await storage.FlushAsync(ct);
+        var res = await storage.GetCallEndpointsAsync(runId, new CallEndpointsQuery(entry, slowOnly, failedOnly, minMs, search), ct);
+        return new CallEndpointsPage(res.TotalCalls, res.TotalSlowCalls, res.TotalFailedCalls, res.Endpoints.Select(ToEndpointInfo).ToList());
+    }
+
+    public async Task<CallEndpointDetailInfo?> GetCallEndpointDetailAsync(
+        string runId,
+        string endpoint,
+        int? entry,
+        string? show,
+        double? minMs,
+        double? maxMs,
+        string? sort,
+        int offset,
+        int limit,
+        CancellationToken ct)
+    {
+        if (IsCurrent(runId)) await storage.FlushAsync(ct);
+        var detail = await storage.GetCallEndpointDetailAsync(runId, new CallDetailQuery(endpoint, entry, show, minMs, maxMs, null, null, sort, offset, limit, MaxPoints: 1), ct);
+        if (detail is null) return null;
+        return new CallEndpointDetailInfo(
+            ToEndpointInfo(detail.Summary),
+            detail.MatchingCalls,
+            detail.Offset,
+            detail.Calls.Select(c => new CallSampleInfo(c.Sequence, c.Entry, c.AtSeconds, c.DurationMs, c.StatusCode, c.Error, c.IsSlow, c.TypicalMs, c.SlowThresholdMs, !string.IsNullOrWhiteSpace(c.Url) ? c.Url : c.RawName)).ToList());
+    }
+
+    private static CallEndpointInfo ToEndpointInfo(CallEndpointSummaryDto s) =>
+        new(s.Endpoint, s.Method ?? "", s.TotalCount, s.SlowCount, s.FailedCount, s.TypicalMs, s.P95Ms, s.MaxMs,
+            s.SlowThresholdMs ?? SlowCallRule.EffectiveThresholdMs(s.TypicalMs) ?? 0, s.HasCustomThreshold);
 
     public async Task<LogPageInfo> QueryLogsAsync(string runId, LogFilter f, CancellationToken ct)
     {

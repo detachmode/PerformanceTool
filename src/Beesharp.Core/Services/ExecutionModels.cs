@@ -9,7 +9,12 @@ public sealed record RecordedCall(
     long Bytes = 0,
     string? Error = null,
     int Step = 0,
-    int Rep = 0);
+    int Rep = 0,
+    string? Endpoint = null,
+    string? Method = null,
+    string? Host = null,
+    double? SlowThresholdMs = null,
+    string? Url = null);
 
 /// <summary>One log statement emitted by a bee via <c>ctx.Logger</c> or <c>ctx.Log</c>.</summary>
 public sealed record RecordedLog(

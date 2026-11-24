@@ -287,7 +287,7 @@ public sealed class ScriptScenarioStore
         var stepVisits = new ConcurrentQueue<RecordedStepVisit>();
         using var inner = innerHandlerFactory?.Invoke() ?? new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) };
         var execSw = new Stopwatch();
-        using var recordingHandler = new RecordingHttpHandler(inner, calls, execSw);
+        using var recordingHandler = new RecordingHttpHandler(inner);
         using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
@@ -335,9 +335,10 @@ public sealed class ScriptScenarioStore
                 execCts.Token,
                 state,
                 structuredLogSink: l => logs.Enqueue(FormatSerilog(l)),
-                callSink: c => calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs)),
+                callSink: c => calls.Enqueue(ToScriptCall(c)),
                 runBag: runBag,
-                stepVisitSink: stepVisits.Enqueue);
+                stepVisitSink: stepVisits.Enqueue,
+                thresholds: scenario.SlowThresholds);
             using (execCtx.Activate())
                 outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
             execSw.Stop();
@@ -452,7 +453,7 @@ public sealed class ScriptScenarioStore
         _ = Task.Run(async () =>
         {
             using var inner = innerHandlerFactory?.Invoke() ?? new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) };
-            using var recordingHandler = new RecordingHttpHandler(inner, run.Calls, run.ExecSw);
+            using var recordingHandler = new RecordingHttpHandler(inner);
             using var http = new HttpClient(recordingHandler) { Timeout = Timeout.InfiniteTimeSpan };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Beesharp/1.0");
 
@@ -479,8 +480,9 @@ public sealed class ScriptScenarioStore
                     execCts.Token,
                     state,
                     structuredLogSink: run.AddLog,
-                    callSink: c => run.Calls.Enqueue(new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs)),
-                    runBag: runBag);
+                    callSink: c => run.Calls.Enqueue(ToScriptCall(c)),
+                    runBag: runBag,
+                    thresholds: scenario.SlowThresholds);
                 run.ExecCtx = execCtx;
                 using (execCtx.Activate())
                     outcome = await scenario.ExecuteAsync(bound, execCtx, execCts.Token);
@@ -571,46 +573,8 @@ public sealed class ScriptScenarioStore
         s.Scenario.Spec.ToJsonSchema(),
         s.Scenario.Steps.Count > 0 ? s.Scenario.Steps : null);
 
-    private sealed class RecordingHttpHandler(HttpMessageHandler inner, ConcurrentQueue<ScriptRecordedCall> calls, Stopwatch execSw) : DelegatingHandler(inner)
-    {
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var step = Math.Max(0, ScenarioContext.Current?.CurrentStep ?? 0);
-            var rep = ScenarioContext.Current?.CurrentRep ?? 0;
-            var offsetMs = execSw.Elapsed.TotalMilliseconds;
-            var sw = Stopwatch.StartNew();
-            try
-            {
-                var response = await base.SendAsync(request, cancellationToken);
-                sw.Stop();
-                long bytes = response.Content.Headers.ContentLength ?? 0;
-                calls.Enqueue(new ScriptRecordedCall(
-                    request.Method.Method,
-                    request.RequestUri?.ToString() ?? "",
-                    (int)response.StatusCode,
-                    sw.Elapsed.TotalMilliseconds,
-                    bytes,
-                    null,
-                    step,
-                    rep,
-                    offsetMs));
-                return response;
-            }
-            catch (Exception ex)
-            {
-                sw.Stop();
-                calls.Enqueue(new ScriptRecordedCall(
-                    request.Method.Method,
-                    request.RequestUri?.ToString() ?? "",
-                    null,
-                    sw.Elapsed.TotalMilliseconds,
-                    0,
-                    ex.Message,
-                    step,
-                    rep,
-                    offsetMs));
-                throw;
-            }
-        }
-    }
+    private static ScriptRecordedCall ToScriptCall(RecordedCall c) =>
+        c.Url is not null && c.Method is not null
+            ? new ScriptRecordedCall(c.Method, c.Url, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs)
+            : new ScriptRecordedCall("STEP", c.Name, c.StatusCode, c.DurationMs, c.Bytes, c.Error, c.Step, c.Rep, c.OffsetMs);
 }
