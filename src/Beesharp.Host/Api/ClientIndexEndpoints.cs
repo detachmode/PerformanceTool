@@ -21,6 +21,7 @@ public static class ClientIndexEndpoints
             ? StaticAssetsEndpointDataSourceHelper.ResolveStaticAssetDescriptors(app, null)
             : [];
         var webRoot = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().WebRootFileProvider;
+        var bundledIndexPath = Path.Combine(AppContext.BaseDirectory, "beesharp-ui", "index.html");
         string? html = null;
 
         // The client asks for build-info.json to notice a newer deploy (brain 0025). On Pages the workflow writes the file;
@@ -41,9 +42,20 @@ public static class ClientIndexEndpoints
             if (html is null)
             {
                 var file = webRoot.GetFileInfo("index.html");
-                if (!file.Exists) { context.Response.StatusCode = StatusCodes.Status404NotFound; return; }
-                using var reader = new StreamReader(file.CreateReadStream());
-                html = ClientIndexHtml.Resolve(await reader.ReadToEndAsync(context.RequestAborted), descriptors);
+                if (file.Exists)
+                {
+                    using var reader = new StreamReader(file.CreateReadStream());
+                    html = ClientIndexHtml.Resolve(await reader.ReadToEndAsync(context.RequestAborted), descriptors);
+                }
+                else if (File.Exists(bundledIndexPath))
+                {
+                    html = await File.ReadAllTextAsync(bundledIndexPath, context.RequestAborted);
+                }
+                else
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
             }
             context.Response.ContentType = "text/html; charset=utf-8";
             context.Response.Headers.CacheControl = "no-cache";   // new deploys show up on the next load (brain 0025)

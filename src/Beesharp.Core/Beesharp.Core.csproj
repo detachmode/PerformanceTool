@@ -11,7 +11,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <PackageId>Beesharp.Core</PackageId>
     <Version>0.1.0</Version>
-    <Authors>Dennis</Authors>
+    <Authors>detachmode</Authors>
     <Description>Core scenario, parameter, step-machine and runtime APIs for Beesharp load tests.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>beesharp;load-testing;performance;scenarios</PackageTags>

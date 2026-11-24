@@ -5,4 +5,14 @@
     <!-- NuGet audit (known vulnerable packages) stays a warning, so a newly published advisory doesn't break every build at once (Proposed, brain 0055). -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
   </PropertyGroup>
+
+  <!-- Shared NuGet metadata defaults for all packable libraries. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>detachmode</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/detachmode/PerformanceTool</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/detachmode/PerformanceTool</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
 </Project>

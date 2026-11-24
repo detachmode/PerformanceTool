@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <PackageId>Beesharp.Engine</PackageId>
+    <Description>Open-model load runner, run lifecycle manager and live plan workspace for Beesharp.</Description>
+    <PackageTags>beesharp;load-testing;performance;engine</PackageTags>
   </PropertyGroup>
 
   <!-- ILogger and IServiceCollection: from .NET 11 the SDK provides them itself (see Beesharp.Core.csproj); older SDKs still need the packages. -->

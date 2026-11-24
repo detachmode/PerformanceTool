@@ -432,6 +432,8 @@ FodyWeavers.xsd
 # Uploaded runtime custom scenario scripts & DuckDB/SQLite run storage
 src/Beesharp/scripts/
 src/Beesharp/data/
+examples/host-app/scripts/
+examples/host-app/data/
 
 # Auto-dropped local SDK package for script IDE support (brain 0057)
 .beesharp/

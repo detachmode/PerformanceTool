@@ -1,0 +1,23 @@
+<Project>
+  <!-- Copies the embedded Blazor WebAssembly UI assets shipped inside Beesharp.Host.nupkg
+       into the consumer project's output and publish directories under beesharp-ui/.
+       Uses Copy targets (rather than <None> items) so Microsoft.NET.Sdk.Web's Razor SDK
+       does not treat bundled *.razor.js files as collocated JS modules (BLAZOR106). -->
+  <Target Name="_CopyBeesharpUiToOutput" AfterTargets="Build">
+    <ItemGroup>
+      <_BeesharpUiAssets Include="$(MSBuildThisFileDirectory)..\beesharp-ui\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BeesharpUiAssets)"
+          DestinationFiles="@(_BeesharpUiAssets->'$(OutputPath)beesharp-ui\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="_CopyBeesharpUiToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_BeesharpUiPublishAssets Include="$(MSBuildThisFileDirectory)..\beesharp-ui\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BeesharpUiPublishAssets)"
+          DestinationFiles="@(_BeesharpUiPublishAssets->'$(PublishDir)beesharp-ui\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
