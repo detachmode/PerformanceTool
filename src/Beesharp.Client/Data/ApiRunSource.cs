@@ -3,6 +3,7 @@ using System.Text.Json;
 using Beesharp.Services;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios;
+using Beesharp.Client.Logs;
 using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Data;
@@ -380,29 +381,36 @@ public sealed class ApiRunSource : IRunSource
         finally { loadingDetails.Remove(sequence); }
     }
 
-    /// <summary>Queries server-side indexed, filtered, paged logs from run storage.</summary>
-    public async Task<LogPageResult?> QueryLogsAsync(
-        int? entry,
-        int? bee,
-        bool? failed,
-        bool? slow,
-        IReadOnlyList<string>? levels,
-        string? search,
-        int offset,
-        int limit,
-        CancellationToken ct = default)
+    /// <summary>Queries the server's indexed, filtered, paged logs of the loaded run (a live run or one from the history).</summary>
+    public async Task<LogPageResult?> QueryLogsAsync(LogFilter filter, int offset, int limit, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(activeRunId)) return new LogPageResult(0, offset, limit, []);
-        var parts = new List<string> { $"offset={offset}", $"limit={limit}" };
-        if (entry is { } e) parts.Add($"entry={e}");
-        if (bee is { } a) parts.Add($"bee={a}");
-        if (failed is { } fl) parts.Add($"failed={(fl ? "true" : "false")}");
-        if (slow is { } sl) parts.Add($"slow={(sl ? "true" : "false")}");
-        if (levels is { Count: > 0 } lv && lv.Count < 5) parts.Add($"levels={Uri.EscapeDataString(string.Join(',', lv))}");
-        if (!string.IsNullOrWhiteSpace(search)) parts.Add($"search={Uri.EscapeDataString(search.Trim())}");
-
-        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs?{string.Join('&', parts)}";
+        if (string.IsNullOrEmpty(activeRunId) || filter.Contradicts) return new LogPageResult(0, offset, limit, []);
+        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs?offset={offset}&limit={limit}{LogFilterParts(filter)}";
         return await http.GetFromJsonAsync<LogPageResult>(url, JsonOpts, ct);
+    }
+
+    /// <summary>The counts behind the Logs page's filter column for the loaded run (brain 0057).</summary>
+    public async Task<LogFacets?> QueryLogFacetsAsync(LogFilter filter, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(activeRunId)) return new LogFacets(0, new Dictionary<string, long>(), [], []);
+        if (filter.Contradicts) return new LogFacets(0, new Dictionary<string, long>(), [], []);
+        var parts = LogFilterParts(filter);
+        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs/facets{(parts.Length > 0 ? "?" + parts[1..] : "")}";
+        return await http.GetFromJsonAsync<LogFacets>(url, JsonOpts, ct);
+    }
+
+    /// <summary>"&amp;entry=1&amp;level..." parts of the server's log query for a filter.</summary>
+    private static string LogFilterParts(LogFilter f)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (f.Entry is { } e) sb.Append("&entry=").Append(e);
+        if (f.Step is { } st && f.Entry is not null) sb.Append("&step=").Append(st);
+        if (f.EffectiveBee is { } b) sb.Append("&bee=").Append(b);
+        if (f.Outcome == Beesharp.Client.Chart.BeeShow.Failed) sb.Append("&failed=true");
+        if (f.Outcome == Beesharp.Client.Chart.BeeShow.Slow) sb.Append("&slow=true");
+        if (f.Levels.Count > 0) sb.Append("&levels=").Append(Uri.EscapeDataString(string.Join(',', f.Levels)));
+        if (f.SearchParts.Text.Length > 0) sb.Append("&search=").Append(Uri.EscapeDataString(f.SearchParts.Text));
+        return sb.ToString();
     }
 
     public void Start()

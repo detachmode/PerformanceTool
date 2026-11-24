@@ -1,5 +1,6 @@
-@* Minimalist full-screen C# Script Editor (/editor):
-   Full-viewport syntax-highlighted code editor with a single compact menu bar (file picker for scenario, preflight & shutdown .cs files, Wrap, Save, Try, actions). *@
+@* The script editor (/editor, brain 0057, 0042): one toolbar above the code (file menu, Saved, Save, Try, more), the code at full height, and the Try result in a column on the right
+   (passed or failed, the steps, the tabs Logs and Calls). No script list: the file menu switches, creates and uploads scripts. Fake mode has no server, so scripts are not saved
+   or tried there: the editor keeps its example and says where scripts come from. *@
 @page "/editor"
 @page "/scripts"
 @layout MainLayout
@@ -93,19 +94,24 @@
         }
         else if (DataMode.IsFakeMode)
         {
-            <button type="button" class="chip" @onclick="SwitchToLive" title="Custom scripts compile and run on the server">Switch to Live</button>
+            <button type="button" class="chip" @onclick="SwitchToLive" title="Scripts are compiled and tried on the server">Switch to Live</button>
+        }
+        else if (canTry)
+        {
+            <span class="script-status muted" role="status">@(Dirty ? "Edited, not saved" : "Saved")</span>
         }
 
         <span class="spacer"></span>
 
         <WrapToggleButton @bind-Wrapped="wordWrap" />
 
-        <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || string.IsNullOrWhiteSpace(scriptCode))">
+        <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || DataMode.IsFakeMode || string.IsNullOrWhiteSpace(scriptCode))"
+                title="@(DataMode.IsFakeMode ? "Scripts are compiled and saved on the server: switch to Live" : "Compile and save the script")">
             @(compiling ? "Saving…" : "Save")
         </button>
 
-        <button type="button" class="btn ghost small" @onclick="OpenTryDialog" disabled="@(busy || !canTry)"
-                title="@(!canTry ? "Save the script first to try it out" : isPreflight ? $"Run this {ProgramName} once and view its log output" : "Configure parameters and run a single test execution")">
+        <button type="button" class="btn ghost small" @onclick="RunTest" disabled="@(busy || !canTry)"
+                title="@(DataMode.IsFakeMode ? "Scripts are tried on the server: switch to Live" : !canTry ? "Save the script first to try it out" : isPreflight ? $"Run this {ProgramName} once and see its output" : "Run the scenario once with one bee")">
             ▶ Try
         </button>
 
@@ -144,232 +150,30 @@
         </form>
     }
 
-    <div class="script-editor-fill">
-        <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# script" />
-    </div>
+    <div class="ed-body">
+        <div class="ed-code">
+            <div class="script-editor-fill">
+                <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# script" />
+            </div>
 
-    @if (diagnostics.Count > 0)
-    {
-        <div class="diag-list script-diag-dock" role="alert">
-            @foreach (var d in diagnostics)
+            @if (diagnostics.Count > 0)
             {
-                <div class="diag-row @(d.Severity == "Error" ? "err" : "warn")">
-                    <code>(@d.Line,@d.Column) @d.Id</code>
-                    <span>@d.Message</span>
+                <div class="diag-list script-diag-dock" role="alert">
+                    @foreach (var d in diagnostics)
+                    {
+                        <div class="diag-row @(d.Severity == "Error" ? "err" : "warn")">
+                            <code>(@d.Line,@d.Column) @d.Id</code>
+                            <span>@d.Message</span>
+                        </div>
+                    }
                 </div>
             }
         </div>
-    }
+
+        <TryColumn Live="liveTest" Program="preflightResult" Testing="testing" Busy="busy" CanTry="canTry" ProgramName="@ProgramName" EnvName="@Envs.ActiveName"
+                   Hint="@TryHint" Spec="@(isPreflight ? null : compiledSpec)" Params="testParams" OnRun="RunTest" OnStop="StopLiveTestRunAsync" />
+    </div>
 </div>
-
-@if (tryOpen && canTry)
-{
-    <div class="overlay" tabindex="-1" @onclick="() => tryOpen = false" role="presentation">
-        <div class="dialog" style="width:min(720px,100%)" role="dialog" aria-modal="true" aria-labelledby="try-title" @onclick:stopPropagation="true">
-            <div class="dlg-head">
-                <h2 id="try-title">Try · @(isPreflight ? selectedPreflight!.FileName : selectedSummary!.ScenarioName)</h2>
-                <span class="muted">@(Envs.ActiveName is null ? "No environment" : $"Env: {Envs.ActiveName}")</span>
-                <span class="spacer"></span>
-                <button type="button" class="btn primary small" @onclick="RunTest" disabled="@busy">
-                    @(testing ? "Running…" : "▶ Run once")
-                </button>
-                <button type="button" class="icon-btn" @onclick="() => tryOpen = false" aria-label="Close">✕</button>
-            </div>
-
-            <div class="script-try-body">
-                @if (!isPreflight && compiledSpec is not null)
-                {
-                    @if (compiledSpec.Fields.Count > 0)
-                    {
-                        <div class="form param-grid">
-                            <ParameterEditor Spec="compiledSpec" Values="testParams" Disabled="@busy" IdPrefix="script-test" />
-                        </div>
-                    }
-                    else
-                    {
-                        <p class="muted" style="margin:0">This scenario takes no parameters.</p>
-                    }
-
-                    @if (liveTest is not null && !liveTestPopupOpen)
-                    {
-                        <div class="bee-head-bar" style="padding:.2rem 0">
-                            <span class="muted">Last test run: @(liveTest.Running ? "Running…" : liveTest.Success ? "Succeeded" : "Failed") (@Format.Ms(liveTest.DurationMs))</span>
-                            <span class="spacer"></span>
-                            <button type="button" class="btn ghost small" @onclick="() => liveTestPopupOpen = true">Inspect test bee</button>
-                        </div>
-                    }
-                }
-                else if (isPreflight)
-                {
-                    @if (testing)
-                    {
-                        <section class="bee-panel p-run" aria-label="Running @ProgramName">
-                            <div class="bee-head" style="margin-bottom:0">
-                                <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Running</span>
-                                <span class="muted">Running @ProgramName…</span>
-                            </div>
-                        </section>
-                    }
-                    else if (preflightResult is null)
-                    {
-                        <p class="muted" style="margin:0">Click <b>▶ Run once</b> to execute this @ProgramName and inspect its log output.</p>
-                    }
-                    else
-                    {
-                        <div class="test-result @(preflightResult.Success ? "ok" : "bad")">
-                            <div class="test-result-head">
-                                <b>@(preflightResult.Success ? $"{ProgramTitle} succeeded" : $"{ProgramTitle} failed")</b>
-                                <span class="muted">@Format.Ms(preflightResult.DurationMs)</span>
-                                <span class="spacer"></span>
-                                <CopyButton GetText="@(() => string.Join("\n", preflightResult.Logs))" Disabled="@(preflightResult.Logs.Count == 0)" />
-                                <WrapToggleButton @bind-Wrapped="tryWrap" />
-                            </div>
-                            @if (!string.IsNullOrEmpty(preflightResult.Error))
-                            {
-                                <div class="field-error">@preflightResult.Error</div>
-                            }
-                            @if (preflightResult.Logs.Count > 0)
-                            {
-                                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")">
-                                    @foreach (var line in preflightResult.Logs)
-                                    {
-                                        <SerilogLine Raw="@line" />
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                }
-            </div>
-        </div>
-    </div>
-}
-
-@if (liveTestPopupOpen && liveTest is { } lt)
-{
-    var tryHasSteps = lt.Steps is { Count: > 0 };
-    var tryStepsOn = tryHasSteps && tryTab == 0;
-    var tryLogsOn = !tryStepsOn && (tryTab == 1 || (!tryHasSteps && tryTab == 0));
-    var tryWaterfallOn = !tryStepsOn && !tryLogsOn;
-    var tryCalls = BuildLiveTryCalls(lt);
-    var tryStepsDecl = tryHasSteps ? new ScenarioSteps(lt.Steps!.Select(st => st.Name).ToArray()) : ScenarioSteps.None;
-    var statusCls = lt.Running ? "p-run" : lt.Success ? "p-ok" : "p-bad";
-    <div class="overlay bee-inspect-ov" @key="@($"try-{lt.TestRunId}")" role="presentation" @onclick="CloseLiveTestPopup">
-        <section class="bee-panel bee-inspect-dialog @statusCls" @ref="tryInspectEl" role="dialog" aria-modal="true" aria-label="Test bee · @lt.ScenarioName" @onclick:stopPropagation="true">
-            <div class="bee-head">
-                <div class="bee-head-top">
-                    <div class="bee-head-meta">
-                        @if (lt.Running)
-                        {
-                            <span class="state run ado-run-state"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Active</span>
-                        }
-                        else if (lt.Success)
-                        {
-                            <span class="state good bee-ok-state"><HexBadge Kind="ok" Size="16" StrokeWidth="7.5" />Succeeded</span>
-                        }
-                        else
-                        {
-                            <span class="state bad bee-ok-state"><HexBadge Kind="bad" Size="16" StrokeWidth="7.5" />Failed</span>
-                        }
-                        @if (lt.StatusCode is { } sc) { <span class="tag">HTTP @sc</span> }
-                        <span class="muted bee-meta-time">@Format.Ms(lt.DurationMs) · @lt.Bytes B</span>
-                        @if (lt.Running && tryHasSteps && lt.CurrentStep >= 0)
-                        {
-                            <span class="step-now">@tryStepsDecl.Position(lt.CurrentStep, lt.CurrentRep)</span>
-                        }
-                        else if (!lt.Running && !lt.Success && tryHasSteps && lt.FailedStep >= 0)
-                        {
-                            <span class="step-now bad">failed at @tryStepsDecl.Name(lt.FailedStep)</span>
-                        }
-                    </div>
-                    <div class="bee-head-btns">
-                        @if (lt.Running)
-                        {
-                            <button type="button" class="btn ghost danger small" @onclick="StopLiveTestRunAsync">Stop</button>
-                        }
-                        <button type="button" class="icon-btn" @onclick="CloseLiveTestPopup" aria-label="Close test run">✕</button>
-                    </div>
-                </div>
-                <div class="bee-head-bar">
-                    <div class="seg" role="group" aria-label="Test run inspection view">
-                        @if (tryHasSteps) { <button type="button" class="@(tryStepsOn ? "on" : "")" @onclick="() => tryTab = 0">Steps (@lt.Steps!.Count)</button> }
-                        <button type="button" class="@(tryLogsOn ? "on" : "")" @onclick="() => tryTab = 1">Logs (@lt.Logs.Count)</button>
-                        <button type="button" class="@(tryWaterfallOn ? "on" : "")" @onclick="() => tryTab = 2">Waterfall (@lt.Calls.Count)</button>
-                    </div>
-                    <span class="spacer"></span>
-                    @if (tryStepsOn)
-                    {
-                        <button type="button" class="btn ghost small bee-toggle-all" @onclick="() => { tryStepsExpanded = !tryStepsExpanded; tryStepsReset++; }">
-                            @(tryStepsExpanded ? "Collapse all" : "Expand all")
-                        </button>
-                    }
-                    else if (tryLogsOn)
-                    {
-                        <CopyButton GetText="@(() => FormatLiveTestLogs(lt.Logs))" Disabled="@(lt.Logs.Count == 0)" />
-                        <WrapToggleButton @bind-Wrapped="tryWrap" />
-                    }
-                </div>
-            </div>
-            @if (!string.IsNullOrEmpty(lt.Error) && !(tryStepsOn && lt.FailedStep >= 0))
-            {
-                <p class="bee-error bad">@lt.Error</p>
-            }
-            @if (tryStepsOn)
-            {
-                @if (lt.Running)
-                {
-                    var runningBee = new RunningBee(0, 0, 0, tryCalls, lt.CurrentStep, lt.CurrentRep, lt.StepVisits);
-                    <StepList Steps="StepLogic.ForRunning(tryStepsDecl, runningBee, Math.Max(1, lt.DurationMs))" LiveLogs="lt.Logs" DefaultExpanded="tryStepsExpanded" ResetKey="tryStepsReset" AriaLabel="Live steps of test run" />
-                }
-                else
-                {
-                    <StepList Steps="StepLogic.ForBee(tryStepsDecl, tryCalls, lt.FailedStep, lt.FailedRep, lt.Error, lt.StepVisits)" LiveLogs="lt.Logs" DefaultExpanded="tryStepsExpanded" ResetKey="tryStepsReset" AriaLabel="Steps of test run" />
-                }
-            }
-            else if (tryLogsOn)
-            {
-                <div class="sl-console compact @(tryWrap ? "wrap" : "nowrap")" role="log" aria-live="polite" aria-label="Logs of test run">
-                    @if (lt.Logs.Count == 0)
-                    {
-                        <div class="sl-empty" style="padding:.35rem 0">@(lt.Running ? "Waiting for logs…" : "No logs emitted by this test run.")</div>
-                    }
-                    else
-                    {
-                        @foreach (var log in lt.Logs)
-                        {
-                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
-                        }
-                    }
-                </div>
-            }
-            else
-            {
-                var denom = Math.Max(1, Math.Max(lt.DurationMs, tryCalls.Count > 0 ? tryCalls.Max(c => c.OffsetMs + c.DurationMs) : 1));
-                @if (tryCalls.Count == 0)
-                {
-                    <p class="muted" style="margin:0">@(lt.Running ? "Waiting for calls…" : "No calls recorded.")</p>
-                }
-                else
-                {
-                    <ol class="calls" aria-label="Calls of test run">
-                        @foreach (var call in tryCalls)
-                        {
-                            var cls = call.Failed ? "bad" : call.Slow ? "warn" : "good";
-                            var left = Math.Clamp(call.OffsetMs / denom * 100, 0, 100);
-                            var width = Math.Max(0.8, Math.Min(100 - left, call.DurationMs / denom * 100));
-                            <li class="call @cls">
-                                <span class="call-name" title="@call.Name">@call.Name</span>
-                                <span class="track"><i style="left:@left.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;width:@width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
-                                <span class="call-dur">@Format.Ms(call.DurationMs)</span>
-                                <span class="call-status" title="@call.Error">@(call.Failed ? (call.Status?.ToString() ?? "failed") : call.Status?.ToString() ?? "ok")</span>
-                            </li>
-                        }
-                    </ol>
-                }
-            }
-        </section>
-    </div>
-}
 
 @code {
     [SupplyParameterFromQuery(Name = "script")]
@@ -398,29 +202,25 @@
     private string fileName = "order-api-stress.cs";
     private string scriptCode = ScenarioTemplate;
     private bool wordWrap = true;
-    private bool tryWrap = true;
-    private int tryTab; // 0 = Steps (when present), 1 = Logs, 2 = Waterfall
-    private bool tryStepsExpanded = true;
-    private int tryStepsReset;
     private bool filesOpen;
     private bool moreOpen;
     private bool renameOpen;
-    private bool tryOpen;
     private List<ScriptDiagnosticDto> diagnostics = [];
     private LiveTestRunStatusDto? liveTest;
-    private bool liveTestPopupOpen;
     private CancellationTokenSource? liveTestPollCts;
-    private ElementReference tryInspectEl;
-    private IJSObjectReference? logScrollMod;
-    private IJSObjectReference? tryScrollHandle;
-    private string? tryScrollAttachedRunId;
     private PreflightRunResult? preflightResult;
     private string? statusMessage;
     private bool statusIsError;
     private bool compiling;
     private bool testing;
     private bool busy => compiling || testing;
-    private bool canTry => isPreflight ? selectedPreflight is not null : selectedSummary is not null;
+    private bool canTry => !DataMode.IsFakeMode && (isPreflight ? selectedPreflight is not null : selectedSummary is not null);
+    private bool Dirty => (selectedSummary?.Code ?? selectedPreflight?.Code) is { } saved && saved != scriptCode;
+    private string TryHint =>
+        DataMode.IsFakeMode ? "Fake mode has no server: scripts are compiled, saved and tried on the server. Switch to Live to try this one."
+        : !canTry ? "Save the script, then try it here: it runs once with the selected environment."
+        : isPreflight ? $"Press Try to run this {ProgramName} once. Its output shows up here."
+        : "Press Try to run the scenario once with one bee. Passed or failed, its steps, logs and calls show up here.";
 
     private const string ScenarioTemplate = """
         // 1. Define parameters (reflected by the backend to build the Blazor form)
@@ -552,26 +352,6 @@
         }
     }
 
-    private static List<FakeCall> BuildLiveTryCalls(LiveTestRunStatusDto res)
-    {
-        var errs = new ErrorDictionary();
-        var list = new List<FakeCall>(res.Calls.Count);
-        var cursor = 0.0;
-        for (var i = 0; i < res.Calls.Count; i++)
-        {
-            var c = res.Calls[i];
-            var off = c.OffsetMs > 0 || i == 0 ? c.OffsetMs : cursor;
-            cursor = Math.Max(cursor, off + c.DurationMs);
-            var name = c.Method == "STEP" ? c.Url : $"{c.Method} {c.Url}";
-            var slow = c.Error is null && c.DurationMs >= 1500;
-            list.Add(new FakeCall(i, name, off, c.DurationMs, c.StatusCode, errs.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: errs, Step: c.Step, Rep: c.Rep));
-        }
-        return list;
-    }
-
-    private static string FormatLiveTestLogs(IReadOnlyList<LiveLogEntryDto> logs) =>
-        string.Join("\n", logs.Select(l => $"[{l.Timestamp.ToLocalTime():HH:mm:ss.fff} {l.Level[..Math.Min(3, l.Level.Length)].ToUpperInvariant()}] {l.Message}" + (string.IsNullOrEmpty(l.Exception) ? "" : "\n" + l.Exception)));
-
     private void PickScenarioFile(ScriptScenarioSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
     private void PickPreflightFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
     private void PickShutdownFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
@@ -587,7 +367,6 @@
         scriptCode = s.Code;
         diagnostics = [];
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         compiledSpec = ParameterSpec.FromJsonSchema(s.Parameters);
         testParams = compiledSpec.DefaultJson();
@@ -612,7 +391,6 @@
         scriptCode = p.Code;
         diagnostics = [];
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         compiledSpec = null;
         statusMessage = null;
@@ -633,7 +411,6 @@
         scriptCode = ScenarioTemplate;
         diagnostics = [];
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         statusMessage = null;
         statusIsError = false;
@@ -661,7 +438,6 @@
         scriptCode = PreflightTemplate;
         diagnostics = [];
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         statusMessage = null;
         statusIsError = false;
@@ -682,7 +458,6 @@
         selectedPreflight = null;
         compiledSpec = null;
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         diagnostics = [];
         await CompileAndSave();
@@ -696,7 +471,6 @@
         statusIsError = false;
         diagnostics = [];
         liveTest = null;
-        liveTestPopupOpen = false;
         preflightResult = null;
         try
         {
@@ -709,7 +483,7 @@
                     var wasShutdown = isShutdown;
                     await ReloadAllAsync();
                     if (wasShutdown) SelectShutdown(saved); else SelectPreflight(saved);
-                    statusMessage = "Saved ✓";
+                    statusMessage = null; // the toolbar says "Saved"
                     statusIsError = false;
                 }
                 else
@@ -726,7 +500,7 @@
                 {
                     await ReloadAllAsync();
                     SelectScenario(saved);
-                    statusMessage = "Saved ✓";
+                    statusMessage = null; // the toolbar says "Saved"
                     statusIsError = false;
                 }
                 else
@@ -744,12 +518,6 @@
         finally { compiling = false; }
     }
 
-    private void OpenTryDialog()
-    {
-        if (!canTry) return;
-        tryOpen = true;
-    }
-
     private async Task RunTest()
     {
         if (!canTry) return;
@@ -758,7 +526,6 @@
         statusMessage = null;
         statusIsError = false;
         liveTest = null;
-        liveTestPopupOpen = false;
         liveTest = null;
         preflightResult = null;
         try
@@ -771,10 +538,6 @@
             else
             {
                 liveTest = await Api.StartLiveTestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
-                tryTab = 0;
-                tryStepsExpanded = true;
-                tryStepsReset++;
-                liveTestPopupOpen = true;
                 if (liveTest.Running)
                 {
                     StartLiveTestPolling(liveTest.TestRunId);
@@ -839,16 +602,6 @@
             await Api.StopLiveTestRunAsync(lt.TestRunId);
     }
 
-    private void CloseLiveTestPopup()
-    {
-        liveTestPopupOpen = false;
-        if (liveTest is not { Running: true })
-        {
-            StopLiveTestPolling();
-            testing = false;
-        }
-    }
-
     private void AddToPlan()
     {
         if (selectedSummary is null) return;
@@ -905,48 +658,11 @@
         _ = ReloadAllAsync();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        var runId = liveTestPopupOpen ? liveTest?.TestRunId : null;
-        if (runId != tryScrollAttachedRunId)
-        {
-            if (tryScrollHandle is not null)
-            {
-                try { await tryScrollHandle.InvokeVoidAsync("dispose"); } catch { }
-                try { await tryScrollHandle.DisposeAsync(); } catch { }
-                tryScrollHandle = null;
-            }
-            tryScrollAttachedRunId = runId;
-            if (runId is not null)
-            {
-                try { logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js"); } catch { }
-                if (logScrollMod is not null)
-                {
-                    try { tryScrollHandle = await logScrollMod.InvokeAsync<IJSObjectReference>("attach", tryInspectEl); } catch { }
-                }
-            }
-        }
-        else if (runId is not null && tryScrollHandle is not null)
-        {
-            try { await tryScrollHandle.InvokeVoidAsync("follow"); } catch { }
-        }
-    }
-
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         StopLiveTestPolling();
         DataMode.Changed -= OnStateChanged;
         Sim.Changed -= OnStateChanged;
-        if (tryScrollHandle is not null)
-        {
-            try { await tryScrollHandle.InvokeVoidAsync("dispose"); } catch { }
-            try { await tryScrollHandle.DisposeAsync(); } catch { }
-            tryScrollHandle = null;
-        }
-        if (logScrollMod is not null)
-        {
-            try { await logScrollMod.DisposeAsync(); } catch { }
-            logScrollMod = null;
-        }
+        return ValueTask.CompletedTask;
     }
 }

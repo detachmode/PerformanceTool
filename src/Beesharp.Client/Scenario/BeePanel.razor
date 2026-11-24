@@ -4,7 +4,7 @@
 @implements IAsyncDisposable
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
-@inject LogsPopupState LogsPopup
+@inject LogsLinks LogsPopup
 @inject IJSRuntime JS
 
 @{
@@ -286,7 +286,7 @@
     private void OpenBeeLogs(int sequence)
     {
         if (OpenLogs is not null) _ = OpenLogs(sequence);
-        else LogsPopup.Show(Index, sequence);
+        else LogsPopup.Show(entry: Index, bee: sequence);
     }
 
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);

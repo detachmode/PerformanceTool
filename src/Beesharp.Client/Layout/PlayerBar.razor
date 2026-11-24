@@ -4,7 +4,7 @@
 @implements IDisposable
 @implements IAsyncDisposable
 @inject IRunSource Sim
-@inject LogsPopupState Logs
+@inject LogsLinks Logs
 @inject DataModeState DataMode
 @inject ApiRunSource ApiRun
 @inject IJSRuntime JS
@@ -61,17 +61,17 @@
         <div class="gauge" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)pct)"><i style="width:@pct.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></div>
     </div>
 
-    <button class="inst key" @onclick="() => Logs.Show()" aria-haspopup="dialog" title="Open the logs (active bees are shown live)" aria-label="Active: @Format.Num(inFlight). Open logs"><span class="lbl">Active</span><span class="val run">@Format.Num(inFlight)</span></button>
+    <button class="inst key" @onclick="() => Logs.Show()" title="Open the logs" aria-label="Active: @Format.Num(inFlight). Open logs"><span class="lbl">Active</span><span class="val run">@Format.Num(inFlight)</span></button>
     <div class="inst extra" role="group" aria-label="Bees per minute"><span class="lbl">Bees/min</span><span class="val">@(active || s.State == FakeRunState.Finished ? Format.Num(actual) : "–")<em> / @Format.Num(target)</em></span></div>
-    <button class="inst key" @onclick="() => Logs.Show(null, null, BeeShow.Failed)" aria-haspopup="dialog" title="Show the failed bees in the logs" aria-label="Errors: @Format.Num(failed). Open failed bees in logs"><span class="lbl">Errors</span><span class="val @(failed > 0 ? "bad" : "")">@Format.Num(failed)</span></button>
-    <button class="inst extra" @onclick="() => Logs.Show(null, null, BeeShow.Slow)" aria-haspopup="dialog" title="Show the slow bees in the logs" aria-label="Slow: @Format.Num(slow). Open slow bees in logs"><span class="lbl">Slow</span><span class="val @(slow > 0 ? "warn" : "")">@Format.Num(slow)</span></button>
+    <button class="inst key" @onclick="() => Logs.Show(null, null, BeeShow.Failed)" title="Show the logs of the failed bees" aria-label="Errors: @Format.Num(failed). Open failed bees in logs"><span class="lbl">Errors</span><span class="val @(failed > 0 ? "bad" : "")">@Format.Num(failed)</span></button>
+    <button class="inst extra" @onclick="() => Logs.Show(null, null, BeeShow.Slow)" title="Show the logs of the slow bees" aria-label="Slow: @Format.Num(slow). Open slow bees in logs"><span class="lbl">Slow</span><span class="val @(slow > 0 ? "warn" : "")">@Format.Num(slow)</span></button>
 
     <div class="pl-end">
         @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
         {
             <a class="btn ghost small" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download title="Export this run as a ZIP of Parquet files (runs, bees, calls, logs)">Export</a>
         }
-        <button class="btn ghost small logs-btn" @onclick="() => Logs.Show()" aria-haspopup="dialog">Logs</button>
+        <button class="btn ghost small logs-btn" @onclick="() => Logs.Show()">Logs</button>
         <button class="btn ghost small more-btn" @onclick="() => open = !open" aria-expanded="@Aria.Bool(open)" aria-label="Run details">@(open ? "✕" : "⋯")</button>
     </div>
     <span class="visually-hidden" role="status" aria-live="polite">Run @stateText.ToLowerInvariant()</span>

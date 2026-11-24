@@ -9,6 +9,7 @@
             <h2>@Request.Title</h2>
             <span class="muted">@(loaded ? Format.Plural((int)Math.Min(total, int.MaxValue), "line", "lines") : "loading…")</span>
             <span class="spacer"></span>
+            <CopyButton GetTextAsync="CopyAllAsync" Disabled="@(rows.Count == 0)" />
             <button class="icon-btn" @onclick="Assistant.CloseFullLogs" aria-label="Close">✕</button>
         </div>
         <p class="log-filters muted">
@@ -53,6 +54,19 @@
         if (page is not null) { rows.AddRange(page.Items); total = page.TotalCount; }
         loaded = true;
         busy = false;
+    }
+
+    /// <summary>All lines of the query (the loaded ones plus the rest from the server), for the clipboard.</summary>
+    private async Task<string> CopyAllAsync()
+    {
+        var all = new List<StoredLogRow>(rows);
+        while (all.Count < total)
+        {
+            var page = await Client.GetLogsAsync(Request.RunId, Request.Query, all.Count, 1000);
+            if (page is null || page.Items.Count == 0) break;
+            all.AddRange(page.Items);
+        }
+        return string.Join("\n", all.Select(Raw));
     }
 
     private static string Raw(StoredLogRow r)

@@ -426,10 +426,10 @@ public sealed class FakeRunSource : IRunSource
                 callScopes[call.Index] = s = new Dictionary<string, string>(scope) { ["Call"] = $"{call.Index + 1}/{calls.Count} {call.Name}" };
             var t = at + offsetMs / 1000;
             list.Add(intern
-                ? new(t, runStarted.AddSeconds(t), level, errors.Intern(message), errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index)
+                ? new(t, runStarted.AddSeconds(t), level, errors.Intern(message), errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0)
                 : ex is null
-                    ? new(t, runStarted.AddSeconds(t), level, message, null, bee.Entry, seq, s, call?.Index)
-                    : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index));
+                    ? new(t, runStarted.AddSeconds(t), level, message, null, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0)
+                    : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0));
         }
 
         Log(0, "Debug", $"B{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));

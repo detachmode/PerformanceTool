@@ -1,7 +1,6 @@
 @* Fixed top bar shared by all pages (brain 0020): brand, Overview / Editor, and a clean hamburger menu on small screens so the header stays one crisp fixed row. *@
 @inherits LayoutComponentBase
 @implements IDisposable
-@inject LogsPopupState Logs
 @inject ViewSettings Settings
 @inject EnvironmentsPopupState EnvPopup
 @inject DataModeState DataMode
@@ -167,11 +166,6 @@
     <EnvironmentsDialog @key="EnvPopup.Version" />
 }
 
-@if (Logs.IsOpen)
-{
-    <LogsDialog @key="Logs.Version" />
-}
-
 @code {
     private bool menuOpen;
     private bool modeMenuOpen;
@@ -260,7 +254,6 @@
 
     protected override void OnInitialized()
     {
-        Logs.Changed += OnChanged;
         Settings.Changed += OnChanged;
         EnvPopup.Changed += OnChanged;
         DataMode.Changed += OnChanged;
@@ -293,7 +286,6 @@
 
     public void Dispose()
     {
-        Logs.Changed -= OnChanged;
         Settings.Changed -= OnChanged;
         EnvPopup.Changed -= OnChanged;
         DataMode.Changed -= OnChanged;

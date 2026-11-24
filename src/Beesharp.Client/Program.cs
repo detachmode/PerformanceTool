@@ -19,7 +19,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddSingleton(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddSingleton<ScenarioCatalog>();
-builder.Services.AddSingleton<LogsPopupState>();
+builder.Services.AddSingleton<LogsLinks>();
 builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();
 builder.Services.AddSingleton<ScriptApiClient>();

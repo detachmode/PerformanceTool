@@ -108,12 +108,27 @@ public sealed record StoredLogRow(
     int? CallIndex,
     int BeeOutcome,
     bool IsFailed,
-    bool IsSlow);
+    bool IsSlow,
+    int Step = 0);
 
 public sealed record LogPageResult(
     long TotalCount,
     int Offset,
     int Limit,
     IReadOnlyList<StoredLogRow> Items);
+
+/// <summary>Lines of one step of a scenario entry in the logs, and how many of them are errors (brain 0057).</summary>
+public sealed record LogStepCount(int Step, long Count, long Errors);
+
+/// <summary>
+/// The counts behind the Logs page's filter column (brain 0057), <c>GET /api/runs/{runId}/logs/facets</c>. <see cref="Total"/> is the number of lines the whole filter matches;
+/// <see cref="Levels"/> counts per level name (ignoring the level filter), <see cref="Entries"/> per scenario entry (index = entry; ignoring the entry and step filters),
+/// <see cref="Steps"/> per step of the filtered entry (empty without an entry filter; ignoring the step and level filters).
+/// </summary>
+public sealed record LogFacets(
+    long Total,
+    IReadOnlyDictionary<string, long> Levels,
+    IReadOnlyList<long> Entries,
+    IReadOnlyList<LogStepCount> Steps);
 
 public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);
