@@ -12,8 +12,8 @@
 
 <div class="rt-row @(Fresh ? "fresh" : "")" role="listitem">
     <button type="button" class="rt-line" aria-expanded="@Aria.Bool(Open)" title="@(Open ? "Hide details" : Written is null ? "Show the full value" : "Show the full value and who wrote it")" @onclick="OnToggle">
-        <span class="rt-key">@Key</span>
-        <span class="rt-val @(isObject ? "obj" : "") @(masked ? "masked" : "")">@(masked ? EnvironmentDisplay.Mask : Compact(Value))</span>
+        <span class="rt-key" title="@Key">@Key</span>
+        <span class="rt-val @(isObject ? "obj" : "") @(masked ? "masked" : "")" title="@(masked ? null : Full(Value))">@(masked ? EnvironmentDisplay.Mask : Compact(Value))</span>
     </button>
     @if (secret)
     {

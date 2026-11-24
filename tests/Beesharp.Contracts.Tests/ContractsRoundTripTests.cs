@@ -60,6 +60,17 @@ public class ContractsRoundTripTests
     }
 
     [Fact]
+    public void Log_rows_carry_their_step_and_the_facets_round_trip()
+    {
+        var row = RoundTrip(new StoredLogRow(1, 2, "B3", 0, 0.5, "Error", "bad", null, 0, 2, true, false, Step: 3));
+        Assert.Equal(3, row.Step);
+        var facets = RoundTrip(new LogFacets(7, new Dictionary<string, long> { ["Error"] = 4, ["Information"] = 3 }, [5, 2], [new LogStepCount(0, 3, 0), new LogStepCount(1, 4, 4)]));
+        Assert.Equal(4, facets.Levels["Error"]);
+        Assert.Equal([5L, 2L], facets.Entries);
+        Assert.Equal(new LogStepCount(1, 4, 4), facets.Steps[1]);
+    }
+
+    [Fact]
     public void Script_plan_and_request_types_round_trip()
     {
         var summary = new ScriptScenarioSummary("s", "s.cs", "script:s", "S", "d", "code", DateTimeOffset.UtcNow, new JsonObject { ["a"] = 1 });

@@ -49,6 +49,7 @@ public static class RunEndpoints
         app.MapGet("/api/runs/{runId}/logs", (
             string runId,
             int? entry,
+            int? step,
             int? bee,
             string? beeName,
             int? outcome,
@@ -60,20 +61,35 @@ public static class RunEndpoints
             int? limit,
             IRunStorage storage,
             CancellationToken ct) =>
-        {
-            var levelList = string.IsNullOrWhiteSpace(levels)
-                ? null
-                : levels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            return storage.QueryLogsAsync(
-                runId,
-                new LogQuery(entry, bee, beeName, outcome, failed, slow, levelList, search, offset ?? 0, limit ?? 200),
-                ct);
-        });
+            storage.QueryLogsAsync(runId, LogFilter(entry, step, bee, beeName, outcome, failed, slow, levels, search, offset ?? 0, limit ?? 200), ct));
+        // The counts behind the Logs page's filter column (brain 0057): the same filters as the log list.
+        app.MapGet("/api/runs/{runId}/logs/facets", (
+            string runId,
+            int? entry,
+            int? step,
+            int? bee,
+            string? beeName,
+            int? outcome,
+            bool? failed,
+            bool? slow,
+            string? levels,
+            string? search,
+            IRunStorage storage,
+            CancellationToken ct) =>
+            storage.GetLogFacetsAsync(runId, LogFilter(entry, step, bee, beeName, outcome, failed, slow, levels, search, 0, 1), ct));
         app.MapGet("/api/runs/{runId}/export", async (string runId, string? format, IRunStorage storage, CancellationToken ct) =>
         {
             var export = await storage.ExportRunAsync(runId, format ?? "parquet", ct);
             return export is null ? Results.NotFound() : Results.File(export.Content, export.ContentType, export.FileName);
         });
         return app;
+    }
+
+    private static LogQuery LogFilter(int? entry, int? step, int? bee, string? beeName, int? outcome, bool? failed, bool? slow, string? levels, string? search, int offset, int limit)
+    {
+        var levelList = string.IsNullOrWhiteSpace(levels)
+            ? null
+            : levels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return new LogQuery(entry, bee, beeName, outcome, failed, slow, levelList, search, offset, limit, step);
     }
 }

@@ -39,6 +39,12 @@
     [Parameter] public object? ResetKey { get; set; }
     /// <summary>Raised when the visible window approaches the end of <see cref="Items"/>, for lazy-loading pages.</summary>
     [Parameter] public EventCallback OnNearEnd { get; set; }
+    /// <summary>A log that grows at its end: while the reader is at the bottom, the list stays at the bottom when rows are added or measured.</summary>
+    [Parameter] public bool Follow { get; set; }
+    /// <summary>Raised when the reader scrolls to the bottom (true) or away from it (false).</summary>
+    [Parameter] public EventCallback<bool> AtEndChanged { get; set; }
+    /// <summary>Raised after a render in which the rows in the DOM changed: the first and last row index (exclusive) of the window, for lazy-loading the rows in it.</summary>
+    [Parameter] public EventCallback<(int First, int Last)> OnWindow { get; set; }
 
     private sealed class Box { public double H; }
 
@@ -49,6 +55,8 @@
     private int first, last;
     private object? lastKey;
     private bool reset;
+    private bool atEnd = true, lastFollow;
+    private (int, int) notifiedWindow = (-1, -1);
 
     // variable mode: pos[i] = top of row i, pos[n] = total height; valid for rows below validTo
     private double[] pos = [0];
@@ -120,6 +128,7 @@
                 await module.InvokeVoidAsync("attach", root, self);
             }
             if (module is null) return;
+            if (Follow != lastFollow) { lastFollow = Follow; await module.InvokeVoidAsync("setFollow", root, Follow); }
             if (reset)
             {
                 reset = false; pendingScrollTo = null;
@@ -131,6 +140,20 @@
         catch (JSDisconnectedException) { }
         catch (JSException) { }
         catch (OperationCanceledException) { }
+        if (OnWindow.HasDelegate && (first, last) != notifiedWindow)
+        {
+            notifiedWindow = (first, last);
+            await OnWindow.InvokeAsync((first, last));
+        }
+    }
+
+    /// <summary>Scrolls to the last row and follows the end again (when <see cref="Follow"/> is on).</summary>
+    public async Task ScrollToEndAsync()
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("pinToEnd", root); }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
     }
 
     /// <summary>Reads the real heights of the rendered rows and corrects the offsets behind them. The rendered rows themselves do not move.</summary>
@@ -171,8 +194,13 @@
     }
 
     [JSInvokable]
-    public void OnViewport(double scrollTop, double clientHeight, double clientWidth)
+    public void OnViewport(double scrollTop, double clientHeight, double clientWidth, bool atEndNow)
     {
+        if (atEndNow != atEnd)
+        {
+            atEnd = atEndNow;
+            if (AtEndChanged.HasDelegate) _ = AtEndChanged.InvokeAsync(atEndNow);
+        }
         var widthChanged = Variable && width >= 0 && Math.Abs(clientWidth - width) >= 1;
         width = clientWidth;
         if (!widthChanged && Math.Abs(scrollTop - top) < 1 && Math.Abs(clientHeight - height) < 1) return;
