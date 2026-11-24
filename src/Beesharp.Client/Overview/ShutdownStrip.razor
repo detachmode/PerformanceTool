@@ -10,6 +10,7 @@
             <span class="pf-badge @(failed ? "bad" : Run.IsRunning ? "run" : "ok")">@(failed ? "Shutdown failed" : Run.IsRunning ? "Shutting down…" : "Shutdown done")</span>
             <b class="mono">@Run.Name</b>
             <span class="spacer"></span>
+            <CopyButton GetText="@(() => string.Join("\n", Run.Logs))" Disabled="@(Run.Logs.Count == 0)" />
             <button type="button" class="btn ghost small" aria-expanded="@Aria.Bool(showLogs)" @onclick="() => userOpen = !showLogs"
                     title="@(showLogs ? "Hide the output" : "Show the output of the shutdown program")">
                 Logs · @Run.Logs.Count

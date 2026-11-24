@@ -36,7 +36,7 @@ public sealed class AssistantState : IDisposable
     private readonly ApiRunSource api;
     private readonly ApiEnvironmentSource environments;
     private readonly ScriptApiClient scripts;
-    private readonly LogsPopupState logs;
+    private readonly LogsLinks logs;
     private readonly EnvironmentsPopupState environmentsPopup;
     private readonly NavigationManager nav;
     private readonly IJSRuntime? js;
@@ -44,7 +44,7 @@ public sealed class AssistantState : IDisposable
     private CancellationTokenSource? sending;
 
     public AssistantState(AssistantClient client, DataModeState mode, ApiRunSource api, ApiEnvironmentSource environments, ScriptApiClient scripts,
-        LogsPopupState logs, EnvironmentsPopupState environmentsPopup, NavigationManager nav, IJSRuntime? js = null)
+        LogsLinks logs, EnvironmentsPopupState environmentsPopup, NavigationManager nav, IJSRuntime? js = null)
     {
         this.client = client;
         this.mode = mode;
@@ -209,14 +209,18 @@ public sealed class AssistantState : IDisposable
         }
     }
 
-    /// <summary>Opens the Logs popup pre-filtered when it can show the filter, otherwise the full-screen log list.</summary>
+    /// <summary>Opens the Logs page with the filter of the assistant's query when the run is the loaded one (or can be loaded), otherwise the full-screen log list of that run.</summary>
     public async Task OpenLogsAsync(string title, ViewQueryDto query)
     {
-        var simple = query.Levels is not { Count: > 0 } && string.IsNullOrWhiteSpace(query.Search);
-        if (simple && await EnsureRunLoadedAsync(query.RunId))
+        if (await EnsureRunLoadedAsync(query.RunId))
         {
-            var outcome = query.FailedBees is true ? BeeShow.Failed : query.SlowBees is true ? BeeShow.Slow : BeeShow.All;
-            logs.Show(query.Entry is { } e ? e - 1 : null, query.Bee is { } b ? b - 1 : null, outcome);
+            var filter = LogFilter.None
+                .WithEntry(query.Entry is { } e ? e - 1 : null)
+                .WithBee(query.Bee is { } b ? b - 1 : null)
+                .WithOutcome(query.FailedBees is true ? BeeShow.Failed : query.SlowBees is true ? BeeShow.Slow : BeeShow.All)
+                .WithLevels((query.Levels ?? []).Select(LogFilter.LevelName).OfType<string>())
+                .WithSearch(query.Search);
+            logs.Show(filter);
             return;
         }
         if (query.RunId is { } id)

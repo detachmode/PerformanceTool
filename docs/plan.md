@@ -57,7 +57,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 
 - **Done (X, user request):** UI polish (2026-11-23): one calm look, new overview cards, step list (0056), fixes; screenshots `docs/screenshots/2026-11-23-ui-polish-review/`.
 - **Next (Y1, user decision 0057):** the scenario as its own page (three columns: steps, chart and bees, the selected bee on the right) instead of the popup.
-- **Next (Y2, user decision 0057):** Logs page (filter column with counts, full-width search, removable filter chips), Editor (toolbar + Try column), Environment (one column), and a copy-all-logs button wherever logs show.
+- **Done (Y2, user decision 0057):** Logs page (filter column with counts, full-width search, removable filter chips; Fake, live, finished and stored runs, server-side paging, counts and step filter via `GET /api/runs/{id}/logs/facets`), Editor (toolbar + Try column), Environment (one centred column), and a copy-all-logs button wherever logs show; screenshots `docs/screenshots/2026-11-24-logs-editor-environment/`. The logs popup is gone (entry points link to `/logs?...`). Follow-up: preflight and shutdown output is not stored with a run, so a stored run shows no program output (see 0057 implementation notes).
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

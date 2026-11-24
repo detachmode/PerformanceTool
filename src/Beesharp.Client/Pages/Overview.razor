@@ -11,7 +11,7 @@
 @inject ApiRunSource ApiRun
 @inject ScenarioCatalog Catalog
 @inject ScriptApiClient ScriptApi
-@inject LogsPopupState Logs
+@inject LogsLinks Logs
 @inject NavigationManager Nav
 
 <PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
@@ -95,7 +95,7 @@
                         {
                             <div class="dd-sep" role="separator"></div>
                             <div class="dd-lbl">Run</div>
-                            <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Run logs popup</button>
+                            <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Logs</button>
                             @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
                             {
                                 <a class="dd-item" role="menuitem" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download @onclick="() => viewMenuOpen = false">Export Parquet (.zip)</a>

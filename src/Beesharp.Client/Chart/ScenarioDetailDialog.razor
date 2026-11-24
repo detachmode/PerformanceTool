@@ -2,7 +2,7 @@
    there are many), a quick Show: All / Failed / Slow switch with stepping, and the calls of the selected bee. Logs are one click away. *@
 @using System.Globalization
 @implements IDisposable
-@inject LogsPopupState Logs
+@inject LogsLinks Logs
 @inject ViewSettings Settings
 @inject ScenarioCatalog Catalog
 @inject NavigationManager Nav
@@ -967,7 +967,7 @@
 
     protected override void OnInitialized()
     {
-        Logs.Changed += OnLogsChanged; Settings.Changed += OnSettingsChanged;
+        Settings.Changed += OnSettingsChanged;
         if (InitialBee is { } initialBee)
         {
             var all = Snapshot.Store.Bees(Index);
@@ -1239,12 +1239,6 @@
         catch (ObjectDisposedException) { }
     }
 
-    // When the Logs popup (which sits on top of this one) closes, take the keyboard focus back so Esc keeps working.
-    private void OnLogsChanged()
-    {
-        if (!Logs.IsOpen) { refocus = true; InvokeAsync(StateHasChanged); }
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         SyncRunningLogPoll();
@@ -1339,7 +1333,7 @@
             beeStepsScrolled = null;
         }
 
-        if (!refocus || Logs.IsOpen) return;
+        if (!refocus) return;
         refocus = false;
         try { await root.FocusAsync(); } catch (Exception) { }
     }
@@ -1662,7 +1656,6 @@
         entryLogCts?.Cancel();
         entryLogCts?.Dispose();
         selfRef?.Dispose();
-        Logs.Changed -= OnLogsChanged;
         Settings.Changed -= OnSettingsChanged;
     }
 }
