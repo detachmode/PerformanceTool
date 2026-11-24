@@ -1,16 +1,15 @@
 name: NuGet
 
-# Packs and publishes Beesharp.Host (and its Beesharp.* library dependencies) to NuGet.org
-# on version tags (v*) or manual dispatch.
+# Packs and publishes Beesharp.Core and Beesharp.Host to NuGet.org.
+# Called by ci.yml on version tags (v*) after build-test and e2e pass, or triggered manually via workflow_dispatch.
 # Supports either NuGet Trusted Publishing (OIDC: set repository variable NUGET_USER)
 # or a classic API key (set repository secret NUGET_API_KEY).
 on:
-  push:
-    tags: ['v*']
+  workflow_call:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version to publish (leave empty to use Beesharp.Core.csproj, e.g. 0.1.0)'
+        description: 'Package version to publish (leave empty to use Directory.Build.props, e.g. 0.1.1)'
         required: false
         type: string
       dry_run:
@@ -62,12 +61,13 @@ jobs:
           elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Beesharp.Core/Beesharp.Core.csproj | head -n 1)
+            VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved package version: $VERSION"
 
       - name: Test Core, Scripting and Host
+        if: github.event_name != 'workflow_call'
         run: |
           dotnet test tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj -c Release
           dotnet test tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj -c Release
@@ -85,21 +85,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
-          for proj in \
-            src/Beesharp.Core/Beesharp.Core.csproj \
-            src/Beesharp.Contracts/Beesharp.Contracts.csproj \
-            src/Beesharp.Ai.Contracts/Beesharp.Ai.Contracts.csproj \
-            src/Beesharp.Storage/Beesharp.Storage.csproj \
-            src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj \
-            src/Beesharp.Scripting/Beesharp.Scripting.csproj \
-            src/Beesharp.Engine/Beesharp.Engine.csproj \
-            src/Beesharp.Ai/Beesharp.Ai.csproj; do
-            dotnet pack "$proj" \
-              -c Release \
-              -o artifacts/nuget \
-              -p:Version="$VERSION" \
-              -p:ContinuousIntegrationBuild=true
-          done
+          dotnet pack src/Beesharp.Core/Beesharp.Core.csproj \
+            -c Release \
+            -o artifacts/nuget \
+            -p:Version="$VERSION" \
+            -p:ContinuousIntegrationBuild=true
           dotnet pack src/Beesharp.Host/Beesharp.Host.csproj \
             -c Release \
             -o artifacts/nuget \
@@ -137,16 +127,7 @@ jobs:
             exit 1
           fi
           VERSION="${{ steps.ver.outputs.version }}"
-          for pkg in \
-            Beesharp.Core \
-            Beesharp.Contracts \
-            Beesharp.Ai.Contracts \
-            Beesharp.Storage \
-            Beesharp.Storage.DuckDb \
-            Beesharp.Scripting \
-            Beesharp.Engine \
-            Beesharp.Ai \
-            Beesharp.Host; do
+          for pkg in Beesharp.Core Beesharp.Host; do
             dotnet nuget push "artifacts/nuget/${pkg}.${VERSION}.nupkg" \
               --source https://api.nuget.org/v3/index.json \
               --api-key "$API_KEY" \
@@ -161,5 +142,5 @@ jobs:
             echo "### Beesharp NuGet"
             echo "- **Version:** \`${{ steps.ver.outputs.version }}\`"
             echo "- **Dry run:** \`${{ inputs.dry_run == true }}\`"
-            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Contracts\`, \`Beesharp.Ai.Contracts\`, \`Beesharp.Storage\`, \`Beesharp.Storage.DuckDb\`, \`Beesharp.Scripting\`, \`Beesharp.Engine\`, \`Beesharp.Ai\`, \`Beesharp.Host\`"
+            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Host\`"
           } >> "$GITHUB_STEP_SUMMARY"

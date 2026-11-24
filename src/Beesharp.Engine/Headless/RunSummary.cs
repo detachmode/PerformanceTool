@@ -1,15 +1,15 @@
 using System.Text;
 using System.Text.Json;
-using Beesharp.Services;
 
-namespace Beesharp.Cli;
+namespace Beesharp.Services;
 
 public sealed record StepFailureCount(string Step, int Count);
 
 /// <summary>One scenario entry in the summary. <see cref="Failed"/> includes the canceled bees (brain 0053). Times are milliseconds of the bees that did not fail; null when there were none.</summary>
 public sealed record EntrySummary(
     int Number, string Label, int Started, int Finished, int Failed, int Canceled, int Slow, int Dropped, double? TypicalMs, double? Slowest5PercentMs,
-    IReadOnlyList<StepFailureCount>? FailedPerStep = null);
+    IReadOnlyList<StepFailureCount>? FailedPerStep = null,
+    double? MinMs = null, double? AvgMs = null, double? MaxMs = null);
 
 public sealed record ErrorCount(string Error, int Count);
 
@@ -35,7 +35,9 @@ public sealed record RunSummary(
     ProgramOutcome Shutdown,
     string StorageProvider,
     string? SavedTo,
-    int ExitCode)
+    int ExitCode,
+    string? ExportedTo = null,
+    long? ExportedBytes = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -44,15 +46,16 @@ public sealed record RunSummary(
     /// <summary>The exit code for a finished run (brain 0054): 2 could not run, 1 a bee failed or canceled / stopped / shutdown program failed, else 0.</summary>
     public static int ExitCodeFor(string? runError, string? preflightState, bool stopped, int failedBees, string? shutdownState)
     {
-        if (stopped) return ExitCodes.BeesFailed; // a stopped run is not "could not run", even when it was stopped during the preflight
-        if (preflightState == "Failed" || runError is not null) return ExitCodes.CouldNotRun;
-        if (failedBees > 0 || shutdownState == "Failed") return ExitCodes.BeesFailed;
-        return ExitCodes.Ok;
+        if (stopped) return HeadlessExitCodes.BeesFailed; // a stopped run is not "could not run", even when it was stopped during the preflight
+        if (preflightState == "Failed" || runError is not null) return HeadlessExitCodes.CouldNotRun;
+        if (failedBees > 0 || shutdownState == "Failed") return HeadlessExitCodes.BeesFailed;
+        return HeadlessExitCodes.Ok;
     }
 
     /// <summary>Builds the summary from the final status and all bees of a run.</summary>
     public static RunSummary Build(
-        string preset, string? environment, LiveRunStatusDto status, IReadOnlyList<LiveBeeDto> bees, bool stopped, string? savedTo, int topErrors = 5)
+        string preset, string? environment, LiveRunStatusDto status, IReadOnlyList<LiveBeeDto> bees, bool stopped, string? savedTo, int topErrors = 5,
+        string? exportedTo = null, long? exportedBytes = null)
     {
         var entries = new List<EntrySummary>();
         for (var i = 0; i < status.Plan.Scenarios.Count; i++)
@@ -79,7 +82,10 @@ public sealed record RunSummary(
                 view.SlowBees, view.Dropped,
                 times.Length == 0 ? null : Percentile(times, 0.5),
                 times.Length == 0 ? null : Percentile(times, 0.95),
-                failedSteps));
+                failedSteps,
+                times.Length == 0 ? null : times[0],
+                times.Length == 0 ? null : times.Average(),
+                times.Length == 0 ? null : times[^1]));
         }
 
         var errors = bees.Where(b => b.Error is not null)
@@ -97,7 +103,8 @@ public sealed record RunSummary(
             Outcome(status.PreflightState, status.PreflightScriptName, status.PreflightError),
             shutdown,
             status.StorageProvider, savedTo,
-            ExitCodeFor(status.Error, status.PreflightState, stopped, failed, status.ShutdownState));
+            ExitCodeFor(status.Error, status.PreflightState, stopped, failed, status.ShutdownState),
+            exportedTo, exportedBytes);
     }
 
     private static ProgramOutcome Outcome(string? state, string? script, string? error) =>
@@ -122,10 +129,10 @@ public sealed record RunSummary(
         sb.AppendLine();
 
         var label = Math.Max(5, Entries.Max(e => (int?)Label(e).Length) ?? 5);
-        sb.AppendLine($"  {"Entry".PadRight(label)}  {"finished",8}  {"failed",6}  {"slow",5}  {"typical",9}  {"slowest 5%",10}");
+        sb.AppendLine($"  {"Entry".PadRight(label)}  {"finished",8}  {"failed",6}  {"slow",5}  {"min",8}  {"typical",9}  {"avg",8}  {"slowest 5%",10}  {"max",8}");
         foreach (var e in Entries)
         {
-            sb.AppendLine($"  {Label(e).PadRight(label)}  {e.Finished,8}  {e.Failed,6}  {e.Slow,5}  {Ms(e.TypicalMs),9}  {Ms(e.Slowest5PercentMs),10}" +
+            sb.AppendLine($"  {Label(e).PadRight(label)}  {e.Finished,8}  {e.Failed,6}  {e.Slow,5}  {Ms(e.MinMs),8}  {Ms(e.TypicalMs),9}  {Ms(e.AvgMs),8}  {Ms(e.Slowest5PercentMs),10}  {Ms(e.MaxMs),8}" +
                 (e.Dropped > 0 ? $"   ({e.Dropped} dropped: too many in flight)" : ""));
             if (e.FailedPerStep is { Count: > 0 })
                 sb.AppendLine($"    failed at {string.Join(", ", e.FailedPerStep.Select(f => $"{f.Step}: {f.Count}"))}");
@@ -143,14 +150,16 @@ public sealed record RunSummary(
 
         sb.AppendLine();
         sb.AppendLine(SavedTo is not null ? $"  Saved to    {SavedTo}" : $"  Not saved   ({(StorageProvider == "Memory" ? "--storage memory keeps nothing" : "the run never started")})");
+        if (ExportedTo is not null)
+            sb.AppendLine($"  Exported to {ExportedTo}{(ExportedBytes is { } bytes ? $" ({FormatBytes(bytes)})" : "")}");
         if (Bees == 0 && RunError is null) sb.AppendLine("  No bee finished. Check the plan's duration and rates.");
         sb.AppendLine();
         sb.AppendLine(ExitCode switch
         {
-            ExitCodes.Ok => $"Result: all {Bees} bees succeeded (exit code 0).",
-            ExitCodes.BeesFailed when FailedBees > 0 => $"Result: {FailedBees} of {Bees} bees failed (exit code 1).",
-            ExitCodes.BeesFailed when Stopped => "Result: the run was stopped (exit code 1).",
-            ExitCodes.BeesFailed => "Result: the shutdown program failed (exit code 1).",
+            HeadlessExitCodes.Ok => $"Result: all {Bees} bees succeeded (exit code 0).",
+            HeadlessExitCodes.BeesFailed when FailedBees > 0 => $"Result: {FailedBees} of {Bees} bees failed (exit code 1).",
+            HeadlessExitCodes.BeesFailed when Stopped => "Result: the run was stopped (exit code 1).",
+            HeadlessExitCodes.BeesFailed => "Result: the shutdown program failed (exit code 1).",
             _ => "Result: the run could not run (exit code 2).",
         });
         return sb.ToString();
@@ -166,14 +175,30 @@ public sealed record RunSummary(
         _ => $"{o.State.ToLowerInvariant()} ({o.Script})",
     };
 
-    internal static string Duration(double seconds) =>
+    public static string Duration(double seconds) =>
         seconds < 60 ? $"{seconds:0.0} s" : $"{(int)(seconds / 60)} min {(int)(seconds % 60)} s";
 
-    internal static string Ms(double? ms) => ms is null ? "-" : ms.Value >= 1000 ? $"{ms.Value / 1000:0.00} s" : $"{ms.Value:0} ms";
+    public static string FormatClock(double seconds)
+    {
+        var total = Math.Max(0, (int)Math.Floor(seconds));
+        var h = total / 3600;
+        var m = (total % 3600) / 60;
+        var s = total % 60;
+        return h > 0 ? $"{h:00}:{m:00}:{s:00}" : $"{m:00}:{s:00}";
+    }
 
-    private static string Shorten(string error)
+    public static string Ms(double? ms) => ms is null ? "-" : ms.Value >= 1000 ? $"{ms.Value / 1000:0.00} s" : $"{ms.Value:0} ms";
+
+    public static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):0.0} MB",
+    };
+
+    public static string Shorten(string error, int maxLength = 110)
     {
         var line = error.ReplaceLineEndings(" ").Trim();
-        return line.Length <= 110 ? line : line[..107] + "...";
+        return line.Length <= maxLength ? line : line[..(maxLength - 3)] + "...";
     }
 }

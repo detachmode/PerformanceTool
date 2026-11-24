@@ -27,6 +27,8 @@ public sealed class InMemoryRunStorage : IRunStorage
         public string? Error { get; set; }
         public int FailedBees { get; set; }
         public string? RuntimeJson { get; set; }
+        public StoredProgramRunDto? Preflight { get; set; }
+        public StoredProgramRunDto? Shutdown { get; set; }
         public Dictionary<int, StoredBeeDetail> Bees { get; } = [];
         public List<StoredLogRow> Logs { get; } = [];
     }
@@ -94,6 +96,33 @@ public sealed class InMemoryRunStorage : IRunStorage
             return Task.FromResult(runs.FirstOrDefault(x => x.RunId == runId)?.RuntimeJson);
     }
 
+    public Task SaveProgramRunAsync(string runId, string kind, StoredProgramRunDto program, CancellationToken ct = default)
+    {
+        var (normalized, entry, beeName) = ProgramLogHelper.ResolveKind(kind);
+        var isFailed = string.Equals(program.State, "Failed", StringComparison.OrdinalIgnoreCase);
+        var outcome = isFailed ? 2 : 0;
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return Task.CompletedTask;
+            if (normalized == "preflight") bucket.Preflight = program;
+            else bucket.Shutdown = program;
+
+            bucket.Logs.RemoveAll(l => l.Entry == entry);
+            var atSeconds = normalized == "shutdown" ? bucket.ElapsedSeconds : 0.0;
+            foreach (var raw in program.Logs)
+            {
+                if (bucket.Logs.Count >= MaxLogsPerRun) bucket.Logs.RemoveAt(0);
+                var (level, message) = ProgramLogHelper.ParseLine(raw);
+                bucket.Logs.Add(new StoredLogRow(
+                    Interlocked.Increment(ref nextLogId),
+                    entry, beeName, entry, atSeconds, level, message, null, null,
+                    outcome, isFailed, false, 0));
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default)
@@ -115,7 +144,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             if (b is null) return Task.FromResult<StoredRunData?>(null);
             var bees = b.Bees.Values.OrderBy(a => a.Sequence).Select(a => new StoredBeeSummary(
                 a.Sequence, a.Entry, a.StartedAt, a.DurationMs, a.StatusCode, a.Bytes, a.Error, 0, a.FailedStep, a.FailedRep)).ToList();
-            return Task.FromResult<StoredRunData?>(new StoredRunData(b.RunId, b.StartedUtc, b.State, b.ElapsedSeconds, b.Plan.Clone(), bees, b.Logs.Count, b.Error, b.Steps));
+            return Task.FromResult<StoredRunData?>(new StoredRunData(b.RunId, b.StartedUtc, b.State, b.ElapsedSeconds, b.Plan.Clone(), bees, b.Logs.Count, b.Error, b.Steps, b.Preflight, b.Shutdown));
         }
     }
 
@@ -169,6 +198,8 @@ public sealed class InMemoryRunStorage : IRunStorage
             var bucket = runs.FirstOrDefault(x => x.RunId == runId);
             if (bucket is null) return Task.FromResult(new LogFacets(0, new Dictionary<string, long>(), [], []));
             var total = 0L;
+            var preflightCount = 0L;
+            var shutdownCount = 0L;
             var levelCounts = new Dictionary<string, long>();
             var entryCounts = new List<long>();
             var stepCounts = new SortedDictionary<int, (long Count, long Errors)>();
@@ -178,16 +209,21 @@ public sealed class InMemoryRunStorage : IRunStorage
                 if (Matches(l, q, entry: true, step: true, levels: false)) levelCounts[l.Level] = levelCounts.GetValueOrDefault(l.Level) + 1;
                 if (Matches(l, q, entry: false, step: false, levels: true))
                 {
-                    while (entryCounts.Count <= l.Entry) entryCounts.Add(0);
-                    entryCounts[l.Entry]++;
+                    if (l.Entry == ProgramLogEntry.Preflight) preflightCount++;
+                    else if (l.Entry == ProgramLogEntry.Shutdown) shutdownCount++;
+                    else if (l.Entry >= 0)
+                    {
+                        while (entryCounts.Count <= l.Entry) entryCounts.Add(0);
+                        entryCounts[l.Entry]++;
+                    }
                 }
-                if (q.Entry is not null && Matches(l, q, entry: true, step: false, levels: false))
+                if (q.Entry is >= 0 && Matches(l, q, entry: true, step: false, levels: false))
                 {
                     var (c, err) = stepCounts.GetValueOrDefault(l.Step);
                     stepCounts[l.Step] = (c + 1, err + (string.Equals(l.Level, "Error", StringComparison.OrdinalIgnoreCase) ? 1 : 0));
                 }
             }
-            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList()));
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflightCount, shutdownCount));
         }
     }
 

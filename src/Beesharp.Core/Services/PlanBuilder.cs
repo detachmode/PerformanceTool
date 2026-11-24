@@ -17,7 +17,9 @@ public sealed class PlanBuilder
     private int maxConcurrency = 50;
     private int timeoutSeconds = 15;
     private string? preflightScriptId;
+    private Func<IEnumerable<IPreflightProgram>?, string?>? preflightResolver;
     private string? shutdownScriptId;
+    private Func<IEnumerable<IShutdownProgram>?, string?>? shutdownResolver;
 
     public PlanBuilder Duration(TimeSpan duration)
     {
@@ -52,12 +54,30 @@ public sealed class PlanBuilder
     public PlanBuilder Preflight(string? scriptId)
     {
         preflightScriptId = scriptId;
+        preflightResolver = null;
+        return this;
+    }
+
+    /// <summary>Sets the preflight program by compiled C# class (resolved from registered <see cref="IPreflightProgram"/> instances).</summary>
+    public PlanBuilder Preflight<TPreflight>() where TPreflight : class, IPreflightProgram
+    {
+        preflightScriptId = null;
+        preflightResolver = programs => ResolveProgramId<TPreflight, IPreflightProgram>(programs, "Preflight", "AddPreflight");
         return this;
     }
 
     public PlanBuilder Shutdown(string? scriptId)
     {
         shutdownScriptId = scriptId;
+        shutdownResolver = null;
+        return this;
+    }
+
+    /// <summary>Sets the shutdown program by compiled C# class (resolved from registered <see cref="IShutdownProgram"/> instances).</summary>
+    public PlanBuilder Shutdown<TShutdown>() where TShutdown : class, IShutdownProgram
+    {
+        shutdownScriptId = null;
+        shutdownResolver = programs => ResolveProgramId<TShutdown, IShutdownProgram>(programs, "Shutdown", "AddShutdown");
         return this;
     }
 
@@ -117,7 +137,10 @@ public sealed class PlanBuilder
         return this;
     }
 
-    public LoadPlan Build(ScenarioCatalog? catalog = null)
+    public LoadPlan Build(
+        ScenarioCatalog? catalog = null,
+        IEnumerable<IPreflightProgram>? preflights = null,
+        IEnumerable<IShutdownProgram>? shutdowns = null)
     {
         var scenarios = new List<ScenarioRunConfig>(entries.Count);
         foreach (var entryFactory in entries)
@@ -129,9 +152,27 @@ public sealed class PlanBuilder
             DurationSeconds = durationSeconds,
             MaxConcurrency = maxConcurrency,
             TimeoutSeconds = timeoutSeconds,
-            PreflightScriptId = preflightScriptId,
-            ShutdownScriptId = shutdownScriptId,
+            PreflightScriptId = preflightResolver is not null ? preflightResolver(preflights) : preflightScriptId,
+            ShutdownScriptId = shutdownResolver is not null ? shutdownResolver(shutdowns) : shutdownScriptId,
         };
+    }
+
+    private static string ResolveProgramId<TProgram, TInterface>(
+        IEnumerable<TInterface>? programs,
+        string kindLabel,
+        string registrationMethod)
+        where TProgram : class, TInterface
+        where TInterface : IRunProgram
+    {
+        if (programs is null)
+            throw new InvalidOperationException($"Registered {kindLabel.ToLowerInvariant()} programs are required to build a plan referencing '{typeof(TProgram).Name}'.");
+
+        var list = programs as IReadOnlyCollection<TInterface> ?? programs.ToList();
+        var program = list.FirstOrDefault(p => p.GetType() == typeof(TProgram))
+            ?? list.FirstOrDefault(p => typeof(TProgram).IsAssignableFrom(p.GetType()))
+            ?? throw new InvalidOperationException($"{kindLabel} program '{typeof(TProgram).Name}' is not registered. Call builder.{registrationMethod}<{typeof(TProgram).Name}>().");
+
+        return program.Id;
     }
 
     private static ScenarioRunConfig CreateTypedEntry<TScenario>(

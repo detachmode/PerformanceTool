@@ -104,8 +104,6 @@ public sealed class PlanWorkspace
         var index = -1;
         Mutate(() =>
         {
-            if (plan.Scenarios.Count >= LoadPlan.MaxEntries)
-                throw new InvalidOperationException($"At most {LoadPlan.MaxEntries} scenario entries per plan.");
             var config = ScenarioRunConfig.CreateFor(scenario);
             var same = plan.Scenarios.Count(s => s.ScenarioId == scenario.Id);
             config.Label = same == 0 ? scenario.Name : $"{scenario.Name} #{same + 1}";

@@ -50,16 +50,42 @@ public abstract class ScriptProgramStore
         string FileName,
         string Name,
         string Code,
-        Script<object> Compiled,
+        Script<object>? CompiledScript,
+        IRunProgram? CompiledProgram,
         DateTimeOffset UpdatedUtc);
 
     /// <param name="directory">The folder of this kind's <c>.cs</c> files (e.g. <c>scripts/preflight</c>).</param>
-    protected ScriptProgramStore(string directory, EnvironmentStore? environments, ScriptProgramKind kind)
+    protected ScriptProgramStore(
+        string directory,
+        EnvironmentStore? environments,
+        ScriptProgramKind kind,
+        IEnumerable<IRunProgram>? compiled = null)
     {
         this.kind = kind;
         (label, writerKind) = kind == ScriptProgramKind.Shutdown ? ("Shutdown program", DataWriterKind.Shutdown) : ("Preflight", DataWriterKind.Preflight);
         folder = new ScriptFolder(directory, includeLegacyCsx: false);
         this.environments = environments;
+
+        if (compiled is not null)
+        {
+            var loadedAt = DateTimeOffset.UtcNow;
+            foreach (var program in compiled)
+            {
+                if (string.IsNullOrWhiteSpace(program.Id))
+                    throw new InvalidOperationException($"Compiled {label.ToLowerInvariant()} '{program.GetType().FullName}' must have a non-empty Id.");
+                var type = program.GetType();
+                var stored = new StoredProgram(
+                    program.Id,
+                    $"{type.Name}.cs",
+                    program.Name,
+                    $"// Compiled C# class: {type.FullName}",
+                    CompiledScript: null,
+                    CompiledProgram: program,
+                    loadedAt);
+                if (!scripts.TryAdd(program.Id, stored))
+                    throw new InvalidOperationException($"Duplicate {label.ToLowerInvariant()} id '{program.Id}'.");
+            }
+        }
     }
 
     /// <summary>Compiles every file of this kind. Returns the files that did not compile (empty when all went well), so a caller can report them.</summary>
@@ -113,7 +139,7 @@ public abstract class ScriptProgramStore
         if (persist)
             await folder.SaveAsync(id, code, ct);
 
-        var stored = new StoredProgram(id, baseName, displayName, code, script, updated);
+        var stored = new StoredProgram(id, baseName, displayName, code, script, CompiledProgram: null, updated);
         lock (sync) scripts[id] = stored;
 
         return new PreflightCompileResult(true, ToSummary(stored), mapped);
@@ -123,7 +149,9 @@ public abstract class ScriptProgramStore
     {
         lock (sync)
         {
-            if (!scripts.Remove(scriptId)) return false;
+            if (!scripts.TryGetValue(scriptId, out var existing) || existing.CompiledProgram is not null)
+                return false;
+            scripts.Remove(scriptId);
         }
         folder.Delete(ScriptNames.SanitizeId(scriptId));
         return true;
@@ -163,22 +191,44 @@ public abstract class ScriptProgramStore
         runCts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 600)));
 
         var logger = new CallbackLogger(Emit);
-        var globals = new PreflightGlobals
-        {
-            Http = http,
-            Logger = logger,
-            Env = envValues,
-            Data = (runData ?? new RunData(0)).RunBagFor(new DataWriter(writerKind)),
-            CancellationToken = runCts.Token,
-            Log = msg => Emit("INF", msg),
-            Fail = reason => throw new InvalidOperationException(string.IsNullOrWhiteSpace(reason) ? $"{label} failed." : reason),
-            RunProcessAsync = (file, args) => RunExternalProcessAsync(file, args, Emit, runCts.Token),
-        };
+        var data = (runData ?? new RunData(0)).RunBagFor(new DataWriter(writerKind));
+        Action<string> log = msg => Emit("INF", msg);
+        Action<string> fail = reason => throw new InvalidOperationException(string.IsNullOrWhiteSpace(reason) ? $"{label} failed." : reason);
+        Func<string, string, Task<int>> runProcessAsync = (file, args) => RunExternalProcessAsync(file, args, Emit, runCts.Token);
 
         Emit("INF", $"Starting {label.ToLowerInvariant()} '{stored.FileName}'…");
         try
         {
-            await stored.Compiled.RunAsync(globals, runCts.Token);
+            if (stored.CompiledProgram is not null)
+            {
+                var context = new ProgramContext
+                {
+                    Http = http,
+                    Logger = logger,
+                    Environment = envValues,
+                    Data = data,
+                    CancellationToken = runCts.Token,
+                    Log = log,
+                    Fail = fail,
+                    RunProcessAsync = runProcessAsync,
+                };
+                await stored.CompiledProgram.ExecuteAsync(context, runCts.Token);
+            }
+            else
+            {
+                var globals = new PreflightGlobals
+                {
+                    Http = http,
+                    Logger = logger,
+                    Env = envValues,
+                    Data = data,
+                    CancellationToken = runCts.Token,
+                    Log = log,
+                    Fail = fail,
+                    RunProcessAsync = runProcessAsync,
+                };
+                await stored.CompiledScript!.RunAsync(globals, runCts.Token);
+            }
             sw.Stop();
             Emit("INF", $"{label} finished successfully in {sw.Elapsed.TotalMilliseconds:0.#} ms.");
             return new PreflightRunResult(true, sw.Elapsed.TotalMilliseconds, null, logs.ToArray());
@@ -271,10 +321,16 @@ public abstract class ScriptProgramStore
     }
 }
 
-/// <summary>The preflight (brain 0042): runs before the scenarios; they only start if it succeeds. Stored in <c>scripts/preflight/*.cs</c>.</summary>
-public sealed class PreflightStore(string directory, EnvironmentStore? environments = null)
-    : ScriptProgramStore(directory, environments, ScriptProgramKind.Preflight);
+/// <summary>The preflight (brain 0042): runs before the scenarios; they only start if it succeeds. Supports compiled <see cref="IPreflightProgram"/> classes and <c>scripts/preflight/*.cs</c>.</summary>
+public sealed class PreflightStore(
+    string directory,
+    EnvironmentStore? environments = null,
+    IEnumerable<IPreflightProgram>? compiled = null)
+    : ScriptProgramStore(directory, environments, ScriptProgramKind.Preflight, compiled);
 
-/// <summary>The shutdown program (brain 0052): the same kind of C# script, stored in <c>scripts/shutdown/*.cs</c>. It always runs at the end of a run.</summary>
-public sealed class ShutdownStore(string directory, EnvironmentStore? environments = null)
-    : ScriptProgramStore(directory, environments, ScriptProgramKind.Shutdown);
+/// <summary>The shutdown program (brain 0052): runs at the end of a run. Supports compiled <see cref="IShutdownProgram"/> classes and <c>scripts/shutdown/*.cs</c>.</summary>
+public sealed class ShutdownStore(
+    string directory,
+    EnvironmentStore? environments = null,
+    IEnumerable<IShutdownProgram>? compiled = null)
+    : ScriptProgramStore(directory, environments, ScriptProgramKind.Shutdown, compiled);

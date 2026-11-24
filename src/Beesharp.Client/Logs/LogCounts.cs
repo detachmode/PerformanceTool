@@ -11,6 +11,8 @@ public static class LogCounts
     public static LogFacets Count(IReadOnlyList<FakeLogEntry> lines, LogFilter filter, RunStore store)
     {
         long total = 0;
+        long preflight = 0;
+        long shutdown = 0;
         var levels = new Dictionary<string, long>();
         var entries = new List<long>();
         var steps = new SortedDictionary<int, (long Count, long Errors)>();
@@ -23,16 +25,21 @@ public static class LogCounts
                 levels[l.Level] = levels.GetValueOrDefault(l.Level) + 1;
             if (all || filter.Matches(l, store, entry: false, step: false, levels: true))
             {
-                while (entries.Count <= l.Entry) entries.Add(0);
-                entries[l.Entry]++;
+                if (l.Entry == ProgramLogEntry.Preflight) preflight++;
+                else if (l.Entry == ProgramLogEntry.Shutdown) shutdown++;
+                else if (l.Entry >= 0)
+                {
+                    while (entries.Count <= l.Entry) entries.Add(0);
+                    entries[l.Entry]++;
+                }
             }
-            if (filter.Entry is not null && filter.Matches(l, store, entry: true, step: false, levels: false))
+            if (filter.Entry is >= 0 && filter.Matches(l, store, entry: true, step: false, levels: false))
             {
                 var (c, e) = steps.GetValueOrDefault(l.Step);
                 steps[l.Step] = (c + 1, e + (l.Level == "Error" ? 1 : 0));
             }
         }
-        return new LogFacets(total, levels, entries, steps.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList());
+        return new LogFacets(total, levels, entries, steps.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflight, shutdown);
     }
 
     /// <summary>The lines that pass the filter, in their order.</summary>
