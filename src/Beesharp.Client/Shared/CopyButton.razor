@@ -1,17 +1,24 @@
-@* Compact icon-only clipboard copy button for log consoles. *@
+@* Compact icon-only clipboard copy button: copies ALL of the logs it stands for (the whole filtered set, not only the rendered lines), user rule, brain 0059.
+   Give it the text (GetText) or, when the text has to be fetched first (a stored run's pages), GetTextAsync. Works over plain http too (clipboard.js falls back
+   to a hidden textarea when navigator.clipboard is missing). *@
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <button type="button"
-        class="btn ghost small icon-toggle @(copied ? "copy-ok" : "")"
-        disabled="@Disabled"
-        aria-label="@(copied ? "Copied to clipboard" : Title)"
-        title="@(copied ? "Copied!" : Title)"
+        class="btn ghost small icon-toggle @(copied ? "copy-ok" : failed ? "copy-fail" : "")"
+        disabled="@(Disabled || busy)"
+        aria-label="@Label"
+        title="@Label"
         @onclick="CopyAsync">
     @if (copied)
     {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="20 6 9 17 4 12" />
         </svg>
+    }
+    else if (failed)
+    {
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
     }
     else
     {
@@ -23,42 +30,66 @@
 </button>
 
 @code {
-    [Parameter, EditorRequired] public Func<string> GetText { get; set; } = default!;
-    [Parameter] public string Title { get; set; } = "Copy logs to clipboard";
+    /// <summary>The text to copy, when it is at hand.</summary>
+    [Parameter] public Func<string>? GetText { get; set; }
+    /// <summary>The text to copy, when it first has to be fetched.</summary>
+    [Parameter] public Func<Task<string>>? GetTextAsync { get; set; }
+    [Parameter] public string Title { get; set; } = "Copy all logs to clipboard";
     [Parameter] public bool Disabled { get; set; }
 
-    private bool copied;
+    private bool copied, failed, busy;
     private CancellationTokenSource? resetCts;
+    private IJSObjectReference? module;
+
+    private string Label => busy ? "Copying…" : copied ? "Copied to clipboard" : failed ? "Could not copy" : Title;
 
     private async Task CopyAsync()
     {
-        var text = GetText();
+        busy = true;
+        failed = false;
+        string text;
+        try { text = GetTextAsync is not null ? await GetTextAsync() : GetText?.Invoke() ?? ""; }
+        catch { busy = false; failed = true; Reset(); return; }
+        busy = false;
         if (string.IsNullOrEmpty(text)) return;
+
+        var ok = false;
         try
         {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./clipboard.js");
+            ok = await module.InvokeAsync<bool>("copy", text);
         }
-        catch
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("eval",
-                    "(t => { const a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); })(" + System.Text.Json.JsonSerializer.Serialize(text) + ")");
-            }
-            catch { return; }
-        }
+        catch { ok = false; }
 
-        copied = true;
+        (copied, failed) = (ok, !ok);
+        Reset();
+    }
+
+    private void Reset()
+    {
         StateHasChanged();
         resetCts?.Cancel();
         resetCts?.Dispose();
         resetCts = new CancellationTokenSource();
-        var ct = resetCts.Token;
+        _ = ClearLater(resetCts.Token);
+    }
+
+    private async Task ClearLater(CancellationToken ct)
+    {
         try
         {
-            await Task.Delay(1500, ct);
-            copied = false; // the click handler ends here, so Blazor renders by itself
+            await Task.Delay(1800, ct);
+            copied = failed = false;
+            await InvokeAsync(StateHasChanged);
         }
-        catch (TaskCanceledException) { }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        resetCts?.Cancel();
+        resetCts?.Dispose();
+        if (module is not null) { try { await module.DisposeAsync(); } catch (JSDisconnectedException) { } }
     }
 }

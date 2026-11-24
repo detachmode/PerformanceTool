@@ -1,0 +1,16 @@
+@* One line of the Logs page (brain 0059), console style: [0:05.9] ERR Checkout B7 message, an exception below it. The bee number filters the page to that bee (brain 0029).
+   Colour only where it means something: the level tag (red error, amber warning, green information) and the message of an error. *@
+@if (ReferenceEquals(Line, PagedLogList.Placeholder))
+{
+    <div class="lg-line lg-wait" aria-hidden="true">…</div>
+}
+else
+{
+    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Time(Line.AtSeconds)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }<button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button><span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public FakeLogEntry Line { get; set; } = default!;
+    [Parameter] public string Scenario { get; set; } = "";
+    [Parameter] public EventCallback<int> OnBee { get; set; }
+}

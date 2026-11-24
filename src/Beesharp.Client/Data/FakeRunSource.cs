@@ -103,7 +103,7 @@ public sealed class FakeRunSource : IRunSource
     /// <summary>Length of the finished run that is there on first load (brain 0039).</summary>
     public const int SeedRunSeconds = 30 * 60;
 
-    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null, int burstBees = 0)
+    public FakeRunSource(ScenarioCatalog catalog, double simulateSeconds = 0, RunStoreOptions? storeOptions = null, int burstBees = 0, IReadOnlyList<int>? stepCounts = null)
     {
         this.catalog = catalog;
         StoreOptions = storeOptions ?? new RunStoreOptions();
@@ -119,6 +119,9 @@ public sealed class FakeRunSource : IRunSource
                     Profiles[i] = Profiles[i] with { ErrorRate = 0.02 };
                 }
         }
+        // Debug (URL "?stepcount=1,8,24", brain 0056): one more entry per number, with that many steps (some with long names), to test the steps UI at any size.
+        foreach (var n in stepCounts ?? [])
+            AddStepsTest(n);
         Presets.Add(new("Black Friday mix", Plan.Clone(), [.. Profiles]));
         Presets.Add(MakeSmoke());
         savedFingerprint = Fingerprint(Plan);
@@ -423,10 +426,10 @@ public sealed class FakeRunSource : IRunSource
                 callScopes[call.Index] = s = new Dictionary<string, string>(scope) { ["Call"] = $"{call.Index + 1}/{calls.Count} {call.Name}" };
             var t = at + offsetMs / 1000;
             list.Add(intern
-                ? new(t, runStarted.AddSeconds(t), level, errors.Intern(message), errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index)
+                ? new(t, runStarted.AddSeconds(t), level, errors.Intern(message), errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0)
                 : ex is null
-                    ? new(t, runStarted.AddSeconds(t), level, message, null, bee.Entry, seq, s, call?.Index)
-                    : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index));
+                    ? new(t, runStarted.AddSeconds(t), level, message, null, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0)
+                    : new(t, runStarted.AddSeconds(t), level, message, errors.Intern(ex), errors, bee.Entry, seq, s, call?.Index, call?.Step ?? 0, call?.Rep ?? 0));
         }
 
         Log(0, "Debug", $"B{seq + 1} started" + (calls.Count > 1 ? $" ({calls.Count} calls)" : ""));
@@ -598,6 +601,26 @@ public sealed class FakeRunSource : IRunSource
                 [new("POST /login", 300), new("GET /orders", 450), new("GET /orders/{id}", 380), new("GET /orders/{id}/items", 300), new("POST /returns", 850, 0.25), new("POST /returns/{id}/label", 500)],
                 ThinkMs: 250, TailChance: 0.15, ErrorRate: 0.0,
                 Errors: [new(502, "HTTP 502 Bad Gateway on POST /returns", 1), new(409, "HTTP 409 Item is not returnable", 1)], FailAtCall: 4));
+    }
+
+    private static readonly string[] StepsTestNames =
+    [
+        "Log in", "Search", "Verify the shipping address with the external address validation service", "Open product", "Add to cart",
+        "Apply voucher", "Choose delivery slot", "Pay", "Wait for the payment provider to confirm the 3-D Secure challenge", "Confirm",
+        "Send receipt", "Rate the order",
+    ];
+
+    private void AddStepsTest(int n)
+    {
+        n = Math.Clamp(n, 1, 60);
+        var names = Enumerable.Range(0, n).Select(i => i < StepsTestNames.Length ? StepsTestNames[i] : $"Step {i + 1}").ToList();
+        var calls = Enumerable.Range(0, n).Select(i => new CallSpec($"POST /steps/{i + 1}", 120 + 40 * (i % 4), 0.2, Step: i)).ToList();
+        // failures at a few steps spread over the story, so counts show up at the start, the middle and the end
+        var errors = new List<FakeError> { new(500, "HTTP 500 Internal Server Error", 3, AtCall: n / 2) };
+        if (n > 1) errors.Add(new(422, "HTTP 422 Rejected", 2, AtCall: n - 1));
+        if (n > 3) errors.Add(new(503, "HTTP 503 Service Unavailable", 1, AtCall: 1));
+        Plan.Scenarios.Add(Entry("user-journey", $"Steps test · {n} {(n == 1 ? "step" : "steps")}", 20, "", urls("{{BaseUrl}}/")));
+        Profiles.Add(new($"A story with {n} steps (debug URL ?stepcount).", calls, ThinkMs: 80, ErrorRate: 0.12, Errors: errors, Steps: names));
     }
 
     private FakePreset MakeSmoke()

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Beesharp: layout drafts</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 40px 80px; background: #e9e7e3; color: #1d1c1a; font: 14px/1.4 Inter, -apple-system, "Segoe UI", sans-serif; }
+  h1 { margin: 0 0 6px; font-size: 26px; }
+  .intro { margin: 0 0 28px; color: #5a5650; max-width: 900px; }
+  section.page { margin: 0 0 56px; }
+  section.page > h2 { margin: 0 0 4px; font-size: 21px; }
+  section.page > p { margin: 0 0 16px; color: #5a5650; max-width: 1000px; }
+  .opt { display: flex; gap: 28px; align-items: flex-start; margin: 0 0 30px; }
+  .opt-label { width: 190px; flex: none; }
+  .opt-label b { display: block; font-size: 16px; margin-bottom: 4px; }
+  .opt-label span { color: #5a5650; font-size: 13px; }
+  .shot { display: flex; flex-direction: column; gap: 6px; }
+  .shot > small { color: #77726b; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+
+  /* the device frames: a dark app inside */
+  .frame { position: relative; overflow: hidden; background: #0f0e0d; color: #d6d2ca; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.18); font-size: 11px; }
+  .desk { width: 900px; height: 540px; }
+  .phone { width: 250px; height: 520px; border-radius: 22px; border: 6px solid #1d1c1a; }
+  .col { display: flex; flex-direction: column; }
+  .row { display: flex; }
+  .grow { flex: 1; min-width: 0; min-height: 0; }
+  .gap { gap: 8px; } .gap-s { gap: 5px; }
+  .pad { padding: 10px; } .pad-s { padding: 6px; }
+
+  /* wireframe pieces */
+  .bar { background: #191816; border-bottom: 1px solid #2a2825; display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 36px; flex: none; }
+  .bar.bottom { border-bottom: 0; border-top: 1px solid #2a2825; }
+  .logo { width: 16px; height: 16px; border-radius: 4px; background: #f5b700; flex: none; }
+  .tab { color: #8d877e; } .tab.on { color: #fff; font-weight: 600; }
+  .pill { padding: 3px 8px; border-radius: 999px; background: #262422; color: #bdb8b0; white-space: nowrap; }
+  .pill.light { background: #f1efea; color: #111; font-weight: 600; }
+  .pill.bad { background: rgba(240,82,82,.18); color: #fca5a5; }
+  .pill.warn { background: rgba(251,191,36,.16); color: #fbbf24; }
+  .pill.run { background: rgba(91,155,240,.2); color: #93c5fd; }
+  .box { background: #1a1917; border: 1px solid #2a2825; border-radius: 8px; padding: 8px; min-width: 0; }
+  .box.dash { border-style: dashed; background: transparent; }
+  .title { color: #fff; font-weight: 700; font-size: 12px; }
+  .h1 { color: #fff; font-weight: 700; font-size: 15px; }
+  .mut { color: #7d776f; }
+  .big { color: #fff; font-weight: 700; font-size: 18px; }
+  .bad { color: #f87171; } .warn { color: #fbbf24; } .good { color: #34d399; } .run { color: #60a5fa; }
+  .line { height: 7px; border-radius: 4px; background: #2c2a27; }
+  .line.s { width: 40%; } .line.m { width: 65%; }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
+  .chart i { flex: 1; height: 62%; background: #3c4a42; border-radius: 1px 1px 0 0; }
+  .chart i:nth-child(2n) { height: 78%; } .chart i:nth-child(5n) { height: 92%; } .chart i:nth-child(4n+1) { height: 48%; }
+  .chart i:nth-child(3n) { background: #8c3b3b; } .chart i:nth-child(7n) { background: #8a6d1e; }
+  .chart.tall { height: 120px; } .chart.tall.grow { height: auto; }
+  .steps { display: flex; flex-direction: column; gap: 3px; }
+  .st { display: flex; align-items: center; gap: 6px; }
+  .st .n { width: 13px; height: 13px; border-radius: 50%; background: #2c2a27; flex: none; }
+  .st .n.r { background: rgba(240,82,82,.4); } .st .n.b { background: rgba(91,155,240,.5); } .st .n.g { background: rgba(52,211,153,.45); }
+  .st .nm { flex: 1; } .st .c { width: 26px; text-align: right; }
+  .list .li { display: flex; gap: 8px; align-items: center; padding: 5px 4px; border-bottom: 1px solid #23211f; }
+  .code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #a9c4a0; line-height: 1.6; }
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+  .over { position: absolute; background: #151412; border: 1px solid #34312d; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  .note { position: absolute; background: #f5b700; color: #111; font-weight: 700; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .tabbar { display: flex; justify-content: space-around; align-items: center; height: 44px; flex: none; background: #191816; border-top: 1px solid #2a2825; color: #8d877e; font-size: 10px; }
+  .tabbar span { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .tabbar span::before { content: ""; width: 14px; height: 14px; border-radius: 4px; background: #3a3733; }
+  .tabbar span.on { color: #fff; } .tabbar span.on::before { background: #f1efea; }
+  .side { width: 170px; flex: none; background: #151412; border-right: 1px solid #2a2825; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .side .it { padding: 5px 8px; border-radius: 6px; color: #8d877e; } .side .it.on { background: #262422; color: #fff; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { text-align: left; padding: 6px 6px; border-bottom: 1px solid #23211f; font-weight: 400; white-space: nowrap; }
+  th { color: #7d776f; font-size: 10px; }
+  .mini-steps { display: flex; gap: 2px; } .mini-steps i { width: 10px; height: 6px; border-radius: 2px; background: #3c4a42; } .mini-steps i.r { background: #c04848; }
+  .tabs-u { display: flex; gap: 12px; border-bottom: 1px solid #2a2825; padding: 0 2px; }
+  .tabs-u span { padding: 5px 0; color: #8d877e; } .tabs-u span.on { color: #fff; border-bottom: 2px solid #fff; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #151412; border-top: 1px solid #34312d; border-radius: 14px 14px 0 0; }
+  .grab { width: 34px; height: 4px; border-radius: 2px; background: #4a4641; margin: 6px auto; }
+</style>
+</head>
+<body>
+<h1>Beesharp: layout drafts</h1>
+<p class="intro">Rough layouts only, no styling decisions. For each page there are two options (A and B), each as desktop (left) and phone (right).
+Grey boxes stand for content; yellow tags explain what is going on. Pick per page: A, B, or a mix.</p>
+
+<!-- ═════════════════════════ 1. App frame ═════════════════════════ -->
+<section class="page" id="frame">
+  <h2>1. App frame: navigation and run controls</h2>
+  <p>Where the pages are switched and where Start / Pause / Stop and the run figures live, on every page.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>A · Top tabs, run bar at the bottom</b><span>Today's setup. Desktop: tabs in the header, the player bar at the bottom. Phone: tabs move to a bottom tab bar, a slim run bar sits above it.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="logo"></span><b style="color:#fff">Beesharp</b><span class="tab on">Overview</span><span class="tab">Editor</span><span class="tab">Logs</span><span class="tab">Environment</span><span class="grow"></span><span class="pill">Fake ▾</span><span class="pill">Staging ▾</span><span class="pill">⚙</span></div>
+        <div class="grow pad"><div class="box dash" style="height:100%;display:grid;place-items:center" ><span class="mut">page content</span></div></div>
+        <div class="bar bottom" style="height:48px"><span class="pill light">▶ Start run</span><span class="pill">■</span><span class="mut">0:12 / 5:00</span><span class="grow"><div class="line" style="width:60%"></div></span><span class="run">8 active</span><span class="bad">3 failed</span><span class="pill">Logs</span></div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span class="logo"></span><b style="color:#fff">Overview</b><span class="grow"></span><span class="pill">Fake ▾</span></div>
+        <div class="grow pad"><div class="box dash" style="height:100%;display:grid;place-items:center"><span class="mut">page content</span></div></div>
+        <div class="bar bottom" style="height:40px"><span class="pill light">❚❚</span><span class="mut">0:12</span><span class="grow"><div class="line"></div></span><span class="run">8</span><span class="bad">3</span></div>
+        <div class="tabbar"><span class="on">Overview</span><span>Editor</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>B · Sidebar with the run inside</b><span>Desktop: a left sidebar holds the pages and, below them, the run (start, time, figures). The page gets the full height. Phone: same bottom tab bar; the run is its own tab-like button in the middle.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk row">
+        <div class="side">
+          <div class="row gap-s" style="align-items:center;margin-bottom:6px"><span class="logo"></span><b style="color:#fff">Beesharp</b></div>
+          <div class="it on">Overview</div><div class="it">Editor</div><div class="it">Logs</div><div class="it">Environment</div>
+          <div class="grow"></div>
+          <div class="box col gap-s"><span class="mut">Run · Black Friday mix</span><span class="big">0:12 <span class="mut" style="font-size:11px">/ 5:00</span></span><div class="line"></div><span><span class="run">8 active</span> · <span class="bad">3 failed</span></span><div class="row gap-s"><span class="pill light">❚❚ Pause</span><span class="pill">■</span></div></div>
+          <div class="row gap-s"><span class="pill">Fake ▾</span><span class="pill">Staging ▾</span></div>
+        </div>
+        <div class="grow pad"><div class="box dash" style="height:100%;display:grid;place-items:center"><span class="mut">page content, full height</span></div></div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span class="logo"></span><b style="color:#fff">Overview</b><span class="grow"></span><span class="pill">Staging ▾</span></div>
+        <div class="grow pad"><div class="box dash" style="height:100%;display:grid;place-items:center"><span class="mut">page content</span></div></div>
+        <div class="tabbar"><span class="on">Overview</span><span>Editor</span><span style="color:#93c5fd">▶ 0:12</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+</section>
+
+<!-- ═════════════════════════ 2. Overview ═════════════════════════ -->
+<section class="page" id="overview">
+  <h2>2. Overview: all scenarios of the run</h2>
+  <p>The main question: which scenario has a problem, and where in its steps. Every number opens its bees.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>A · Cards in a grid</b><span>One card per scenario with the figure, a small chart and its steps. Good for 3 to 10 scenarios; gets long with many.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="logo"></span><span class="tab on">Overview</span><span class="tab">Editor</span><span class="tab">Logs</span><span class="tab">Environment</span></div>
+        <div class="grow pad col gap">
+          <div class="row gap" style="align-items:center"><span class="h1">Scenarios</span><span class="mut">Finished · 6,019 bees</span><span class="grow"></span><span class="pill">Edit</span><span class="pill">⋯</span></div>
+          <div class="row gap grow" style="align-items:flex-start">
+            <div class="box col gap-s grow"><span class="title">Checkout</span><span class="mut">User journey · 40/min</span><div class="row gap-s"><span class="big">90.4%</span><span class="grow"></span><span class="pill bad">115 failed</span></div><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">77</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div></div></div>
+            <div class="box col gap-s grow"><span class="title">Guest checkout</span><span class="mut">HTTP POST · 30/min</span><div class="row gap-s"><span class="big">89.7%</span><span class="grow"></span><span class="pill bad">93 failed</span></div><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="steps"><div class="st"><i class="n g"></i><span class="nm">Cart</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">93</span></div></div></div>
+            <div class="box col gap-s grow"><span class="title">Browse categories</span><span class="mut">Bursts 15 × 6/min</span><div class="row gap-s"><span class="big">100%</span><span class="grow"></span><span class="pill warn">355 slow</span></div><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="mut">no steps</span></div>
+          </div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><b style="color:#fff">Scenarios</b><span class="grow"></span><span class="pill">⋯</span></div>
+        <div class="grow pad col gap" style="overflow:hidden">
+          <div class="box col gap-s"><span class="title">Checkout</span><div class="row gap-s"><span class="big">90.4%</span><span class="grow"></span><span class="pill bad">115</span></div><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="steps"><div class="st"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">77</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div></div></div>
+          <div class="box col gap-s"><span class="title">Guest checkout</span><div class="row gap-s"><span class="big">89.7%</span><span class="grow"></span><span class="pill bad">93</span></div><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><span class="on">Overview</span><span>Editor</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>B · One row per scenario</b><span>A calm table: name, figure, failed, slow, a mini chart and the steps as small blocks (red where bees failed). Scales to many scenarios; the details live on the scenario page.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="logo"></span><span class="tab on">Overview</span><span class="tab">Editor</span><span class="tab">Logs</span><span class="tab">Environment</span></div>
+        <div class="grow pad col gap">
+          <div class="row gap" style="align-items:center"><span class="h1">Scenarios</span><span class="mut">Finished · 6,019 bees · 30:00</span><span class="grow"></span><span class="pill">Edit</span><span class="pill">⋯</span></div>
+          <div class="box" style="padding:4px 10px">
+            <table>
+              <tr><th>Scenario</th><th>OK</th><th>Failed</th><th>Slow</th><th>Typical</th><th style="width:150px">Bees over time</th><th>Steps</th></tr>
+              <tr><td><span class="title">Checkout</span><br><span class="mut">User journey · 40/min</span></td><td class="big" style="font-size:13px">90.4%</td><td class="bad">115</td><td class="warn">106</td><td>6.5 s</td><td><div class="chart" style="height:20px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td><div class="mini-steps"><i></i><i></i><i class="r"></i><i></i><i class="r"></i></div></td></tr>
+              <tr><td><span class="title">Guest checkout</span><br><span class="mut">HTTP POST · 30/min</span></td><td class="big" style="font-size:13px">89.7%</td><td class="bad">93</td><td class="warn">46</td><td>3.3 s</td><td><div class="chart" style="height:20px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td><div class="mini-steps"><i></i><i></i><i></i><i class="r"></i><i></i></div></td></tr>
+              <tr><td><span class="title">Browse categories</span><br><span class="mut">Bursts 15 × 6/min</span></td><td class="big" style="font-size:13px">100%</td><td class="mut">–</td><td class="warn">355</td><td>2.3 s</td><td><div class="chart" style="height:20px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td class="mut">–</td></tr>
+              <tr><td><span class="title">Sign up &amp; first order</span><br><span class="mut">Custom HTTP · 20/min</span></td><td class="big" style="font-size:13px">94.7%</td><td class="bad">32</td><td class="warn">3</td><td>4.5 s</td><td><div class="chart" style="height:20px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td><div class="mini-steps"><i></i><i></i><i class="r"></i></div></td></tr>
+              <tr><td><span class="title">Order history &amp; return</span><br><span class="mut">User journey · 20/min</span></td><td class="big" style="font-size:13px">100%</td><td class="mut">–</td><td class="warn">89</td><td>4.1 s</td><td><div class="chart" style="height:20px"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></td><td class="mut">–</td></tr>
+            </table>
+          </div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><b style="color:#fff">Scenarios</b><span class="grow"></span><span class="pill">⋯</span></div>
+        <div class="grow pad col">
+          <div class="box list" style="padding:2px 8px">
+            <div class="li"><div class="grow"><span class="title">Checkout</span><br><span class="mut">90.4% ok</span> <div class="mini-steps" style="margin-top:3px"><i></i><i></i><i class="r"></i><i></i><i class="r"></i></div></div><span class="bad">115</span><span class="mut">›</span></div>
+            <div class="li"><div class="grow"><span class="title">Guest checkout</span><br><span class="mut">89.7% ok</span> <div class="mini-steps" style="margin-top:3px"><i></i><i></i><i></i><i class="r"></i><i></i></div></div><span class="bad">93</span><span class="mut">›</span></div>
+            <div class="li"><div class="grow"><span class="title">Browse categories</span><br><span class="mut">100% ok</span></div><span class="warn">355</span><span class="mut">›</span></div>
+            <div class="li"><div class="grow"><span class="title">Sign up &amp; first order</span><br><span class="mut">94.7% ok</span> <div class="mini-steps" style="margin-top:3px"><i></i><i></i><i class="r"></i></div></div><span class="bad">32</span><span class="mut">›</span></div>
+            <div class="li" style="border:0"><div class="grow"><span class="title">Order history</span><br><span class="mut">100% ok</span></div><span class="warn">89</span><span class="mut">›</span></div>
+          </div>
+        </div>
+        <div class="tabbar"><span class="on">Overview</span><span>Editor</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+</section>
+
+<!-- ═════════════════════════ 3. Scenario ═════════════════════════ -->
+<section class="page" id="scenario">
+  <h2>3. One scenario: its steps, its bees over time, its bees</h2>
+  <p>Opened from the overview. Today it is a popup over the overview with a side list of bees.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>A · Popup over the overview</b><span>Like today, tidied up: header, steps on top, the chart, the bees at the side. Phone: a full-screen sheet, everything below each other.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk">
+        <div class="col" style="height:100%;opacity:.35"><div class="bar"><span class="tab on">Overview</span></div><div class="grow pad row gap"><div class="box grow"></div><div class="box grow"></div><div class="box grow"></div></div></div>
+        <div class="scrim"></div>
+        <div class="over col" style="left:40px;right:40px;top:24px;bottom:24px">
+          <div class="bar" style="background:none"><span class="h1">Checkout</span><span class="mut">1,204 bees · typical 6.5 s</span><span class="grow"></span><span class="pill">Logs</span><span class="pill">✕</span></div>
+          <div class="grow row gap pad" style="min-height:0">
+            <div class="grow col gap">
+              <div class="box"><span class="title">Steps</span><div class="steps" style="margin-top:6px"><div class="st"><i class="n"></i><span class="nm">Log in</span><span class="c">–</span></div><div class="st"><i class="n"></i><span class="nm">Search</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Open product ×5</span><span class="c bad">77</span></div><div class="st"><i class="n"></i><span class="nm">Add to cart</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div><div class="st"><i class="n g"></i><span class="nm">Finished all steps</span><span class="c good">1,089</span></div></div></div>
+              <div class="box grow col"><span class="mut">Bees over time</span><div class="chart tall grow"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            </div>
+            <div class="box col" style="width:220px"><div class="row gap-s"><span class="pill light">All</span><span class="pill bad">Failed</span><span class="pill warn">Slow</span></div><div class="list" style="margin-top:6px"><div class="li"><span class="bad">B7</span><span>3.7 s</span><span class="mut">0:03</span></div><div class="li"><span class="bad">B199</span><span>3.1 s</span><span class="mut">0:59</span></div><div class="li"><span class="bad">B212</span><span>2.6 s</span><span class="mut">1:06</span></div><div class="li"><span class="bad">B270</span><span>6.4 s</span><span class="mut">1:21</span></div><div class="li"><span class="warn">B279</span><span>9.6 s</span><span class="mut">1:26</span></div></div></div>
+          </div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span>‹</span><b style="color:#fff">Checkout</b><span class="grow"></span><span class="pill">Logs</span></div>
+        <div class="grow pad col gap" style="overflow:hidden">
+          <div class="box"><span class="title">Steps</span><div class="steps" style="margin-top:5px"><div class="st"><i class="n"></i><span class="nm">Log in</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">77</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div><div class="st"><i class="n g"></i><span class="nm">Finished all</span><span class="c good">1,089</span></div></div></div>
+          <div class="box"><div class="chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          <div class="row gap-s"><span class="pill light">All</span><span class="pill bad">Failed</span><span class="pill warn">Slow</span></div>
+          <div class="box list"><div class="li"><span class="bad">B7</span><span>3.7 s</span></div><div class="li"><span class="bad">B199</span><span>3.1 s</span></div><div class="li"><span class="bad">B212</span><span>2.6 s</span></div></div>
+        </div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>B · Its own page, three columns</b><span>A real page (own URL, back button) instead of a popup: steps on the left as the navigation of the scenario, chart and bees in the middle, the selected bee on the right. Phone: tabs Steps · Chart · Bees.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="logo"></span><span class="tab">Overview</span><span class="mut">›</span><span class="tab on">Checkout</span><span class="grow"></span><span class="pill">Logs</span></div>
+        <div class="grow row" style="min-height:0">
+          <div class="col gap pad" style="width:200px;border-right:1px solid #2a2825">
+            <span class="h1">Checkout</span><span class="mut">1,204 bees · 90.4% ok</span>
+            <div class="steps" style="margin-top:6px"><span class="mut">Steps</span><div class="st"><i class="n"></i><span class="nm">Log in</span><span class="c">–</span></div><div class="st"><i class="n"></i><span class="nm">Search</span><span class="c">–</span></div><div class="st" style="background:#262422;border-radius:4px"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">77</span></div><div class="st"><i class="n"></i><span class="nm">Add to cart</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div><div class="st"><i class="n g"></i><span class="nm">Finished all</span><span class="c good">1,089</span></div></div>
+          </div>
+          <div class="grow col gap pad" style="min-width:0">
+            <div class="row gap-s"><span class="pill light">All 1,204</span><span class="pill bad">Failed 115</span><span class="pill warn">Slow 106</span><span class="pill">Failed at Open product ✕</span></div>
+            <div class="box"><div class="chart tall"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            <div class="box list grow"><div class="li"><span class="bad">B7</span><span>3.7 s</span><span class="mut">0:03</span><span class="grow mut">HTTP 503 on GET /products</span></div><div class="li" style="background:#262422"><span class="bad">B199</span><span>3.1 s</span><span class="mut">0:59</span><span class="grow mut">HTTP 503 on GET /products</span></div><div class="li"><span class="bad">B212</span><span>2.6 s</span><span class="mut">1:06</span><span class="grow mut">HTTP 500 on /availability</span></div></div>
+          </div>
+          <div class="col gap pad" style="width:230px;border-left:1px solid #2a2825">
+            <span class="title bad">B199 · failed at Open product</span><span class="mut">3.1 s · started 0:59</span>
+            <div class="tabs-u"><span class="on">Steps</span><span>Logs</span><span>Calls</span></div>
+            <div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span><span class="c mut">352ms</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span><span class="c mut">464ms</span></div><div class="st"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">2.6s</span></div><div class="st"><i class="n"></i><span class="nm mut">2 not reached</span></div></div>
+          </div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span>‹</span><b style="color:#fff">Checkout</b><span class="grow"></span><span class="pill">Logs</span></div>
+        <div class="tabs-u" style="padding:0 10px"><span class="on">Steps</span><span>Chart</span><span>Bees 1,204</span></div>
+        <div class="grow pad col gap">
+          <div class="row gap-s"><span class="big">90.4%</span><span class="mut">ok · 1,204 bees</span></div>
+          <div class="steps"><div class="st"><i class="n"></i><span class="nm">Log in</span><span class="c">–</span></div><div class="st"><i class="n"></i><span class="nm">Search</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Open product</span><span class="c bad">77</span></div><div class="st"><i class="n"></i><span class="nm">Add to cart</span><span class="c">–</span></div><div class="st"><i class="n r"></i><span class="nm">Pay</span><span class="c bad">38</span></div><div class="st"><i class="n g"></i><span class="nm">Finished all</span><span class="c good">1,089</span></div></div>
+          <span class="note" style="position:static;align-self:flex-start">tap 77 → Bees tab, filtered</span>
+        </div>
+      </div></div>
+  </div>
+</section>
+
+<!-- ═════════════════════════ 4. Bee ═════════════════════════ -->
+<section class="page" id="bee">
+  <h2>4. One bee: steps, logs, calls</h2>
+  <p>Opened from a bee in the list or a bar in the chart.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>A · Floating panel</b><span>Like today: a panel over the scenario popup. Phone: a bottom sheet that can be dragged up to full height.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk">
+        <div class="col" style="height:100%;opacity:.35"><div class="bar"></div><div class="grow pad row gap"><div class="box grow"></div><div class="box" style="width:220px"></div></div></div>
+        <div class="over col gap pad" style="left:250px;right:140px;top:60px;bottom:60px">
+          <div class="row gap-s"><span class="title bad">B7 · Failed</span><span class="mut">3.7 s · started 0:03 · failed at Open product, 3rd time</span><span class="grow"></span><span class="pill">✕</span></div>
+          <div class="tabs-u"><span class="on">Steps 5</span><span>Logs 34</span><span>Calls 26</span></div>
+          <div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span><span class="c mut">352ms</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span><span class="c mut">464ms</span></div><div class="st"><i class="n r"></i><span class="nm bad">Open product ×5 · HTTP 503</span><span class="c bad">2.6s</span></div><div class="st"><i class="n"></i><span class="nm mut">Add to cart · not reached</span></div><div class="st"><i class="n"></i><span class="nm mut">Pay · not reached</span></div></div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone">
+        <div class="col" style="height:100%;opacity:.35"><div class="bar"></div><div class="grow pad col gap"><div class="box" style="height:90px"></div><div class="box grow"></div></div></div>
+        <div class="scrim"></div>
+        <div class="sheet col gap pad" style="height:68%"><div class="grab"></div><span class="title bad">B7 · Failed · 3.7 s</span><div class="tabs-u"><span class="on">Steps</span><span>Logs</span><span>Calls</span></div><div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span></div><div class="st"><i class="n r"></i><span class="nm bad">Open product</span></div><div class="st"><i class="n"></i><span class="nm mut">2 not reached</span></div></div></div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>B · Right-hand column / own screen</b><span>Desktop: the bee always shows in a column at the right of the scenario page (option 3B); picking another bee just swaps it, no overlay. Phone: its own screen with a back arrow and ‹ › to go to the previous / next bee.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="tab">Overview</span><span class="mut">›</span><span class="tab">Checkout</span><span class="mut">›</span><span class="tab on">B7</span></div>
+        <div class="grow row" style="min-height:0">
+          <div class="col pad gap" style="width:200px;border-right:1px solid #2a2825"><span class="mut">Steps of Checkout</span><div class="line"></div><div class="line m"></div><div class="line s"></div></div>
+          <div class="grow col pad gap"><div class="box" style="height:90px"></div><div class="box grow list"><div class="li" style="background:#262422"><span class="bad">B7</span><span>3.7 s</span></div><div class="li"><span class="bad">B199</span><span>3.1 s</span></div><div class="li"><span class="bad">B212</span><span>2.6 s</span></div></div></div>
+          <div class="col gap pad" style="width:300px;border-left:1px solid #2a2825">
+            <div class="row gap-s"><span class="title bad">B7 · Failed</span><span class="grow"></span><span class="pill">‹</span><span class="pill">›</span></div>
+            <span class="mut">3.7 s · started 0:03 · failed at Open product</span>
+            <div class="tabs-u"><span class="on">Steps</span><span>Logs</span><span>Calls</span></div>
+            <div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span><span class="c mut">352ms</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span><span class="c mut">464ms</span></div><div class="st"><i class="n r"></i><span class="nm bad">Open product</span><span class="c bad">2.6s</span></div><div class="box code" style="margin:2px 0 2px 18px">GET /products/{id} · 3 → 503<br>HTTP 503 Service Unavailable</div><div class="st"><i class="n"></i><span class="nm mut">2 not reached</span></div></div>
+          </div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span>‹</span><b class="bad">B7</b><span class="mut">Failed · 3.7 s</span><span class="grow"></span><span class="pill">‹</span><span class="pill">›</span></div>
+        <div class="tabs-u" style="padding:0 10px"><span class="on">Steps</span><span>Logs</span><span>Calls</span></div>
+        <div class="grow pad col gap"><div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span><span class="c mut">352ms</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span><span class="c mut">464ms</span></div><div class="st"><i class="n r"></i><span class="nm bad">Open product</span><span class="c bad">2.6s</span></div><div class="box code">HTTP 503 Service Unavailable on GET /products/{id}</div><div class="st"><i class="n"></i><span class="nm mut">2 not reached</span></div></div></div>
+      </div></div>
+  </div>
+</section>
+
+<!-- ═════════════════════════ 5. Editor ═════════════════════════ -->
+<section class="page" id="editor">
+  <h2>5. Editor: scenario scripts, preflight, shutdown</h2>
+  <p>Writing and trying C# scripts. Today: a file dropdown in a toolbar above the code.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>A · Toolbar + code</b><span>One toolbar line (file ▾, Save, Try, ⋯), code below at full size. The Try result opens as a panel at the bottom. Phone: same, toolbar wraps into two rows.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="tab">Overview</span><span class="tab on">Editor</span><span class="tab">Logs</span></div>
+        <div class="bar" style="background:#151412"><span class="pill">checkout-steps.cs ▾</span><span class="mut">Saved</span><span class="grow"></span><span class="pill light">Save</span><span class="pill">▶ Try</span><span class="pill">⋯</span></div>
+        <div class="grow pad code">// steps of the checkout<br>union CheckoutStep(LogIn, Search, OpenProduct, AddToCart, Pay);<br><br>Scenario.DefineSteps&lt;Params, CheckoutStep&gt;("Checkout", async (step, ctx) =&gt; step switch<br>{<br>&nbsp;&nbsp;LogIn =&gt; ...,</div>
+        <div class="box" style="margin:0 10px 10px;height:110px"><span class="title">Try result</span> <span class="good">· passed in 3.1 s</span><div class="steps" style="margin-top:6px"><div class="st"><i class="n g"></i><span class="nm">Log in</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span></div><div class="st"><i class="n g"></i><span class="nm">Pay</span></div></div></div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><span class="pill">checkout-steps.cs ▾</span><span class="grow"></span><span class="pill">⋯</span></div>
+        <div class="grow pad code">union CheckoutStep(<br>&nbsp;LogIn, Search,<br>&nbsp;OpenProduct, ...);<br><br>Scenario.DefineSteps&lt;...&gt;(<br>&nbsp;"Checkout", ...</div>
+        <div class="bar bottom"><span class="pill light">Save</span><span class="pill">▶ Try</span><span class="grow"></span><span class="mut">Saved</span></div>
+        <div class="tabbar"><span>Overview</span><span class="on">Editor</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>B · File list at the side</b><span>Desktop: the scripts as a list on the left, grouped (Scenarios, Preflight, Shutdown), code in the middle, the Try result on the right. Phone: the file list is the first screen; tap a file to open it.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="tab">Overview</span><span class="tab on">Editor</span><span class="tab">Logs</span></div>
+        <div class="grow row" style="min-height:0">
+          <div class="col gap-s pad" style="width:170px;border-right:1px solid #2a2825"><span class="mut">Scenarios</span><div class="side" style="width:auto;border:0;padding:0;background:none"><div class="it on">checkout-steps.cs</div><div class="it">order-api-stress.cs</div></div><span class="mut">Preflight</span><div class="it mut" style="padding:5px 8px">seed-data.cs</div><span class="mut">Shutdown</span><div class="it mut" style="padding:5px 8px">cleanup.cs</div><span class="pill" style="align-self:flex-start">+ New</span></div>
+          <div class="grow col"><div class="bar" style="background:none"><b style="color:#fff">checkout-steps.cs</b><span class="mut">Saved</span><span class="grow"></span><span class="pill light">Save</span><span class="pill">▶ Try</span></div><div class="grow pad code">union CheckoutStep(LogIn, Search, OpenProduct, AddToCart, Pay);<br><br>Scenario.DefineSteps&lt;Params, CheckoutStep&gt;("Checkout", ...)</div></div>
+          <div class="col gap pad" style="width:220px;border-left:1px solid #2a2825"><span class="title">Try</span><span class="good">Passed · 3.1 s</span><div class="steps"><div class="st"><i class="n g"></i><span class="nm">Log in</span></div><div class="st"><i class="n g"></i><span class="nm">Search</span></div><div class="st"><i class="n g"></i><span class="nm">Pay</span></div></div></div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><b style="color:#fff">Scripts</b><span class="grow"></span><span class="pill">+ New</span></div>
+        <div class="grow pad col gap"><span class="mut">Scenarios</span><div class="box list"><div class="li">checkout-steps.cs<span class="grow"></span><span class="mut">›</span></div><div class="li" style="border:0">order-api-stress.cs<span class="grow"></span><span class="mut">›</span></div></div><span class="mut">Preflight</span><div class="box list"><div class="li" style="border:0">seed-data.cs<span class="grow"></span><span class="mut">›</span></div></div><span class="mut">Shutdown</span><div class="box list"><div class="li" style="border:0">cleanup.cs<span class="grow"></span><span class="mut">›</span></div></div></div>
+        <div class="tabbar"><span>Overview</span><span class="on">Editor</span><span>Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+</section>
+
+<!-- ═════════════════════════ 6. Logs + Environment ═════════════════════════ -->
+<section class="page" id="logs-env">
+  <h2>6. Logs and Environment</h2>
+  <p>Logs: everything the bees wrote, filtered. Environment: the static values and the data written during the run. One layout each; the question is only whether filters sit above or at the side.</p>
+
+  <div class="opt">
+    <div class="opt-label"><b>Logs · filters on top</b><span>Level chips, scenario and step filters and search in one line; lines below, newest at the bottom while live. Phone: the filters fold into one "Filter" button.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="tab">Overview</span><span class="tab">Editor</span><span class="tab on">Logs</span></div>
+        <div class="bar" style="background:#151412"><span class="pill light">All</span><span class="pill">Info</span><span class="pill">Warn</span><span class="pill bad">Error</span><span class="pill">Scenario: all ▾</span><span class="pill">Step: all ▾</span><span class="box" style="padding:3px 8px;width:180px;border-radius:999px"><span class="mut">Search…</span></span><span class="grow"></span><span class="pill">Wrap</span><span class="pill">Copy</span></div>
+        <div class="grow pad code" style="color:#bdb8b0">[0:03.1] INF B7 Log in → 200 in 352 ms<br>[0:03.5] INF B7 Search → 200 in 464 ms<br>[0:05.9] <span class="bad">ERR B7 GET /products/{id} · 3 → 503</span><br>[0:06.0] INF B8 Log in → 200 in 290 ms<br>[0:06.4] WRN B8 slow: GET /search 1.8 s</div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><b style="color:#fff">Logs</b><span class="grow"></span><span class="pill">Filter · 2</span><span class="pill">⋯</span></div>
+        <div class="grow pad code" style="color:#bdb8b0">0:03.1 INF B7 Log in 352 ms<br>0:03.5 INF B7 Search 464 ms<br><span class="bad">0:05.9 ERR B7 GET /products 503</span><br>0:06.0 INF B8 Log in 290 ms</div>
+        <div class="tabbar"><span>Overview</span><span>Editor</span><span class="on">Logs</span><span>Env</span></div>
+      </div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-label"><b>Environment · two lists</b><span>Static values (fixed during a run) and runtime data (run bag, one bag per scenario) as plain key / value lists that fold. Phone: key above value.</span></div>
+    <div class="shot"><small>Desktop</small>
+      <div class="frame desk col">
+        <div class="bar"><span class="tab">Overview</span><span class="tab">Logs</span><span class="tab on">Environment</span></div>
+        <div class="grow pad col gap" style="max-width:640px;margin:0 auto;width:100%">
+          <div class="row gap-s"><span class="h1">Staging</span><span class="mut">fixed during a run</span><span class="grow"></span><span class="pill">Configure…</span></div>
+          <div class="box list"><div class="li"><span class="mut" style="width:120px">BaseUrl</span><span class="code">https://shop.example.com</span></div><div class="li"><span class="mut" style="width:120px">Tenant</span><span class="code">acme-test</span></div><div class="li" style="border:0"><span class="mut" style="width:120px">ApiToken</span><span class="code">••••••••</span><span class="grow"></span><span class="mut">Show</span></div></div>
+          <div class="row gap-s"><span class="h1">Runtime data</span><span class="mut">written during the run</span></div>
+          <div class="box list"><div class="li"><b>Run bag</b><span class="grow"></span><span class="mut">7 values ▾</span></div><div class="li"><b>Checkout</b><span class="grow"></span><span class="mut">4 values ▸</span></div><div class="li" style="border:0"><b>Guest checkout</b><span class="grow"></span><span class="mut">4 values ▸</span></div></div>
+        </div>
+      </div></div>
+    <div class="shot"><small>Phone</small>
+      <div class="frame phone col">
+        <div class="bar"><b style="color:#fff">Environment</b><span class="grow"></span><span class="pill">Staging ▾</span></div>
+        <div class="grow pad col gap"><div class="box list"><div class="li col" style="align-items:flex-start;gap:1px"><span class="mut">BaseUrl</span><span class="code">https://shop.example.com</span></div><div class="li col" style="align-items:flex-start;gap:1px;border:0"><span class="mut">Tenant</span><span class="code">acme-test</span></div></div><div class="box list"><div class="li"><b>Run bag</b><span class="grow"></span><span class="mut">7 ▾</span></div><div class="li" style="border:0"><b>Checkout</b><span class="grow"></span><span class="mut">4 ▸</span></div></div></div>
+        <div class="tabbar"><span>Overview</span><span>Editor</span><span>Logs</span><span class="on">Env</span></div>
+      </div></div>
+  </div>
+</section>
+</body>
+</html>

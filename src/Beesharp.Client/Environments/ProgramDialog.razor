@@ -12,6 +12,7 @@
                 <b class="mono">@Run.Name</b>
             }
             <span class="spacer"></span>
+            <CopyButton GetText="@(() => string.Join("\n", Run?.Logs ?? []))" Disabled="@(Run is null || Run.Logs.Count == 0)" />
             <WrapToggleButton @bind-Wrapped="wrap" />
             @if (!string.IsNullOrWhiteSpace(ScriptId))
             {

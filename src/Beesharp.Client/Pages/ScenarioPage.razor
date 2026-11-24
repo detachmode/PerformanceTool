@@ -1,0 +1,59 @@
+@* One scenario as its own page (brain 0059): /scenario/{n} with query parameters for the entry points (?show=failed|slow|slowest, ?failedStep=n, ?nowStep=n, ?bee=n).
+   The numbers are the ones the UI shows (scenario 1, step 1, B1). The view (ScenarioView) keeps the filter and the picked bee in the address, so a reload or a link comes back to it. *@
+@page "/scenario/{Number:int}"
+@layout MainLayout
+@implements IDisposable
+@inject IRunSource Sim
+@inject DataModeState DataMode
+@inject NavigationManager Nav
+
+@{
+    var s = Sim.Current;
+    var index = Number - 1;
+    var ok = index >= 0 && index < s.Count;
+}
+<PageTitle>@(ok ? s.Labels[index] : "Scenario") · Beesharp</PageTitle>
+
+@if (ok)
+{
+    @* Re-created only for another scenario: the address changes with every filter click and must not reset the chart. *@
+    <ScenarioDetail @key="Number" Index="index" Snapshot="s" InitialShow="initial.Show" InitialFailedStep="initial.FailedStep" InitialInFlightStep="initial.NowStep" InitialBee="initial.Bee"
+                  OnFilterChanged="FilterChanged" />
+}
+else
+{
+    <div class="dr-note scn-missing">
+        <h1>No scenario @Number</h1>
+        <p class="muted">This run has @Format.Plural(s.Count, "scenario", "scenarios").</p>
+        <a href="">Back to the overview</a>
+    </div>
+}
+
+@code {
+    [Parameter] public int Number { get; set; }
+
+    private ScenarioFilter initial;
+    private int shownNumber = -1;
+
+    protected override void OnInitialized() { Sim.Changed += OnChanged; DataMode.Changed += OnChanged; }
+
+    protected override void OnParametersSet()
+    {
+        // The view starts from the address when the scenario changes (a link, the browser's back and forward), not on every filter click it makes itself.
+        if (shownNumber != Number) { shownNumber = Number; initial = ScenarioLink.Parse(Nav.Uri); }
+    }
+
+    private void FilterChanged(ScenarioFilter f)
+    {
+        var next = ScenarioLink.WithFilter(Nav.Uri, f);
+        if (Nav.ToBaseRelativePath(Nav.Uri) != next) Nav.NavigateTo(next, new NavigationOptions { ReplaceHistoryEntry = true });
+    }
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose() { Sim.Changed -= OnChanged; DataMode.Changed -= OnChanged; }
+}

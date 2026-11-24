@@ -1,0 +1,500 @@
+@* The Logs page (/logs, brain 0059, 0012, 0017, 0021): a filter column with a count per choice (level, scenario, the steps of the chosen scenario with their errors), a full-width
+   search on top of the lines, and every active filter as a chip with ✕ under it. One implementation for all data: the fake run's logs (held in the browser) and, in Live mode,
+   the server's stored logs of the loaded run (running, finished or picked from the history), paged and counted by the server. Lines are virtualised, newest at the bottom,
+   and the list follows the end while you are at the bottom. Every filter is in the address (?scenario=2&step=3&bee=199&level=error&q=503), so the figures elsewhere link here. *@
+@page "/logs"
+@layout MainLayout
+@implements IAsyncDisposable
+@using System.Text
+@inject IRunSource Sim
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
+@inject LogsLinks Links
+@inject NavigationManager Nav
+
+<PageTitle>Logs · Beesharp</PageTitle>
+
+@{
+    var s = Sim.Current;
+    var items = Items;
+    var total = UseServer ? (paged?.Count ?? 0) : local.Count;
+    var levelAll = facets.Levels.Values.Sum();
+    var chips = Chips(s);
+    var stepsOfEntry = filter.Entry is { } fe ? s.StepsOf(fe) : ScenarioSteps.None;
+}
+
+<div class="logs-page">
+    <aside class="lg-filters @(filtersOpen ? "open" : "")" id="lg-filters" aria-label="Log filters">
+        <div class="lg-group" role="group" aria-label="Level">
+            <h2>Level</h2>
+            <button type="button" class="lg-opt @(filter.Levels.Count == 0 ? "on" : "")" aria-pressed="@Aria.Bool(filter.Levels.Count == 0)" @onclick="() => Apply(filter.WithLevels([]))">
+                <span>All</span><span class="n">@Format.Num(levelAll)</span>
+            </button>
+            @foreach (var (name, label) in LevelRows)
+            {
+                var n = facets.Levels.GetValueOrDefault(name);
+                var on = filter.Levels.Contains(name);
+                if (n == 0 && !on && name is "Debug" or "Trace") continue;
+                <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleLevel(name))" title="@(on ? "Remove" : "Show only") @label lines">
+                    <span>@label</span><span class="n @(n > 0 && name == "Error" ? "bad" : n > 0 && name == "Warning" ? "warn" : "")">@Format.Num(n)</span>
+                </button>
+            }
+        </div>
+
+        <div class="lg-group" role="group" aria-label="Scenario">
+            <h2>Scenario</h2>
+            @for (var i = 0; i < s.Count; i++)
+            {
+                var entry = i;
+                var on = filter.Entry == entry;
+                <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleEntry(entry))" title="@(on ? "Remove" : "Show only") @s.Labels[entry]">
+                    <span class="lg-opt-name">@s.Labels[entry]</span><span class="n">@Format.Num(facets.Entries.ElementAtOrDefault(entry))</span>
+                </button>
+            }
+            @if (s.Count == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
+        </div>
+
+        @if (stepsOfEntry.Any)
+        {
+            <div class="lg-group" role="group" aria-label="Step of @s.Labels[filter.Entry!.Value]">
+                <h2>Step of @s.Labels[filter.Entry!.Value]</h2>
+                @for (var j = 0; j < stepsOfEntry.Count; j++)
+                {
+                    var step = j;
+                    var on = filter.Step == step;
+                    var sc = facets.Steps.FirstOrDefault(x => x.Step == step);
+                    <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleStep(step))" title="@(on ? "Remove" : "Show only") the lines of @stepsOfEntry.Name(step)">
+                        <span class="lg-opt-name">@stepsOfEntry.Name(step)</span>
+                        @if (sc is { Errors: > 0 }) { <span class="n bad">@Format.Plural((int)Math.Min(int.MaxValue, sc.Errors), "error", "errors")</span> }
+                        else { <span class="n">@Format.Num(sc?.Count ?? 0)</span> }
+                    </button>
+                }
+            </div>
+        }
+    </aside>
+
+    <section class="lg-main" aria-label="Log lines">
+        <div class="lg-searchrow">
+            <button type="button" class="btn ghost small lg-filter-btn" aria-expanded="@Aria.Bool(filtersOpen)" aria-controls="lg-filters" @onclick="() => filtersOpen = !filtersOpen">
+                Filter@(chips.Count > 0 ? $" · {chips.Count}" : "")
+            </button>
+            <div class="lg-search">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                <input type="text" @ref="searchEl" value="@searchText" placeholder="Search text, a bee (B199), a status (503)…" aria-label="Search the logs" autocomplete="off" spellcheck="false"
+                       @oninput="OnSearchInput" @onkeydown="OnSearchKey" />
+                @if (searchText.Length > 0)
+                {
+                    <button type="button" class="lg-search-x" aria-label="Clear the search" title="Clear the search" @onclick="ClearSearch">✕</button>
+                }
+            </div>
+            <WrapToggleButton @bind-Wrapped="wrap" />
+            <CopyButton GetTextAsync="CopyAllAsync" Disabled="@(total == 0)" Title="@($"Copy all {Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")} to the clipboard")" />
+        </div>
+
+        <div class="lg-chips" role="group" aria-label="Active filters">
+            @foreach (var chip in chips)
+            {
+                var remove = chip.Remove;
+                <span class="lg-chip"><span>@chip.Text</span><button type="button" aria-label="Remove filter @chip.Text" title="Remove" @onclick="() => Apply(remove(filter))">✕</button></span>
+            }
+            @if (chips.Count > 0)
+            {
+                <button type="button" class="lg-clear" @onclick="ClearAll">Clear all</button>
+            }
+            <span class="spacer"></span>
+            @if (Sim.IsRunning && UseServerOrLocal)
+            {
+                <span class="lg-live" title="@(atEnd ? "Following the newest lines" : "New lines arrive; scroll to the bottom to follow them")"><i aria-hidden="true"></i>Live</span>
+            }
+            <span class="lg-count" role="status" aria-live="polite">@Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")</span>
+        </div>
+
+        <div class="lg-listwrap">
+            @if (!UseServerOrLocal)
+            {
+                <p class="muted lg-empty">No run is loaded. <a href="">Start a run on the Overview</a> or pick one from the history in the mode menu.</p>
+            }
+            else
+            {
+                <VirtualList @ref="list" TItem="FakeLogEntry" Class="@LinesClass" Role="log" Label="Log lines" Items="items" Variable="true" RowHeight="22"
+                             Follow="true" AtEndChanged="OnAtEnd" OnWindow="OnWindow">
+                    <ItemContent Context="l">
+                        <LogLine Line="l" Scenario="@ScenarioOf(l.Entry)" OnBee="FilterBee" />
+                    </ItemContent>
+                </VirtualList>
+                @if (total == 0)
+                {
+                    <div class="lg-empty-over">
+                        @if (loadError is not null)
+                        {
+                            <p class="bad">@loadError</p>
+                            <button type="button" class="btn ghost small" @onclick="RetryAsync">Retry</button>
+                        }
+                        else if (loading) { <p class="muted">Loading logs…</p> }
+                        else if (!filter.IsEmpty)
+                        {
+                            <p class="muted">No log line matches these filters.</p>
+                            <button type="button" class="btn ghost small" @onclick="ClearAll">Clear all</button>
+                        }
+                        else { <p class="muted">No logs yet. Start a run on the Overview and its lines show up here.</p> }
+                    </div>
+                }
+                @if (!atEnd && total > 0)
+                {
+                    <button type="button" class="lg-latest" @onclick="ToEndAsync" title="Jump to the newest line">↓ Latest</button>
+                }
+            }
+        </div>
+        @if (s.Store.DetailTrimmed && !UseServer)
+        {
+            <p class="muted lg-note">Logs of older successful bees are no longer kept in the browser.</p>
+        }
+    </section>
+</div>
+
+@code {
+    private static readonly (string Name, string Label)[] LevelRows =
+        [("Information", "Info"), ("Warning", "Warn"), ("Error", "Error"), ("Debug", "Debug"), ("Trace", "Trace")];
+    private static readonly LogFacets NoFacets = new(0, new Dictionary<string, long>(), [], []);
+
+    [SupplyParameterFromQuery(Name = "scenario")] public string? QScenario { get; set; }
+    [SupplyParameterFromQuery(Name = "step")] public string? QStep { get; set; }
+    [SupplyParameterFromQuery(Name = "bee")] public string? QBee { get; set; }
+    [SupplyParameterFromQuery(Name = "level")] public string? QLevel { get; set; }
+    [SupplyParameterFromQuery(Name = "bees")] public string? QBees { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
+
+    private LogFilter filter = LogFilter.None;
+    private string searchText = "";
+    private bool wrap = true, atEnd = true, filtersOpen, scrollEnd = true, loading, initialized, disposed;
+    private string? loadError;
+    private LogFacets facets = NoFacets;
+    private List<FakeLogEntry> local = [];
+    private PagedLogList? paged;
+    private VirtualList<FakeLogEntry>? list;
+    private ElementReference searchEl;
+    private (int First, int Last) window;
+    private int gen;
+    private bool pumping;
+    private CancellationTokenSource? searchDebounce;
+    private CancellationTokenSource? loopCts;
+    private string runKey = "";
+    private int lastLocalCount = -1;
+    private long localBuiltAt;
+    private bool localScheduled;
+    private DateTime failedAt = DateTime.MinValue;
+
+    private bool UseServer => !DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId);
+    private string LinesClass => wrap ? "lg-lines wrap" : "lg-lines nowrap";
+    private bool UseServerOrLocal => DataMode.IsFakeMode || UseServer;
+    private IReadOnlyList<FakeLogEntry> Items => UseServer ? (IReadOnlyList<FakeLogEntry>?)paged ?? [] : local;
+    private string ScenarioOf(int entry) { var s = Sim.Current; return entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : ""; }
+    private string CurrentRunKey() => DataMode.IsFakeMode ? "fake:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Sim.Current.Store) : "live:" + ApiRun.CurrentRunId;
+
+    // ---------- the address ----------
+
+    protected override void OnParametersSet()
+    {
+        var fromUrl = LogFilter.FromQuery(QScenario, QStep, QBee, QLevel, QBees, QSearch);
+        if (!initialized)
+        {
+            initialized = true;
+            var hasQuery = !fromUrl.IsEmpty;
+            filter = hasQuery ? fromUrl : Links.Last;
+            searchText = filter.Search;
+            runKey = CurrentRunKey();
+            if (!hasQuery && !filter.IsEmpty) Nav.NavigateTo(filter.Href(), replace: true);
+            _ = ReloadAsync();
+        }
+        else if (!fromUrl.SameAs(filter))
+        {
+            filter = fromUrl;
+            searchText = filter.Search;
+            Links.Last = filter;
+            _ = ReloadAsync();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Sim.Changed += OnChanged;
+        DataMode.Changed += OnChanged;
+        loopCts = new CancellationTokenSource();
+        _ = RefreshLoopAsync(loopCts.Token);
+    }
+
+    /// <summary>A filter was chosen: remember it, put it in the address and load.</summary>
+    private void Apply(LogFilter next)
+    {
+        if (next.SameAs(filter)) { filter = next; return; }
+        filter = next;
+        searchText = next.Search;
+        Links.Last = next;
+        Nav.NavigateTo(next.Href(), replace: true);
+        _ = ReloadAsync();
+    }
+
+    private void ClearAll() => Apply(LogFilter.None);
+    private void FilterBee(int sequence) => Apply(filter.WithBee(sequence).WithSearch(filter.SearchParts.Bee is not null ? "" : filter.Search));
+
+    private List<(string Text, Func<LogFilter, LogFilter> Remove)> Chips(RunSnapshot s)
+    {
+        var chips = new List<(string, Func<LogFilter, LogFilter>)>();
+        if (filter.Levels.Count > 0)
+            chips.Add(($"Level: {string.Join(", ", filter.Levels.Select(l => LevelRows.First(r => r.Name == l).Label))}", f => f.WithLevels([])));
+        if (filter.Entry is { } e) chips.Add(($"Scenario: {(e < s.Labels.Count ? s.Labels[e] : $"#{e + 1}")}", f => f.WithEntry(null)));
+        if (filter.Step is { } st && filter.Entry is { } se) chips.Add(($"Step: {(s.StepsOf(se).Any ? s.StepsOf(se).Name(st) : $"#{st + 1}")}", f => f.WithStep(null)));
+        if (filter.Bee is { } b) chips.Add(($"Bee: B{b + 1}", f => f.WithBee(null).WithSearch(f.SearchParts.Bee == b ? "" : f.Search)));
+        if (filter.Outcome != BeeShow.All) chips.Add(($"Bees: {(filter.Outcome == BeeShow.Failed ? "failed" : "slow")}", f => f.WithOutcome(BeeShow.All)));
+        if (filter.SearchParts.Bee is { } sb) { if (sb != filter.Bee) chips.Add(($"Bee: B{sb + 1}", f => f.WithSearch(""))); }
+        else if (filter.SearchParts.Text.Length > 0) chips.Add(($"Text: {filter.SearchParts.Text}", f => f.WithSearch("")));
+        return chips;
+    }
+
+    // ---------- the search field ----------
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString() ?? "";
+        searchDebounce?.Cancel();
+        searchDebounce?.Dispose();
+        searchDebounce = new CancellationTokenSource();
+        _ = ApplySearchLaterAsync(searchDebounce.Token);
+    }
+
+    private async Task ApplySearchLaterAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(250, ct);
+            await InvokeAsync(() => { Apply(filter.WithSearch(searchText)); StateHasChanged(); });
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            searchDebounce?.Cancel();
+            Apply(filter.WithSearch(searchText));
+        }
+        else if (e.Key == "Escape" && searchText.Length > 0) ClearSearch();
+    }
+
+    private void ClearSearch()
+    {
+        searchDebounce?.Cancel();
+        searchText = "";
+        Apply(filter.WithSearch(""));
+    }
+
+    // ---------- data ----------
+
+    private void OnChanged()
+    {
+        if (disposed) return;
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                var key = CurrentRunKey();
+                if (key != runKey) { runKey = key; await ReloadAsync(); return; }
+                if (!UseServer) ScheduleLocal();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var g = ++gen;
+        loadError = null;
+        scrollEnd = true;
+        atEnd = true;
+        if (!UseServer)
+        {
+            paged = null;
+            RebuildLocal();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        loading = true;
+        paged = new PagedLogList();
+        local = [];
+        facets = NoFacets;
+        await InvokeAsync(StateHasChanged);
+        await LoadFacetsAsync(g);
+        loading = false;
+        if (g == gen) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RetryAsync() { failedAt = DateTime.MinValue; await ReloadAsync(); }
+
+    private async Task LoadFacetsAsync(int g)
+    {
+        try
+        {
+            var f = await ApiRun.QueryLogFacetsAsync(filter);
+            if (g != gen || f is null) return;
+            loadError = null;
+            facets = f;
+            paged?.SetTotal(f.Total);
+        }
+        catch (Exception) when (!disposed)
+        {
+            if (g == gen) loadError = "The server did not answer. The logs could not be loaded.";
+        }
+    }
+
+    private void ScheduleLocal()
+    {
+        if (localScheduled) return;
+        var wait = Math.Max(0, 700 - (Environment.TickCount64 - localBuiltAt));
+        localScheduled = true;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay((int)wait);
+            try
+            {
+                await InvokeAsync(() => { localScheduled = false; if (!UseServer) { RebuildLocal(); StateHasChanged(); } });
+            }
+            catch (ObjectDisposedException) { }
+        });
+    }
+
+    private void RebuildLocal()
+    {
+        var s = Sim.Current;
+        var lines = s.Store.Logs();
+        localBuiltAt = Environment.TickCount64;
+        if (lines.Count == lastLocalCount && gen == builtGen) return;
+        lastLocalCount = lines.Count;
+        builtGen = gen;
+        local = LogCounts.Filter(lines, filter, s.Store);
+        facets = LogCounts.Count(lines, filter, s.Store);
+    }
+
+    private int builtGen = -1;
+
+    /// <summary>While a run goes (and a moment after it), the server's counts and the end of the list are refreshed.</summary>
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        var wasRunning = false;
+        var extra = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(1500, ct);
+                var running = Sim.IsRunning;
+                if (wasRunning && !running) extra = 3;
+                wasRunning = running;
+                if (!UseServer || (!running && extra == 0) || paged is null) continue;
+                if (!running) extra--;
+                var g = gen;
+                await LoadFacetsAsync(g);
+                await InvokeAsync(StateHasChanged);
+                _ = PumpAsync();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Loads the pages of the lines in view (and one more each side) that the browser does not hold yet.</summary>
+    private Task OnWindow((int First, int Last) w)
+    {
+        window = w;
+        _ = PumpAsync();
+        return Task.CompletedTask;
+    }
+
+    private async Task PumpAsync()
+    {
+        if (pumping) return;
+        pumping = true;
+        try
+        {
+            while (!disposed)
+            {
+                var p = paged;
+                var g = gen;
+                if (p is null || !UseServer) break;
+                if (DateTime.UtcNow - failedAt < TimeSpan.FromSeconds(3)) break;
+                var missing = p.Missing(window.First, window.Last);
+                if (missing.Count == 0) break;
+                var page = missing[0];
+                LogPageResult? result;
+                try { result = await ApiRun.QueryLogsAsync(filter, page * PagedLogList.PageSize, PagedLogList.PageSize); }
+                catch (Exception) { result = null; }
+                if (g != gen || !ReferenceEquals(p, paged)) continue;
+                if (result is null) { failedAt = DateTime.UtcNow; loadError = "Some lines could not be loaded."; await InvokeAsync(StateHasChanged); break; }
+                loadError = null;
+                var started = ApiRun.CurrentStartedUtc;
+                p.SetPage(page, result.Items.Select(r => new FakeLogEntry(r.AtSeconds, started.AddSeconds(r.AtSeconds), r.Level, r.Message, r.Exception, r.Entry, r.Sequence,
+                    new Dictionary<string, string> { ["Bee"] = r.BeeName }, r.CallIndex, r.Step)).ToList());
+                p.Trim(window.First, window.Last);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally { pumping = false; }
+    }
+
+    // ---------- list ----------
+
+    private void OnAtEnd(bool value) => atEnd = value;
+
+    private async Task ToEndAsync()
+    {
+        if (list is not null) await list.ScrollToEndAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (scrollEnd && list is not null)
+        {
+            scrollEnd = false;
+            await list.ScrollToEndAsync();
+        }
+    }
+
+    // ---------- copy all ----------
+
+    /// <summary>Every line of the filter: the filtered lines in the browser, or all pages of the stored run from the server.</summary>
+    private async Task<string> CopyAllAsync()
+    {
+        if (!UseServer) return LogText.All(local, ScenarioOf);
+        var sb = new StringBuilder();
+        var offset = 0;
+        var started = ApiRun.CurrentStartedUtc;
+        while (true)
+        {
+            var page = await ApiRun.QueryLogsAsync(filter, offset, 1000);
+            if (page is null || page.Items.Count == 0) break;
+            foreach (var r in page.Items)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(LogText.Line(new FakeLogEntry(r.AtSeconds, started, r.Level, r.Message, r.Exception, r.Entry, r.Sequence, new Dictionary<string, string>(), r.CallIndex, r.Step), ScenarioOf(r.Entry)));
+            }
+            offset += page.Items.Count;
+            if (offset >= page.TotalCount) break;
+        }
+        return sb.ToString();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        gen++;
+        Sim.Changed -= OnChanged;
+        DataMode.Changed -= OnChanged;
+        searchDebounce?.Cancel();
+        searchDebounce?.Dispose();
+        loopCts?.Cancel();
+        loopCts?.Dispose();
+        await Task.CompletedTask;
+    }
+}

@@ -28,7 +28,8 @@ public class ContractsRoundTripTests
             7, 3, "DuckDb", null, PreflightState: "Done",
             RunningBees: [new LiveRunningBeeDto(8, 0, 11.9, Step: 1, Rep: 2)],
             RuntimeVersion: 4,
-            Steps: [[new StepInfo("Log in"), new StepInfo("Pay")]]);
+            Steps: [[new StepInfo("Log in"), new StepInfo("Pay")]],
+            NextBeeIndex: 12);
         var json = JsonSerializer.Serialize(dto, Web);
         var node = JsonNode.Parse(json)!.AsObject();
         Assert.Equal("r1", (string?)node["runId"]);
@@ -36,6 +37,7 @@ public class ContractsRoundTripTests
         Assert.Equal(7, (int?)node["lastSequence"]);
         Assert.NotNull(node["newBees"]);
         Assert.Equal(4, (long?)node["runtimeVersion"]);
+        Assert.Equal(12, (int?)node["nextBeeIndex"]);   // the cursor of the live bee poll (afterIndex)
         var back = RoundTrip(dto);
         Assert.Equal(dto.NewBees[0], back.NewBees[0]);
         Assert.Equal(dto.RunningBees![0], back.RunningBees![0]);
@@ -57,6 +59,17 @@ public class ContractsRoundTripTests
             [new StoredLogRow(1, 2, "B3", 0, 0.5, "Error", "bad", null, 0, 2, true, false)]));
         Assert.Equal("B3", page.Items[0].BeeName);
         RoundTrip(new LiveLogEntryDto(1, 2, "B3", 0, 0.5, DateTimeOffset.UtcNow, "Info", "hi", null));
+    }
+
+    [Fact]
+    public void Log_rows_carry_their_step_and_the_facets_round_trip()
+    {
+        var row = RoundTrip(new StoredLogRow(1, 2, "B3", 0, 0.5, "Error", "bad", null, 0, 2, true, false, Step: 3));
+        Assert.Equal(3, row.Step);
+        var facets = RoundTrip(new LogFacets(7, new Dictionary<string, long> { ["Error"] = 4, ["Information"] = 3 }, [5, 2], [new LogStepCount(0, 3, 0), new LogStepCount(1, 4, 4)]));
+        Assert.Equal(4, facets.Levels["Error"]);
+        Assert.Equal([5L, 2L], facets.Entries);
+        Assert.Equal(new LogStepCount(1, 4, 4), facets.Steps[1]);
     }
 
     [Fact]

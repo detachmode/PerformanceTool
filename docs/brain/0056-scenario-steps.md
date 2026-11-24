@@ -1,6 +1,6 @@
 # 0056. Scenario steps: known up front, shown as a stepper
 
-- Status: Proposed (user request: steps known before the run; flying bee shows "step N of M"; a failed bee shows the step it failed at; all bees that failed at one step). Code API and UI details are Claude's proposal.
+- Status: Accepted for the UI (step list, 2026-11-23); rest Proposed (user request: steps known before the run; flying bee shows "step N of M"; a failed bee shows the step it failed at; all bees that failed at one step). Code API and UI details are Claude's proposal.
 - Date: 2026-11-22
 
 ## What
@@ -87,3 +87,6 @@ Fake data and client only; status stays Proposed. Screenshots: `docs/screenshots
   - Scripting: upgraded `Microsoft.CodeAnalysis.CSharp.Scripting` to `5.12.0` (C# 15 `union` support); `ScriptScenarioStore.TestRunAsync` returns `Steps`, `FailedStep`, `FailedRep`, and tagged calls. Example script: `src/Beesharp/scripts/checkout-steps.cs`.
   - Engine & Storage: `LoadRunner` + `RunManager` track live step/rep per active bee, `FailedPerStep`/`InFlightPerStep`, and persist declared steps per run (`run_steps`, DuckDB schema v1 → v2 migration, exports).
   - Contracts, Server API, CLI, AI & Client Live mode: all wired end to end (`GET /api/scenarios`, `GET /api/runs/{id}/bees?failedStep=n`, `RunSummary`, assistant tools, `ApiRunSource`, `RemoteBeeDetail`, `StepList.razor`).
+
+## Step list (user choice, 2026-11-23)
+The steps show as one list on the overview card and the scenario page (`Chart/StepTrack.razor`): per step the bees there **now** (blue, only while a run goes) and the bees that **failed** there (red), zero as a quiet dash, and a last row **Finished all steps** (green). Every number opens its bees. Past a few steps, runs of quiet steps fold into one row ("Steps 3–12"); a bee's stepper folds the steps it never reached. Debug URL `?stepcount=1,8,24` adds fake entries with that many steps. Rejected: a horizontal track of nodes and a funnel with bars (user: "not convinced about the bar").

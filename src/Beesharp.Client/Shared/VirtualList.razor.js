@@ -2,6 +2,9 @@
 // and keeps the first visible row where it is when rows are rendered above it (variable row heights, brain 0022).
 export function attach(el, ref) {
     let queued = false;
+    let follow = false; // stick to the bottom (a log that grows at its end), as long as the reader is at the bottom
+    let pinned = true;  // whether the reader is at the bottom right now
+    const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
     let rec = null; // the first visible row: its index, its top in the list viewport and the scroll position at that time
     const rowSel = ':scope > div > div > .vrow';
     const record = () => {
@@ -14,6 +17,11 @@ export function attach(el, ref) {
     };
     // Runs right after Blazor changed the DOM, before the browser paints.
     const keep = () => {
+        if (follow && pinned) {
+            if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) el.scrollTop = el.scrollHeight;
+            record();
+            return;
+        }
         if (rec) {
             const lt = el.getBoundingClientRect().top;
             const r = el.querySelector(`${rowSel}[data-i="${rec.i}"]`);
@@ -26,18 +34,23 @@ export function attach(el, ref) {
     };
     const mo = new MutationObserver(keep);
     mo.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
-    const send = () => { queued = false; record(); ref.invokeMethodAsync('OnViewport', el.scrollTop, el.clientHeight, el.clientWidth); };
+    const send = () => { queued = false; record(); ref.invokeMethodAsync('OnViewport', el.scrollTop, el.clientHeight, el.clientWidth, atEnd()); };
     const on = () => { if (!queued) { queued = true; requestAnimationFrame(send); } };
-    el.addEventListener('scroll', on, { passive: true });
+    const onScroll = () => { pinned = atEnd(); on(); };
+    el.addEventListener('scroll', onScroll, { passive: true });
     const ro = new ResizeObserver(on);
     ro.observe(el);
-    el.__vlist = () => { el.removeEventListener('scroll', on); ro.disconnect(); mo.disconnect(); };
+    el.__vlist = () => { el.removeEventListener('scroll', onScroll); ro.disconnect(); mo.disconnect(); };
     el.__vrecord = record;
+    el.__vfollow = v => { follow = v; if (v && pinned) keep(); };
+    el.__vpin = () => { pinned = true; el.scrollTop = el.scrollHeight; record(); on(); };
     send();
 }
 
 export function detach(el) { if (el.__vlist) { el.__vlist(); el.__vlist = null; } }
 
+export function setFollow(el, follow) { el.__vfollow?.(follow); }
+export function pinToEnd(el) { el.__vpin?.(); }
 export function scrollToTop(el) { el.scrollTop = 0; el.__vrecord?.(); }
 export function scrollTo(el, y) { el.scrollTop = y; el.__vrecord?.(); }
 

@@ -13,7 +13,8 @@ public sealed record LogQuery(
     IReadOnlyList<string>? Levels = null,
     string? Search = null,
     int Offset = 0,
-    int Limit = 200);
+    int Limit = 200,
+    int? Step = null);
 
 public sealed record StoredBeeSummary(
     int Sequence,
@@ -71,6 +72,12 @@ public interface IRunStorage : IAsyncDisposable
     Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default);
     Task<StoredBeeDetail?> GetBeeDetailAsync(string runId, int sequence, CancellationToken ct = default);
     Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default);
+
+    /// <summary>
+    /// The counts behind the Logs page's filter column (brain 0059) for the filters in <paramref name="query"/> (offset and limit are ignored): how many lines per level,
+    /// per scenario entry, and, when the query names an entry, per step with its error lines. Each group ignores its own filter, so the other choices show what they would give.
+    /// </summary>
+    Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery query, CancellationToken ct = default);
 
     /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
     Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default);

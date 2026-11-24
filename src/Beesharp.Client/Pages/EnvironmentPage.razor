@@ -1,7 +1,6 @@
-@* Environment tab (brain 0052): inspect the environment of the current run. Static values of the selected environment (fixed during a run), and runtime
-   data written during the run: the run bag and one entry bag per scenario entry. A finished run shows the final values. Calm UI (0016): thin lists, no
-   boxes in boxes, details (full value, who wrote it and when) only on expand. Every figure drills down (0029): counts expand, writers open the bee or
-   the scenario entry. Colour carries meaning (0018), so runtime data stays neutral. *@
+@* The Environment page (brain 0059, 0052): one centred column. The selected environment's static values (fixed during a run), then the runtime data below: the run bag and one
+   entry bag per scenario entry; a finished run shows the final values. Calm UI (0016): flat panels, thin rows, details (the full value, who wrote it and when) only on expand.
+   Every figure drills down (0029): counts expand, writers open the bee or the scenario entry. Colour carries meaning (0018), so runtime data stays neutral. *@
 @page "/environment"
 @layout MainLayout
 @implements IDisposable
@@ -28,27 +27,19 @@
 }
 
 <div class="page env-page">
-    <section class="preset-bar" aria-label="Environment header">
-        <div class="preset-title">
-            <h1>Environment</h1>
-            <span class="muted">@StateText(s)</span>
-        </div>
-        <div class="preset-actions">
+    @if (staticTotal + total >= 8)
+    {
+        <div class="env-filterrow">
             <input class="rt-filter" type="search" placeholder="Filter keys…" aria-label="Filter keys" autocomplete="off" spellcheck="false"
                    value="@filter" @oninput="e => filter = e.Value?.ToString() ?? string.Empty" />
         </div>
-    </section>
+    }
 
     @* ---------- static values ---------- *@
-    <section class="rt-sec" aria-labelledby="rt-static">
-        <div class="rt-head">
-            <h2 id="rt-static">
-                <button type="button" class="rt-toggle" aria-expanded="@Aria.Bool(openStatic || filtering)" @onclick="() => openStatic = !openStatic">
-                    <i class="rt-caret" aria-hidden="true">@((openStatic || filtering) ? "▾" : "▸")</i>Static values
-                    @if (env is not null) { <span class="rt-count">@Count(staticRows.Count, staticTotal)</span> }
-                </button>
-            </h2>
-            <span class="muted rt-note">@(env is null ? "" : $"{env.Name} · fixed during a run")</span>
+    <section class="env-sec" aria-labelledby="env-static">
+        <div class="env-head">
+            <h2 id="env-static">@(env?.Name ?? "Environment")</h2>
+            @if (env is not null) { <span class="muted">fixed during a run</span> }
             <span class="spacer"></span>
             <button type="button" class="btn ghost small" @onclick="() => EnvPopup.Show(Envs.ActiveName)">Configure…</button>
         </div>
@@ -68,42 +59,33 @@
                 }
             </p>
         }
-        else if (openStatic || filtering)
+        else if (staticRows.Count == 0)
         {
-            @if (staticRows.Count == 0)
-            {
-                <p class="muted rt-quiet">@(filtering ? "No static key matches." : "This environment has no keys yet.")</p>
-            }
-            else
-            {
-                <div class="rt-rows" role="list" aria-label="Static values">
-                    @foreach (var v in staticRows)
-                    {
-                        var id = "s:" + v.Key;
-                        <RuntimeRow @key="id" Key="@v.Key" Value="JsonValue.Create(v.Value)" Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
-                                    OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" />
-                    }
-                </div>
-            }
+            <p class="muted rt-quiet">@(filtering ? "No static key matches." : "This environment has no keys yet. Configure… adds some.")</p>
+        }
+        else
+        {
+            <div class="env-card rt-rows" role="list" aria-label="Static values">
+                @foreach (var v in staticRows)
+                {
+                    var id = "s:" + v.Key;
+                    <RuntimeRow @key="id" Key="@v.Key" Value="JsonValue.Create(v.Value)" Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" />
+                }
+            </div>
         }
     </section>
 
     @* ---------- runtime data ---------- *@
-    <section class="rt-sec" aria-labelledby="rt-runtime">
-        <div class="rt-head">
-            <h2 id="rt-runtime">
-                <button type="button" class="rt-toggle" aria-expanded="@Aria.Bool(openRuntime)" @onclick="() => openRuntime = !openRuntime">
-                    <i class="rt-caret" aria-hidden="true">@(openRuntime ? "▾" : "▸")</i>Runtime data
-                    @if (rt is not null && total > 0) { <span class="rt-count">@Count(shownTotal, total)</span> }
-                </button>
-            </h2>
-            <span class="muted rt-note">written during the run</span>
+    <section class="env-sec" aria-labelledby="env-runtime">
+        <div class="env-head">
+            <h2 id="env-runtime">Runtime data</h2>
+            <span class="muted">written during the run</span>
+            <span class="spacer"></span>
+            <span class="muted env-state">@StateText(s)</span>
         </div>
 
-        @if (!openRuntime)
-        {
-        }
-        else if (rt is null || total == 0)
+        @if (rt is null || total == 0)
         {
             <p class="muted rt-quiet">@EmptyText(s, rt)</p>
         }
@@ -113,68 +95,62 @@
         }
         else
         {
-            @if (!filtering || runRows.Count > 0)
-            {
-                <div class="rt-bag" aria-label="Run bag">
-                    <div class="rt-bag-head">
-                        <span class="rt-bag-name">Run bag</span>
-                        <span class="muted rt-note">shared by the whole run</span>
-                        <span class="spacer"></span>
-                        <button type="button" class="rt-count rt-count-btn" aria-expanded="@Aria.Bool(openRun || filtering)" @onclick="() => openRun = !openRun">
-                            @Count(runRows.Count, rt.Run.Values.Count)<i class="rt-caret" aria-hidden="true">@((openRun || filtering) ? "▾" : "▸")</i>
+            <div class="env-card">
+                @if (rt.Run.Values.Count > 0 && (!filtering || runRows.Count > 0))
+                {
+                    <div class="rt-bag" aria-label="Run bag">
+                        <button type="button" class="rt-bag-head" aria-expanded="@Aria.Bool(openRun || filtering)" @onclick="() => openRun = !openRun">
+                            <span class="rt-bag-name">Run bag</span>
+                            <span class="spacer"></span>
+                            <span class="rt-count">@Count(runRows.Count, rt.Run.Values.Count)</span><i class="rt-caret" aria-hidden="true">@((openRun || filtering) ? "▾" : "▸")</i>
                         </button>
+                        @if (openRun || filtering)
+                        {
+                            <div class="rt-rows" role="list">
+                                @foreach (var v in runRows)
+                                {
+                                    var id = "r:" + v.Key;
+                                    <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
+                                                Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                                OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
+                                }
+                            </div>
+                        }
                     </div>
-                    @if (openRun || filtering)
-                    {
-                        <div class="rt-rows" role="list">
-                            @foreach (var v in runRows)
-                            {
-                                var id = "r:" + v.Key;
-                                <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
-                                            Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
-                                            OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
-                            }
+                }
+                @foreach (var bag in rt.Entries)
+                {
+                    var entry = bag.Entry;
+                    var rows = bag.Values.Where(v => Match(v.Key)).ToList();
+                    if (bag.Values.Count == 0 || (filtering && rows.Count == 0)) continue;
+                    var open = filtering || openEntries.Contains(entry);
+                    <div class="rt-bag" aria-label="Entry bag of @Label(s, entry)">
+                        <div class="rt-bag-head">
+                            <button type="button" class="rt-link rt-bag-name" title="Open this scenario entry" @onclick="() => OpenEntry(entry, null)">@Label(s, entry)</button>
+                            <span class="muted rt-note">entry bag</span>
+                            <span class="spacer"></span>
+                            <button type="button" class="rt-count rt-count-btn" aria-expanded="@Aria.Bool(open)" @onclick="() => ToggleEntry(entry)">
+                                @Count(rows.Count, bag.Values.Count)<i class="rt-caret" aria-hidden="true">@(open ? "▾" : "▸")</i>
+                            </button>
                         </div>
-                    }
-                </div>
-            }
-            @foreach (var bag in rt.Entries)
-            {
-                var entry = bag.Entry;
-                var rows = bag.Values.Where(v => Match(v.Key)).ToList();
-                if (bag.Values.Count == 0 || (filtering && rows.Count == 0)) continue;
-                var open = filtering || openEntries.Contains(entry);
-                <div class="rt-bag" aria-label="Entry bag of @Label(s, entry)">
-                    <div class="rt-bag-head">
-                        <button type="button" class="rt-link rt-bag-name" title="Open this scenario entry" @onclick="() => OpenEntry(entry, null)">@Label(s, entry)</button>
-                        <span class="muted rt-note">entry bag</span>
-                        <span class="spacer"></span>
-                        <button type="button" class="rt-count rt-count-btn" aria-expanded="@Aria.Bool(open)" @onclick="() => ToggleEntry(entry)">
-                            @Count(rows.Count, bag.Values.Count)<i class="rt-caret" aria-hidden="true">@(open ? "▾" : "▸")</i>
-                        </button>
+                        @if (open)
+                        {
+                            <div class="rt-rows" role="list">
+                                @foreach (var v in rows)
+                                {
+                                    var id = $"e{entry}:{v.Key}";
+                                    <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
+                                                Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
+                                                OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
+                                }
+                            </div>
+                        }
                     </div>
-                    @if (open)
-                    {
-                        <div class="rt-rows" role="list">
-                            @foreach (var v in rows)
-                            {
-                                var id = $"e{entry}:{v.Key}";
-                                <RuntimeRow @key="v" Key="@v.Key" Value="v.Value" Written="v" WriterText="@WriterText(s, v.Writer)" Fresh="fresh.Contains(v)"
-                                            Open="expanded.Contains(id)" Revealed="revealed.Contains(id)"
-                                            OnToggle="() => Toggle(id)" OnReveal="() => ToggleReveal(id)" OnWriter="() => OpenWriter(v.Writer)" />
-                            }
-                        </div>
-                    }
-                </div>
-            }
+                }
+            </div>
         }
     </section>
 </div>
-
-@if (openEntry is { } oe && oe < s.Count)
-{
-    <ScenarioDetailDialog @key="(oe, openBee)" Index="oe" Snapshot="s" InitialBee="openBee" OnClose="CloseDialog" />
-}
 
 @if (openProgram is { } kind)
 {
@@ -186,11 +162,10 @@
 @code {
     private DataWriterKind? openProgram;
     private string filter = "";
-    private bool openStatic = true, openRuntime = true, openRun = true;
+    private bool openRun = true;
     private readonly HashSet<int> openEntries = [];
     private readonly HashSet<string> expanded = [], revealed = [];
-    private int? openEntry, openBee;
-
+    
     // Live values (brain 0052): a value that was written since the last update gets a short, neutral fade. Its element is re-created per write (@key = the value).
     private readonly Dictionary<string, RuntimeValue> previous = [];
     private readonly HashSet<RuntimeValue> fresh = new(ReferenceEqualityComparer.Instance);
@@ -245,16 +220,16 @@
     };
 
     private string EmptyText(RunSnapshot s, RuntimeDataSnapshot? rt) =>
-        rt is null && !DataMode.IsFakeMode ? "Loading runtime data…"
-        : s.State == FakeRunState.Idle ? "Start a run: what the preflight and scenarios write shows up here."
+        s.State == FakeRunState.Idle ? "Start a run: what the preflight and scenarios write shows up here."
+        : rt is null && !DataMode.IsFakeMode ? "Loading runtime data…"
         : s.Running ? "Nothing written yet."
         : "This run wrote no runtime data.";
 
     private void ToggleEntry(int entry) { if (!openEntries.Remove(entry)) openEntries.Add(entry); }
     private void Toggle(string id) { if (!expanded.Remove(id)) expanded.Add(id); }
     private void ToggleReveal(string id) { if (!revealed.Remove(id)) revealed.Add(id); }
-    private void OpenEntry(int entry, int? bee) { openEntry = entry; openBee = bee; }
-    private void CloseDialog() { openEntry = null; openBee = null; }
+    /// <summary>A value's writer opens its scenario page (brain 0059), at the bee when it was a bee.</summary>
+    private void OpenEntry(int entry, int? bee) => Nav.NavigateTo(ScenarioLink.Href(entry, new(Bee: bee)));
 
     private void OpenWriter(DataWriter w)
     {

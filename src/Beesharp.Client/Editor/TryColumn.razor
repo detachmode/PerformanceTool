@@ -1,0 +1,173 @@
+@* The Try result, in the column on the right of the editor (brain 0059, 0042): passed or failed with its time, the steps of the scenario (the step look of brain 0056), then the tabs Logs and Calls.
+   Before the first Try it is one quiet hint. A scenario's parameters sit behind "Parameters" (the values Try runs with); a preflight or shutdown program has only its output. Copy copies all the logs. *@
+@using System.Text.Json.Nodes
+
+<aside class="ed-try" aria-label="Try">
+    <div class="ed-try-head">
+        <h2>Try</h2>
+        @if (EnvName is not null) { <span class="muted ed-try-env" title="Try runs with the values of this environment">@EnvName</span> }
+        <span class="spacer"></span>
+        @if (Live is { Running: true })
+        {
+            <button type="button" class="btn ghost danger small" @onclick="OnStop">Stop</button>
+        }
+        else if (Live is not null || Program is not null)
+        {
+            <button type="button" class="btn ghost small" @onclick="OnRun" disabled="@(!CanTry || Busy)">▶ Again</button>
+        }
+    </div>
+
+    @if (Spec is { Fields.Count: > 0 } spec && Params is not null)
+    {
+        <details class="ed-params" open="@(Live is null)">
+            <summary>Parameters</summary>
+            <div class="form param-grid"><ParameterEditor Spec="spec" Values="Params" Disabled="@Busy" IdPrefix="script-test" /></div>
+        </details>
+    }
+
+    @if (Testing && Live is null && Program is null)
+    {
+        <p class="muted ed-hint"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" /> Running @ProgramName…</p>
+    }
+    else if (Live is { } lt)
+    {
+        var hasSteps = lt.Steps is { Count: > 0 };
+        var calls = BuildCalls(lt);
+        var stepsDecl = hasSteps ? new ScenarioSteps(lt.Steps!.Select(st => st.Name).ToArray()) : ScenarioSteps.None;
+        <div class="ed-result @(lt.Running ? "run" : lt.Success ? "ok" : "bad")" role="status">
+            @if (lt.Running) { <span class="ed-state run"><HexBadge Kind="spin" Size="16" StrokeWidth="9.5" />Running</span> }
+            else if (lt.Success) { <span class="ed-state good">Passed</span> }
+            else { <span class="ed-state bad">Failed</span> }
+            <span class="muted">· @Format.Ms(lt.DurationMs)</span>
+            @if (lt.StatusCode is { } sc) { <span class="muted">· HTTP @sc</span> }
+        </div>
+        @if (!string.IsNullOrEmpty(lt.Error) && !(hasSteps && lt.FailedStep >= 0))
+        {
+            <p class="ed-error bad">@lt.Error</p>
+        }
+        @if (hasSteps)
+        {
+            var steps = lt.Running
+                ? StepLogic.ForRunning(stepsDecl, new RunningBee(0, 0, 0, calls, lt.CurrentStep, lt.CurrentRep, lt.StepVisits), Math.Max(1, lt.DurationMs))
+                : StepLogic.ForBee(stepsDecl, calls, lt.FailedStep, lt.FailedRep, lt.Error, lt.StepVisits);
+            <StepList Steps="steps" LiveLogs="lt.Logs" DefaultExpanded="false" AriaLabel="@(lt.Running ? "Live steps of the test run" : "Steps of the test run")" />
+        }
+        <div class="ed-tabs">
+            <div class="seg" role="tablist" aria-label="Test run details">
+                <button type="button" role="tab" class="@(tab == 0 ? "on" : "")" aria-selected="@Aria.Bool(tab == 0)" @onclick="() => tab = 0">Logs <span class="n">@lt.Logs.Count</span></button>
+                <button type="button" role="tab" class="@(tab == 1 ? "on" : "")" aria-selected="@Aria.Bool(tab == 1)" @onclick="() => tab = 1">Calls <span class="n">@lt.Calls.Count</span></button>
+            </div>
+            <span class="spacer"></span>
+            @if (tab == 0)
+            {
+                <CopyButton GetText="@(() => FormatLogs(lt.Logs))" Disabled="@(lt.Logs.Count == 0)" />
+                <WrapToggleButton @bind-Wrapped="wrap" />
+            }
+        </div>
+        @if (tab == 0)
+        {
+            <div class="sl-console compact ed-console @(wrap ? "wrap" : "nowrap")" role="log" aria-live="polite" aria-label="Logs of the test run">
+                @if (lt.Logs.Count == 0)
+                {
+                    <div class="sl-empty">@(lt.Running ? "Waiting for logs…" : "No logs emitted by this test run.")</div>
+                }
+                else
+                {
+                    @foreach (var log in lt.Logs)
+                    {
+                        <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                    }
+                }
+            </div>
+        }
+        else if (calls.Count == 0)
+        {
+            <p class="muted ed-hint">@(lt.Running ? "Waiting for calls…" : "No calls recorded.")</p>
+        }
+        else
+        {
+            var denom = Math.Max(1, Math.Max(lt.DurationMs, calls.Max(c => c.OffsetMs + c.DurationMs)));
+            <ol class="calls ed-calls" aria-label="Calls of the test run">
+                @foreach (var call in calls)
+                {
+                    var cls = call.Failed ? "bad" : call.Slow ? "warn" : "good";
+                    var left = Math.Clamp(call.OffsetMs / denom * 100, 0, 100);
+                    var width = Math.Max(0.8, Math.Min(100 - left, call.DurationMs / denom * 100));
+                    <li class="call @cls">
+                        <span class="call-name" title="@call.Name">@call.Name</span>
+                        <span class="track"><i style="left:@left.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;width:@width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></span>
+                        <span class="call-dur">@Format.Ms(call.DurationMs)</span>
+                        <span class="call-status" title="@call.Error">@(call.Failed ? (call.Status?.ToString() ?? "failed") : call.Status?.ToString() ?? "ok")</span>
+                    </li>
+                }
+            </ol>
+        }
+    }
+    else if (Program is { } pr)
+    {
+        <div class="ed-result @(pr.Success ? "ok" : "bad")" role="status">
+            <span class="ed-state @(pr.Success ? "good" : "bad")">@(pr.Success ? "Passed" : "Failed")</span>
+            <span class="muted">· @Format.Ms(pr.DurationMs)</span>
+        </div>
+        @if (!string.IsNullOrEmpty(pr.Error)) { <p class="ed-error bad">@pr.Error</p> }
+        <div class="ed-tabs">
+            <span class="muted">Output <span class="n">@pr.Logs.Count</span></span>
+            <span class="spacer"></span>
+            <CopyButton GetText="@(() => string.Join("\n", pr.Logs))" Disabled="@(pr.Logs.Count == 0)" />
+            <WrapToggleButton @bind-Wrapped="wrap" />
+        </div>
+        <div class="sl-console compact ed-console @(wrap ? "wrap" : "nowrap")" role="log" aria-label="Output of the @ProgramName">
+            @if (pr.Logs.Count == 0) { <div class="sl-empty">The @ProgramName printed nothing.</div> }
+            @foreach (var line in pr.Logs) { <SerilogLine Raw="@line" /> }
+        </div>
+    }
+    else
+    {
+        <p class="muted ed-hint">@Hint</p>
+        @if (CanTry)
+        {
+            <button type="button" class="btn ghost small ed-hint-btn" @onclick="OnRun" disabled="@Busy">▶ Try</button>
+        }
+    }
+</aside>
+
+@code {
+    [Parameter] public LiveTestRunStatusDto? Live { get; set; }
+    [Parameter] public PreflightRunResult? Program { get; set; }
+    /// <summary>A run was started and nothing came back yet.</summary>
+    [Parameter] public bool Testing { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool CanTry { get; set; }
+    /// <summary>"preflight script" or "shutdown program" (what Try runs when it is not a scenario).</summary>
+    [Parameter] public string ProgramName { get; set; } = "script";
+    [Parameter] public string? EnvName { get; set; }
+    /// <summary>What to say before the first Try.</summary>
+    [Parameter] public string Hint { get; set; } = "";
+    [Parameter] public ParameterSpec? Spec { get; set; }
+    [Parameter] public JsonObject? Params { get; set; }
+    [Parameter] public EventCallback OnRun { get; set; }
+    [Parameter] public EventCallback OnStop { get; set; }
+    private bool wrap = true;
+    /// <summary>0 = Logs, 1 = Calls.</summary>
+    private int tab;
+
+    private static List<FakeCall> BuildCalls(LiveTestRunStatusDto res)
+    {
+        var errs = new ErrorDictionary();
+        var list = new List<FakeCall>(res.Calls.Count);
+        var cursor = 0.0;
+        for (var i = 0; i < res.Calls.Count; i++)
+        {
+            var c = res.Calls[i];
+            var off = c.OffsetMs > 0 || i == 0 ? c.OffsetMs : cursor;
+            cursor = Math.Max(cursor, off + c.DurationMs);
+            var name = c.Method == "STEP" ? c.Url : $"{c.Method} {c.Url}";
+            var slow = c.Error is null && c.DurationMs >= 1500;
+            list.Add(new FakeCall(i, name, off, c.DurationMs, c.StatusCode, errs.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: errs, Step: c.Step, Rep: c.Rep));
+        }
+        return list;
+    }
+
+    private static string FormatLogs(IReadOnlyList<LiveLogEntryDto> logs) =>
+        string.Join("\n", logs.Select(l => $"[{l.Timestamp.ToLocalTime():HH:mm:ss.fff} {l.Level[..Math.Min(3, l.Level.Length)].ToUpperInvariant()}] {l.Message}" + (string.IsNullOrEmpty(l.Exception) ? "" : "\n" + l.Exception)));
+}

@@ -62,7 +62,7 @@ public sealed class InMemoryRunStorage : IRunStorage
                     bucket.Logs.Add(new StoredLogRow(
                         Interlocked.Increment(ref nextLogId),
                         r.Sequence, beeName, r.Entry, l.AtSeconds, l.Level, l.Message, l.Exception, l.CallIndex,
-                        beeOutcome, isFailed, isSlow));
+                        beeOutcome, isFailed, isSlow, l.Step));
                 }
             }
         }
@@ -136,23 +136,58 @@ public sealed class InMemoryRunStorage : IRunStorage
         {
             var bucket = runs.FirstOrDefault(x => x.RunId == runId);
             if (bucket is null) return Task.FromResult(new LogPageResult(0, offset, limit, []));
-            IEnumerable<StoredLogRow> seq = bucket.Logs;
-            if (q.Entry is { } e) seq = seq.Where(l => l.Entry == e);
-            if (q.Bee is { } a) seq = seq.Where(l => l.Sequence == a);
-            if (!string.IsNullOrWhiteSpace(q.BeeName)) seq = seq.Where(l => string.Equals(l.BeeName, q.BeeName.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (q.Outcome is { } o) seq = seq.Where(l => l.BeeOutcome == o);
-            if (q.Failed is { } fl) seq = seq.Where(l => l.IsFailed == fl);
-            if (q.Slow is { } sl) seq = seq.Where(l => l.IsSlow == sl);
-            if (q.Levels is { Count: > 0 } lv) seq = seq.Where(l => lv.Contains(l.Level, StringComparer.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(q.Search))
-            {
-                var needle = q.Search.Trim();
-                seq = seq.Where(l => l.Message.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                    || (l.Exception?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || l.BeeName.Contains(needle, StringComparison.OrdinalIgnoreCase));
-            }
+            IEnumerable<StoredLogRow> seq = bucket.Logs.Where(l => Matches(l, q, entry: true, step: true, levels: true));
             var matched = seq.ToList();
             return Task.FromResult(new LogPageResult(matched.Count, offset, limit, matched.Skip(offset).Take(limit).ToList()));
+        }
+    }
+
+    private static bool Matches(StoredLogRow l, LogQuery q, bool entry, bool step, bool levels)
+    {
+        if (entry && q.Entry is { } e && l.Entry != e) return false;
+        if (step && q.Step is { } st && l.Step != st) return false;
+        if (q.Bee is { } a && l.Sequence != a) return false;
+        if (!string.IsNullOrWhiteSpace(q.BeeName) && !string.Equals(l.BeeName, q.BeeName.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
+        if (q.Outcome is { } o && l.BeeOutcome != o) return false;
+        if (q.Failed is { } fl && l.IsFailed != fl) return false;
+        if (q.Slow is { } sl && l.IsSlow != sl) return false;
+        if (levels && q.Levels is { Count: > 0 } lv && !lv.Contains(l.Level, StringComparer.OrdinalIgnoreCase)) return false;
+        if (!string.IsNullOrWhiteSpace(q.Search))
+        {
+            var needle = q.Search.Trim();
+            if (!(l.Message.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || (l.Exception?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false)
+                || l.BeeName.Contains(needle, StringComparison.OrdinalIgnoreCase))) return false;
+        }
+        return true;
+    }
+
+    public Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery q, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return Task.FromResult(new LogFacets(0, new Dictionary<string, long>(), [], []));
+            var total = 0L;
+            var levelCounts = new Dictionary<string, long>();
+            var entryCounts = new List<long>();
+            var stepCounts = new SortedDictionary<int, (long Count, long Errors)>();
+            foreach (var l in bucket.Logs)
+            {
+                if (Matches(l, q, entry: true, step: true, levels: true)) total++;
+                if (Matches(l, q, entry: true, step: true, levels: false)) levelCounts[l.Level] = levelCounts.GetValueOrDefault(l.Level) + 1;
+                if (Matches(l, q, entry: false, step: false, levels: true))
+                {
+                    while (entryCounts.Count <= l.Entry) entryCounts.Add(0);
+                    entryCounts[l.Entry]++;
+                }
+                if (q.Entry is not null && Matches(l, q, entry: true, step: false, levels: false))
+                {
+                    var (c, err) = stepCounts.GetValueOrDefault(l.Step);
+                    stepCounts[l.Step] = (c + 1, err + (string.Equals(l.Level, "Error", StringComparison.OrdinalIgnoreCase) ? 1 : 0));
+                }
+            }
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList()));
         }
     }
 

@@ -614,6 +614,90 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>The WHERE clause of a log query; a facet leaves out the filter of its own group (brain 0059).</summary>
+    private static (string Where, List<object> Args) BuildLogWhere(string runId, LogQuery query, bool entry, bool step, bool levels)
+    {
+        var where = new StringBuilder("WHERE run_id = $1");
+        var args = new List<object> { runId };
+        int NextIdx() => args.Count + 1;
+
+        if (entry && query.Entry is { } e) { where.Append($" AND entry = ${NextIdx()}"); args.Add(e); }
+        if (step && query.Step is { } st) { where.Append($" AND COALESCE(step, 0) = ${NextIdx()}"); args.Add(st); }
+        if (query.Bee is { } a) { where.Append($" AND sequence = ${NextIdx()}"); args.Add(a); }
+        if (!string.IsNullOrWhiteSpace(query.BeeName)) { where.Append($" AND bee_name = ${NextIdx()}"); args.Add(query.BeeName.Trim()); }
+        if (query.Outcome is { } o) { where.Append($" AND bee_outcome = ${NextIdx()}"); args.Add(o); }
+        if (query.Failed is { } fl) { where.Append($" AND is_failed = ${NextIdx()}"); args.Add(fl); }
+        if (query.Slow is { } sl) { where.Append($" AND is_slow = ${NextIdx()}"); args.Add(sl); }
+        if (levels && query.Levels is { Count: > 0 } lvls && lvls.Count < 5)
+        {
+            var ph = new List<string>(lvls.Count);
+            foreach (var lv in lvls)
+            {
+                ph.Add($"${NextIdx()}");
+                args.Add(lv);
+            }
+            where.Append($" AND level IN ({string.Join(",", ph)})");
+        }
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var p = $"${NextIdx()}";
+            where.Append($" AND (message ILIKE {p} OR COALESCE(exception, '') ILIKE {p} OR bee_name ILIKE {p})");
+            args.Add($"%{query.Search.Trim()}%");
+        }
+        return (where.ToString(), args);
+    }
+
+    public Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery query, CancellationToken ct = default)
+    {
+        lock (dbLock)
+        {
+            long total;
+            var levelCounts = new Dictionary<string, long>();
+            var entryCounts = new List<long>();
+            var stepCounts = new List<LogStepCount>();
+
+            var (allWhere, allArgs) = BuildLogWhere(runId, query, entry: true, step: true, levels: true);
+            total = ScalarCount($"SELECT COUNT(*) FROM logs {allWhere};", allArgs);
+
+            var (lvWhere, lvArgs) = BuildLogWhere(runId, query, entry: true, step: true, levels: false);
+            Read($"SELECT level, COUNT(*) FROM logs {lvWhere} GROUP BY level;", lvArgs, r => levelCounts[r.GetString(0)] = r.GetInt64(1));
+
+            var (enWhere, enArgs) = BuildLogWhere(runId, query, entry: false, step: false, levels: true);
+            Read($"SELECT entry, COUNT(*) FROM logs {enWhere} GROUP BY entry ORDER BY entry;", enArgs, r =>
+            {
+                var entry = r.GetInt32(0);
+                while (entryCounts.Count <= entry) entryCounts.Add(0);
+                entryCounts[entry] = r.GetInt64(1);
+            });
+
+            if (query.Entry is not null)
+            {
+                var (stWhere, stArgs) = BuildLogWhere(runId, query, entry: true, step: false, levels: false);
+                Read($"SELECT COALESCE(step, 0) AS s, COUNT(*), COUNT(*) FILTER (WHERE level = 'Error') FROM logs {stWhere} GROUP BY s ORDER BY s;", stArgs,
+                    r => stepCounts.Add(new LogStepCount(r.GetInt32(0), r.GetInt64(1), r.GetInt64(2))));
+            }
+
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts));
+        }
+    }
+
+    private long ScalarCount(string sql, List<object> args)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var v in args) cmd.Parameters.Add(new DuckDBParameter(v));
+        return Convert.ToInt64(cmd.ExecuteScalar());
+    }
+
+    private void Read(string sql, List<object> args, Action<System.Data.Common.DbDataReader> row)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var v in args) cmd.Parameters.Add(new DuckDBParameter(v));
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) row(reader);
+    }
+
     public Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default)
     {
         var limit = Math.Clamp(query.Limit, 1, 1000);
@@ -621,32 +705,7 @@ public sealed class DuckDbRunStorage : IRunStorage
 
         lock (dbLock)
         {
-            var where = new StringBuilder("WHERE run_id = $1");
-            var args = new List<object> { runId };
-            int NextIdx() => args.Count + 1;
-
-            if (query.Entry is { } e) { where.Append($" AND entry = ${NextIdx()}"); args.Add(e); }
-            if (query.Bee is { } a) { where.Append($" AND sequence = ${NextIdx()}"); args.Add(a); }
-            if (!string.IsNullOrWhiteSpace(query.BeeName)) { where.Append($" AND bee_name = ${NextIdx()}"); args.Add(query.BeeName.Trim()); }
-            if (query.Outcome is { } o) { where.Append($" AND bee_outcome = ${NextIdx()}"); args.Add(o); }
-            if (query.Failed is { } fl) { where.Append($" AND is_failed = ${NextIdx()}"); args.Add(fl); }
-            if (query.Slow is { } sl) { where.Append($" AND is_slow = ${NextIdx()}"); args.Add(sl); }
-            if (query.Levels is { Count: > 0 } levels && levels.Count < 5)
-            {
-                var ph = new List<string>(levels.Count);
-                foreach (var lv in levels)
-                {
-                    ph.Add($"${NextIdx()}");
-                    args.Add(lv);
-                }
-                where.Append($" AND level IN ({string.Join(",", ph)})");
-            }
-            if (!string.IsNullOrWhiteSpace(query.Search))
-            {
-                var p = $"${NextIdx()}";
-                where.Append($" AND (message ILIKE {p} OR COALESCE(exception, '') ILIKE {p} OR bee_name ILIKE {p})");
-                args.Add($"%{query.Search.Trim()}%");
-            }
+            var (where, args) = BuildLogWhere(runId, query, entry: true, step: true, levels: true);
 
             long total;
             using (var countCmd = conn.CreateCommand())
@@ -663,7 +722,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 var limitIdx = args.Count + 1;
                 var offsetIdx = args.Count + 2;
                 pageCmd.CommandText = $"""
-                    SELECT id, sequence, bee_name, entry, at_seconds, level, message, exception, call_index, bee_outcome, is_failed, is_slow
+                    SELECT id, sequence, bee_name, entry, at_seconds, level, message, exception, call_index, bee_outcome, is_failed, is_slow, COALESCE(step, 0)
                     FROM logs {where}
                     ORDER BY id
                     LIMIT ${limitIdx} OFFSET ${offsetIdx};
@@ -687,7 +746,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                         reader.IsDBNull(8) ? null : reader.GetInt32(8),
                         reader.GetInt32(9),
                         reader.GetBoolean(10),
-                        reader.GetBoolean(11)));
+                        reader.GetBoolean(11),
+                        reader.GetInt32(12)));
                 }
             }
 

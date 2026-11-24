@@ -1,8 +1,14 @@
 @* The vertical stepper of one bee (brain 0056, calm UI brain 0016): numbered circles joined by a thin line. A done step gets a check and its time, the step the bee failed at
    is red with its error (one line), the step in flight is highlighted with the active spinner, steps not reached are greyed out. Clicking any step expands its calls and
    Azure DevOps-style console output; currently running and failed steps auto-open so logs stream in live. *@
+@{
+    // Steps the bee never reached at the end of a long story fold into one row (any number of steps, brain 0056); a click shows them.
+    var tailFrom = Steps.Count;
+    while (tailFrom > 0 && Steps[tailFrom - 1].State == StepState.Pending) tailFrom--;
+    var shown = !showPending && Steps.Count - tailFrom >= 3 ? tailFrom : Steps.Count;
+}
 <ol class="stepper" aria-label="@AriaLabel">
-    @for (var rowIdx = 0; rowIdx < Steps.Count; rowIdx++)
+    @for (var rowIdx = 0; rowIdx < shown; rowIdx++)
     {
         var row = rowIdx;
         var step = Steps[row];
@@ -87,6 +93,8 @@
                     }
                     @if (stepLiveLogs.Count > 0 || stepLogs.Count > 0 || (step.State == StepState.Current && LiveLogs is not null))
                     {
+                        <div class="stp-consolewrap">
+                        <div class="stp-copy"><CopyButton GetText="@(() => ConsoleText(step))" Disabled="@(stepLiveLogs.Count == 0 && stepLogs.Count == 0)" Title="Copy all logs of this step to the clipboard" /></div>
                         <div class="sl-console compact stp-console wrap" role="log" aria-label="Console output of @step.Name">
                             @if (stepLiveLogs.Count > 0)
                             {
@@ -107,8 +115,22 @@
                                 <div class="sl-empty" style="padding:.2rem 0">Waiting for output…</div>
                             }
                         </div>
+                        </div>
                     }
                 }
+            </div>
+        </li>
+    }
+    @if (shown < Steps.Count)
+    {
+        <li class="stp pending stp-fold">
+            <span class="stp-dot" aria-hidden="true"><HexBadge Kind="num" Size="24" StrokeWidth="6.5">⋯</HexBadge></span>
+            <div class="stp-body">
+                <button type="button" class="stp-head" @onclick="() => showPending = true" title="@string.Join(" → ", Steps.Skip(shown).Select(x => x.Name))">
+                    <span class="stp-name">Steps @(shown + 1)–@Steps.Count</span>
+                    <span class="stp-word">@(Steps.Count - shown) not reached</span>
+                    <span class="stp-chev" aria-hidden="true">▸</span>
+                </button>
             </div>
         </li>
     }
@@ -129,6 +151,7 @@
     [Parameter] public string AriaLabel { get; set; } = "Steps";
 
     private readonly HashSet<int> toggled = [];
+    private bool showPending;
     private int lastResetKey;
 
     protected override void OnParametersSet()
@@ -154,6 +177,22 @@
         if (LiveLogs is not { Count: > 0 }) return [];
         var rep = step.VisitNumber > 0 ? step.VisitNumber - 1 : -1;
         return LiveLogs.Where(l => l.Step == step.Index && (rep < 0 || l.Rep == rep)).ToList();
+    }
+
+    /// <summary>ALL log lines of a step (live or stored), one per line, for the copy button of its console.</summary>
+    private string ConsoleText(StepView step)
+    {
+        var live = LiveLogsFor(step);
+        var lines = live.Count > 0
+            ? live.Select(l => Plain(l.Timestamp, l.Level, l.Message, l.Exception))
+            : LogsFor(step).Select(l => Plain(l.Timestamp, l.Level, l.Message, l.Exception));
+        return string.Join("\n", lines);
+    }
+
+    private static string Plain(DateTimeOffset ts, string level, string message, string? exception)
+    {
+        var tag = level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
+        return $"[{ts.ToLocalTime():HH:mm:ss.fff} {tag}] " + (string.IsNullOrEmpty(exception) ? message : $"{message}\n{exception}");
     }
 
     private static string Css(StepView s) => s.State switch { StepState.Done => "done", StepState.Failed => "failed", StepState.Current => "current", _ => "pending" };

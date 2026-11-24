@@ -1,4 +1,4 @@
-@* Hosts the full-screen view of a card's bees (brain 0049): the popup chart (ScenarioDetailDialog) fed with a bee set instead of a scenario entry, so the user inspects them the same way
+@* Hosts the full-screen view of a card's bees (brain 0049): the scenario view (Scenario/ScenarioDetail, without its left column) in a dialog, fed with a bee set instead of a scenario entry, so the user inspects them the same way
    (click a bar, calls and logs, zoom, step through failed and slow). It re-queries live data when it opens. Lives in the layout, next to the other popups. *@
 @implements IDisposable
 @inject AssistantState Assistant
@@ -17,8 +17,13 @@
     }
     else
     {
-        <ScenarioDetailDialog @key="loadedVersion" Index="0" Snapshot="set.Snapshot" Selection="true" InitialBee="request.InitialBee" InitialShow="Filter(request.Show)"
-                              Notes="request.Notes" EnsureDetail="EnsureDetailAsync" OpenLogs="OpenLogsAsync" OnClose="Assistant.CloseBees" />
+        <div class="overlay" role="presentation" @onclick="Assistant.CloseBees">
+            <div class="dialog wide bs-dlg" role="dialog" aria-modal="true" aria-labelledby="bs-title" @onclick:stopPropagation="true">
+                <div class="dlg-head"><h2 id="bs-title">@request.Title</h2><span class="spacer"></span><button class="icon-btn" @onclick="Assistant.CloseBees" aria-label="Close">✕</button></div>
+                <ScenarioDetail @key="loadedVersion" Index="0" Snapshot="set.Snapshot" Selection="true" InitialBee="request.InitialBee" InitialShow="Filter(request.Show)"
+                              Notes="request.Notes" EnsureDetail="EnsureDetailAsync" OpenLogs="OpenLogsAsync" OnEscape="Assistant.CloseBees" />
+            </div>
+        </div>
     }
 }
 
@@ -67,7 +72,7 @@
 
     private static DetailFilter Filter(string? show) => show switch { "failed" => DetailFilter.Failed, "slow" => DetailFilter.Slow, _ => DetailFilter.All };
 
-    /// <summary>The popup asks for a selected bee's calls and logs on every render: fetch each bee once.</summary>
+    /// <summary>The view asks for a selected bee's calls and logs on every render: fetch each bee once.</summary>
     private async Task EnsureDetailAsync(int sequence)
     {
         var current = set;

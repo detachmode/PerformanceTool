@@ -94,3 +94,22 @@ export function scrollToBottom(el) {
         });
     });
 }
+
+// Scrolls a container so the first element matching the selector is near its top (a finished bee opens at the step it failed at).
+export function scrollToSelector(el, selector) {
+    if (!el) return;
+    requestAnimationFrame(() => {
+        const t = el.querySelector(selector);
+        if (!t) return;
+        const top = t.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        el.scrollTo({ top: Math.max(0, el.scrollTop + top - 12), behavior: "auto" });
+    });
+}
+
+// On a narrow screen the scenario page stacks its columns: bring the bee column into view after a bee was picked in the list above it.
+export function revealWhenStacked(el) {
+    if (!el || !window.matchMedia("(max-width: 960px)").matches) return;
+    const r = el.getBoundingClientRect();
+    if (r.top > 0 && r.top < window.innerHeight * 0.6) return;
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: smoothBehavior(), block: "start" }));
+}

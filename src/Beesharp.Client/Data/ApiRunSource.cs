@@ -3,6 +3,7 @@ using System.Text.Json;
 using Beesharp.Services;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios;
+using Beesharp.Client.Logs;
 using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Data;
@@ -34,6 +35,10 @@ public sealed class ApiRunSource : IRunSource
     private DateTimeOffset activeStartedUtc = DateTimeOffset.UtcNow;
     private RunStore activeStore = new(0);
     private int lastSequence = -1;
+    /// <summary>How many bees of the run the client has received, in the server's finishing order (bees finish out of sequence order, so the sequence is no cursor).</summary>
+    private int receivedBees;
+
+    private string StatusUrl() => $"api/runs/current?afterSeq={lastSequence}&afterIndex={receivedBees}" + (activeRunId is null ? "" : "&runId=" + Uri.EscapeDataString(activeRunId));
     private readonly HashSet<int> loadedDetails = [];
     private readonly HashSet<int> loadingDetails = [];
 
@@ -301,7 +306,7 @@ public sealed class ApiRunSource : IRunSource
     {
         try
         {
-            var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts);
+            var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts);
             SetReachable(true);
             if (dto is not null && dto.Plan.Scenarios.Count > 0)
             {
@@ -357,45 +362,55 @@ public sealed class ApiRunSource : IRunSource
     /// <summary>Lazily fetches one bee's full calls and logs from run storage on demand.</summary>
     public async Task EnsureBeeDetailLoadedAsync(int sequence, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(activeRunId) || loadedDetails.Contains(sequence) || !loadingDetails.Add(sequence))
-            return;
+        if (string.IsNullOrEmpty(activeRunId) || loadedDetails.Contains(sequence)) return;
+        // A bee whose detail is not there yet (the server writes it a moment after the bee finished) is asked again after a few seconds, not on every refresh.
+        if (detailMissedAt.TryGetValue(sequence, out var missedAt) && Environment.TickCount64 - missedAt < 3000) return;
+        if (!loadingDetails.Add(sequence)) return;
         try
         {
             var detail = await http.GetFromJsonAsync<StoredBeeDetail>(
                 $"api/runs/{Uri.EscapeDataString(activeRunId)}/bees/{sequence}", JsonOpts, ct);
-            if (detail is null) return;
+            if (detail is null) { detailMissedAt[sequence] = Environment.TickCount64; return; }
+            detailMissedAt.Remove(sequence);
             var beeDetail = RemoteBeeDetail.Build(detail, activeStore, activeStartedUtc, detail.Entry);
             activeStore.ReplaceDetail(beeDetail);
             loadedDetails.Add(sequence);
             Changed?.Invoke();
         }
-        catch { }
+        catch { detailMissedAt[sequence] = Environment.TickCount64; }
         finally { loadingDetails.Remove(sequence); }
     }
 
-    /// <summary>Queries server-side indexed, filtered, paged logs from run storage.</summary>
-    public async Task<LogPageResult?> QueryLogsAsync(
-        int? entry,
-        int? bee,
-        bool? failed,
-        bool? slow,
-        IReadOnlyList<string>? levels,
-        string? search,
-        int offset,
-        int limit,
-        CancellationToken ct = default)
+    /// <summary>Queries the server's indexed, filtered, paged logs of the loaded run (a live run or one from the history).</summary>
+    public async Task<LogPageResult?> QueryLogsAsync(LogFilter filter, int offset, int limit, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(activeRunId)) return new LogPageResult(0, offset, limit, []);
-        var parts = new List<string> { $"offset={offset}", $"limit={limit}" };
-        if (entry is { } e) parts.Add($"entry={e}");
-        if (bee is { } a) parts.Add($"bee={a}");
-        if (failed is { } fl) parts.Add($"failed={(fl ? "true" : "false")}");
-        if (slow is { } sl) parts.Add($"slow={(sl ? "true" : "false")}");
-        if (levels is { Count: > 0 } lv && lv.Count < 5) parts.Add($"levels={Uri.EscapeDataString(string.Join(',', lv))}");
-        if (!string.IsNullOrWhiteSpace(search)) parts.Add($"search={Uri.EscapeDataString(search.Trim())}");
-
-        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs?{string.Join('&', parts)}";
+        if (string.IsNullOrEmpty(activeRunId) || filter.Contradicts) return new LogPageResult(0, offset, limit, []);
+        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs?offset={offset}&limit={limit}{LogFilterParts(filter)}";
         return await http.GetFromJsonAsync<LogPageResult>(url, JsonOpts, ct);
+    }
+
+    /// <summary>The counts behind the Logs page's filter column for the loaded run (brain 0059).</summary>
+    public async Task<LogFacets?> QueryLogFacetsAsync(LogFilter filter, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(activeRunId)) return new LogFacets(0, new Dictionary<string, long>(), [], []);
+        if (filter.Contradicts) return new LogFacets(0, new Dictionary<string, long>(), [], []);
+        var parts = LogFilterParts(filter);
+        var url = $"api/runs/{Uri.EscapeDataString(activeRunId)}/logs/facets{(parts.Length > 0 ? "?" + parts[1..] : "")}";
+        return await http.GetFromJsonAsync<LogFacets>(url, JsonOpts, ct);
+    }
+
+    /// <summary>"&amp;entry=1&amp;level..." parts of the server's log query for a filter.</summary>
+    private static string LogFilterParts(LogFilter f)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (f.Entry is { } e) sb.Append("&entry=").Append(e);
+        if (f.Step is { } st && f.Entry is not null) sb.Append("&step=").Append(st);
+        if (f.EffectiveBee is { } b) sb.Append("&bee=").Append(b);
+        if (f.Outcome == Beesharp.Client.Chart.BeeShow.Failed) sb.Append("&failed=true");
+        if (f.Outcome == Beesharp.Client.Chart.BeeShow.Slow) sb.Append("&slow=true");
+        if (f.Levels.Count > 0) sb.Append("&levels=").Append(Uri.EscapeDataString(string.Join(',', f.Levels)));
+        if (f.SearchParts.Text.Length > 0) sb.Append("&search=").Append(Uri.EscapeDataString(f.SearchParts.Text));
+        return sb.ToString();
     }
 
     public void Start()
@@ -456,7 +471,7 @@ public sealed class ApiRunSource : IRunSource
                 try
                 {
                     await Task.Delay(PreflightState == "Running" ? 250 : 300, ct);
-                    var dto = await http.GetFromJsonAsync<LiveRunStatusDto>($"api/runs/current?afterSeq={lastSequence}", JsonOpts, ct);
+                    var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts, ct);
                     if (dto is not null)
                     {
                         ApplyStatus(dto);
@@ -477,6 +492,7 @@ public sealed class ApiRunSource : IRunSource
     }
 
     private readonly HashSet<int> seenSequences = [];
+    private readonly Dictionary<int, long> detailMissedAt = [];
 
     private void ApplyStatus(LiveRunStatusDto dto)
     {
@@ -487,9 +503,11 @@ public sealed class ApiRunSource : IRunSource
             activeStartedUtc = dto.StartedUtc;
             activeStore = new RunStore(count);
             lastSequence = -1;
+            receivedBees = 0;
             seenSequences.Clear();
             loadedDetails.Clear();
             loadingDetails.Clear();
+            detailMissedAt.Clear();
             PreflightDismissed = false;
             runtime = null;
             runtimeVersion = -1;
@@ -515,6 +533,7 @@ public sealed class ApiRunSource : IRunSource
             if (a.Sequence > lastSequence) lastSequence = a.Sequence;
         }
         if (dto.LastSequence > lastSequence) lastSequence = dto.LastSequence;
+        if (dto.NextBeeIndex > receivedBees) receivedBees = dto.NextBeeIndex;
 
         var labels = dto.Plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
         var views = new ScenarioView[count];
