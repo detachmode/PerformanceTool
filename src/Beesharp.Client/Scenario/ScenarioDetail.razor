@@ -123,7 +123,7 @@
                     <button type="button" class="icon-btn sm" @onclick="() => Logs.Show(entry: Index)" title="Open logs filtered to @label" aria-label="Open logs of @label">
                         <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9M7.5 13h6M7.5 16h3.5" /></svg>
                     </button>
-                    @if (Index < s.Plan.Scenarios.Count && Catalog.IsCustom(s.Plan.Scenarios[Index].ScenarioId))
+                    @if (Index < s.Plan.Scenarios.Count && Catalog.Find(s.Plan.Scenarios[Index].ScenarioId) is RemoteSchemaScenario { ScriptId: not null })
                     {
                         var scriptScnId = s.Plan.Scenarios[Index].ScenarioId;
                         <button type="button" class="icon-btn sm" @onclick="() => EditScript(scriptScnId)" title="Open this scenario's .cs file in the Script Editor" aria-label="Edit script">

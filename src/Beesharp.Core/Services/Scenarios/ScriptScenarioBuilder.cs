@@ -646,13 +646,15 @@ public sealed class DelegateScenario<TParameters> : IScenario where TParameters 
 /// Client-side proxy for a custom server-compiled scenario: its <see cref="ParameterSpec"/> is reconstructed from the
 /// JSON Schema returned by <c>GET /api/scenarios</c>, so <c>ParameterEditor</c> renders the exact generated form in WASM.
 /// </summary>
-public sealed class RemoteSchemaScenario(string id, string name, string description, JsonObject parameterSchema, IReadOnlyList<StepInfo>? steps = null) : IScenario
+public sealed class RemoteSchemaScenario(string id, string name, string description, JsonObject parameterSchema, IReadOnlyList<StepInfo>? steps = null, string? scriptId = null) : IScenario
 {
     public string Id { get; } = id;
     public string Name { get; } = name;
     public string Description { get; } = description;
     public ParameterSpec Spec { get; } = ParameterSpec.FromJsonSchema(parameterSchema);
     public IReadOnlyList<StepInfo> Steps { get; } = steps ?? [];
+    /// <summary>Script id when backed by a Roslyn script file; null for compiled <c>.csproj</c> host scenarios.</summary>
+    public string? ScriptId { get; } = scriptId;
 
     public Task<ScenarioOutcome> ExecuteAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         throw new NotSupportedException($"Scenario '{Id}' is a server-side script and can only execute on the server.");
