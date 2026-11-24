@@ -11,6 +11,7 @@
 @inject ApiRunSource ApiRun
 @inject LogsLinks Links
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Logs · Beesharp</PageTitle>
 
@@ -87,6 +88,10 @@
                     <button type="button" class="lg-search-x" aria-label="Clear the search" title="Clear the search" @onclick="ClearSearch">✕</button>
                 }
             </div>
+            <button type="button" class="btn ghost small lg-timemode" aria-pressed="@Aria.Bool(timeMode == LogTimeMode.Clock)" @onclick="ToggleTimeModeAsync"
+                    title="@(timeMode == LogTimeMode.Run ? "Showing time into the run (0:05.9). Click for the clock time." : "Showing the clock time (14:02:07.3). Click for the time into the run.")">
+                @(timeMode == LogTimeMode.Run ? "Run time" : "Clock time")
+            </button>
             <WrapToggleButton @bind-Wrapped="wrap" />
             <CopyButton GetTextAsync="CopyAllAsync" Disabled="@(total == 0)" Title="@($"Copy all {Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")} to the clipboard")" />
         </div>
@@ -119,7 +124,7 @@
                 <VirtualList @ref="list" TItem="FakeLogEntry" Class="@LinesClass" Role="log" Label="Log lines" Items="items" Variable="true" RowHeight="22"
                              Follow="true" AtEndChanged="OnAtEnd" OnWindow="OnWindow">
                     <ItemContent Context="l">
-                        <LogLine Line="l" Scenario="@ScenarioOf(l.Entry)" OnBee="FilterBee" />
+                        <LogLine Line="l" Scenario="@ScenarioOf(l.Entry)" OnBee="FilterBee" TimeMode="timeMode" />
                     </ItemContent>
                 </VirtualList>
                 @if (total == 0)
@@ -454,6 +459,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender) await LoadTimeModeAsync();
         if (scrollEnd && list is not null)
         {
             scrollEnd = false;
@@ -461,12 +467,40 @@
         }
     }
 
+    // ---------- time: into the run or clock time (remembered in the browser) ----------
+
+    private const string TimeModeKey = "pt.log-time";
+    private LogTimeMode timeMode = LogTimeMode.Run;
+    private bool timeModeLoaded;
+
+    private async Task ToggleTimeModeAsync()
+    {
+        timeMode = timeMode == LogTimeMode.Run ? LogTimeMode.Clock : LogTimeMode.Run;
+        try { await JS.InvokeVoidAsync("localStorage.setItem", TimeModeKey, timeMode.ToString()); }
+        catch (JSException) { }
+    }
+
+    private async Task LoadTimeModeAsync()
+    {
+        if (timeModeLoaded) return;
+        timeModeLoaded = true;
+        try
+        {
+            if (Enum.TryParse<LogTimeMode>(await JS.InvokeAsync<string?>("localStorage.getItem", TimeModeKey), out var m) && m != timeMode)
+            {
+                timeMode = m;
+                StateHasChanged();
+            }
+        }
+        catch (JSException) { }
+    }
+
     // ---------- copy all ----------
 
     /// <summary>Every line of the filter: the filtered lines in the browser, or all pages of the stored run from the server.</summary>
     private async Task<string> CopyAllAsync()
     {
-        if (!UseServer) return LogText.All(local, ScenarioOf);
+        if (!UseServer) return LogText.All(local, ScenarioOf, timeMode);
         var sb = new StringBuilder();
         var offset = 0;
         var started = ApiRun.CurrentStartedUtc;
@@ -477,7 +511,7 @@
             foreach (var r in page.Items)
             {
                 if (sb.Length > 0) sb.Append('\n');
-                sb.Append(LogText.Line(new FakeLogEntry(r.AtSeconds, started, r.Level, r.Message, r.Exception, r.Entry, r.Sequence, new Dictionary<string, string>(), r.CallIndex, r.Step), ScenarioOf(r.Entry)));
+                sb.Append(LogText.Line(new FakeLogEntry(r.AtSeconds, started.AddSeconds(r.AtSeconds), r.Level, r.Message, r.Exception, r.Entry, r.Sequence, new Dictionary<string, string>(), r.CallIndex, r.Step), ScenarioOf(r.Entry), timeMode));
             }
             offset += page.Items.Count;
             if (offset >= page.TotalCount) break;

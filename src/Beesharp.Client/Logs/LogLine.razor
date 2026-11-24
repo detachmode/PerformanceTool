@@ -6,11 +6,13 @@
 }
 else
 {
-    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Time(Line.AtSeconds)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }<button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button><span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
+    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Stamp(Line, TimeMode)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }<button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button><span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
 }
 
 @code {
     [Parameter, EditorRequired] public FakeLogEntry Line { get; set; } = default!;
     [Parameter] public string Scenario { get; set; } = "";
     [Parameter] public EventCallback<int> OnBee { get; set; }
+    /// <summary>Time into the run or clock time (the toggle on the Logs page).</summary>
+    [Parameter] public LogTimeMode TimeMode { get; set; }
 }
