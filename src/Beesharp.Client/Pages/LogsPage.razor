@@ -500,7 +500,7 @@
     /// <summary>Every line of the filter: the filtered lines in the browser, or all pages of the stored run from the server.</summary>
     private async Task<string> CopyAllAsync()
     {
-        if (!UseServer) return LogText.All(local, ScenarioOf, timeMode);
+        if (!UseServer) return LogText.All(local, ScenarioOf);
         var sb = new StringBuilder();
         var offset = 0;
         var started = ApiRun.CurrentStartedUtc;
@@ -511,7 +511,7 @@
             foreach (var r in page.Items)
             {
                 if (sb.Length > 0) sb.Append('\n');
-                sb.Append(LogText.Line(new FakeLogEntry(r.AtSeconds, started.AddSeconds(r.AtSeconds), r.Level, r.Message, r.Exception, r.Entry, r.Sequence, new Dictionary<string, string>(), r.CallIndex, r.Step), ScenarioOf(r.Entry), timeMode));
+                sb.Append(LogText.CopyLine(r.AtSeconds, started.AddSeconds(r.AtSeconds), r.Level, r.Message, r.Exception, ScenarioOf(r.Entry), r.Sequence));
             }
             offset += page.Items.Count;
             if (offset >= page.TotalCount) break;

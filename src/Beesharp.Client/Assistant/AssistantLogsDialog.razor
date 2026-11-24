@@ -69,11 +69,7 @@
         return string.Join("\n", all.Select(Raw));
     }
 
-    private static string Raw(StoredLogRow r)
-    {
-        var tag = r.Level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
-        return $"[{Format.Time(r.AtSeconds)} {tag}] {r.Message}" + (string.IsNullOrEmpty(r.Exception) ? "" : "\n" + r.Exception);
-    }
+    private static string Raw(StoredLogRow r) => LogText.CopyLine(r.AtSeconds, null, r.Level, r.Message, r.Exception, sequence: r.Sequence);
 
     private void OpenBee(int sequence) =>
         Assistant.OpenBees(new BeeSetRequest($"Bee B{sequence + 1}", Request.RunId, [sequence], null, null, sequence, null));

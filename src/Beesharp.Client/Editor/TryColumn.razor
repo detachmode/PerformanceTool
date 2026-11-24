@@ -169,5 +169,5 @@
     }
 
     private static string FormatLogs(IReadOnlyList<LiveLogEntryDto> logs) =>
-        string.Join("\n", logs.Select(l => $"[{l.Timestamp.ToLocalTime():HH:mm:ss.fff} {l.Level[..Math.Min(3, l.Level.Length)].ToUpperInvariant()}] {l.Message}" + (string.IsNullOrEmpty(l.Exception) ? "" : "\n" + l.Exception)));
+        string.Join("\n", logs.Select(l => LogText.CopyLine(l.AtSeconds, l.Timestamp, l.Level, l.Message, l.Exception)));
 }

@@ -165,6 +165,15 @@ public class LogFilterTests
     }
 
     [Fact]
+    public void A_copied_line_has_the_run_time_and_the_clock_time()
+    {
+        var at = new DateTimeOffset(2026, 11, 24, 14, 2, 7, 312, TimeSpan.Zero);
+        Assert.Equal("[0:05.9 · 14:02:07.312] ERR Checkout B7 GET /a 503\nSystem.Exception: bad",
+            LogText.CopyLine(5.96, at, "Error", "GET /a 503", "System.Exception: bad", "Checkout", 6, TimeZoneInfo.Utc));
+        Assert.Equal("[1:05.0] INF hello", LogText.CopyLine(65, null, "Information", "hello", null));
+    }
+
+    [Fact]
     public void A_line_reads_like_the_console_and_all_lines_join()
     {
         var (_, lines) = Run();

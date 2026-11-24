@@ -270,16 +270,10 @@
     /// <summary>ALL logs of the bee, one line each, for the clipboard (not only the ones of the shown tab or step).</summary>
     private string AllLogsText()
     {
-        if (Running is not null) return string.Join("\n", runningLogs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception)));
-        return Bee is { } b && Snapshot.Store.Detail(b.Sequence) is { } d ? string.Join("\n", d.Logs.Select(l => FormatPlainLog(l.Timestamp, l.Level, l.Message, l.Exception))) : "";
+        if (Running is not null) return string.Join("\n", runningLogs.Select(l => LogText.CopyLine(l.AtSeconds, l.Timestamp, l.Level, l.Message, l.Exception)));
+        return Bee is { } b && Snapshot.Store.Detail(b.Sequence) is { } d ? string.Join("\n", d.Logs.Select(l => LogText.CopyLine(l.AtSeconds, l.Timestamp, l.Level, l.Message, l.Exception))) : "";
     }
 
-    private static string FormatPlainLog(DateTimeOffset ts, string level, string message, string? exception)
-    {
-        var tag = level switch { "Trace" => "TRC", "Debug" => "DBG", "Warning" => "WRN", "Error" => "ERR", "Critical" => "FTL", _ => "INF" };
-        var body = string.IsNullOrEmpty(exception) ? message : $"{message}\n{exception}";
-        return $"[{ts.ToLocalTime():HH:mm:ss.fff} {tag}] {body}";
-    }
 
     private void ToggleAllSteps() { stepsAllExpanded = !stepsAllExpanded; stepsExpandVersion++; }
 
