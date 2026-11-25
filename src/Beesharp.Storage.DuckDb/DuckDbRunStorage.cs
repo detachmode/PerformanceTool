@@ -16,6 +16,9 @@ namespace Beesharp.Services.Storage;
 /// </summary>
 public sealed class DuckDbRunStorage : IRunStorage
 {
+    /// <summary>
+    /// Current schema version recorded in the <c>schema_meta</c> table of the DuckDB database.
+    /// </summary>
     public const int CurrentSchemaVersion = 4;
 
     private const int MaxBatchSize = 2000;
@@ -30,7 +33,14 @@ public sealed class DuckDbRunStorage : IRunStorage
     private long nextCallId;
     private long nextLogId;
 
+    /// <summary>
+    /// Gets the storage provider name (<c>"DuckDB"</c>).
+    /// </summary>
     public string ProviderName => "DuckDB";
+
+    /// <summary>
+    /// Gets the file path (or DuckDB data source string) of the underlying DuckDB database.
+    /// </summary>
     public string DatabasePath { get; }
 
     private abstract record WriteOp;
@@ -40,6 +50,11 @@ public sealed class DuckDbRunStorage : IRunStorage
     private sealed record FinishRunOp(string RunId, DateTimeOffset FinishedUtc, string State, double ElapsedSeconds, string? Error) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
 
+    /// <summary>
+    /// Opens or creates a DuckDB database at <paramref name="dbPath"/>, initializes the schema,
+    /// and starts the background ingestion writer loop.
+    /// </summary>
+    /// <param name="dbPath">Path to the DuckDB database file.</param>
     public DuckDbRunStorage(string dbPath)
     {
         DatabasePath = dbPath;
@@ -201,6 +216,13 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Enqueues a run-started record containing the run identifier, UTC start timestamp, load plan, and optional scenario step definitions.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="startedUtc">UTC timestamp when the run started.</param>
+    /// <param name="plan">The load plan executed by the run.</param>
+    /// <param name="steps">Optional per-entry step definitions for step-machine scenarios.</param>
     public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null) =>
         queue.Writer.TryWrite(new StartRunOp(
             runId,
@@ -208,15 +230,46 @@ public sealed class DuckDbRunStorage : IRunStorage
             JsonSerializer.Serialize(plan, JsonOpts),
             steps is not null && steps.Any(s => s.Count > 0) ? JsonSerializer.Serialize(steps, JsonOpts) : null));
 
+    /// <summary>
+    /// Enqueues a completed bee execution along with its calls and logs for background columnar ingestion.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="result">Execution result including recorded calls, logs, and step visits.</param>
+    /// <param name="beeOutcome">Numeric outcome code for the bee (0 = ok, 1 = slow, 2 = failed).</param>
+    /// <param name="slowCalls">Number of slow calls recorded during the bee execution.</param>
     public void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls) =>
         queue.Writer.TryWrite(new BeeOp(runId, result, beeOutcome, slowCalls));
 
+    /// <summary>
+    /// Enqueues a host-level log line associated with the specified run.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="atSeconds">Elapsed run time in seconds when the log entry was emitted.</param>
+    /// <param name="level">Log severity level (e.g., <c>Information</c>, <c>Warning</c>, <c>Error</c>).</param>
+    /// <param name="message">Log message text.</param>
+    /// <param name="exception">Optional formatted exception details.</param>
     public void EnqueueHostLog(string runId, double atSeconds, string level, string message, string? exception = null) =>
         queue.Writer.TryWrite(new HostLogOp(runId, atSeconds, level, message, exception));
 
+    /// <summary>
+    /// Enqueues a run-finished update recording the final run state, elapsed duration, and any terminal error.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="finishedUtc">UTC timestamp when the run finished.</param>
+    /// <param name="state">Final run state string (e.g., <c>Finished</c>, <c>Stopped</c>, <c>Failed</c>).</param>
+    /// <param name="elapsedSeconds">Total elapsed duration of the run in seconds.</param>
+    /// <param name="error">Optional terminal error message if the run failed.</param>
     public void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error) =>
         queue.Writer.TryWrite(new FinishRunOp(runId, finishedUtc, state, elapsedSeconds, error));
 
+    /// <summary>
+    /// Stores the final runtime data of a run (brain 0052) as JSON: the values as they were at the end, no history. Written once, after the shutdown program.
+    /// A second call for the same run replaces the first.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="json">Serialized runtime data snapshot JSON.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A completed task once the runtime data has been persisted.</returns>
     public Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -230,6 +283,12 @@ public sealed class DuckDbRunStorage : IRunStorage
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Returns the final runtime data of a run as JSON, or <see langword="null"/> when the run kept none.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A task containing the runtime data JSON string, or <see langword="null"/> if none was saved.</returns>
     public Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -241,6 +300,15 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Stores a run-level program's result and log lines (<paramref name="kind"/> is <c>"preflight"</c> or <c>"shutdown"</c>)
+    /// and writes its log lines into the run's log stream so they are queryable on the Logs page.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="kind">Program kind (<c>"preflight"</c> or <c>"shutdown"</c>).</param>
+    /// <param name="program">Program execution summary and captured log lines.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A completed task once the program run and its logs have been persisted.</returns>
     public Task SaveProgramRunAsync(string runId, string kind, StoredProgramRunDto program, CancellationToken ct = default)
     {
         var (normalized, entry, beeName) = ProgramLogHelper.ResolveKind(kind);
@@ -309,6 +377,11 @@ public sealed class DuckDbRunStorage : IRunStorage
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Waits until all currently queued writes are committed to DuckDB.
+    /// </summary>
+    /// <param name="ct">Cancellation token used while awaiting the flush barrier.</param>
+    /// <returns>A task that completes when all preceding queued writes have been flushed.</returns>
     public Task FlushAsync(CancellationToken ct = default)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -565,6 +638,12 @@ public sealed class DuckDbRunStorage : IRunStorage
         beesToAppend.Clear();
     }
 
+    /// <summary>
+    /// Lists stored runs ordered by start timestamp descending.
+    /// </summary>
+    /// <param name="limit">Maximum number of run summaries to return (clamped between 1 and 500).</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A list of stored run summaries.</returns>
     public Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -600,6 +679,12 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Loads the full stored run record, including plan, step definitions, bee summaries, and preflight/shutdown program runs.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>The stored run data, or <see langword="null"/> if no run matches <paramref name="runId"/>.</returns>
     public Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -686,6 +771,13 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Loads detailed execution data for a single bee in a stored run, including its calls, logs, step visits, and entry metadata.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="sequence">Zero-based sequence number of the bee within the run.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>The stored bee detail, or <see langword="null"/> if no matching bee exists.</returns>
     public Task<StoredBeeDetail?> GetBeeDetailAsync(string runId, int sequence, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -853,6 +945,14 @@ public sealed class DuckDbRunStorage : IRunStorage
         return (where.ToString(), args);
     }
 
+    /// <summary>
+    /// Computes the facet counts behind the Logs page filter column (brain 0059) for <paramref name="query"/> (ignoring offset and limit):
+    /// total matching rows, counts per log level, counts per scenario entry/program stream, and (when an entry is selected) counts per step.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="query">Filter criteria for the facet calculation.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>Aggregated log facet counts for the specified run and filters.</returns>
     public Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery query, CancellationToken ct = default)
     {
         lock (dbLock)
@@ -914,6 +1014,13 @@ public sealed class DuckDbRunStorage : IRunStorage
         while (reader.Read()) row(reader);
     }
 
+    /// <summary>
+    /// Queries a page of stored log rows for a run matching the filters in <paramref name="query"/>.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="query">Filter, offset, and limit parameters (limit is clamped between 1 and 1000).</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A paged result containing the total matching count and the requested slice of log rows.</returns>
     public Task<LogPageResult> QueryLogsAsync(string runId, LogQuery query, CancellationToken ct = default)
     {
         var limit = Math.Clamp(query.Limit, 1, 1000);
@@ -971,6 +1078,13 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Aggregates auto-detected endpoint summaries and call counts for a stored run on the Calls analysis page (brain 0060).
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="query">Filtering and grouping options (such as entry, scenario, step, slow/failed flags, and search text).</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>Aggregated endpoint call summaries matching <paramref name="query"/>.</returns>
     public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -1001,6 +1115,13 @@ public sealed class DuckDbRunStorage : IRunStorage
             query.Endpoint));
     }
 
+    /// <summary>
+    /// Returns the top-N slowest individual calls in a stored run matching the optional filters in <paramref name="query"/>.
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="query">Limit and filter parameters for selecting the slowest calls.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>The slowest matching call records.</returns>
     public Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -1050,6 +1171,13 @@ public sealed class DuckDbRunStorage : IRunStorage
             : null;
     }
 
+    /// <summary>
+    /// Builds the duration-over-time timeline, latency histogram, and paged individual calls for one endpoint in a stored run (brain 0060).
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="query">Endpoint name, time/latency filters, sorting, and paging parameters.</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>The endpoint detail payload, or <see langword="null"/> if the run does not exist.</returns>
     public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -1115,6 +1243,13 @@ public sealed class DuckDbRunStorage : IRunStorage
         return facts;
     }
 
+    /// <summary>
+    /// Flushes pending writes and exports a stored run in the requested format (<c>"parquet"</c>, <c>"csv"</c>, <c>"duckdb"</c>, or <c>"json"</c>).
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run to export.</param>
+    /// <param name="format">Export format name (defaults to <c>"parquet"</c> when blank; any unrecognized value exports JSON).</param>
+    /// <param name="ct">Cancellation token used while flushing pending writes before export.</param>
+    /// <returns>The exported file name, MIME content type, and raw bytes, or <see langword="null"/> if the run does not exist.</returns>
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         await FlushAsync(ct);
@@ -1367,6 +1502,15 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    /// <summary>
+    /// Imports a previously exported run (<c>.zip</c> Parquet bundle, <c>.duckdb</c> file, or <c>.json</c> bundle) into this database,
+    /// generating a unique suffix if the source run identifier already exists.
+    /// </summary>
+    /// <param name="fileName">Original upload file name used to determine the export format from its extension.</param>
+    /// <param name="content">Readable stream containing the exported run payload.</param>
+    /// <param name="ct">Cancellation token for asynchronous stream and JSON parsing operations.</param>
+    /// <returns>Summary metadata for the newly imported run.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the file extension is unsupported or the export payload is invalid.</exception>
     public async Task<StoredRunSummary> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -1682,6 +1826,10 @@ public sealed class DuckDbRunStorage : IRunStorage
 
     private static string EscapeSql(string value) => value.Replace("'", "''");
 
+    /// <summary>
+    /// Completes the write channel, waits up to 5 seconds for pending batches to flush, cancels the writer loop, and disposes the DuckDB connection.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous dispose operation.</returns>
     public async ValueTask DisposeAsync()
     {
         queue.Writer.TryComplete();

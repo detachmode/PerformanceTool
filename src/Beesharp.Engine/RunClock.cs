@@ -26,12 +26,14 @@ public sealed class RunClock
         get { lock (sync) return (pausedAt ?? watch.Elapsed) - pausedTotal; }
     }
 
+    /// <summary>Gets whether the clock is currently paused.</summary>
     public bool IsPaused
     {
         get { lock (sync) return pausedAt is not null; }
     }
 
     /// <summary>Holds the run time. Returns false when the clock was already paused.</summary>
+    /// <returns><see langword="true"/> if the clock transitioned to paused; <see langword="false"/> if it was already paused.</returns>
     public bool Pause()
     {
         lock (sync)
@@ -43,6 +45,7 @@ public sealed class RunClock
     }
 
     /// <summary>Lets the run time go on from where it stood. Returns false when the clock was not paused.</summary>
+    /// <returns><see langword="true"/> if the clock resumed; <see langword="false"/> if it was not paused.</returns>
     public bool Resume()
     {
         lock (sync)
@@ -58,6 +61,9 @@ public sealed class RunClock
     /// Waits until the run time reaches <paramref name="due"/>, waiting through pauses. Throws <see cref="OperationCanceledException"/> when
     /// <paramref name="ct"/> is canceled.
     /// </summary>
+    /// <param name="due">Target elapsed run time to wait for.</param>
+    /// <param name="ct">A token to cancel waiting.</param>
+    /// <returns>A task that completes when <see cref="Elapsed"/> reaches <paramref name="due"/> and the clock is not paused.</returns>
     public async Task WaitUntilAsync(TimeSpan due, CancellationToken ct)
     {
         // Short slices, so a pause or resume that happens while waiting is seen within a moment; the absolute due time keeps the schedule exact.

@@ -6,9 +6,11 @@ using Beesharp.Services.Scenarios;
 namespace Beesharp.Ai;
 
 /// <summary>Marks a method of <see cref="AssistantToolbox"/> as a tool the model can call. The name is what the model sees.</summary>
+/// <param name="name">The snake_case tool name exposed to the language model.</param>
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class AssistantToolAttribute(string name) : Attribute
 {
+    /// <summary>Gets the tool name exposed to the model.</summary>
     public string Name { get; } = name;
 }
 

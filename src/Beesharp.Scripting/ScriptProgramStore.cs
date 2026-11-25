@@ -10,19 +10,32 @@ namespace Beesharp.Services;
 /// <summary>Globals injected into every C# preflight and shutdown script.</summary>
 public sealed class PreflightGlobals
 {
+    /// <summary>Pre-configured HTTP client scoped to the program's execution timeout.</summary>
     public required HttpClient Http { get; init; }
+    /// <summary>Logger whose entries are captured into the program's output stream.</summary>
     public required ILogger Logger { get; init; }
+    /// <summary>Resolved key-value settings for the active environment, or <see cref="EnvironmentValues.None"/> when none is selected.</summary>
     public required EnvironmentValues Env { get; init; }
     /// <summary>The run bag (brain 0052): runtime data shared by the whole run. The program reads and writes it; the Environment tab shows it.</summary>
     public required BagAccess Data { get; init; }
+    /// <summary>Token triggered if the program is cancelled or exceeds its execution timeout.</summary>
     public required CancellationToken CancellationToken { get; init; }
+    /// <summary>Writes an informational log line to the program's execution log.</summary>
     public required Action<string> Log { get; init; }
+    /// <summary>Aborts the program immediately with the specified failure reason.</summary>
     public required Action<string> Fail { get; init; }
+    /// <summary>Runs an external process (<c>fileName</c>, <c>arguments</c>), streaming stdout and stderr to the program log and returning its exit code.</summary>
     public required Func<string, string, Task<int>> RunProcessAsync { get; init; }
 }
 
 /// <summary>The two kinds of program that run around the scenarios (brain 0052): the preflight before them, the shutdown program after them.</summary>
-public enum ScriptProgramKind { Preflight, Shutdown }
+public enum ScriptProgramKind
+{
+    /// <summary>Runs before scenarios start; scenarios only begin if the preflight completes without throwing or failing.</summary>
+    Preflight,
+    /// <summary>Runs after scenarios finish (including after a stop or a failed preflight).</summary>
+    Shutdown
+}
 
 /// <summary>
 /// Compiles, persists (<c>scripts/preflight/*.cs</c>, <c>scripts/shutdown/*.cs</c>) and runs C# programs that execute around a load test:
@@ -54,7 +67,11 @@ public abstract class ScriptProgramStore
         IRunProgram? CompiledProgram,
         DateTimeOffset UpdatedUtc);
 
+    /// <summary>Initializes the program store for a specific program kind, backing folder, and optional compiled programs.</summary>
     /// <param name="directory">The folder of this kind's <c>.cs</c> files (e.g. <c>scripts/preflight</c>).</param>
+    /// <param name="environments">Optional environment store used to resolve environment values during execution.</param>
+    /// <param name="kind">Whether this store manages preflight or shutdown programs.</param>
+    /// <param name="compiled">Optional compiled <see cref="IRunProgram"/> instances registered at startup.</param>
     protected ScriptProgramStore(
         string directory,
         EnvironmentStore? environments,
@@ -89,6 +106,8 @@ public abstract class ScriptProgramStore
     }
 
     /// <summary>Compiles every file of this kind. Returns the files that did not compile (empty when all went well), so a caller can report them.</summary>
+    /// <param name="ct">Token to cancel reading or compiling files from disk.</param>
+    /// <returns>The list of files that failed to compile, or an empty list if every file succeeded.</returns>
     public async Task<IReadOnlyList<ScriptLoadProblem>> LoadAllFromDiskAsync(CancellationToken ct = default)
     {
         var problems = new List<ScriptLoadProblem>();
@@ -100,6 +119,8 @@ public abstract class ScriptProgramStore
         return problems;
     }
 
+    /// <summary>Returns summaries of all loaded and compiled programs in this store, ordered by file name.</summary>
+    /// <returns>A read-only list of program summaries.</returns>
     public IReadOnlyList<PreflightScriptSummary> List()
     {
         lock (sync)
@@ -109,12 +130,22 @@ public abstract class ScriptProgramStore
                 .ToList();
     }
 
+    /// <summary>Gets the summary for the program with the specified identifier, or <see langword="null"/> if not found.</summary>
+    /// <param name="id">The program script identifier.</param>
+    /// <returns>The matching <see cref="PreflightScriptSummary"/>, or <see langword="null"/> if no program has that id.</returns>
     public PreflightScriptSummary? Get(string id)
     {
         lock (sync)
             return scripts.TryGetValue(id, out var s) ? ToSummary(s) : null;
     }
 
+    /// <summary>Compiles the supplied program C# code, stores it in memory, and optionally saves it to disk.</summary>
+    /// <param name="scriptId">Optional identifier for the script; derived from <paramref name="fileName"/> when omitted.</param>
+    /// <param name="fileName">Optional file name shown in diagnostics and summaries.</param>
+    /// <param name="code">The C# program source code to compile.</param>
+    /// <param name="persist">When <see langword="true"/>, writes the source file to disk after a successful compile.</param>
+    /// <param name="ct">Token to cancel compilation or file persistence.</param>
+    /// <returns>A <see cref="PreflightCompileResult"/> containing compilation status, diagnostics, and the stored summary on success.</returns>
     public async Task<PreflightCompileResult> CompileAndSaveAsync(
         string? scriptId,
         string? fileName,
@@ -145,6 +176,9 @@ public abstract class ScriptProgramStore
         return new PreflightCompileResult(true, ToSummary(stored), mapped);
     }
 
+    /// <summary>Removes a script-backed program from memory and deletes its file from disk. Compiled C# class programs cannot be deleted.</summary>
+    /// <param name="scriptId">The program identifier to remove.</param>
+    /// <returns><see langword="true"/> if a script program was found and deleted; otherwise <see langword="false"/>.</returns>
     public bool Delete(string scriptId)
     {
         lock (sync)
@@ -157,6 +191,14 @@ public abstract class ScriptProgramStore
         return true;
     }
 
+    /// <summary>Executes the specified preflight or shutdown program against an optional environment and run data bag.</summary>
+    /// <param name="scriptId">The identifier of the program to execute.</param>
+    /// <param name="environmentName">Optional environment name used to supply <see cref="EnvironmentValues"/>.</param>
+    /// <param name="onLog">Optional callback invoked for each formatted log line as it is emitted.</param>
+    /// <param name="timeoutSeconds">Execution timeout in seconds (clamped between 5 and 600).</param>
+    /// <param name="ct">Token to cancel program execution.</param>
+    /// <param name="runData">Optional shared <see cref="RunData"/> whose run bag is exposed via <see cref="PreflightGlobals.Data"/>.</param>
+    /// <returns>A <see cref="PreflightRunResult"/> with success status, duration, optional error message, and captured log lines.</returns>
     public async Task<PreflightRunResult> ExecuteAsync(
         string scriptId,
         string? environmentName,
@@ -322,6 +364,9 @@ public abstract class ScriptProgramStore
 }
 
 /// <summary>The preflight (brain 0042): runs before the scenarios; they only start if it succeeds. Supports compiled <see cref="IPreflightProgram"/> classes and <c>scripts/preflight/*.cs</c>.</summary>
+/// <param name="directory">The folder containing preflight <c>.cs</c> files (typically <c>scripts/preflight</c>).</param>
+/// <param name="environments">Optional environment store used to resolve environment values during execution.</param>
+/// <param name="compiled">Optional compiled <see cref="IPreflightProgram"/> implementations registered at startup.</param>
 public sealed class PreflightStore(
     string directory,
     EnvironmentStore? environments = null,
@@ -329,6 +374,9 @@ public sealed class PreflightStore(
     : ScriptProgramStore(directory, environments, ScriptProgramKind.Preflight, compiled);
 
 /// <summary>The shutdown program (brain 0052): runs at the end of a run. Supports compiled <see cref="IShutdownProgram"/> classes and <c>scripts/shutdown/*.cs</c>.</summary>
+/// <param name="directory">The folder containing shutdown <c>.cs</c> files (typically <c>scripts/shutdown</c>).</param>
+/// <param name="environments">Optional environment store used to resolve environment values during execution.</param>
+/// <param name="compiled">Optional compiled <see cref="IShutdownProgram"/> implementations registered at startup.</param>
 public sealed class ShutdownStore(
     string directory,
     EnvironmentStore? environments = null,

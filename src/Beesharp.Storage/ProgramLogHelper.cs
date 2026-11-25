@@ -8,6 +8,10 @@ public static partial class ProgramLogHelper
     [GeneratedRegex(@"^\[(?<ts>[^\]]+?)(?:\s+(?<lvl>TRC|VRB|DBG|INF|WRN|ERR|FTL|OUT))?\]\s*(?:\[(?<lvl2>TRC|VRB|DBG|INF|WRN|ERR|FTL|OUT)\]\s*)?(?<msg>[\s\S]*)$")]
     private static partial Regex PrefixRegex();
 
+    /// <summary>Resolves a raw program kind string into its canonical kind, synthetic log entry index, and display bee name.</summary>
+    /// <param name="kind">The program kind (<c>"preflight"</c> or <c>"shutdown"</c>, case-insensitive).</param>
+    /// <returns>A tuple containing the normalized kind, synthetic entry index, and display bee name.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="kind"/> is not <c>"preflight"</c> or <c>"shutdown"</c>.</exception>
     public static (string NormalizedKind, int Entry, string BeeName) ResolveKind(string kind)
     {
         if (string.Equals(kind, "preflight", StringComparison.OrdinalIgnoreCase))
@@ -18,6 +22,8 @@ public static partial class ProgramLogHelper
     }
 
     /// <summary>Parses a raw program log line (e.g. <c>[19:05:12.345] [INF] Ready</c>) into a normalized level name and message.</summary>
+    /// <param name="raw">The raw formatted log line.</param>
+    /// <returns>A tuple containing the normalized log level name and extracted message text.</returns>
     public static (string Level, string Message) ParseLine(string raw)
     {
         var m = PrefixRegex().Match(raw);

@@ -12,6 +12,11 @@ namespace Beesharp.Services;
 /// calls and logs into <see cref="IRunStorage"/> (DuckDB by default) without blocking bees, and serving
 /// lightweight incremental polls to the Blazor WebAssembly client (brain 0045).
 /// </summary>
+/// <param name="runner">The open-model load runner used to execute scenario entries.</param>
+/// <param name="environments">The store used to resolve named environments before starting a run.</param>
+/// <param name="storage">The run persistence store where runs, bees, calls, logs, and runtime data are saved.</param>
+/// <param name="preflights">Optional store of preflight scripts executed before scenario bees start.</param>
+/// <param name="shutdowns">Optional store of shutdown scripts executed at the end of a run.</param>
 public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null, ShutdownStore? shutdowns = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
@@ -61,6 +66,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
 
     private bool IsActive => state is "Running" or "Paused" or "Preflight" or "Shutdown";
 
+    /// <summary>
+    /// Checks whether <paramref name="targetRunId"/> matches the run currently loaded in memory.
+    /// </summary>
+    /// <param name="targetRunId">The run identifier to compare against the active or loaded run.</param>
+    /// <returns><see langword="true"/> if <paramref name="targetRunId"/> is the current run; otherwise <see langword="false"/>.</returns>
     public bool IsCurrent(string targetRunId)
     {
         lock (sync) return !string.IsNullOrEmpty(runId) && string.Equals(runId, targetRunId, StringComparison.Ordinal);
@@ -69,12 +79,16 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     /// <summary>
     /// The runtime data (run bag and entry bags) of the active run: live while it runs, the final values afterwards. Null when there is none (e.g. an old stored run).
     /// </summary>
+    /// <returns>The current <see cref="RuntimeDataSnapshot"/>, or null when unavailable.</returns>
     public RuntimeDataSnapshot? GetCurrentRuntime()
     {
         lock (sync) return runData?.Snapshot() ?? storedRuntime;
     }
 
     /// <summary>The runtime data of a run by id: the active run from memory, any other run from storage (its final values).</summary>
+    /// <param name="targetRunId">The identifier of the run whose runtime data is requested.</param>
+    /// <param name="ct">A token to cancel reading from storage.</param>
+    /// <returns>The <see cref="RuntimeDataSnapshot"/> for the requested run, or null if not found.</returns>
     public async Task<RuntimeDataSnapshot?> GetRuntimeAsync(string targetRunId, CancellationToken ct = default)
     {
         lock (sync)
@@ -85,6 +99,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Returns live log lines emitted by currently flying bees (and preflight) with <c>Id &gt; afterId</c>.</summary>
+    /// <param name="afterId">Exclusive lower bound on <see cref="LiveLogEntryDto.Id"/>.</param>
+    /// <param name="limit">Maximum number of log entries to return (clamped between 1 and 2000).</param>
+    /// <param name="sequence">Optional zero-based bee sequence number filter.</param>
+    /// <param name="entry">Optional zero-based scenario entry index filter.</param>
+    /// <returns>Matching live log entries in chronological arrival order.</returns>
     public IReadOnlyList<LiveLogEntryDto> GetLiveLogs(long afterId = 0, int limit = 500, int? sequence = null, int? entry = null)
     {
         limit = Math.Clamp(limit, 1, 2000);
@@ -116,7 +135,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
     }
 
-    /// <summary>Records a host / background-service <see cref="ILogger"/> message into the active run so it streams to the Logs UI and persists for export.</summary>
+    /// <summary>Records a host / background-service <see cref="Microsoft.Extensions.Logging.ILogger"/> message into the active run so it streams to the Logs UI and persists for export.</summary>
+    /// <param name="level">Severity label (e.g. Information, Warning, Error).</param>
+    /// <param name="category">Logger category name; its short tail is prefixed to the formatted message.</param>
+    /// <param name="message">The formatted log message.</param>
+    /// <param name="exception">Optional exception text associated with the log entry.</param>
     public void RecordHostLog(string level, string category, string message, string? exception = null)
     {
         string activeRunId;
@@ -142,6 +165,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Restores the most recent persisted run from <see cref="IRunStorage"/> on server startup.</summary>
+    /// <param name="ct">A token to cancel loading the latest run from storage.</param>
+    /// <returns>A task representing the asynchronous restore operation.</returns>
     public async Task RestoreLatestAsync(CancellationToken ct = default)
     {
         var runs = await storage.ListRunsAsync(20, ct);
@@ -151,6 +176,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Clears a loaded historical run and returns to the idle state (only when no live run is active).</summary>
+    /// <returns><see langword="true"/> if the state was cleared; <see langword="false"/> if a live run is active.</returns>
     public bool UnloadStoredRun()
     {
         lock (sync)
@@ -194,6 +220,9 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Loads a persisted historical run from <see cref="IRunStorage"/> into the active view.</summary>
+    /// <param name="targetRunId">The identifier of the stored run to load.</param>
+    /// <param name="ct">A token to cancel reading from storage.</param>
+    /// <returns>The loaded <see cref="LiveRunStatusDto"/>, or null if no run with <paramref name="targetRunId"/> exists.</returns>
     public async Task<LiveRunStatusDto?> LoadStoredRunAsync(string targetRunId, CancellationToken ct = default)
     {
         lock (sync)
@@ -285,6 +314,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     /// received (<see cref="LiveRunStatusDto.NextBeeIndex"/> of the last answer) and the run it got them from (<paramref name="forRunId"/>; another run means start from the first bee); then the bees in finishing order from that position on are returned.
     /// Full calls and logs live in <see cref="IRunStorage"/> and are fetched lazily on demand.
     /// </summary>
+    /// <param name="afterSeq">Exclusive lower bound on bee sequence when <paramref name="afterIndex"/> is null.</param>
+    /// <param name="maxBees">Maximum number of completed bee records to return (clamped between 1 and 10,000).</param>
+    /// <param name="afterIndex">Optional zero-based finishing-order cursor (<see cref="LiveRunStatusDto.NextBeeIndex"/>) for lossless incremental polling.</param>
+    /// <param name="forRunId">Optional run ID associated with <paramref name="afterIndex"/>; resets the cursor to 0 if the run ID has changed.</param>
+    /// <returns>A snapshot of the current or loaded run status and incremental bee delta.</returns>
     public LiveRunStatusDto GetCurrent(int afterSeq = -1, int maxBees = 2000, int? afterIndex = null, string? forRunId = null)
     {
         maxBees = Math.Clamp(maxBees, 1, 10_000);
@@ -376,6 +410,14 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
     }
 
+    /// <summary>
+    /// Starts a new load run in the background using the specified <paramref name="plan"/> and optional <paramref name="environmentName"/>.
+    /// Executes any configured preflight script, runs the load plan via <see cref="LoadRunner"/>, and always runs any configured shutdown script afterwards.
+    /// </summary>
+    /// <param name="plan">The load plan to execute.</param>
+    /// <param name="environmentName">Optional name of the environment to resolve placeholders and expose to scripts.</param>
+    /// <param name="ct">A token to cancel resolving the environment before the run starts.</param>
+    /// <returns>The initial <see cref="LiveRunStatusDto"/> immediately after the run is queued.</returns>
     public async Task<LiveRunStatusDto> StartAsync(LoadPlan plan, string? environmentName, CancellationToken ct = default)
     {
         EnvironmentDefinition? env = null;
@@ -677,6 +719,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Completes when the active run is completely done: scenarios, shutdown program and the last writes to storage queued. Returns at once when no run is active. For callers without polling (the command-line tool).</summary>
+    /// <returns>A task that completes once the run and storage flush have finished.</returns>
     public async Task WaitUntilFinishedAsync()
     {
         Task? running;
@@ -689,6 +732,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     /// Pauses the run (brain 0027): no new bees start and the run time stands still; bees already in flight finish. Only a running run can
     /// be paused (not during the preflight or the shutdown program). Stop still ends a paused run.
     /// </summary>
+    /// <returns>The updated <see cref="LiveRunStatusDto"/> after attempting to pause.</returns>
     public LiveRunStatusDto Pause()
     {
         lock (sync)
@@ -697,6 +741,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
     }
 
     /// <summary>Resumes a paused run: the run time goes on from where it stood and the remaining bees of the plan start on schedule.</summary>
+    /// <returns>The updated <see cref="LiveRunStatusDto"/> after attempting to resume.</returns>
     public LiveRunStatusDto Resume()
     {
         lock (sync)
@@ -704,6 +749,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         return GetCurrent();
     }
 
+    /// <summary>
+    /// Signals the active run to stop, waits briefly for scenario bees to unwind, flushes storage, and returns the latest status.
+    /// If a shutdown script is configured, the run enters the <c>Shutdown</c> state while that script executes.
+    /// </summary>
+    /// <returns>The <see cref="LiveRunStatusDto"/> after requesting cancellation and flushing storage.</returns>
     public async Task<LiveRunStatusDto> StopAsync()
     {
         CancellationTokenSource? toCancel;

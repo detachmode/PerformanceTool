@@ -17,15 +17,21 @@ public sealed class EnvironmentStore
     private readonly SemaphoreSlim mutex = new(1, 1);
     private readonly ILogger logger;
 
+    /// <summary>Initializes a new <see cref="EnvironmentStore"/> backed by JSON files in <paramref name="directory"/>.</summary>
     /// <param name="directory">The folder of the JSON files (see <see cref="BeesharpDirectories"/>).</param>
+    /// <param name="logger">Optional logger for warnings about unreadable environment files.</param>
     public EnvironmentStore(string directory, ILogger<EnvironmentStore>? logger = null)
     {
         this.logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         Directory = Path.GetFullPath(directory);
     }
 
+    /// <summary>The full path to the directory where environment JSON files are stored.</summary>
     public string Directory { get; }
 
+    /// <summary>Lists all valid environments found in <see cref="Directory"/>, sorted by name.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A read-only list of environment definitions ordered case-insensitively by name.</returns>
     public async Task<IReadOnlyList<EnvironmentDefinition>> ListAsync(CancellationToken ct = default)
     {
         if (!System.IO.Directory.Exists(Directory)) return [];
@@ -46,6 +52,10 @@ public sealed class EnvironmentStore
         return all.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    /// <summary>Loads a single environment by <paramref name="name"/>, or returns <see langword="null"/> if missing or unreadable.</summary>
+    /// <param name="name">The environment name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The deserialized environment definition, or <see langword="null"/> if not found or invalid.</returns>
     public async Task<EnvironmentDefinition?> GetAsync(string name, CancellationToken ct = default)
     {
         var path = PathFor(name);
@@ -63,6 +73,8 @@ public sealed class EnvironmentStore
     }
 
     /// <summary>Saves the environment; throws <see cref="ArgumentException"/> when it is not valid (see <see cref="EnvironmentDefinition.Validate"/>).</summary>
+    /// <param name="environment">The environment definition to trim, validate, and persist.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task SaveAsync(EnvironmentDefinition environment, CancellationToken ct = default)
     {
         var clean = environment.Clone();
@@ -83,6 +95,9 @@ public sealed class EnvironmentStore
         finally { mutex.Release(); }
     }
 
+    /// <summary>Deletes the persisted environment file matching <paramref name="name"/> if it exists.</summary>
+    /// <param name="name">The environment name.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task DeleteAsync(string name, CancellationToken ct = default)
     {
         await mutex.WaitAsync(ct);

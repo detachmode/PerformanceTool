@@ -24,6 +24,10 @@ public sealed class HttpUrlAttribute : ValidationAttribute
     // A value with a {{Key}} placeholder is checked when the run starts, once the active environment has filled it in (brain 0033).
     private static bool Ok(string s) => Placeholders.HasPlaceholder(s) || ScenarioContext.IsHttpUrl(s);
 
+    /// <summary>Validates that <paramref name="value"/> is an empty value, a valid HTTP(S) URL (or placeholder), or a sequence of valid HTTP(S) URLs.</summary>
+    /// <param name="value">The property value being validated.</param>
+    /// <param name="context">The validation context identifying the member and display name.</param>
+    /// <returns><see cref="ValidationResult.Success"/> when valid; otherwise, a <see cref="ValidationResult"/> describing the failure.</returns>
     protected override ValidationResult? IsValid(object? value, ValidationContext context) => value switch
     {
         null => ValidationResult.Success,

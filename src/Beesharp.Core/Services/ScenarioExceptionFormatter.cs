@@ -13,6 +13,12 @@ public static class ScenarioExceptionFormatter
 {
     private static readonly Assembly CoreAssembly = typeof(IScenario).Assembly;
 
+    /// <summary>
+    /// Formats <paramref name="ex"/> and any inner exceptions with stack frames filtered to user scenario or script code.
+    /// </summary>
+    /// <param name="ex">The exception thrown during scenario or script execution.</param>
+    /// <param name="scenarioAssembly">The scenario's declaring assembly, or <see langword="null"/> for Roslyn scripts.</param>
+    /// <returns>The formatted exception message and filtered stack trace.</returns>
     public static string Format(Exception ex, Assembly? scenarioAssembly)
     {
         var sb = new StringBuilder();

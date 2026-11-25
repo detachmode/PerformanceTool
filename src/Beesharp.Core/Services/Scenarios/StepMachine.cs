@@ -11,6 +11,8 @@ using Beesharp.Services.Scenarios.Spec;
 namespace Beesharp.Services.Scenarios;
 
 /// <summary>One declared step of a scenario, known before the run (brain 0056). <see cref="Times"/> is optional (null when dynamic).</summary>
+/// <param name="Name">Human-readable display name of the step.</param>
+/// <param name="Times">Optional declared repetition count for the step, or <c>null</c> when determined dynamically at runtime.</param>
 public sealed record StepInfo(string Name, int? Times = null);
 
 /// <summary>
@@ -19,10 +21,21 @@ public sealed record StepInfo(string Name, int? Times = null);
 /// </summary>
 public static class StepUnionReflection
 {
+    /// <summary>Cached reflection metadata for a step <c>union</c> type.</summary>
+    /// <param name="Steps">Declared steps extracted from the union's case types in declaration order.</param>
+    /// <param name="CaseIndexByType">Maps each union case <see cref="Type"/> to its zero-based index in <see cref="Steps"/>.</param>
     public sealed record CompiledUnion(IReadOnlyList<StepInfo> Steps, IReadOnlyDictionary<Type, int> CaseIndexByType);
 
+    /// <summary>Inspects the C# 15 <c>union</c> type <typeparamref name="TStep"/> and builds its step metadata.</summary>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type representing scenario steps.</typeparam>
+    /// <returns>The compiled step metadata for <typeparamref name="TStep"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when <typeparamref name="TStep"/> is not a valid union with at least one step case.</exception>
     public static CompiledUnion Inspect<TStep>() where TStep : struct, IUnion => Inspect(typeof(TStep));
 
+    /// <summary>Inspects the specified C# 15 <c>union</c> <see cref="Type"/> and builds its step metadata.</summary>
+    /// <param name="unionType">The C# 15 <c>union</c> value type representing scenario steps.</param>
+    /// <returns>The compiled step metadata for <paramref name="unionType"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="unionType"/> is not a <see cref="IUnion"/> value type or declares no step cases.</exception>
     public static CompiledUnion Inspect(Type unionType)
     {
         if (!unionType.IsValueType || !typeof(IUnion).IsAssignableFrom(unionType))
@@ -55,6 +68,8 @@ public static class StepUnionReflection
     }
 
     /// <summary>Reads <c>[Display(Name = ...)]</c> or <c>[DisplayName(...)]</c> from a step record, or humanizes PascalCase (<c>OpenProduct</c> → <c>Open product</c>).</summary>
+    /// <param name="stepType">The step case <see cref="Type"/> whose display name should be resolved.</param>
+    /// <returns>The resolved display name for <paramref name="stepType"/>.</returns>
     public static string DisplayNameOf(Type stepType)
     {
         if (stepType.GetCustomAttribute<DisplayAttribute>()?.GetName() is { Length: > 0 } display)
@@ -92,18 +107,31 @@ public static class StepUnionReflection
 /// Base class for compiled C# scenarios whose steps are a C# 15 <c>union</c> run as a step machine (brain 0056).
 /// Return the next step from <see cref="RunStepAsync"/>, or <c>null</c> to finish the bee cleanly.
 /// </summary>
+/// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+/// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
 public abstract class Scenario<TParameters, TStep> : Scenario<TParameters>
     where TParameters : class
     where TStep : struct, IUnion
 {
     private readonly StepUnionReflection.CompiledUnion union = StepUnionReflection.Inspect<TStep>();
 
+    /// <inheritdoc />
     public override IReadOnlyList<StepInfo> Steps => union.Steps;
 
+    /// <summary>Returns the initial step to execute for a bee.</summary>
+    /// <param name="parameters">Typed scenario parameters for this entry.</param>
+    /// <returns>The first step in the step machine.</returns>
     protected abstract TStep StartStep(TParameters parameters);
 
+    /// <summary>Executes a single step and optionally returns the next step to transition to.</summary>
+    /// <param name="step">The current step union value to execute.</param>
+    /// <param name="parameters">Typed scenario parameters for this entry.</param>
+    /// <param name="context">Per-bee execution context for HTTP calls, bags, and logging.</param>
+    /// <param name="cancellationToken">Token cancelled on per-bee timeout or run stop.</param>
+    /// <returns>The next step to execute, or <c>null</c> to complete the bee cleanly.</returns>
     protected abstract Task<TStep?> RunStepAsync(TStep step, TParameters parameters, ScenarioContext context, CancellationToken cancellationToken);
 
+    /// <inheritdoc />
     protected sealed override Task<ScenarioOutcome> ExecuteAsync(TParameters parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         StepMachineRunner.RunAsync(
             union,

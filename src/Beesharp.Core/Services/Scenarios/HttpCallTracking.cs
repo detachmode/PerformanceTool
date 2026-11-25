@@ -12,6 +12,9 @@ public static class HttpRequestCallExtensions
     internal static readonly HttpRequestOptionsKey<bool> TimingSplitKey = new("Beesharp.MeasureTimingSplit");
 
     /// <summary>Overrides the auto-detected call/endpoint name for this HTTP request (brain 0013, 0060).</summary>
+    /// <param name="request">The outgoing HTTP request message.</param>
+    /// <param name="name">The custom call or endpoint name to associate with the request.</param>
+    /// <returns>The same <see cref="HttpRequestMessage"/> instance for fluent chaining.</returns>
     public static HttpRequestMessage AsCall(this HttpRequestMessage request, string name)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -21,6 +24,9 @@ public static class HttpRequestCallExtensions
     }
 
     /// <summary>Sets an explicit slow threshold for this single HTTP request, overriding scenario rules and <c>2× typical</c> (brain 0060).</summary>
+    /// <param name="request">The outgoing HTTP request message.</param>
+    /// <param name="threshold">The duration above which this request is classified as slow; must be greater than zero.</param>
+    /// <returns>The same <see cref="HttpRequestMessage"/> instance for fluent chaining.</returns>
     public static HttpRequestMessage SlowAbove(this HttpRequestMessage request, TimeSpan threshold)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -31,6 +37,9 @@ public static class HttpRequestCallExtensions
     }
 
     /// <summary>Measures time-to-first-byte (<c>TtfbMs</c>) separately from response body read (<c>ResponseReadMs</c>) for this request.</summary>
+    /// <param name="request">The outgoing HTTP request message.</param>
+    /// <param name="enabled"><c>true</c> to record separate TTFB and body-read timings; <c>false</c> to disable the split.</param>
+    /// <returns>The same <see cref="HttpRequestMessage"/> instance for fluent chaining.</returns>
     public static HttpRequestMessage MeasureTimingSplit(this HttpRequestMessage request, bool enabled = true)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -50,10 +59,14 @@ internal sealed record CallScopeOverride(string? Name, double? SlowThresholdMs);
 /// </summary>
 public sealed class RecordingHttpHandler : DelegatingHandler
 {
+    /// <summary>Initializes a new <see cref="RecordingHttpHandler"/> without an inner handler.</summary>
     public RecordingHttpHandler() { }
 
+    /// <summary>Initializes a new <see cref="RecordingHttpHandler"/> wrapping the specified inner <see cref="HttpMessageHandler"/>.</summary>
+    /// <param name="inner">The inner handler to delegate HTTP requests to.</param>
     public RecordingHttpHandler(HttpMessageHandler inner) : base(inner) { }
 
+    /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var ctx = ScenarioContext.Current;

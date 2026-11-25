@@ -17,6 +17,9 @@ public sealed partial class AssistantToolbox
         note = e.Variables.Any(v => SecretMask.LooksSecret(v.Key)) ? "Values of secret-looking keys are masked." : null,
     };
 
+    /// <summary>Lists all configured environments with secret-looking variable values masked.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A list of environment summaries containing names and masked key-value pairs.</returns>
     [AssistantTool("list_environments")]
     [Description("Lists the environments (named sets of key-value pairs such as BaseUrl or Token that scenarios run against) with their keys. Values of secret-looking keys are masked.")]
     public async Task<object> ListEnvironments(CancellationToken ct)
@@ -26,6 +29,10 @@ public sealed partial class AssistantToolbox
         return all.Select(EnvView).ToList();
     }
 
+    /// <summary>Reads a single environment by name with secret-looking variable values masked.</summary>
+    /// <param name="name">Name of the environment to inspect.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An object containing the environment name and masked variables.</returns>
     [AssistantTool("get_environment")]
     [Description("Reads one environment. Values of secret-looking keys (token, password, key, ...) are masked and never shown in full.")]
     public async Task<object> GetEnvironment([Description("Environment name")] string name, CancellationToken ct)
@@ -35,6 +42,12 @@ public sealed partial class AssistantToolbox
         return EnvView(e);
     }
 
+    /// <summary>Creates or updates an environment by merging new variable values and removing deleted keys.</summary>
+    /// <param name="name">Name of the environment to create or update.</param>
+    /// <param name="variables">Optional map of keys to add or overwrite; masked values preserve existing secrets.</param>
+    /// <param name="removeKeys">Optional list of variable keys to delete from the environment.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The saved environment view with secret-looking values masked.</returns>
     [AssistantTool("save_environment")]
     [Description("Creates an environment or changes one: the given keys are set (added or replaced), the other keys stay, and removeKeys are dropped. A value that is still masked (contains ••••) keeps the stored value.")]
     public async Task<object> SaveEnvironment(
@@ -61,6 +74,10 @@ public sealed partial class AssistantToolbox
         return EnvView(saved);
     }
 
+    /// <summary>Deletes a named environment permanently.</summary>
+    /// <param name="name">Name of the environment to delete.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An object confirming the deleted environment name.</returns>
     [AssistantTool("delete_environment")]
     [Description("Deletes an environment for good.")]
     public async Task<object> DeleteEnvironment([Description("Environment name")] string name, CancellationToken ct)
@@ -88,6 +105,8 @@ public sealed partial class AssistantToolbox
         diagnostics = r.Diagnostics.Take(Bounds.DefaultList).Select(d => new { d.Severity, d.Line, d.Column, d.Message }).ToList(),
     };
 
+    /// <summary>Lists all custom C# scenario scripts uploaded to the server.</summary>
+    /// <returns>A list of brief metadata objects describing each scenario script.</returns>
     [AssistantTool("list_scripts")]
     [Description("Lists the custom C# scenario scripts uploaded to the server (each defines a scenario).")]
     public object ListScripts()
@@ -97,6 +116,9 @@ public sealed partial class AssistantToolbox
         return list.Select(ScriptBrief).ToList();
     }
 
+    /// <summary>Reads a custom scenario script including its C# source code (bounded to 20,000 characters).</summary>
+    /// <param name="scriptId">Identifier of the script to read.</param>
+    /// <returns>An object containing the script metadata and bounded C# code.</returns>
     [AssistantTool("get_script")]
     [Description("Reads a custom scenario script with its C# code (cut at 20000 characters).")]
     public object GetScript([Description("Script id from list_scripts")] string scriptId)
@@ -106,6 +128,12 @@ public sealed partial class AssistantToolbox
         return ScriptFull(s);
     }
 
+    /// <summary>Compiles and saves a custom C# scenario script, registering or updating its scenario in the catalog.</summary>
+    /// <param name="code">C# source code of the scenario script.</param>
+    /// <param name="fileName">Optional file name for the script (for example <c>checkout-flow.cs</c>).</param>
+    /// <param name="scriptId">Optional existing script id to replace; omit to create a new script.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Compilation outcome including script metadata on success or bounded diagnostics on failure.</returns>
     [AssistantTool("upload_script")]
     [Description("Compiles C# scenario script code and saves it on the server; the scenario it defines is added to the catalog. An existing script id replaces that script. Returns compile problems when it does not compile.")]
     public async Task<object> UploadScript(
@@ -120,6 +148,13 @@ public sealed partial class AssistantToolbox
         return CompileView(result);
     }
 
+    /// <summary>Executes a single test bee of a custom scenario script outside of any load run.</summary>
+    /// <param name="scriptId">Identifier of the scenario script to test.</param>
+    /// <param name="parameters">Optional JSON object of scenario parameters; defaults are used when omitted.</param>
+    /// <param name="environmentName">Optional environment name supplying placeholder values.</param>
+    /// <param name="timeoutSeconds">Optional timeout in seconds (clamped between 1 and 300; defaults to 30).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Test execution status, duration, recorded calls, and log lines.</returns>
     [AssistantTool("test_run_script")]
     [Description("Runs one bee of a custom scenario script once, outside any run, and returns status, timing, calls and logs. Safe way to check a script before adding it to a plan.")]
     public async Task<object> TestRunScript(
@@ -139,6 +174,9 @@ public sealed partial class AssistantToolbox
         };
     }
 
+    /// <summary>Permanently deletes a custom scenario script and removes its scenario from the catalog.</summary>
+    /// <param name="scriptId">Identifier of the script to delete.</param>
+    /// <returns>An object confirming the deleted script id.</returns>
     [AssistantTool("delete_script")]
     [Description("Deletes a custom scenario script for good (its scenario leaves the catalog).")]
     public object DeleteScript([Description("Script id from list_scripts")] string scriptId)
@@ -150,6 +188,8 @@ public sealed partial class AssistantToolbox
 
     // ---------- preflights ----------
 
+    /// <summary>Lists all preflight scripts available on the server.</summary>
+    /// <returns>A list of brief metadata objects describing each preflight script.</returns>
     [AssistantTool("list_preflights")]
     [Description("Lists the preflight scripts. A preflight runs before a run's scenarios start; the scenarios only begin when it succeeds.")]
     public object ListPreflights()
@@ -159,6 +199,9 @@ public sealed partial class AssistantToolbox
         return list.Select(ScriptBrief).ToList();
     }
 
+    /// <summary>Reads a preflight script including its C# source code (bounded to 20,000 characters).</summary>
+    /// <param name="scriptId">Identifier of the preflight script to read.</param>
+    /// <returns>An object containing the preflight metadata and bounded C# code.</returns>
     [AssistantTool("get_preflight")]
     [Description("Reads a preflight script with its C# code (cut at 20000 characters).")]
     public object GetPreflight([Description("Preflight id from list_preflights")] string scriptId)
@@ -168,6 +211,12 @@ public sealed partial class AssistantToolbox
         return ScriptFull(s);
     }
 
+    /// <summary>Compiles and saves a preflight C# script on the server.</summary>
+    /// <param name="code">C# source code of the preflight script.</param>
+    /// <param name="fileName">Optional file name for the script (for example <c>check-readiness.cs</c>).</param>
+    /// <param name="scriptId">Optional existing preflight id to replace; omit to create a new preflight.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Compilation outcome including preflight metadata on success or bounded diagnostics on failure.</returns>
     [AssistantTool("upload_preflight")]
     [Description("Compiles preflight C# code and saves it on the server. An existing preflight id replaces that preflight.")]
     public async Task<object> UploadPreflight(
@@ -182,6 +231,12 @@ public sealed partial class AssistantToolbox
         return CompileView(result);
     }
 
+    /// <summary>Executes a preflight script once outside of any load run.</summary>
+    /// <param name="scriptId">Identifier of the preflight script to test.</param>
+    /// <param name="environmentName">Optional environment name supplying placeholder values.</param>
+    /// <param name="timeoutSeconds">Optional timeout in seconds (clamped between 1 and 300; defaults to 60).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Preflight test outcome containing success flag, duration, error, and log lines.</returns>
     [AssistantTool("test_run_preflight")]
     [Description("Runs a preflight once, outside any run, and returns whether it succeeded plus its log lines.")]
     public async Task<object> TestRunPreflight(
@@ -195,6 +250,9 @@ public sealed partial class AssistantToolbox
         return new { success = r.Success, durationMs = Math.Round(r.DurationMs), error = r.Error is null ? null : Bounds.Cut(r.Error), logs = r.Logs.Take(Bounds.MaxList).Select(l => Bounds.Cut(l)).ToList() };
     }
 
+    /// <summary>Permanently deletes a preflight script.</summary>
+    /// <param name="scriptId">Identifier of the preflight script to delete.</param>
+    /// <returns>An object confirming the deleted preflight id.</returns>
     [AssistantTool("delete_preflight")]
     [Description("Deletes a preflight script for good.")]
     public object DeletePreflight([Description("Preflight id from list_preflights")] string scriptId)

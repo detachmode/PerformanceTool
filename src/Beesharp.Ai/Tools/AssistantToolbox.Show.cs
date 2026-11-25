@@ -4,6 +4,8 @@ using Beesharp.Ai.Contracts;
 namespace Beesharp.Ai;
 
 /// <summary>One bee the assistant picked for the timeline, with a short reason why ("slowest checkout").</summary>
+/// <param name="Bee">1-based bee number (for example <c>12</c> for B12).</param>
+/// <param name="Note">Optional short reason explaining why this bee is included on the timeline.</param>
 public sealed record BeeNote(
     [property: Description("Bee number from 1")] int Bee,
     [property: Description("Short reason, e.g. slowest checkout")] string? Note = null);
@@ -19,6 +21,17 @@ public sealed partial class AssistantToolbox
         new(b.Sequence + 1, b.Entry + 1, b.Entry >= 0 && b.Entry < labels.Count ? labels[b.Entry] : $"Entry {b.Entry + 1}",
             Math.Round(b.StartedAt, 3), Math.Round(b.DurationMs, 1), b.StatusCode, b.Outcome, b.Error is null ? null : Bounds.Cut(b.Error), note);
 
+    /// <summary>Emits a logs card into the chat showing matching log lines and a link to open the full query.</summary>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="entry">Optional 1-based scenario entry filter.</param>
+    /// <param name="bee">Optional 1-based bee number filter.</param>
+    /// <param name="failedBees">When <see langword="true"/>, include only logs from failed bees.</param>
+    /// <param name="slowBees">When <see langword="true"/>, include only logs from slow bees.</param>
+    /// <param name="levels">Optional log level filters (<c>Trace</c>, <c>Debug</c>, <c>Information</c>, <c>Warning</c>, <c>Error</c>).</param>
+    /// <param name="search">Optional substring that log messages must contain.</param>
+    /// <param name="title">Optional custom card title.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the card shown to the user and a compact preview of matching lines.</returns>
     [AssistantTool("show_logs")]
     [Description("Shows log lines to the user as a small card in the chat (a few lines, the total, and a button to open them all). Prefer this over pasting log lines as text. Same filters as query_logs. Answers with a short summary of what the card shows.")]
     public async Task<object> ShowLogs(
@@ -44,6 +57,13 @@ public sealed partial class AssistantToolbox
         };
     }
 
+    /// <summary>Emits a bees card into the chat ordered failed first, then slow, then ok.</summary>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="entry">Optional 1-based scenario entry filter.</param>
+    /// <param name="outcome">Optional outcome filter (<c>all</c>, <c>ok</c>, <c>slow</c>, or <c>failed</c>).</param>
+    /// <param name="title">Optional custom card title.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the card shown to the user and the previewed bee rows.</returns>
     [AssistantTool("show_bees")]
     [Description("Shows bees to the user as a small card: failed first, then slow, then ok, each as a numbered chip that opens the bee. Prefer this over listing bees as text.")]
     public async Task<object> ShowBees(
@@ -61,6 +81,11 @@ public sealed partial class AssistantToolbox
         return new { shownToUser = $"A bees card with {page.Items.Count} of {page.Total} bees.", bees = page.Items.Select(BeeRow).ToList() };
     }
 
+    /// <summary>Emits a single-bee detail card showing outcome, error, and call waterfall.</summary>
+    /// <param name="bee">1-based bee number (for example <c>12</c> for B12).</param>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the card shown to the user and the bee's error message if any.</returns>
     [AssistantTool("show_bee")]
     [Description("Shows one bee to the user as a small card: its outcome, error and its calls as a little waterfall, with a button to open the bee with its logs.")]
     public async Task<object> ShowBee(
@@ -78,6 +103,16 @@ public sealed partial class AssistantToolbox
         return new { shownToUser = $"A bee card for B{bee} ({row.Outcome}) with {detail.Calls.Count} calls.", error = row.Error };
     }
 
+    /// <summary>Emits a calls card showing either the slowest endpoints overall or individual calls of a single endpoint.</summary>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="endpoint">Optional normalized endpoint name (for example <c>GET /orders/{id}</c>) to inspect individual calls.</param>
+    /// <param name="entry">Optional 1-based scenario entry filter.</param>
+    /// <param name="outcome">Optional outcome filter (<c>all</c>, <c>slow</c>, or <c>failed</c>).</param>
+    /// <param name="minMs">Optional minimum call duration filter in milliseconds.</param>
+    /// <param name="search">Optional substring filter on endpoint names when <paramref name="endpoint"/> is omitted.</param>
+    /// <param name="title">Optional custom card title.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the calls card shown to the user.</returns>
     [AssistantTool("show_slow_calls")]
     [Description("Shows slow endpoints or individual slow/failing calls of one endpoint to the user as a card with a button to open /calls. Leave endpoint empty for the slowest endpoints overall, or pass an endpoint (e.g. 'POST /payments') for its slowest individual calls.")]
     public async Task<object> ShowSlowCalls(
@@ -144,6 +179,11 @@ public sealed partial class AssistantToolbox
     private static ViewCallEndpointDto ToViewEndpoint(CallEndpointInfo ep) =>
         new(ep.Endpoint, ep.Method, ep.TotalCount, ep.SlowCount, ep.FailedCount, Math.Round(ep.TypicalMs, 1), Math.Round(ep.P95Ms, 1), Math.Round(ep.MaxMs, 1), Math.Round(ep.SlowThresholdMs, 1), ep.HasCustomThreshold);
 
+    /// <summary>Emits a scenario entry card with execution counters and its initial bees.</summary>
+    /// <param name="entry">1-based scenario entry number.</param>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the scenario card shown to the user and its key counters.</returns>
     [AssistantTool("show_scenario")]
     [Description("Shows one scenario entry of a run as a small card: its figures (started, finished, in flight, failed, slow) and its first bees. Every figure opens the bees behind it.")]
     public async Task<object> ShowScenario(
@@ -162,6 +202,10 @@ public sealed partial class AssistantToolbox
         return new { shownToUser = $"A scenario card for {figures.Label}.", figures = new { started = figures.Starts, finished = figures.Finished, inFlight = figures.InFlight, failed = figures.Failed, slow = figures.SlowBees } };
     }
 
+    /// <summary>Emits a run overview card showing state, duration, and counters for every scenario entry.</summary>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the run card shown to the user.</returns>
     [AssistantTool("show_run")]
     [Description("Shows a whole run as a small card: state, time, and the figures of every scenario entry. Every figure opens the bees behind it.")]
     public async Task<object> ShowRun(
@@ -178,6 +222,8 @@ public sealed partial class AssistantToolbox
     private static ViewEntryDto ViewEntry(EntryFigures e) =>
         new(e.Entry + 1, e.Label, e.Starts, e.Finished, e.InFlight, e.Failed, e.SlowBees, e.Dropped, e.BeesPerMinute);
 
+    /// <summary>Emits a plan-changes card comparing the current Live plan against the turn start or last saved preset.</summary>
+    /// <returns>Summary of the plan-changes card and the list of detected plan differences.</returns>
     [AssistantTool("show_plan_changes")]
     [Description("Shows what changed in the plan as a small card (entries added, removed or changed, with the old and new values) and a button to open the editor. Compares with the plan at the start of this conversation turn when you edited it, otherwise with the last saved preset.")]
     public object ShowPlanChanges()
@@ -189,6 +235,12 @@ public sealed partial class AssistantToolbox
         return new { shownToUser = changes.Count == 0 ? "A plan card saying nothing changed." : $"A plan changes card with {changes.Count} changes.", changes = changes.Select(c => new { c.What, c.Entry, c.Label, c.Details }).ToList() };
     }
 
+    /// <summary>Emits a timeline card plotting up to 60 selected bees across scenario entries with optional explanatory notes.</summary>
+    /// <param name="bees">List of 1-based bee numbers and optional short notes to plot on the timeline.</param>
+    /// <param name="runId">Optional run identifier; defaults to the current or newest stored run.</param>
+    /// <param name="title">Optional custom card title.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Summary of the timeline card and any requested bee numbers not found in the run.</returns>
     [AssistantTool("show_bee_timeline")]
     [Description("Shows a hand-picked set of bees together on one time line, drawn like the scenario chart (bars, colours, time axis), also across scenario entries: for example the five slowest checkouts plus the failed bees around them. The user can click a bar to see that bee's calls and logs, zoom, and step through failed and slow. Up to 60 bees. Give each bee a short reason in notes.")]
     public async Task<object> ShowBeeTimeline(

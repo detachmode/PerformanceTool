@@ -74,16 +74,23 @@
     </ItemGroup>
   </Target>
 
-  <!-- Include the 7 internal Beesharp.* DLLs in lib/net11.0/ of Beesharp.Host.nupkg. -->
+  <!-- Include the 7 internal Beesharp.* DLLs (and their XML docs) in lib/net11.0/ of Beesharp.Host.nupkg. -->
   <Target Name="IncludeInternalBeesharpAssemblies">
     <ItemGroup>
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Contracts.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Contracts.xml" Condition="Exists('$(OutputPath)Beesharp.Contracts.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.Contracts.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.Contracts.xml" Condition="Exists('$(OutputPath)Beesharp.Ai.Contracts.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.xml" Condition="Exists('$(OutputPath)Beesharp.Storage.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.DuckDb.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.DuckDb.xml" Condition="Exists('$(OutputPath)Beesharp.Storage.DuckDb.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.xml" Condition="Exists('$(OutputPath)Beesharp.Scripting.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.xml" Condition="Exists('$(OutputPath)Beesharp.Engine.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.xml" Condition="Exists('$(OutputPath)Beesharp.Ai.xml')" />
     </ItemGroup>
   </Target>
 

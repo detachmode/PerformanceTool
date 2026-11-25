@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Beesharp.Engine</PackageId>
     <Description>Open-model load runner, run lifecycle manager and live plan workspace for Beesharp.</Description>
     <PackageTags>beesharp;load-testing;performance;engine</PackageTags>

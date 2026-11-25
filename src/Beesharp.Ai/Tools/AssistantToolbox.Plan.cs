@@ -10,6 +10,8 @@ public sealed partial class AssistantToolbox
 {
     private static readonly ChipLinkDto EditorLink = new("editor");
 
+    /// <summary>Lists all scenarios registered in the catalog (built-in and custom script scenarios).</summary>
+    /// <returns>A list of scenario summaries including id, name, description, custom flag, and 1-based declared steps.</returns>
     [AssistantTool("list_scenarios")]
     [Description("Lists the scenarios that can be put in a plan (built-in and custom script scenarios): id, name, declared steps (numbered from 1) and what each does.")]
     public object ListScenarios()
@@ -25,6 +27,9 @@ public sealed partial class AssistantToolbox
         }).ToList();
     }
 
+    /// <summary>Describes a single scenario including its declared steps and parameter JSON schema.</summary>
+    /// <param name="scenarioId">Scenario identifier (for example <c>http-get</c>).</param>
+    /// <returns>An object containing scenario metadata, 1-based steps, and parameter JSON schema.</returns>
     [AssistantTool("get_scenario")]
     [Description("Describes one scenario: its description, declared steps (numbered from 1) and the JSON Schema of its parameters (the settings of a scenario entry).")]
     public object GetScenario([Description("Scenario id, e.g. http-get")] string scenarioId)
@@ -42,6 +47,8 @@ public sealed partial class AssistantToolbox
         };
     }
 
+    /// <summary>Reads the current Live plan with secret parameter values stripped.</summary>
+    /// <returns>A model-safe representation of the Live plan, its entries (1-based), and validation problems.</returns>
     [AssistantTool("get_plan")]
     [Description("Reads the Live plan the user sees in the editor: its scenario entries (numbered from 1) with rate, spawning pattern and parameters, plus duration, max in flight, timeout, preflight and any problems that would stop a run. Secret parameter values are left out.")]
     public object GetPlan()
@@ -51,6 +58,12 @@ public sealed partial class AssistantToolbox
         return PlanFormat.View(state, catalog);
     }
 
+    /// <summary>Adds a new scenario entry to the Live plan and optionally configures its label, rate, and parameters.</summary>
+    /// <param name="scenarioId">Identifier of the scenario to add.</param>
+    /// <param name="label">Optional display label for the new entry.</param>
+    /// <param name="beesPerMinute">Optional linear spawning rate in bees per minute.</param>
+    /// <param name="parameters">Optional JSON object of scenario parameters to merge into defaults.</param>
+    /// <returns>An object containing the added entry view, normalization warnings, and plan validation problems.</returns>
     [AssistantTool("add_scenario_entry")]
     [Description("Adds a scenario entry to the plan. Optionally sets its label, rate and parameters right away. Parameters are merged into the defaults; use get_scenario to see which exist.")]
     public object AddScenarioEntry(
@@ -70,6 +83,15 @@ public sealed partial class AssistantToolbox
         return new { added = PlanFormat.EntryView(entry, index, catalog), warnings, problems = state.Plan.Validate(catalog) };
     }
 
+    /// <summary>Updates settings or parameters of an existing scenario entry in the Live plan.</summary>
+    /// <param name="entry">1-based entry number to update.</param>
+    /// <param name="label">Optional new display label.</param>
+    /// <param name="pattern">Optional spawning pattern (<c>linear</c> or <c>bursts</c>).</param>
+    /// <param name="beesPerMinute">Optional linear spawning rate in bees per minute.</param>
+    /// <param name="beesPerBurst">Optional number of bees started per burst.</param>
+    /// <param name="burstsPerMinute">Optional burst frequency in bursts per minute.</param>
+    /// <param name="parameters">Optional JSON object of parameter updates merged into the current parameters.</param>
+    /// <returns>An object containing the updated entry view, normalization warnings, and plan validation problems.</returns>
     [AssistantTool("update_scenario_entry")]
     [Description("Changes a scenario entry of the plan: label, spawning pattern (linear or bursts), rate, burst size and rate, and/or scenario parameters (merged into the current ones). Only the given settings change.")]
     public object UpdateScenarioEntry(
@@ -97,6 +119,9 @@ public sealed partial class AssistantToolbox
         return new { entry = PlanFormat.EntryView(current, index, catalog), warnings, problems = state.Plan.Validate(catalog) };
     }
 
+    /// <summary>Removes a scenario entry from the Live plan.</summary>
+    /// <param name="entry">1-based entry number to remove.</param>
+    /// <returns>An object confirming the removed entry label and remaining entry count.</returns>
     [AssistantTool("remove_scenario_entry")]
     [Description("Removes a scenario entry from the plan. Later entries move up by one number.")]
     public object RemoveScenarioEntry([Description("Entry number, starting at 1")] int entry)
@@ -111,6 +136,12 @@ public sealed partial class AssistantToolbox
         return new { removed = label, entriesLeft = state.Plan.Scenarios.Count };
     }
 
+    /// <summary>Updates global settings of the Live plan such as duration, concurrency limit, timeout, and preflight script.</summary>
+    /// <param name="durationSeconds">Optional run duration in seconds.</param>
+    /// <param name="maxInFlight">Optional maximum concurrent bees in flight.</param>
+    /// <param name="timeoutSeconds">Optional per-bee timeout in seconds.</param>
+    /// <param name="preflightScriptId">Optional preflight script id, or empty string to clear the preflight.</param>
+    /// <returns>The updated Live plan view.</returns>
     [AssistantTool("set_plan_settings")]
     [Description("Changes the settings of the whole plan: duration of the run, max bees in flight, timeout of one bee, and the preflight script to run first. Only the given settings change.")]
     public object SetPlanSettings(
@@ -140,6 +171,9 @@ public sealed partial class AssistantToolbox
 
     // ---------- presets ----------
 
+    /// <summary>Lists all saved plan presets and reports which preset is currently loaded.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An object containing the loaded preset name and preset summaries.</returns>
     [AssistantTool("list_presets")]
     [Description("Lists the saved presets (named plans), and which one is loaded.")]
     public async Task<object> ListPresets(CancellationToken ct)
@@ -149,6 +183,10 @@ public sealed partial class AssistantToolbox
         return new { loaded = plan.Get().PresetName, presets = presets.Select(p => new { name = p.Name, entries = p.Entries, durationSeconds = p.DurationSeconds, savedAt = p.SavedAt }).ToList() };
     }
 
+    /// <summary>Saves the current Live plan as a named preset and marks it as loaded.</summary>
+    /// <param name="name">Preset name to save under.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An object confirming the saved preset name.</returns>
     [AssistantTool("save_preset")]
     [Description("Saves the current plan as a preset with this name (replacing a preset of the same name) and makes it the loaded one.")]
     public async Task<object> SavePreset([Description("Preset name")] string name, CancellationToken ct)
@@ -158,6 +196,10 @@ public sealed partial class AssistantToolbox
         return new { saved = name.Trim() };
     }
 
+    /// <summary>Loads a saved preset into the Live plan, replacing the current editor state.</summary>
+    /// <param name="name">Name of the preset to load.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The updated Live plan view after loading the preset.</returns>
     [AssistantTool("load_preset")]
     [Description("Loads a saved preset into the plan, replacing the plan in the editor.")]
     public async Task<object> LoadPreset([Description("Preset name")] string name, CancellationToken ct)
@@ -168,6 +210,10 @@ public sealed partial class AssistantToolbox
         return PlanFormat.View(plan.Get(), catalog);
     }
 
+    /// <summary>Permanently deletes a saved preset without modifying the current Live plan.</summary>
+    /// <param name="name">Name of the preset to delete.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An object confirming the deleted preset name.</returns>
     [AssistantTool("delete_preset")]
     [Description("Deletes a saved preset for good. The plan in the editor stays as it is.")]
     public async Task<object> DeletePreset([Description("Preset name")] string name, CancellationToken ct)

@@ -13,6 +13,7 @@ public sealed class InMemoryRunStorage : IRunStorage
     private readonly List<RunBucket> runs = [];
     private long nextLogId;
 
+    /// <inheritdoc />
     public string ProviderName => "Memory";
 
     private sealed class RunBucket(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps)
@@ -33,6 +34,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         public List<StoredLogRow> Logs { get; } = [];
     }
 
+    /// <inheritdoc />
     public void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null)
     {
         lock (sync)
@@ -43,6 +45,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public void EnqueueBeeCompleted(string runId, ExecutionResult r, int beeOutcome, int slowCalls)
     {
         lock (sync)
@@ -70,6 +73,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error)
     {
         lock (sync)
@@ -83,6 +87,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task SaveRuntimeDataAsync(string runId, string json, CancellationToken ct = default)
     {
         lock (sync)
@@ -90,12 +95,14 @@ public sealed class InMemoryRunStorage : IRunStorage
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default)
     {
         lock (sync)
             return Task.FromResult(runs.FirstOrDefault(x => x.RunId == runId)?.RuntimeJson);
     }
 
+    /// <inheritdoc />
     public Task SaveProgramRunAsync(string runId, string kind, StoredProgramRunDto program, CancellationToken ct = default)
     {
         var (normalized, entry, beeName) = ProgramLogHelper.ResolveKind(kind);
@@ -123,6 +130,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public void EnqueueHostLog(string runId, double atSeconds, string level, string message, string? exception = null)
     {
         var isFailed = string.Equals(level, "Error", StringComparison.OrdinalIgnoreCase);
@@ -141,8 +149,10 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
 
+    /// <inheritdoc />
     public Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default)
     {
         lock (sync)
@@ -154,6 +164,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task<StoredRunData?> GetRunAsync(string runId, CancellationToken ct = default)
     {
         lock (sync)
@@ -166,6 +177,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task<StoredBeeDetail?> GetBeeDetailAsync(string runId, int sequence, CancellationToken ct = default)
     {
         lock (sync)
@@ -184,6 +196,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task<LogPageResult> QueryLogsAsync(string runId, LogQuery q, CancellationToken ct = default)
     {
         var limit = Math.Clamp(q.Limit, 1, 1000);
@@ -218,6 +231,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         return true;
     }
 
+    /// <inheritdoc />
     public Task<LogFacets> GetLogFacetsAsync(string runId, LogQuery q, CancellationToken ct = default)
     {
         lock (sync)
@@ -256,6 +270,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         }
     }
 
+    /// <inheritdoc />
     public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -284,6 +299,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             query.Endpoint));
     }
 
+    /// <inheritdoc />
     public Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -313,6 +329,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             steps is null ? null : (e, s) => e >= 0 && e < steps.Count && s >= 0 && s < steps[e].Count ? steps[e][s].Name : null));
     }
 
+    /// <inheritdoc />
     public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
@@ -348,6 +365,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         return facts;
     }
 
+    /// <inheritdoc />
     public async Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default)
     {
         var runs = await ListRunsAsync(500, ct);
@@ -359,8 +377,10 @@ public sealed class InMemoryRunStorage : IRunStorage
         return new RunExportResult($"{safeRunId}.json", "application/json; charset=utf-8", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload));
     }
 
+    /// <inheritdoc />
     public Task<StoredRunSummary> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default) =>
         throw new NotSupportedException("Importing run files requires DuckDB storage.");
 
+    /// <inheritdoc />
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Beesharp.Storage</PackageId>
     <Description>Run storage abstractions, in-memory storage, and JSON preset/environment stores for Beesharp.</Description>
     <PackageTags>beesharp;load-testing;performance;storage</PackageTags>

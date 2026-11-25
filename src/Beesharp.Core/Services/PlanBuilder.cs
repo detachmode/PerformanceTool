@@ -21,36 +21,54 @@ public sealed class PlanBuilder
     private string? shutdownScriptId;
     private Func<IEnumerable<IShutdownProgram>?, string?>? shutdownResolver;
 
+    /// <summary>Sets the total run duration from a <see cref="TimeSpan"/>, rounded to at least 1 second.</summary>
+    /// <param name="duration">Total run duration.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Duration(TimeSpan duration)
     {
         durationSeconds = Math.Max(1, (int)Math.Round(duration.TotalSeconds));
         return this;
     }
 
+    /// <summary>Sets the total run duration in seconds.</summary>
+    /// <param name="seconds">Run duration in seconds.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder DurationSeconds(int seconds)
     {
         durationSeconds = seconds;
         return this;
     }
 
+    /// <summary>Sets the plan-wide maximum number of concurrent bees in flight.</summary>
+    /// <param name="maxConcurrency">Maximum concurrent executions allowed across the run.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder MaxConcurrency(int maxConcurrency)
     {
         this.maxConcurrency = maxConcurrency;
         return this;
     }
 
+    /// <summary>Sets the per-call/per-execution timeout from a <see cref="TimeSpan"/>, rounded to at least 1 second.</summary>
+    /// <param name="timeout">Timeout duration.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Timeout(TimeSpan timeout)
     {
         timeoutSeconds = Math.Max(1, (int)Math.Round(timeout.TotalSeconds));
         return this;
     }
 
+    /// <summary>Sets the per-call/per-execution timeout in seconds.</summary>
+    /// <param name="seconds">Timeout duration in seconds.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder TimeoutSeconds(int seconds)
     {
         timeoutSeconds = seconds;
         return this;
     }
 
+    /// <summary>Sets the optional preflight script ID to execute before scenarios start.</summary>
+    /// <param name="scriptId">Preflight program or script ID, or <see langword="null"/> to clear.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Preflight(string? scriptId)
     {
         preflightScriptId = scriptId;
@@ -59,6 +77,8 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Sets the preflight program by compiled C# class (resolved from registered <see cref="IPreflightProgram"/> instances).</summary>
+    /// <typeparam name="TPreflight">Registered preflight program type.</typeparam>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Preflight<TPreflight>() where TPreflight : class, IPreflightProgram
     {
         preflightScriptId = null;
@@ -66,6 +86,9 @@ public sealed class PlanBuilder
         return this;
     }
 
+    /// <summary>Sets the optional shutdown script ID to execute at the end of the run.</summary>
+    /// <param name="scriptId">Shutdown program or script ID, or <see langword="null"/> to clear.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Shutdown(string? scriptId)
     {
         shutdownScriptId = scriptId;
@@ -74,6 +97,8 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Sets the shutdown program by compiled C# class (resolved from registered <see cref="IShutdownProgram"/> instances).</summary>
+    /// <typeparam name="TShutdown">Registered shutdown program type.</typeparam>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Shutdown<TShutdown>() where TShutdown : class, IShutdownProgram
     {
         shutdownScriptId = null;
@@ -82,6 +107,11 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a linear-rate entry for a registered scenario using its default parameters.</summary>
+    /// <typeparam name="TScenario">Registered scenario type.</typeparam>
+    /// <param name="ratePerMinute">Target arrival rate in bees per minute.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Add<TScenario>(double ratePerMinute = 60, string? label = null, int? maxInFlight = null)
         where TScenario : IScenario
     {
@@ -91,6 +121,12 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a linear-rate entry for a registered scenario with typed parameters.</summary>
+    /// <typeparam name="TScenario">Registered scenario type.</typeparam>
+    /// <param name="parameters">Typed parameter object serialized to the entry's JSON configuration.</param>
+    /// <param name="ratePerMinute">Target arrival rate in bees per minute.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Add<TScenario>(object parameters, double ratePerMinute = 60, string? label = null, int? maxInFlight = null)
         where TScenario : IScenario
     {
@@ -101,6 +137,12 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a burst-pattern entry for a registered scenario using its default parameters.</summary>
+    /// <typeparam name="TScenario">Registered scenario type.</typeparam>
+    /// <param name="beesPerBurst">Number of bees spawned simultaneously in each burst.</param>
+    /// <param name="burstsPerMinute">Number of bursts triggered per minute.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder AddBurst<TScenario>(int beesPerBurst, double burstsPerMinute, string? label = null, int? maxInFlight = null)
         where TScenario : IScenario
     {
@@ -110,6 +152,13 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a burst-pattern entry for a registered scenario with typed parameters.</summary>
+    /// <typeparam name="TScenario">Registered scenario type.</typeparam>
+    /// <param name="parameters">Typed parameter object serialized to the entry's JSON configuration.</param>
+    /// <param name="beesPerBurst">Number of bees spawned simultaneously in each burst.</param>
+    /// <param name="burstsPerMinute">Number of bursts triggered per minute.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder AddBurst<TScenario>(object parameters, int beesPerBurst, double burstsPerMinute, string? label = null, int? maxInFlight = null)
         where TScenario : IScenario
     {
@@ -120,6 +169,12 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a linear-rate entry by scenario ID (for script scenarios or built-ins by string ID).</summary>
+    /// <param name="scenarioId">Identifier of the scenario to run.</param>
+    /// <param name="ratePerMinute">Target arrival rate in bees per minute.</param>
+    /// <param name="parameters">Optional JSON parameter overrides; cloned when provided.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name or ID.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder Add(string scenarioId, double ratePerMinute = 60, JsonObject? parameters = null, string? label = null, int? maxInFlight = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scenarioId);
@@ -129,6 +184,13 @@ public sealed class PlanBuilder
     }
 
     /// <summary>Adds a burst-pattern entry by scenario ID.</summary>
+    /// <param name="scenarioId">Identifier of the scenario to run.</param>
+    /// <param name="beesPerBurst">Number of bees spawned simultaneously in each burst.</param>
+    /// <param name="burstsPerMinute">Number of bursts triggered per minute.</param>
+    /// <param name="parameters">Optional JSON parameter overrides; cloned when provided.</param>
+    /// <param name="label">Optional display label for the entry; when omitted, derived from the scenario name or ID.</param>
+    /// <param name="maxInFlight">Optional concurrency cap for this entry; <see langword="null"/> uses the plan default.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public PlanBuilder AddBurst(string scenarioId, int beesPerBurst, double burstsPerMinute, JsonObject? parameters = null, string? label = null, int? maxInFlight = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scenarioId);
@@ -137,6 +199,11 @@ public sealed class PlanBuilder
         return this;
     }
 
+    /// <summary>Materializes the configured <see cref="LoadPlan"/>, resolving any typed scenarios or program classes.</summary>
+    /// <param name="catalog">Scenario catalog used to resolve typed scenario entries and normalize parameters.</param>
+    /// <param name="preflights">Registered preflight programs used when <see cref="Preflight{TPreflight}"/> was called.</param>
+    /// <param name="shutdowns">Registered shutdown programs used when <see cref="Shutdown{TShutdown}"/> was called.</param>
+    /// <returns>The constructed <see cref="LoadPlan"/>.</returns>
     public LoadPlan Build(
         ScenarioCatalog? catalog = null,
         IEnumerable<IPreflightProgram>? preflights = null,

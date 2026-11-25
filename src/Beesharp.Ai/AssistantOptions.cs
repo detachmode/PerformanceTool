@@ -6,14 +6,18 @@ namespace Beesharp.Ai;
 /// </summary>
 public sealed class AssistantOptions
 {
+    /// <summary>Configuration section name (<c>AI</c>) used when binding <see cref="AssistantOptions"/>.</summary>
     public const string SectionName = "AI";
+    /// <summary>Identifier for the OpenAI and OpenAI-compatible provider (<c>OpenAI</c>).</summary>
     public const string OpenAiProvider = "OpenAI";
 
     /// <summary>Today only <c>OpenAI</c> (any OpenAI-compatible server through <see cref="Endpoint"/>).</summary>
     public string Provider { get; set; } = OpenAiProvider;
     /// <summary>Optional base URL of an OpenAI-compatible server (OpenAI, Azure's <c>/openai/v1</c>, Ollama <c>/v1</c>, LM Studio, vLLM, OpenRouter, ...). Empty = OpenAI.</summary>
     public string? Endpoint { get; set; }
+    /// <summary>API key sent to the configured provider; optional when using local servers via <see cref="Endpoint"/>.</summary>
     public string? ApiKey { get; set; }
+    /// <summary>Model identifier passed to the chat client (required for the assistant to be enabled).</summary>
     public string? Model { get; set; }
     /// <summary>Replaces the built-in system prompt when set.</summary>
     public string? SystemPrompt { get; set; }
@@ -24,7 +28,7 @@ public sealed class AssistantOptions
     /// <summary>A conversation nobody wrote to for this many minutes is dropped.</summary>
     public int SessionIdleMinutes { get; set; } = 240;
 
-    /// <summary>Why the assistant is not usable, or null when it is. Without a model there is no assistant.</summary>
+    /// <summary>Why the assistant is not usable, or <see langword="null"/> when it is. Without a model there is no assistant.</summary>
     public string? NotConfiguredReason
     {
         get
@@ -38,5 +42,6 @@ public sealed class AssistantOptions
         }
     }
 
+    /// <summary>Gets a value indicating whether the assistant has a valid configuration and can accept chat requests.</summary>
     public bool IsConfigured => NotConfiguredReason is null;
 }

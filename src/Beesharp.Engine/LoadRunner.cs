@@ -11,10 +11,27 @@ namespace Beesharp.Services;
 /// how long earlier executions take. If <see cref="LoadPlan.MaxConcurrency"/> executions are already in flight,
 /// the run is dropped and reported instead of queued. See docs/brain/0004-open-model-rate-scheduling.md.
 /// </summary>
+/// <param name="catalog">The catalog used to resolve scenario definitions referenced by <see cref="LoadPlan.Scenarios"/>.</param>
 public sealed class LoadRunner(ScenarioCatalog catalog)
 {
+    /// <summary>Gets the scenario catalog used by this runner.</summary>
     public ScenarioCatalog Catalog => catalog;
 
+    /// <summary>
+    /// Executes the specified <paramref name="plan"/> as an open-model load test, scheduling each scenario entry on its configured cadence
+    /// until the duration elapses or <paramref name="ct"/> is canceled, then waiting for in-flight executions and running teardown hooks.
+    /// </summary>
+    /// <param name="plan">The load plan specifying duration, concurrency limits, timeouts, and scenario entries.</param>
+    /// <param name="onResult">Callback invoked for each completed, timed-out, failed, or canceled bee execution.</param>
+    /// <param name="onDropped">Callback invoked with the zero-based scenario entry index whenever a scheduled bee is dropped due to concurrency limits.</param>
+    /// <param name="ct">A token used to stop scheduling and cancel in-flight bee executions.</param>
+    /// <param name="onActivity">Optional callback invoked whenever a bee starts or finishes, reporting updated in-flight counts.</param>
+    /// <param name="environment">Optional environment definition used to resolve <c>{{Key}}</c> placeholders in scenario parameters.</param>
+    /// <param name="onLiveLog">Optional sink receiving structured log events emitted by startup hooks and executing bees in real time.</param>
+    /// <param name="data">Optional runtime data container holding the shared run bag and per-entry bags; a new instance is created when null.</param>
+    /// <param name="onBeeContext">Optional callback invoked immediately before a bee executes, providing its sequence number, entry index, and <see cref="ScenarioContext"/>.</param>
+    /// <param name="clock">Optional run clock supporting pause and resume; a new clock is created when null.</param>
+    /// <returns>A task that completes when all scheduled entries and in-flight bees have finished and teardown hooks have run.</returns>
     public async Task RunAsync(
         LoadPlan plan,
         Func<ExecutionResult, ValueTask> onResult,

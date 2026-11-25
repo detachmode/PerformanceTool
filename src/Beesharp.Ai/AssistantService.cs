@@ -6,7 +6,11 @@ using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Ai;
 
+/// <summary>Thrown when a chat request is sent while the assistant is not configured.</summary>
+/// <param name="reason">Human-readable explanation of the missing or invalid configuration.</param>
 public sealed class AssistantNotConfiguredException(string reason) : Exception(reason);
+
+/// <summary>Thrown when a conversation already has an in-flight turn.</summary>
 public sealed class AssistantBusyException() : Exception("The assistant is still working on the previous message of this conversation.");
 
 /// <summary>
@@ -29,6 +33,17 @@ public sealed class AssistantService
     private IChatClient? client;
     private readonly Lock clientLock = new();
 
+    /// <summary>Initializes a new instance of the <see cref="AssistantService"/> class.</summary>
+    /// <param name="options">Assistant configuration options.</param>
+    /// <param name="factory">Factory that creates the underlying <see cref="IChatClient"/>.</param>
+    /// <param name="sessions">In-memory store of active chat sessions.</param>
+    /// <param name="plan">Port for reading and editing the Live plan and presets.</param>
+    /// <param name="run">Port for inspecting and controlling the current load run.</param>
+    /// <param name="history">Port for querying stored runs, bees, calls, and logs.</param>
+    /// <param name="environments">Port for reading and managing environments.</param>
+    /// <param name="scripts">Port for managing custom scenario and preflight scripts.</param>
+    /// <param name="catalog">Catalog of built-in and custom scenarios.</param>
+    /// <param name="logger">Logger used to record failed assistant turns.</param>
     public AssistantService(
         AssistantOptions options,
         IAssistantChatClientFactory factory,
@@ -53,11 +68,23 @@ public sealed class AssistantService
         this.logger = logger;
     }
 
+    /// <summary>Returns the current configuration status and active model of the assistant.</summary>
+    /// <returns>An <see cref="AssistantStatusDto"/> describing whether the assistant is ready to use.</returns>
     public AssistantStatusDto Status() =>
         options.IsConfigured ? new AssistantStatusDto(true, options.Model!.Trim()) : new AssistantStatusDto(false, null, options.NotConfiguredReason);
 
+    /// <summary>Deletes an in-memory conversation session.</summary>
+    /// <param name="sessionId">Identifier of the session to remove.</param>
+    /// <returns><see langword="true"/> if the session existed and was removed; otherwise, <see langword="false"/>.</returns>
     public bool DeleteSession(string sessionId) => sessions.Remove(sessionId);
 
+    /// <summary>Executes one user turn in a conversation, running model tool calls until a final answer or limit is reached.</summary>
+    /// <param name="request">The incoming chat request containing the optional session id and user message.</param>
+    /// <param name="ct">Cancellation token for the model and tool calls.</param>
+    /// <returns>An <see cref="AssistantTurnDto"/> containing the session id, recorded items, changed areas, and any error.</returns>
+    /// <exception cref="AssistantNotConfiguredException">Thrown when the assistant is not configured.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="AssistantChatRequest.Message"/> is empty or whitespace.</exception>
+    /// <exception cref="AssistantBusyException">Thrown when the target session is already processing another message.</exception>
     public async Task<AssistantTurnDto> ChatAsync(AssistantChatRequest request, CancellationToken ct)
     {
         if (options.NotConfiguredReason is { } reason) throw new AssistantNotConfiguredException(reason);

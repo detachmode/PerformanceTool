@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp.Ai.Contracts</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Beesharp.Ai.Contracts</PackageId>
     <Description>Wire DTOs for the Beesharp AI assistant HTTP API.</Description>
     <PackageTags>beesharp;load-testing;performance;ai;contracts</PackageTags>

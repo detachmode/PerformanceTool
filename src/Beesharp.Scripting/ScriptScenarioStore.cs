@@ -14,6 +14,7 @@ namespace Beesharp.Services;
 /// <summary>Globals object injected into every C# scenario script (brain 0040, 0057).</summary>
 public sealed class ScenarioScriptGlobals
 {
+    /// <summary>Host object through which the script defines and registers one or more scenarios.</summary>
     public required ScenarioScriptHost Scenario { get; init; }
     /// <summary>Matches the top-level <c>args</c> parameter in .NET file-based apps so <c>await scenario.DebugRunAsync(args);</c> compiles cleanly.</summary>
     public string[] args { get; init; } = [];
@@ -22,7 +23,7 @@ public sealed class ScenarioScriptGlobals
 /// <summary>
 /// Compiles, persists and test-runs custom C# scenario scripts (<c>.csx</c> / <c>.cs</c>) using Roslyn Scripting
 /// (brain 0040). Compiled scenarios are registered into <see cref="ScenarioCatalog"/> immediately so they work in
-/// the generated parameter editor, single test runs and full <see cref="LoadRunner"/> runs.
+/// the generated parameter editor, single test runs and full <c>LoadRunner</c> runs.
 /// </summary>
 public sealed class ScriptScenarioStore
 {
@@ -117,7 +118,11 @@ public sealed class ScriptScenarioStore
         IScenario Scenario,
         DateTimeOffset UpdatedUtc);
 
+    /// <summary>Initializes a new scenario script store backed by the given folder and catalog.</summary>
     /// <param name="directory">The scripts folder (<c>scripts</c>); preflights and shutdown programs have their own sub folders.</param>
+    /// <param name="catalog">The <see cref="ScenarioCatalog"/> into which compiled script scenarios are registered.</param>
+    /// <param name="environments">Optional environment store used to resolve placeholders during test runs.</param>
+    /// <param name="innerHandlerFactory">Optional factory for the inner <see cref="HttpMessageHandler"/> used by test runs.</param>
     public ScriptScenarioStore(
         string directory,
         ScenarioCatalog catalog,
@@ -131,6 +136,8 @@ public sealed class ScriptScenarioStore
     }
 
     /// <summary>Compiles every script file and registers the scenarios. Returns the files that did not compile or register (empty when all went well), so a caller can report them.</summary>
+    /// <param name="ct">Token to cancel reading, compiling, or registering scripts from disk.</param>
+    /// <returns>A read-only list of scripts that failed to compile or register, or an empty list if all succeeded.</returns>
     public async Task<IReadOnlyList<ScriptLoadProblem>> LoadAllFromDiskAsync(CancellationToken ct = default)
     {
         var problems = new List<ScriptLoadProblem>();
@@ -142,6 +149,8 @@ public sealed class ScriptScenarioStore
         return problems;
     }
 
+    /// <summary>Returns summaries of all compiled scenario scripts, ordered by scenario display name.</summary>
+    /// <returns>A read-only list of <see cref="ScriptScenarioSummary"/> entries.</returns>
     public IReadOnlyList<ScriptScenarioSummary> List()
     {
         lock (sync)
@@ -151,18 +160,31 @@ public sealed class ScriptScenarioStore
                 .ToList();
     }
 
+    /// <summary>Gets the summary for the scenario script with the specified identifier, or <see langword="null"/> if not found.</summary>
+    /// <param name="id">The script identifier.</param>
+    /// <returns>The matching <see cref="ScriptScenarioSummary"/>, or <see langword="null"/> if not found.</returns>
     public ScriptScenarioSummary? Get(string id)
     {
         lock (sync)
             return scripts.TryGetValue(id, out var s) ? ToSummary(s) : null;
     }
 
+    /// <summary>Finds the script identifier that registered the scenario with the specified scenario identifier.</summary>
+    /// <param name="scenarioId">The registered scenario identifier.</param>
+    /// <returns>The owning script identifier, or <see langword="null"/> if the scenario was not registered by a script in this store.</returns>
     public string? FindScriptIdForScenario(string scenarioId)
     {
         lock (sync)
             return scripts.Values.FirstOrDefault(s => string.Equals(s.Scenario.Id, scenarioId, StringComparison.OrdinalIgnoreCase))?.ScriptId;
     }
 
+    /// <summary>Compiles a C# scenario script, registers its scenario in the catalog, and optionally persists the source file to disk.</summary>
+    /// <param name="scriptId">Optional script identifier; derived from the registered scenario identifier when omitted.</param>
+    /// <param name="fileName">Optional file name shown in diagnostics and summaries.</param>
+    /// <param name="code">The C# scenario script source code.</param>
+    /// <param name="persist">When <see langword="true"/>, writes the script file to disk after successful compilation and registration.</param>
+    /// <param name="ct">Token to cancel compilation, registration, or persistence.</param>
+    /// <returns>A <see cref="ScriptCompileResult"/> containing compilation status, diagnostics, and the script summary on success.</returns>
     public async Task<ScriptCompileResult> CompileAndRegisterAsync(
         string? scriptId,
         string? fileName,
@@ -231,6 +253,9 @@ public sealed class ScriptScenarioStore
         return new ScriptCompileResult(true, ToSummary(stored), mapped);
     }
 
+    /// <summary>Unregisters the script's custom scenario from the catalog, removes it from memory, and deletes its file from disk.</summary>
+    /// <param name="scriptId">The script identifier to delete.</param>
+    /// <returns><see langword="true"/> if the script existed and was deleted; otherwise <see langword="false"/>.</returns>
     public bool Delete(string scriptId)
     {
         StoredScript? existing;
@@ -247,6 +272,12 @@ public sealed class ScriptScenarioStore
     /// Executes a single bee run of the compiled script (<c>StartupAsync</c> → <c>ExecuteAsync</c> → <c>TeardownAsync</c>)
     /// and returns status, timing, recorded HTTP calls and logs.
     /// </summary>
+    /// <param name="scriptOrScenarioId">The script identifier or registered scenario identifier to run.</param>
+    /// <param name="parameters">Optional JSON parameter overrides; defaults to the scenario's default parameters when <see langword="null"/>.</param>
+    /// <param name="environmentName">Optional environment name used to resolve <c>{{placeholder}}</c> values.</param>
+    /// <param name="timeoutSeconds">Execution timeout in seconds (clamped between 1 and 300).</param>
+    /// <param name="ct">Token to cancel the test run.</param>
+    /// <returns>A <see cref="ScriptTestRunResult"/> describing the outcome, timings, HTTP calls, logs, and step visits.</returns>
     public async Task<ScriptTestRunResult> TestRunAsync(
         string scriptOrScenarioId,
         JsonObject? parameters,
@@ -405,6 +436,12 @@ public sealed class ScriptScenarioStore
     }
 
     /// <summary>Starts a single-bee test run asynchronously so the UI can poll live steps, calls and logs as they happen.</summary>
+    /// <param name="scriptOrScenarioId">The script identifier or registered scenario identifier to run.</param>
+    /// <param name="parameters">Optional JSON parameter overrides; defaults to the scenario's default parameters when <see langword="null"/>.</param>
+    /// <param name="environmentName">Optional environment name used to resolve <c>{{placeholder}}</c> values.</param>
+    /// <param name="timeoutSeconds">Execution timeout in seconds (clamped between 1 and 300).</param>
+    /// <param name="ct">Token to cancel setup before the background test run starts.</param>
+    /// <returns>An initial <see cref="LiveTestRunStatusDto"/> snapshot containing the generated test run identifier.</returns>
     public async Task<LiveTestRunStatusDto> StartLiveTestRunAsync(
         string scriptOrScenarioId,
         JsonObject? parameters,
@@ -542,9 +579,15 @@ public sealed class ScriptScenarioStore
         return run.Snapshot();
     }
 
+    /// <summary>Gets the latest status snapshot for an active or recently finished live test run.</summary>
+    /// <param name="testRunId">The live test run identifier returned by <see cref="StartLiveTestRunAsync"/>.</param>
+    /// <returns>The current <see cref="LiveTestRunStatusDto"/> snapshot, or <see langword="null"/> if not found or pruned.</returns>
     public LiveTestRunStatusDto? GetLiveTestRun(string testRunId) =>
         liveTestRuns.TryGetValue(testRunId, out var run) ? run.Snapshot() : null;
 
+    /// <summary>Requests cancellation of an active live test run.</summary>
+    /// <param name="testRunId">The live test run identifier to cancel.</param>
+    /// <returns><see langword="true"/> if the test run was found; otherwise <see langword="false"/>.</returns>
     public bool StopLiveTestRun(string testRunId)
     {
         if (!liveTestRuns.TryGetValue(testRunId, out var run)) return false;

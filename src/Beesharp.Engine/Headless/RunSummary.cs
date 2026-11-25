@@ -3,20 +3,63 @@ using System.Text.Json;
 
 namespace Beesharp.Services;
 
+/// <summary>Number of bee failures attributed to a single scenario step.</summary>
+/// <param name="Step">Name of the step where bees failed.</param>
+/// <param name="Count">Number of bees that failed at <paramref name="Step"/>.</param>
 public sealed record StepFailureCount(string Step, int Count);
 
 /// <summary>One scenario entry in the summary. <see cref="Failed"/> includes the canceled bees (brain 0053). Times are milliseconds of the bees that did not fail; null when there were none.</summary>
+/// <param name="Number">One-based scenario entry index in the plan.</param>
+/// <param name="Label">Display label of the scenario entry, falling back to its scenario ID.</param>
+/// <param name="Started">Total number of bees started for this entry.</param>
+/// <param name="Finished">Total number of bees that finished (succeeded, failed, or canceled).</param>
+/// <param name="Failed">Total number of failed bees, including canceled bees.</param>
+/// <param name="Canceled">Number of bees canceled when the run was stopped.</param>
+/// <param name="Slow">Number of finished bees with at least one slow call.</param>
+/// <param name="Dropped">Number of scheduled bees dropped because too many were already in flight.</param>
+/// <param name="TypicalMs">Median (50th percentile) duration in milliseconds of successful bees, or <see langword="null"/> if none succeeded.</param>
+/// <param name="Slowest5PercentMs">95th percentile duration in milliseconds of successful bees, or <see langword="null"/> if none succeeded.</param>
+/// <param name="FailedPerStep">Optional breakdown of failures by step name when step metadata is available.</param>
+/// <param name="MinMs">Minimum duration in milliseconds of successful bees, or <see langword="null"/> if none succeeded.</param>
+/// <param name="AvgMs">Mean duration in milliseconds of successful bees, or <see langword="null"/> if none succeeded.</param>
+/// <param name="MaxMs">Maximum duration in milliseconds of successful bees, or <see langword="null"/> if none succeeded.</param>
 public sealed record EntrySummary(
     int Number, string Label, int Started, int Finished, int Failed, int Canceled, int Slow, int Dropped, double? TypicalMs, double? Slowest5PercentMs,
     IReadOnlyList<StepFailureCount>? FailedPerStep = null,
     double? MinMs = null, double? AvgMs = null, double? MaxMs = null);
 
+/// <summary>Aggregated count for a distinct bee error message.</summary>
+/// <param name="Error">Error message reported by failing bees.</param>
+/// <param name="Count">Number of bees that failed with <paramref name="Error"/>.</param>
 public sealed record ErrorCount(string Error, int Count);
 
 /// <summary>Preflight or shutdown program outcome: <c>None</c> (the preset has none), <c>Succeeded</c>, <c>Failed</c> or <c>NotRun</c>.</summary>
+/// <param name="State">Outcome state (<c>None</c>, <c>Succeeded</c>, <c>Failed</c>, or <c>NotRun</c>).</param>
+/// <param name="Script">Script name or ID, or <see langword="null"/> when none was configured.</param>
+/// <param name="Error">Error message if the program failed, or <see langword="null"/> otherwise.</param>
 public sealed record ProgramOutcome(string State, string? Script, string? Error);
 
 /// <summary>Everything the end of a run says (also the JSON written by <c>--json</c>). It uses the tool's words: bees, scenario entries, preflight, shutdown program (docs/context.md).</summary>
+/// <param name="Preset">Name of the executed preset.</param>
+/// <param name="Environment">Environment name used for placeholder resolution, or <see langword="null"/> if none was specified.</param>
+/// <param name="RunId">Unique identifier assigned to the run.</param>
+/// <param name="ElapsedSeconds">Total elapsed run duration in seconds.</param>
+/// <param name="Stopped">Whether the run was stopped early (for example via Ctrl+C).</param>
+/// <param name="RunError">Top-level run error message if the run failed unexpectedly, or <see langword="null"/>.</param>
+/// <param name="Bees">Total finished bees across all scenario entries.</param>
+/// <param name="FailedBees">Total failed bees (including canceled bees) across all scenario entries.</param>
+/// <param name="CanceledBees">Total canceled bees across all scenario entries.</param>
+/// <param name="SlowBees">Total slow bees across all scenario entries.</param>
+/// <param name="DroppedBees">Total dropped bees across all scenario entries.</param>
+/// <param name="Entries">Per-entry summaries in plan order.</param>
+/// <param name="TopErrors">Most frequent error messages across all failed bees.</param>
+/// <param name="Preflight">Outcome of the preflight script.</param>
+/// <param name="Shutdown">Outcome of the shutdown program.</param>
+/// <param name="StorageProvider">Name of the active storage provider (for example <c>DuckDb</c> or <c>Memory</c>).</param>
+/// <param name="SavedTo">Human-readable description of where the run was saved, or <see langword="null"/> if not persisted.</param>
+/// <param name="ExitCode">Process exit code determined by <see cref="ExitCodeFor"/>.</param>
+/// <param name="ExportedTo">Destination path if the run was exported, or <see langword="null"/>.</param>
+/// <param name="ExportedBytes">Byte size of the exported artifact, or <see langword="null"/> if not exported.</param>
 public sealed record RunSummary(
     string Preset,
     string? Environment,
@@ -41,9 +84,17 @@ public sealed record RunSummary(
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
+    /// <summary>Serializes this summary as indented JSON using web defaults.</summary>
+    /// <returns>The JSON representation of this <see cref="RunSummary"/>.</returns>
     public string ToJson() => JsonSerializer.Serialize(this, JsonOpts);
 
     /// <summary>The exit code for a finished run (brain 0054): 2 could not run, 1 a bee failed or canceled / stopped / shutdown program failed, else 0.</summary>
+    /// <param name="runError">Top-level run error, if any.</param>
+    /// <param name="preflightState">Preflight outcome state.</param>
+    /// <param name="stopped">Whether the run was stopped early.</param>
+    /// <param name="failedBees">Total count of failed (including canceled) bees.</param>
+    /// <param name="shutdownState">Shutdown program outcome state.</param>
+    /// <returns>One of the <see cref="HeadlessExitCodes"/> constants.</returns>
     public static int ExitCodeFor(string? runError, string? preflightState, bool stopped, int failedBees, string? shutdownState)
     {
         if (stopped) return HeadlessExitCodes.BeesFailed; // a stopped run is not "could not run", even when it was stopped during the preflight
@@ -53,6 +104,16 @@ public sealed record RunSummary(
     }
 
     /// <summary>Builds the summary from the final status and all bees of a run.</summary>
+    /// <param name="preset">Preset name executed.</param>
+    /// <param name="environment">Optional environment name used for the run.</param>
+    /// <param name="status">Final live run status snapshot.</param>
+    /// <param name="bees">All recorded bees for the run.</param>
+    /// <param name="stopped">Whether the run was stopped via cancellation.</param>
+    /// <param name="savedTo">Optional display string describing where the run was saved.</param>
+    /// <param name="topErrors">Maximum number of top distinct errors to include.</param>
+    /// <param name="exportedTo">Optional destination path of an exported run archive/file.</param>
+    /// <param name="exportedBytes">Optional byte length of the exported artifact.</param>
+    /// <returns>A populated <see cref="RunSummary"/> instance.</returns>
     public static RunSummary Build(
         string preset, string? environment, LiveRunStatusDto status, IReadOnlyList<LiveBeeDto> bees, bool stopped, string? savedTo, int topErrors = 5,
         string? exportedTo = null, long? exportedBytes = null)
@@ -111,10 +172,14 @@ public sealed record RunSummary(
         new(state ?? "None", script, error);
 
     /// <summary>Nearest-rank percentile of a sorted array.</summary>
+    /// <param name="sorted">Ascending-sorted array of numeric values (must be non-empty).</param>
+    /// <param name="p">Percentile fraction in the range <c>[0, 1]</c> (for example <c>0.5</c> or <c>0.95</c>).</param>
+    /// <returns>The value at the nearest-rank percentile.</returns>
     public static double Percentile(double[] sorted, double p) =>
         sorted[Math.Clamp((int)Math.Ceiling(p * sorted.Length) - 1, 0, sorted.Length - 1)];
 
     /// <summary>Plain text for terminals and CI logs: no colour codes, no cursor tricks.</summary>
+    /// <returns>Multi-line human-readable summary text.</returns>
     public string ToText()
     {
         var sb = new StringBuilder();
@@ -175,9 +240,15 @@ public sealed record RunSummary(
         _ => $"{o.State.ToLowerInvariant()} ({o.Script})",
     };
 
+    /// <summary>Formats a duration in seconds as either <c>0.0 s</c> or <c>M min S s</c>.</summary>
+    /// <param name="seconds">Duration in seconds.</param>
+    /// <returns>Human-readable duration string.</returns>
     public static string Duration(double seconds) =>
         seconds < 60 ? $"{seconds:0.0} s" : $"{(int)(seconds / 60)} min {(int)(seconds % 60)} s";
 
+    /// <summary>Formats an elapsed time in seconds as <c>MM:SS</c> or <c>HH:MM:SS</c>.</summary>
+    /// <param name="seconds">Elapsed seconds (negative values are clamped to zero).</param>
+    /// <returns>Clock-formatted timestamp string.</returns>
     public static string FormatClock(double seconds)
     {
         var total = Math.Max(0, (int)Math.Floor(seconds));
@@ -187,8 +258,14 @@ public sealed record RunSummary(
         return h > 0 ? $"{h:00}:{m:00}:{s:00}" : $"{m:00}:{s:00}";
     }
 
+    /// <summary>Formats a duration in milliseconds as <c>-</c>, whole milliseconds (<c>ms</c>), or seconds (<c>s</c>).</summary>
+    /// <param name="ms">Duration in milliseconds, or <see langword="null"/> when unavailable.</param>
+    /// <returns>Formatted duration string.</returns>
     public static string Ms(double? ms) => ms is null ? "-" : ms.Value >= 1000 ? $"{ms.Value / 1000:0.00} s" : $"{ms.Value:0} ms";
 
+    /// <summary>Formats a byte count into <c>B</c>, <c>KB</c>, or <c>MB</c>.</summary>
+    /// <param name="bytes">Size in bytes.</param>
+    /// <returns>Human-readable byte size string.</returns>
     public static string FormatBytes(long bytes) => bytes switch
     {
         < 1024 => $"{bytes} B",
@@ -196,6 +273,10 @@ public sealed record RunSummary(
         _ => $"{bytes / (1024.0 * 1024.0):0.0} MB",
     };
 
+    /// <summary>Collapses line endings and truncates an error message to at most <paramref name="maxLength"/> characters.</summary>
+    /// <param name="error">Error text to shorten.</param>
+    /// <param name="maxLength">Maximum length of the returned string, including ellipsis when truncated.</param>
+    /// <returns>Single-line shortened error string.</returns>
     public static string Shorten(string error, int maxLength = 110)
     {
         var line = error.ReplaceLineEndings(" ").Trim();

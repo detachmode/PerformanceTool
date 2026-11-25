@@ -21,6 +21,13 @@ public static class ScriptSdkDropper
         </configuration>
         """;
 
+    /// <summary>
+    /// Copies the bundled <c>Beesharp.Core</c> NuGet package and reference assemblies into <c>&lt;scriptsDirectory&gt;/.beesharp/</c>
+    /// and ensures a minimal <c>NuGet.config</c> exists when one is not already present.
+    /// </summary>
+    /// <param name="scriptsDirectory">The root scripts directory into which <c>.beesharp/</c> and <c>NuGet.config</c> are written.</param>
+    /// <param name="sdkSourceDirectory">Optional directory containing <c>Beesharp.Core.*.nupkg</c>; defaults to <c>&lt;AppContext.BaseDirectory&gt;/sdk</c>.</param>
+    /// <param name="binDirectory">Optional directory containing <c>Beesharp.Core.dll</c> and <c>Beesharp.Core.xml</c>; defaults to <see cref="AppContext.BaseDirectory"/>.</param>
     public static void Sync(string scriptsDirectory, string? sdkSourceDirectory = null, string? binDirectory = null)
     {
         if (string.IsNullOrWhiteSpace(scriptsDirectory)) return;

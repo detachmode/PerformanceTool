@@ -12,34 +12,106 @@ using System.Text.RegularExpressions;
 namespace Beesharp.Services.Scenarios.Spec;
 
 /// <summary>How a parameter is edited. Derived from the property's C# type and attributes, never set by hand.</summary>
-public enum FieldKind { Text, Multiline, Url, Secret, Toggle, Choice, Integer, Slider, Number, Duration, List, KeyValue, Group }
+public enum FieldKind
+{
+    /// <summary>Single-line text input.</summary>
+    Text,
 
+    /// <summary>Multi-line textarea input (marked with <see cref="MultilineAttribute"/>).</summary>
+    Multiline,
+
+    /// <summary>HTTP/HTTPS URL input (marked with <see cref="HttpUrlAttribute"/>).</summary>
+    Url,
+
+    /// <summary>Masked secret input (marked with <see cref="SecretAttribute"/>).</summary>
+    Secret,
+
+    /// <summary>Boolean toggle switch.</summary>
+    Toggle,
+
+    /// <summary>Selection from discrete enum or schema-defined choices.</summary>
+    Choice,
+
+    /// <summary>Whole-number input (<see cref="int"/> or <see cref="long"/>).</summary>
+    Integer,
+
+    /// <summary>Bounded integer slider (<see cref="int"/> or <see cref="long"/> with a <see cref="RangeAttribute"/> span of at most 20).</summary>
+    Slider,
+
+    /// <summary>Floating-point or decimal numeric input (<see cref="double"/>, <see cref="float"/>, or <see cref="decimal"/>).</summary>
+    Number,
+
+    /// <summary>Duration input bound to a <see cref="TimeSpan"/>.</summary>
+    Duration,
+
+    /// <summary>Ordered list of strings (<c>string[]</c>, <see cref="List{T}"/>, <see cref="IList{T}"/>, or <see cref="IReadOnlyList{T}"/> of <see cref="string"/>).</summary>
+    List,
+
+    /// <summary>Key-value string map (<see cref="Dictionary{TKey, TValue}"/> of <see cref="string"/> to <see cref="string"/>).</summary>
+    KeyValue,
+
+    /// <summary>Nested parameter class rendered as a grouped section of child fields.</summary>
+    Group,
+}
+
+/// <summary>One selectable option for a <see cref="FieldKind.Choice"/> parameter field.</summary>
+/// <param name="Value">The serialized enum member name or JSON string value.</param>
+/// <param name="Label">The human-readable display label shown in the editor and summary.</param>
 public sealed record ChoiceOption(string Value, string Label);
 
 /// <summary>Editor/validation metadata for one property of a parameter class (or JSON Schema property on the client).</summary>
 public sealed class FieldSpec
 {
+    /// <summary>The CLR property backing this field, or <see langword="null"/> when constructed from a JSON Schema.</summary>
     public PropertyInfo? Property { get; init; }
+
+    /// <summary>The camelCase or <see cref="JsonPropertyNameAttribute"/>-configured JSON key used in presets and schemas.</summary>
     public required string JsonName { get; init; }
+
+    /// <summary>The display label shown in the editor, validation messages, and summaries.</summary>
     public required string Label { get; init; }
+
+    /// <summary>The derived editor control kind for this field.</summary>
     public required FieldKind Kind { get; init; }
+
+    /// <summary>Optional help text from <see cref="DisplayAttribute"/>, <see cref="DescriptionAttribute"/>, or JSON Schema <c>description</c>.</summary>
     public string? Description { get; init; }
+
+    /// <summary>Optional input placeholder text from <see cref="DisplayAttribute.Prompt"/>.</summary>
     public string? Placeholder { get; init; }
+
+    /// <summary>Whether a non-empty value is required (<see cref="RequiredAttribute"/>, <see cref="MinLengthAttribute"/> &gt;= 1, or schema <c>required</c>).</summary>
     public bool Required { get; init; }
+
     /// <summary>The property is nullable (e.g. <c>int?</c> or <c>string?</c>), so "empty" / <c>null</c> is a valid value.</summary>
     public bool Nullable { get; init; }
+
+    /// <summary>Optional inclusive minimum numeric value from <see cref="RangeAttribute"/> or JSON Schema <c>minimum</c>.</summary>
     public double? Min { get; init; }
+
+    /// <summary>Optional inclusive maximum numeric value from <see cref="RangeAttribute"/> or JSON Schema <c>maximum</c>.</summary>
     public double? Max { get; init; }
+
+    /// <summary>Selectable options when <see cref="Kind"/> is <see cref="FieldKind.Choice"/>.</summary>
     public IReadOnlyList<ChoiceOption> Options { get; init; } = [];
+
+    /// <summary>Nested parameter specification when <see cref="Kind"/> is <see cref="FieldKind.Group"/>.</summary>
     public ParameterSpec? Children { get; init; }
+
+    /// <summary>Whether entries in a <see cref="FieldKind.List"/> field represent HTTP/HTTPS URLs.</summary>
     public bool ItemsAreUrls { get; init; }
+
     /// <summary>Shown only under "More options" in the editor.</summary>
     public bool Advanced { get; init; }
+
     /// <summary>Default JSON value when constructed from a JSON Schema (no CLR <see cref="Property"/>).</summary>
     public JsonNode? SchemaDefault { get; init; }
 
+    /// <summary>Whether leaving this field empty is treated as optional in the editor UI.</summary>
     public bool Optional => !Required && (Nullable || Kind is FieldKind.Text or FieldKind.Multiline or FieldKind.Url
         or FieldKind.Secret or FieldKind.List or FieldKind.KeyValue);
+
+    /// <summary>Whether this field spans a full-width editor row.</summary>
     public bool Wide => Kind is FieldKind.Multiline or FieldKind.Url or FieldKind.List or FieldKind.KeyValue or FieldKind.Group;
 }
 
@@ -54,6 +126,7 @@ public sealed partial class ParameterSpec
     private static readonly ConcurrentDictionary<Type, ParameterSpec> Cache = new();
     private static readonly NullabilityInfoContext Nullability = new();
 
+    /// <summary>Shared JSON serializer options used when serializing and binding scenario parameters.</summary>
     public static JsonSerializerOptions JsonOptions { get; } = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -71,17 +144,26 @@ public sealed partial class ParameterSpec
         IsSchemaOnly = isSchemaOnly;
     }
 
+    /// <summary>The parameter CLR type, or <see cref="JsonObject"/> when <see cref="IsSchemaOnly"/> is <see langword="true"/>.</summary>
     public Type Type { get; }
+
+    /// <summary>The ordered list of editable fields derived from the parameter type or JSON Schema.</summary>
     public IReadOnlyList<FieldSpec> Fields { get; }
+
+    /// <summary>Whether this spec was built from a JSON Schema rather than a CLR parameter type.</summary>
     public bool IsSchemaOnly { get; }
 
     /// <summary>Returns the (cached) spec. Throws <see cref="NotSupportedException"/> for unsupported property types.</summary>
+    /// <param name="type">The CLR parameter class or record type to inspect.</param>
+    /// <returns>The cached <see cref="ParameterSpec"/> describing <paramref name="type"/>.</returns>
     public static ParameterSpec For(Type type) => Cache.TryGetValue(type, out var spec) ? spec : Cache.GetOrAdd(type, Build(type));
 
     /// <summary>
     /// Reconstructs a schema-only <see cref="ParameterSpec"/> from the JSON Schema returned by <c>GET /api/scenarios</c>.
     /// Used by the Blazor WebAssembly client to render the generated parameter editor for server-compiled C# scripts.
     /// </summary>
+    /// <param name="schema">The JSON Schema object describing the parameter properties.</param>
+    /// <returns>A schema-only <see cref="ParameterSpec"/> whose <see cref="Type"/> is <see cref="JsonObject"/>.</returns>
     public static ParameterSpec FromJsonSchema(JsonObject schema)
     {
         var fields = new List<FieldSpec>();
@@ -282,6 +364,8 @@ public sealed partial class ParameterSpec
 
     // ---------- values ----------
 
+    /// <summary>Creates a new parameter instance populated with its default property values (or a default <see cref="JsonObject"/> when schema-only).</summary>
+    /// <returns>A default instance of <see cref="Type"/>, or a <see cref="JsonObject"/> if <see cref="IsSchemaOnly"/> is <see langword="true"/>.</returns>
     public object CreateDefault()
     {
         if (IsSchemaOnly) return DefaultJson();
@@ -291,6 +375,8 @@ public sealed partial class ParameterSpec
         return defaultCtor.Invoke(args);
     }
 
+    /// <summary>Builds a <see cref="JsonObject"/> containing the default serialized value for every field in this spec.</summary>
+    /// <returns>A new <see cref="JsonObject"/> populated with default values.</returns>
     public JsonObject DefaultJson()
     {
         if (!IsSchemaOnly) return ToJson(CreateDefault());
@@ -313,10 +399,16 @@ public sealed partial class ParameterSpec
         return obj;
     }
 
+    /// <summary>Serializes a parameter instance (or clones an existing <see cref="JsonObject"/>) into the preset JSON representation.</summary>
+    /// <param name="value">A typed parameter instance of <see cref="Type"/> or a <see cref="JsonObject"/>.</param>
+    /// <returns>A <see cref="JsonObject"/> representing <paramref name="value"/>.</returns>
     public JsonObject ToJson(object value) =>
         value is JsonObject jo ? (JsonObject)jo.DeepClone() : (JsonObject)JsonSerializer.SerializeToNode(value, Type, JsonOptions)!;
 
     /// <summary>Binds and re-serialises: fills defaults, drops unknown keys, converts legacy shapes.</summary>
+    /// <param name="json">The stored parameter JSON object, or <see langword="null"/> to produce defaults.</param>
+    /// <param name="problems">Optional list to receive human-readable warnings for values that could not be read.</param>
+    /// <returns>A normalized <see cref="JsonObject"/> matching the current schema.</returns>
     public JsonObject Normalize(JsonObject? json, List<string>? problems = null)
     {
         if (IsSchemaOnly)
@@ -341,6 +433,10 @@ public sealed partial class ParameterSpec
     /// shape are converted where possible (e.g. a multiline string into a list); anything else is reported in
     /// <paramref name="problems"/> and replaced by the default.
     /// </summary>
+    /// <param name="json">The stored parameter JSON object, or <see langword="null"/> to create defaults.</param>
+    /// <param name="problems">Optional list to receive human-readable warnings for invalid or unreadable field values.</param>
+    /// <param name="prefix">Label prefix prepended to nested group problem messages.</param>
+    /// <returns>A bound instance of <see cref="Type"/>, or a normalized <see cref="JsonObject"/> when <see cref="IsSchemaOnly"/> is <see langword="true"/>.</returns>
     public object Bind(JsonObject? json, List<string>? problems = null, string prefix = "")
     {
         if (IsSchemaOnly) return Normalize(json, problems);
@@ -420,6 +516,8 @@ public sealed partial class ParameterSpec
     // ---------- validation ----------
 
     /// <summary>Validates stored values with the DataAnnotations on the parameter class (recursively).</summary>
+    /// <param name="json">The parameter JSON object to validate, or <see langword="null"/> to validate defaults.</param>
+    /// <returns>A list of validation error messages; empty when valid.</returns>
     public List<string> Validate(JsonObject? json)
     {
         if (IsSchemaOnly)
@@ -434,6 +532,8 @@ public sealed partial class ParameterSpec
     /// Same checks as <see cref="Validate"/>, but per field, for inline messages. Keys are the field's JSON name, nested
     /// groups joined with "-" (matching the editor's element ids); "" holds messages that belong to no single field.
     /// </summary>
+    /// <param name="json">The parameter JSON object to validate, or <see langword="null"/> to validate defaults.</param>
+    /// <returns>A map from field key (or <c>""</c> for object-level errors) to its validation error messages.</returns>
     public Dictionary<string, List<string>> ValidateByField(JsonObject? json)
     {
         var map = new Dictionary<string, List<string>>();
@@ -525,6 +625,9 @@ public sealed partial class ParameterSpec
     [GeneratedRegex(@"^\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}$")]
     private static partial Regex EnvReference();
 
+    /// <summary>Determines whether <paramref name="value"/> is an environment-variable reference of the form <c>${env:NAME}</c>.</summary>
+    /// <param name="value">The raw string value to test.</param>
+    /// <returns><see langword="true"/> if <paramref name="value"/> matches <c>${env:NAME}</c> (ignoring surrounding whitespace); otherwise, <see langword="false"/>.</returns>
     public static bool IsEnvReference(string? value) => value is not null && EnvReference().IsMatch(value.Trim());
 
     /// <summary>A secret value that is just a <c>{{Key}}</c> placeholder holds no secret itself, so presets keep it (brain 0033).</summary>
@@ -532,6 +635,8 @@ public sealed partial class ParameterSpec
         Services.Environments.Placeholders.Split(value.Trim()) is [{ IsPlaceholder: true }];
 
     /// <summary>Blanks secret values that aren't <c>${env:NAME}</c> references. Returns how many were removed.</summary>
+    /// <param name="json">The parameter JSON object to sanitize in place.</param>
+    /// <returns>The number of secret field values blanked across this spec and any nested groups.</returns>
     public int StripSecrets(JsonObject json)
     {
         var removed = 0;
@@ -550,6 +655,7 @@ public sealed partial class ParameterSpec
     }
 
     /// <summary>Replaces <c>${env:NAME}</c> in secret fields of a bound instance with the environment variable's value.</summary>
+    /// <param name="obj">The bound parameter instance whose secret properties should be resolved in place.</param>
     public void ResolveSecrets(object obj)
     {
         if (IsSchemaOnly) return;
@@ -565,6 +671,8 @@ public sealed partial class ParameterSpec
 
     // ---------- JSON Schema (for the API, CLI and coding harnesses) ----------
 
+    /// <summary>Generates a JSON Schema object describing all fields, defaults, constraints, and editor hints (<c>x-editor</c>).</summary>
+    /// <returns>A JSON Schema <see cref="JsonObject"/> for this parameter specification.</returns>
     public JsonObject ToJsonSchema()
     {
         var defaults = DefaultJson();

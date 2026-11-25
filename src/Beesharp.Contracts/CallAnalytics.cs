@@ -4,6 +4,26 @@ using Beesharp.Services.Scenarios;
 namespace Beesharp.Contracts;
 
 /// <summary>One flat call record fed into <see cref="CallAnalytics"/> by DuckDB, InMemory storage, or the client's Fake store.</summary>
+/// <param name="Id">Unique call record identifier.</param>
+/// <param name="Sequence">Zero-based global bee execution sequence number.</param>
+/// <param name="Entry">Zero-based scenario entry index in the load plan.</param>
+/// <param name="Step">Zero-based step index during which this call was recorded.</param>
+/// <param name="Rep">Zero-based repetition index within the step.</param>
+/// <param name="StartedAtSeconds">Run-relative start time of the parent bee in seconds.</param>
+/// <param name="OffsetMs">Start offset of the call in milliseconds relative to the bee's execution start.</param>
+/// <param name="DurationMs">Total call duration in milliseconds.</param>
+/// <param name="StatusCode">Optional HTTP or custom status code returned by the call.</param>
+/// <param name="Bytes">Number of payload bytes transferred.</param>
+/// <param name="Error">Optional error message if the call failed.</param>
+/// <param name="RawName">Raw unnormalized call name.</param>
+/// <param name="Url">Optional full request URL.</param>
+/// <param name="Endpoint">Optional normalized endpoint key; falls back to normalizing <see cref="RawName"/> when blank.</param>
+/// <param name="Method">Optional HTTP method (for example <c>GET</c>, <c>POST</c>).</param>
+/// <param name="Host">Optional target host name.</param>
+/// <param name="SlowThresholdMs">Optional explicit slow threshold in milliseconds for this call.</param>
+/// <param name="TtfbMs">Optional time-to-first-byte in milliseconds when HTTP timing split is enabled.</param>
+/// <param name="ResponseReadMs">Optional response body read duration in milliseconds when HTTP timing split is enabled.</param>
+/// <param name="Headers">Optional captured request/response headers for slow or failed calls.</param>
 public readonly record struct CallFact(
     long Id,
     int Sequence,
@@ -26,7 +46,10 @@ public readonly record struct CallFact(
     double? ResponseReadMs = null,
     IReadOnlyDictionary<string, string>? Headers = null)
 {
+    /// <summary>Gets the run-relative timestamp in seconds at which the call started.</summary>
     public double AtSeconds => StartedAtSeconds + OffsetMs / 1000.0;
+
+    /// <summary>Gets the normalized endpoint key, falling back to normalizing <see cref="RawName"/> when <see cref="Endpoint"/> is blank.</summary>
     public string NormalizedEndpoint => string.IsNullOrWhiteSpace(Endpoint) ? EndpointNormalizer.NormalizeCallName(RawName) : Endpoint.Trim();
 }
 
@@ -40,6 +63,9 @@ public static class CallAnalytics
     private static readonly double[] NiceMsSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10_000, 20_000, 50_000, 100_000];
 
     /// <summary>Resolves 0-based scenario entry indices matching a scenario ID or display label (case-insensitive).</summary>
+    /// <param name="plan">The load plan whose scenario entries are searched.</param>
+    /// <param name="scenarioFilter">Scenario ID or display label to match (leading/trailing whitespace is trimmed).</param>
+    /// <returns>A set of matching 0-based scenario entry indices.</returns>
     public static HashSet<int> ResolveScenarioEntries(LoadPlan plan, string scenarioFilter)
     {
         var needle = scenarioFilter.Trim();
@@ -56,6 +82,22 @@ public static class CallAnalytics
         return set;
     }
 
+    /// <summary>
+    /// Groups recorded calls into canonical endpoints (or endpoint/entry/step buckets when <paramref name="byStep"/> is <see langword="true"/>)
+    /// and computes latency percentiles, slow/failure counts, and totals.
+    /// </summary>
+    /// <param name="allCalls">All recorded call facts for the run.</param>
+    /// <param name="entry">Optional 0-based scenario entry index filter.</param>
+    /// <param name="slowOnly">When <see langword="true"/>, keeps only endpoints with at least one slow call.</param>
+    /// <param name="failedOnly">When <see langword="true"/>, keeps only endpoints with at least one failed call.</param>
+    /// <param name="minMs">Optional minimum maximum-duration filter in milliseconds.</param>
+    /// <param name="search">Optional case-insensitive substring filter matched against endpoint, host, or step name.</param>
+    /// <param name="step">Optional 0-based step index filter.</param>
+    /// <param name="byStep">When <see langword="true"/>, produces separate summaries per (endpoint, entry, step) instead of merging across steps.</param>
+    /// <param name="resolveStepName">Optional callback resolving a human-readable step name from <c>(entry, step)</c>.</param>
+    /// <param name="entries">Optional set of allowed 0-based scenario entry indices.</param>
+    /// <param name="endpointFilter">Optional case-insensitive substring filter matched strictly against the canonical endpoint name.</param>
+    /// <returns>A <see cref="CallEndpointsResult"/> containing sorted summaries and aggregate call totals.</returns>
     public static CallEndpointsResult BuildEndpoints(
         IReadOnlyList<CallFact> allCalls,
         int? entry = null,
@@ -155,6 +197,19 @@ public static class CallAnalytics
     /// Returns the top-<paramref name="limit"/> slowest individual calls matching the optional filters,
     /// with slowness evaluated per (endpoint, entry, step) so shared URLs keep independent baselines.
     /// </summary>
+    /// <param name="allCalls">All recorded call facts for the run.</param>
+    /// <param name="limit">Maximum number of calls to return (clamped to <c>1..1000</c>).</param>
+    /// <param name="entry">Optional 0-based scenario entry index filter.</param>
+    /// <param name="entries">Optional set of allowed 0-based scenario entry indices.</param>
+    /// <param name="step">Optional 0-based step index filter.</param>
+    /// <param name="endpointFilter">Optional case-insensitive substring filter matched against the canonical endpoint name.</param>
+    /// <param name="slowOnly">When <see langword="true"/>, includes only calls classified as slow.</param>
+    /// <param name="failedOnly">When <see langword="true"/>, includes only failed calls.</param>
+    /// <param name="minMs">Optional minimum call duration filter in milliseconds.</param>
+    /// <param name="search">Optional case-insensitive substring filter matched against endpoint, URL, host, or step name.</param>
+    /// <param name="resolveEntryLabel">Optional callback resolving a display label from a 0-based scenario entry index.</param>
+    /// <param name="resolveStepName">Optional callback resolving a human-readable step name from <c>(entry, step)</c>.</param>
+    /// <returns>A <see cref="SlowestCallsResult"/> containing up to <paramref name="limit"/> calls sorted by descending duration and the total matching count.</returns>
     public static SlowestCallsResult BuildSlowestCalls(
         IReadOnlyList<CallFact> allCalls,
         int limit,
@@ -266,6 +321,8 @@ public static class CallAnalytics
     /// Aggregates per-(entry, step) call latency percentiles (min/p50/p95/max/avg) and slow/failed counts.
     /// Slowness is evaluated per (endpoint, entry, step) so steps sharing the same URL keep independent baselines.
     /// </summary>
+    /// <param name="allCalls">All recorded call facts for the run.</param>
+    /// <returns>A dictionary keyed by <c>(Entry, Step)</c> mapping each step to its aggregated <see cref="CallStepMetrics"/>.</returns>
     public static Dictionary<(int Entry, int Step), CallStepMetrics> BuildStepMetrics(IReadOnlyList<CallFact> allCalls)
     {
         var result = new Dictionary<(int Entry, int Step), CallStepMetrics>();
@@ -340,6 +397,24 @@ public static class CallAnalytics
         return result;
     }
 
+    /// <summary>
+    /// Builds the full drill-down payload for a single canonical endpoint, including summary metrics,
+    /// a duration histogram, a bounded duration-over-time timeline, and a paged list of call samples.
+    /// </summary>
+    /// <param name="allCalls">All recorded call facts for the run.</param>
+    /// <param name="endpoint">Canonical endpoint name to inspect.</param>
+    /// <param name="runElapsedSeconds">Total elapsed duration of the run in seconds.</param>
+    /// <param name="entry">Optional 0-based scenario entry index filter.</param>
+    /// <param name="show">Optional outcome filter (<c>"slow"</c> or <c>"failed"</c>).</param>
+    /// <param name="minMs">Optional inclusive minimum call duration filter in milliseconds.</param>
+    /// <param name="maxMs">Optional exclusive maximum call duration filter in milliseconds.</param>
+    /// <param name="fromSec">Optional inclusive lower run-relative time bound in seconds.</param>
+    /// <param name="toSec">Optional inclusive upper run-relative time bound in seconds.</param>
+    /// <param name="sort">Sort order for paged samples: <c>"time"</c>, <c>"failed"</c>, or default descending duration.</param>
+    /// <param name="offset">Zero-based paging offset for the returned <see cref="CallEndpointDetailDto.Calls"/> slice.</param>
+    /// <param name="limit">Maximum number of call samples to return per page (clamped to <c>1..1000</c>).</param>
+    /// <param name="maxPoints">Maximum number of timeline points/buckets to emit (clamped to <c>20..500</c>).</param>
+    /// <returns>The <see cref="CallEndpointDetailDto"/> for <paramref name="endpoint"/>, or <see langword="null"/> if no matching calls exist.</returns>
     public static CallEndpointDetailDto? BuildEndpointDetail(
         IReadOnlyList<CallFact> allCalls,
         string endpoint,

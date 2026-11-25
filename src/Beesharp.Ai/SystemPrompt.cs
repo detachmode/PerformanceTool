@@ -3,6 +3,7 @@ namespace Beesharp.Ai;
 /// <summary>The built-in system prompt. <c>AI__SystemPrompt</c> replaces it.</summary>
 public static class SystemPrompt
 {
+    /// <summary>Default system prompt instructing the assistant on Beesharp terminology, available tools, and response style.</summary>
     public const string Default = """
         You are the assistant of Beesharp, a tool that tests how a system behaves under load. You work for the person using its UI, you can do everything they can do there, and you see the same data.
 

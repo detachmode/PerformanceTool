@@ -4,6 +4,11 @@ using System.Text.RegularExpressions;
 namespace Beesharp.Services.Scenarios;
 
 /// <summary>Result of normalizing an HTTP call for endpoint auto-detection while preserving its exact raw URL and name.</summary>
+/// <param name="Endpoint">The normalized endpoint key (for example <c>GET /products/{id}</c>).</param>
+/// <param name="RawName">The unnormalized HTTP method and path/query string.</param>
+/// <param name="Method">The uppercase HTTP verb.</param>
+/// <param name="Host">The request host (including non-default port) when the URI is absolute, or <c>null</c>.</param>
+/// <param name="Url">The full string representation of the request URI, or an empty string if <c>null</c>.</param>
 public readonly record struct NormalizedHttpCall(string Endpoint, string RawName, string Method, string? Host, string Url);
 
 /// <summary>
@@ -15,6 +20,10 @@ public static partial class EndpointNormalizer
 {
     private static readonly string[] HttpVerbs = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
+    /// <summary>Normalizes an HTTP method and URI into a <see cref="NormalizedHttpCall"/> with collapsed dynamic path segments.</summary>
+    /// <param name="method">The HTTP request method.</param>
+    /// <param name="uri">The request URI (absolute or relative), or <c>null</c> to default to <c>/</c>.</param>
+    /// <returns>A <see cref="NormalizedHttpCall"/> containing both the normalized endpoint key and raw call metadata.</returns>
     public static NormalizedHttpCall NormalizeHttp(HttpMethod method, Uri? uri)
     {
         var methodStr = method.Method.ToUpperInvariant();
@@ -42,6 +51,8 @@ public static partial class EndpointNormalizer
     /// HTTP-like names (<c>GET /products/1042?q=shoe</c> or <c>GET /products/{id} · 3</c>) normalize their path and drop query values;
     /// custom non-HTTP names (<c>Place order</c>) stay intact apart from trailing <c> · N</c> repetition suffixes.
     /// </summary>
+    /// <param name="name">The recorded call name to normalize, or <c>null</c>.</param>
+    /// <returns>The normalized call or endpoint name, or an empty string if <paramref name="name"/> is null or whitespace.</returns>
     public static string NormalizeCallName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return "";
@@ -74,6 +85,9 @@ public static partial class EndpointNormalizer
         return $"{verb} {rest}";
     }
 
+    /// <summary>Attempts to extract a known uppercase HTTP method verb from the start of a call name.</summary>
+    /// <param name="name">The call or endpoint name to inspect, or <c>null</c>.</param>
+    /// <returns>The uppercase HTTP verb if found at the beginning of <paramref name="name"/>; otherwise, <c>null</c>.</returns>
     public static string? TryExtractMethod(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
@@ -84,6 +98,9 @@ public static partial class EndpointNormalizer
         return Array.IndexOf(HttpVerbs, verb) >= 0 ? verb : null;
     }
 
+    /// <summary>Normalizes a URL path by stripping query/fragment components and replacing dynamic segments with <c>{id}</c>.</summary>
+    /// <param name="path">The raw URL path to normalize, or <c>null</c>.</param>
+    /// <returns>The normalized path starting with <c>/</c>.</returns>
     public static string NormalizePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return "/";
@@ -184,6 +201,7 @@ public static partial class EndpointNormalizer
 /// </summary>
 public static class EndpointGrouper
 {
+    /// <summary>Default number of distinct segment values in a path position above which segments collapse to <c>{id}</c>.</summary>
     public const int DefaultAdaptiveCollapseThreshold = 10;
 
     private static readonly HashSet<string> HttpVerbs = new(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], StringComparer.OrdinalIgnoreCase);
@@ -197,6 +215,13 @@ public static class EndpointGrouper
         public bool IsHttp => Method is not null && Segments is not null;
     }
 
+    /// <summary>
+    /// Maps each observed <c>(RawEndpoint, Host)</c> pair to a canonical run-wide endpoint key, adding the host only
+    /// when multiple hosts are observed and collapsing high-cardinality path segments into <c>{id}</c>.
+    /// </summary>
+    /// <param name="observed">The observed normalized endpoints and optional hosts across the run.</param>
+    /// <param name="adaptiveThreshold">Maximum distinct segment values allowed at a path position before collapsing to <c>{id}</c>; values below <c>1</c> disable adaptive collapsing.</param>
+    /// <returns>A dictionary mapping each normalized <c>(RawEndpoint, Host)</c> key to its canonical grouped endpoint name.</returns>
     public static Dictionary<(string RawEndpoint, string? Host), string> BuildMap(
         IEnumerable<(string RawEndpoint, string? Host)> observed,
         int adaptiveThreshold = DefaultAdaptiveCollapseThreshold)

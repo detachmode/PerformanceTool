@@ -8,13 +8,20 @@ namespace Beesharp.Services.Scenarios;
 /// </summary>
 public sealed class CallThresholds
 {
+    /// <summary>An empty threshold configuration with no default threshold and no endpoint rules.</summary>
     public static readonly CallThresholds None = new();
 
     private readonly List<(string Pattern, Regex? Wildcard, string? NormalizedPattern, double ThresholdMs)> rules;
 
+    /// <summary>Gets the scenario-wide default slow-call threshold, or <c>null</c> when only the automatic <c>2× typical</c> rule applies.</summary>
     public TimeSpan? Default { get; }
+
+    /// <summary>Gets the configured per-endpoint slow-call threshold rules keyed by endpoint pattern.</summary>
     public IReadOnlyDictionary<string, TimeSpan> Rules { get; }
 
+    /// <summary>Initializes a new <see cref="CallThresholds"/> instance with an optional default threshold and per-endpoint rules.</summary>
+    /// <param name="defaultThreshold">Optional scenario-wide default slow-call threshold; must be greater than zero when provided.</param>
+    /// <param name="rules">Optional mapping of endpoint patterns (exact or <c>*</c> wildcards) to slow-call thresholds.</param>
     public CallThresholds(TimeSpan? defaultThreshold = null, IReadOnlyDictionary<string, TimeSpan>? rules = null)
     {
         if (defaultThreshold is { } d && d <= TimeSpan.Zero)
@@ -48,8 +55,15 @@ public sealed class CallThresholds
         this.rules = compiled;
     }
 
+    /// <summary>Returns a new <see cref="CallThresholds"/> instance with the specified default threshold, preserving existing endpoint rules.</summary>
+    /// <param name="threshold">The scenario-wide default slow-call threshold; must be greater than zero.</param>
+    /// <returns>A new <see cref="CallThresholds"/> instance with the updated default threshold.</returns>
     public CallThresholds WithDefault(TimeSpan threshold) => new(threshold, Rules);
 
+    /// <summary>Returns a new <see cref="CallThresholds"/> instance with an added or updated slow-call threshold rule for an endpoint pattern.</summary>
+    /// <param name="endpointPattern">The endpoint pattern (exact match or <c>*</c> wildcard) to match against normalized or raw call names.</param>
+    /// <param name="threshold">The slow-call threshold for matching endpoints; must be greater than zero.</param>
+    /// <returns>A new <see cref="CallThresholds"/> instance containing the new or updated rule.</returns>
     public CallThresholds For(string endpointPattern, TimeSpan threshold)
     {
         if (string.IsNullOrWhiteSpace(endpointPattern))
@@ -64,7 +78,11 @@ public sealed class CallThresholds
         return new CallThresholds(Default, next);
     }
 
-    /// <summary>Resolves the threshold in milliseconds for an endpoint/raw call name, or null when only the automatic <c>2× typical</c> rule applies.</summary>
+    /// <summary>Resolves the threshold in milliseconds for an endpoint/raw call name, or <c>null</c> when only the automatic <c>2× typical</c> rule applies.</summary>
+    /// <param name="endpoint">The normalized endpoint name (for example <c>GET /products/{id}</c>), or <c>null</c>.</param>
+    /// <param name="rawName">The unnormalized raw call name, or <c>null</c>.</param>
+    /// <param name="method">Optional HTTP method associated with the call.</param>
+    /// <returns>The resolved slow-call threshold in milliseconds, or <c>null</c> if neither a rule nor a default threshold applies.</returns>
     public double? ResolveMs(string? endpoint, string? rawName = null, string? method = null)
     {
         if (rules.Count > 0)

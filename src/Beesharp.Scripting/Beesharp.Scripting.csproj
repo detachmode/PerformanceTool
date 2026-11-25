@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Beesharp.Scripting</PackageId>
     <Description>Roslyn C# script compiler and store for Beesharp scenario, preflight and shutdown scripts.</Description>
     <PackageTags>beesharp;load-testing;performance;scripting;roslyn</PackageTags>

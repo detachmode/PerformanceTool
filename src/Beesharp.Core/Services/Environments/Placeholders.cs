@@ -5,8 +5,11 @@ using System.Text.RegularExpressions;
 namespace Beesharp.Services.Environments;
 
 /// <summary>A piece of text: plain, or a <c>{{Key}}</c> placeholder (<see cref="Key"/> set).</summary>
+/// <param name="Text">The text content of this segment, either literal text or the raw <c>{{Key}}</c> token.</param>
+/// <param name="Key">The referenced environment key when this segment is a placeholder; otherwise <see langword="null"/>.</param>
 public readonly record struct PlaceholderPart(string Text, string? Key = null)
 {
+    /// <summary>Gets a value indicating whether this part represents a placeholder rather than plain text.</summary>
     public bool IsPlaceholder => Key is not null;
 }
 
@@ -26,14 +29,20 @@ public static partial class Placeholders
     private static partial Regex Pattern();
 
     /// <summary>True when the text contains at least one (unescaped) placeholder.</summary>
+    /// <param name="text">The text to inspect.</param>
+    /// <returns><see langword="true"/> if <paramref name="text"/> contains at least one unescaped placeholder; otherwise <see langword="false"/>.</returns>
     public static bool HasPlaceholder(string? text) =>
         !string.IsNullOrEmpty(text) && Pattern().Matches(text).Any(m => !m.Groups["esc"].Success);
 
     /// <summary>The distinct keys used in the text, in order of first use.</summary>
+    /// <param name="text">The text to scan for placeholder keys.</param>
+    /// <returns>The distinct placeholder keys found in <paramref name="text"/>, ordered by first appearance.</returns>
     public static IReadOnlyList<string> Keys(string? text) => string.IsNullOrEmpty(text) ? [] :
         Pattern().Matches(text).Where(m => !m.Groups["esc"].Success).Select(m => m.Groups["key"].Value).Distinct().ToList();
 
     /// <summary>Splits the text into plain and placeholder parts, for highlighting. Escaped placeholders are plain text without the backslash.</summary>
+    /// <param name="text">The text to split.</param>
+    /// <returns>An ordered list of <see cref="PlaceholderPart"/> segments representing <paramref name="text"/>.</returns>
     public static IReadOnlyList<PlaceholderPart> Split(string? text)
     {
         var parts = new List<PlaceholderPart>();
@@ -54,6 +63,10 @@ public static partial class Placeholders
     }
 
     /// <summary>Replaces known placeholders. Unknown keys stay as written and are added to <paramref name="unknown"/> (once each).</summary>
+    /// <param name="text">The input text containing optional placeholders.</param>
+    /// <param name="values">The environment key-value map used to resolve placeholders, or <see langword="null"/> if none is active.</param>
+    /// <param name="unknown">An optional collection that receives each distinct unresolved placeholder key.</param>
+    /// <returns>The text with known placeholders replaced and escaped placeholders unescaped.</returns>
     public static string Resolve(string? text, IReadOnlyDictionary<string, string>? values, ICollection<string>? unknown = null)
     {
         if (string.IsNullOrEmpty(text)) return text ?? "";
@@ -71,6 +84,10 @@ public static partial class Placeholders
     /// Returns a copy of stored parameter values with every string (also inside lists, groups and key-value maps) resolved. Property names stay
     /// as they are. The input is not changed, because the same plan is shown in the editor.
     /// </summary>
+    /// <param name="parameters">The parameter JSON object to resolve.</param>
+    /// <param name="values">The environment key-value map used to resolve placeholders, or <see langword="null"/> if none is active.</param>
+    /// <param name="unknown">An optional collection that receives each distinct unresolved placeholder key.</param>
+    /// <returns>A cloned <see cref="JsonObject"/> with all string values resolved.</returns>
     public static JsonObject ResolveJson(JsonObject parameters, IReadOnlyDictionary<string, string>? values, ICollection<string>? unknown = null) =>
         (JsonObject)ResolveNode(parameters, values, unknown)!;
 
@@ -92,6 +109,8 @@ public static partial class Placeholders
     }
 
     /// <summary>The keys used anywhere in the stored parameter values.</summary>
+    /// <param name="node">The JSON node tree to scan for placeholders.</param>
+    /// <returns>The distinct placeholder keys found anywhere in string values within <paramref name="node"/>.</returns>
     public static IReadOnlyList<string> KeysIn(JsonNode? node)
     {
         var keys = new List<string>();

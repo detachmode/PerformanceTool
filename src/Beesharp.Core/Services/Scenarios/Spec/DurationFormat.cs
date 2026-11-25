@@ -9,6 +9,10 @@ public static partial class DurationFormat
     [GeneratedRegex(@"(\d+(?:\.\d+)?)\s*(ms|s|m|h)", RegexOptions.IgnoreCase)]
     private static partial Regex Part();
 
+    /// <summary>Parses a human-friendly duration (such as <c>500ms</c>, <c>1.5s</c>, <c>1m 30s</c>), plain millisecond number, or standard <see cref="TimeSpan"/> string.</summary>
+    /// <param name="text">The input text to parse.</param>
+    /// <param name="value">When this method returns <see langword="true"/>, contains the parsed <see cref="TimeSpan"/>; otherwise, <see langword="default"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="text"/> was parsed successfully; otherwise, <see langword="false"/>.</returns>
     public static bool TryParse(string? text, out TimeSpan value)
     {
         value = default;
@@ -42,6 +46,9 @@ public static partial class DurationFormat
         return TimeSpan.TryParse(text, CultureInfo.InvariantCulture, out value);
     }
 
+    /// <summary>Formats a <see cref="TimeSpan"/> in compact human-friendly units (e.g., <c>0s</c>, <c>500ms</c>, <c>1.5s</c>, <c>1m 30s</c>).</summary>
+    /// <param name="t">The duration to format.</param>
+    /// <returns>A compact duration string formatted with invariant culture.</returns>
     public static string Format(TimeSpan t)
     {
         if (t == TimeSpan.Zero) return "0s";

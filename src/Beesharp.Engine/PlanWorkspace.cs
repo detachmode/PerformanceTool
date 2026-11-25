@@ -10,6 +10,7 @@ namespace Beesharp.Services;
 /// </summary>
 public sealed class PlanWorkspace
 {
+    /// <summary>Default preset name used when the workspace holds an unsaved or inline plan.</summary>
     public const string DefaultPresetName = "Live plan";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -24,6 +25,12 @@ public sealed class PlanWorkspace
     private string? defaultEnvironment;
     private long version = 1;
 
+    /// <summary>
+    /// Initializes a new <see cref="PlanWorkspace"/> backed by the given scenario catalog and preset store.
+    /// </summary>
+    /// <param name="catalog">The catalog used to look up scenarios and normalize entry parameters.</param>
+    /// <param name="presets">The file-backed store used to persist and load user presets.</param>
+    /// <param name="codePresets">Optional code-defined presets registered at startup.</param>
     public PlanWorkspace(ScenarioCatalog catalog, PresetStore presets, IEnumerable<Preset>? codePresets = null)
     {
         this.catalog = catalog;
@@ -34,17 +41,23 @@ public sealed class PlanWorkspace
     /// <summary>Raised after every real change (outside the lock). Handlers must not block.</summary>
     public event Action<PlanWorkspaceState>? Changed;
 
+    /// <summary>Monotonically increasing version number incremented whenever the workspace state changes.</summary>
     public long Version { get { lock (sync) return version; } }
 
     /// <summary>Default environment name configured at startup (brain 0058). Used when a run starts without an explicit environment.</summary>
     public string? DefaultEnvironment { get { lock (sync) return defaultEnvironment; } }
 
+    /// <summary>
+    /// Sets or clears the default environment name used when a run starts without an explicit environment.
+    /// </summary>
+    /// <param name="name">The environment name to set, or null/whitespace to clear it.</param>
     public void SetDefaultEnvironment(string? name)
     {
         lock (sync) defaultEnvironment = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
     }
 
     /// <summary>Registers code-defined presets (brain 0058). Disk presets with the same name override these if the user saves edits.</summary>
+    /// <param name="presetsToRegister">The collection of code-defined presets to register.</param>
     public void RegisterCodePresets(IEnumerable<Preset> presetsToRegister)
     {
         ArgumentNullException.ThrowIfNull(presetsToRegister);
@@ -59,18 +72,29 @@ public sealed class PlanWorkspace
         }
     }
 
+    /// <summary>
+    /// Registers a single code-defined preset (brain 0058).
+    /// </summary>
+    /// <param name="preset">The preset to register.</param>
     public void RegisterCodePreset(Preset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
         RegisterCodePresets([preset]);
     }
 
+    /// <summary>
+    /// Returns a thread-safe snapshot of the current workspace state.
+    /// </summary>
+    /// <returns>The current <see cref="PlanWorkspaceState"/> snapshot.</returns>
     public PlanWorkspaceState GetState() { lock (sync) return Snapshot(); }
 
     /// <summary>The plan to start a run with (a copy).</summary>
+    /// <returns>A deep clone of the current <see cref="LoadPlan"/>.</returns>
     public LoadPlan GetPlan() { lock (sync) return plan.Clone(); }
 
     /// <summary>Replaces the whole plan (what the editor pushes). Nothing changes, and the version stays, when the plan is equal.</summary>
+    /// <param name="newPlan">The replacement load plan.</param>
+    /// <returns>The resulting <see cref="PlanWorkspaceState"/> snapshot.</returns>
     public PlanWorkspaceState SetPlan(LoadPlan newPlan)
     {
         ArgumentNullException.ThrowIfNull(newPlan);
@@ -84,6 +108,8 @@ public sealed class PlanWorkspace
     }
 
     /// <summary>Changes the plan in place under the lock (for the assistant's edits). Return false when nothing changed.</summary>
+    /// <param name="edit">A callback that mutates a cloned <see cref="LoadPlan"/> and returns true if changes should be committed.</param>
+    /// <returns>The resulting <see cref="PlanWorkspaceState"/> snapshot.</returns>
     public PlanWorkspaceState Update(Func<LoadPlan, bool> edit)
     {
         ArgumentNullException.ThrowIfNull(edit);
@@ -98,6 +124,8 @@ public sealed class PlanWorkspace
     }
 
     /// <summary>Adds an entry for a scenario with its default parameters. Returns the new entry's index.</summary>
+    /// <param name="scenarioId">The identifier of the scenario to add.</param>
+    /// <returns>The zero-based index of the newly added scenario entry.</returns>
     public int AddEntry(string scenarioId)
     {
         var scenario = catalog.Find(scenarioId) ?? throw new ArgumentException($"Unknown scenario '{scenarioId}'.", nameof(scenarioId));
@@ -116,6 +144,11 @@ public sealed class PlanWorkspace
         return index;
     }
 
+    /// <summary>
+    /// Removes the scenario entry at the specified zero-based index.
+    /// </summary>
+    /// <param name="index">The zero-based index of the entry to remove.</param>
+    /// <returns>The updated <see cref="PlanWorkspaceState"/> snapshot.</returns>
     public PlanWorkspaceState RemoveEntry(int index) => Mutate(() =>
     {
         if (index < 0 || index >= plan.Scenarios.Count)
@@ -126,6 +159,7 @@ public sealed class PlanWorkspace
     });
 
     /// <summary>Seeds an empty workspace (for example with the plan of the run restored at startup). Does nothing when the plan already has entries.</summary>
+    /// <param name="seed">The plan used to seed the workspace when it currently has no scenario entries.</param>
     public void SeedIfEmpty(LoadPlan seed)
     {
         Mutate(() =>
@@ -143,6 +177,9 @@ public sealed class PlanWorkspace
     /// when the workspace is empty (or <see cref="DefaultPlanOptions.ForceDefault"/> is true).
     /// Returns true if a plan was applied.
     /// </summary>
+    /// <param name="options">The default plan options, or null if none are configured.</param>
+    /// <param name="ct">A token to cancel preset loading.</param>
+    /// <returns><see langword="true"/> if a preset or inline plan was applied; otherwise <see langword="false"/>.</returns>
     public async Task<bool> ApplyDefaultPlanAsync(DefaultPlanOptions? options, CancellationToken ct = default)
     {
         if (options is null) return false;
@@ -223,6 +260,11 @@ public sealed class PlanWorkspace
 
     // ---------- presets ----------
 
+    /// <summary>
+    /// Lists all available presets, merging code-defined presets with disk presets (disk presets override code presets with the same name).
+    /// </summary>
+    /// <param name="ct">A token to cancel reading presets from disk.</param>
+    /// <returns>The merged list of presets ordered by name.</returns>
     public async Task<IReadOnlyList<Preset>> ListPresetsAsync(CancellationToken ct = default)
     {
         var disk = await presets.ListAsync(ct);
@@ -240,6 +282,10 @@ public sealed class PlanWorkspace
     }
 
     /// <summary>Saves a plan (the current one when <paramref name="source"/> is null) under <paramref name="name"/> and makes it the current preset.</summary>
+    /// <param name="name">The preset name to save under.</param>
+    /// <param name="source">Optional plan to save; uses the current workspace plan when null.</param>
+    /// <param name="ct">A token to cancel saving the preset to disk.</param>
+    /// <returns>The updated <see cref="PlanWorkspaceState"/> snapshot.</returns>
     public async Task<PlanWorkspaceState> SavePresetAsync(string name, LoadPlan? source = null, CancellationToken ct = default)
     {
         name = name.Trim();
@@ -257,6 +303,9 @@ public sealed class PlanWorkspace
     }
 
     /// <summary>Loads a preset into the workspace. Returns null when there is no preset with that name.</summary>
+    /// <param name="name">The case-insensitive name of the preset to load.</param>
+    /// <param name="ct">A token to cancel reading presets from disk.</param>
+    /// <returns>The updated <see cref="PlanWorkspaceState"/> snapshot, or null if no matching preset exists.</returns>
     public async Task<PlanWorkspaceState?> LoadPresetAsync(string name, CancellationToken ct = default)
     {
         var preset = (await ListPresetsAsync(ct)).FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -273,6 +322,12 @@ public sealed class PlanWorkspace
         });
     }
 
+    /// <summary>
+    /// Deletes a disk-persisted preset by name and bumps <see cref="Version"/> if it existed.
+    /// </summary>
+    /// <param name="name">The case-insensitive name of the preset to delete.</param>
+    /// <param name="ct">A token to cancel deleting the preset from disk.</param>
+    /// <returns><see langword="true"/> if the preset was found on disk and deleted; otherwise <see langword="false"/>.</returns>
     public async Task<bool> DeletePresetAsync(string name, CancellationToken ct = default)
     {
         var existing = (await presets.ListAsync(ct)).FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));

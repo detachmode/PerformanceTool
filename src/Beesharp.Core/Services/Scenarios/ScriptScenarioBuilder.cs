@@ -27,6 +27,8 @@ public static class Scenario
     public static bool IsHostRegistering => currentHost.Value is not null;
 
     /// <summary>Routes static <see cref="Scenario"/> registrations on the current async flow into <paramref name="host"/>.</summary>
+    /// <param name="host">The script host that receives scenario definitions registered within the returned scope.</param>
+    /// <returns>An <see cref="IDisposable"/> that restores the previous host scope when disposed.</returns>
     public static IDisposable BeginHostScope(ScenarioScriptHost host)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -43,6 +45,12 @@ public static class Scenario
     private static ScenarioScriptHost ActiveHost => currentHost.Value ?? new ScenarioScriptHost();
 
     /// <summary>Defines a scenario whose delegate returns <see cref="Task"/> (completing without throwing counts as success).</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> Define<TParameters>(
         string name,
         Func<TParameters, ScenarioContext, Task> execute,
@@ -51,6 +59,12 @@ public static class Scenario
         ActiveHost.Define(name, execute, id, description);
 
     /// <summary>Defines a scenario whose delegate returns a <see cref="ScenarioOutcome"/> directly.</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee and returning its <see cref="ScenarioOutcome"/>.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> Define<TParameters>(
         string name,
         Func<TParameters, ScenarioContext, Task<ScenarioOutcome>> execute,
@@ -59,6 +73,11 @@ public static class Scenario
         ActiveHost.Define(name, execute, id, description);
 
     /// <summary>Defines a parameterless scenario.</summary>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public static ScenarioBuilder<EmptyScenarioParameters> Define(
         string name,
         Func<ScenarioContext, Task> execute,
@@ -70,6 +89,14 @@ public static class Scenario
     /// Defines a step-machine scenario whose steps are declared as a C# 15 <c>union</c> (brain 0056).
     /// Return the next step from <paramref name="run"/>, or <c>null</c> to finish the bee cleanly.
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler returning the next step, or <c>null</c> when finished.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> DefineSteps<TParameters, TStep>(
         string name,
         Func<TParameters, TStep> start,
@@ -83,6 +110,16 @@ public static class Scenario
     /// <summary>
     /// Defines a step-machine scenario with per-bee shared state (e.g. auth token, cart id) so step records stay small.
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TState">Per-bee state type initialized once before the first step.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="init">Factory creating the per-bee shared state instance.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler receiving the step, parameters, state, and context, returning the next step or <c>null</c>.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> DefineSteps<TParameters, TState, TStep>(
         string name,
         Func<TParameters, ScenarioContext, TState> init,
@@ -95,6 +132,13 @@ public static class Scenario
         ActiveHost.DefineSteps(name, init, start, run, id, description);
 
     /// <summary>Defines a parameterless step-machine scenario.</summary>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler returning the next step, or <c>null</c> when finished.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public static ScenarioBuilder<EmptyScenarioParameters> DefineSteps<TStep>(
         string name,
         Func<TStep> start,
@@ -107,6 +151,14 @@ public static class Scenario
     /// <summary>
     /// Defines a step-machine scenario whose step handler yields zero, one or many follow-up steps via <see cref="IAsyncEnumerable{T}"/>.
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler yielding follow-up steps in execution order.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> DefineSteps<TParameters, TStep>(
         string name,
         Func<TParameters, TStep> start,
@@ -118,6 +170,16 @@ public static class Scenario
         ActiveHost.DefineSteps(name, start, run, id, description);
 
     /// <summary>Defines a stateful step-machine scenario whose step handler yields follow-up steps via <see cref="IAsyncEnumerable{T}"/>.</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TState">Per-bee state type initialized once before the first step.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="init">Factory creating the per-bee shared state instance.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler receiving the step, parameters, state, and context, yielding follow-up steps.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public static ScenarioBuilder<TParameters> DefineSteps<TParameters, TState, TStep>(
         string name,
         Func<TParameters, ScenarioContext, TState> init,
@@ -130,6 +192,13 @@ public static class Scenario
         ActiveHost.DefineSteps(name, init, start, run, id, description);
 
     /// <summary>Defines a parameterless step-machine scenario whose step handler yields follow-up steps via <see cref="IAsyncEnumerable{T}"/>.</summary>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler yielding follow-up steps in execution order.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public static ScenarioBuilder<EmptyScenarioParameters> DefineSteps<TStep>(
         string name,
         Func<TStep> start,
@@ -152,6 +221,12 @@ public sealed class ScenarioScriptHost
     private readonly List<IScenarioDefinitionBuilder> builders = [];
 
     /// <summary>Defines a scenario whose delegate returns <see cref="Task"/> (completing without throwing counts as success).</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> Define<TParameters>(
         string name,
         Func<TParameters, ScenarioContext, Task> execute,
@@ -174,6 +249,12 @@ public sealed class ScenarioScriptHost
     }
 
     /// <summary>Defines a scenario whose delegate returns a <see cref="ScenarioOutcome"/> directly.</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee and returning its <see cref="ScenarioOutcome"/>.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> Define<TParameters>(
         string name,
         Func<TParameters, ScenarioContext, Task<ScenarioOutcome>> execute,
@@ -192,6 +273,11 @@ public sealed class ScenarioScriptHost
     }
 
     /// <summary>Defines a parameterless scenario.</summary>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="execute">Asynchronous delegate executed once per bee.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public ScenarioBuilder<EmptyScenarioParameters> Define(
         string name,
         Func<ScenarioContext, Task> execute,
@@ -203,6 +289,14 @@ public sealed class ScenarioScriptHost
     /// Defines a step-machine scenario whose steps are declared as a C# 15 <c>union</c> (brain 0056).
     /// Return the next step from <paramref name="run"/>, or <c>null</c> to finish the bee cleanly.
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler returning the next step, or <c>null</c> when finished.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> DefineSteps<TParameters, TStep>(
         string name,
         Func<TParameters, TStep> start,
@@ -229,6 +323,16 @@ public sealed class ScenarioScriptHost
     /// <summary>
     /// Defines a step-machine scenario with per-bee shared state (e.g. auth token, cart id) so step records stay small.
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TState">Per-bee state type initialized once before the first step.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="init">Factory creating the per-bee shared state instance.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler receiving the step, parameters, state, and context, returning the next step or <c>null</c>.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> DefineSteps<TParameters, TState, TStep>(
         string name,
         Func<TParameters, ScenarioContext, TState> init,
@@ -259,6 +363,13 @@ public sealed class ScenarioScriptHost
     }
 
     /// <summary>Defines a parameterless step-machine scenario.</summary>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler returning the next step, or <c>null</c> when finished.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public ScenarioBuilder<EmptyScenarioParameters> DefineSteps<TStep>(
         string name,
         Func<TStep> start,
@@ -272,6 +383,14 @@ public sealed class ScenarioScriptHost
     /// Defines a step-machine scenario whose step handler yields zero, one or many follow-up steps via <see cref="IAsyncEnumerable{T}"/>
     /// (e.g. a Search step yielding several OpenProduct steps followed by AddToCart).
     /// </summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler yielding follow-up steps in execution order.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> DefineSteps<TParameters, TStep>(
         string name,
         Func<TParameters, TStep> start,
@@ -296,6 +415,16 @@ public sealed class ScenarioScriptHost
     }
 
     /// <summary>Defines a stateful step-machine scenario whose step handler yields follow-up steps via <see cref="IAsyncEnumerable{T}"/>.</summary>
+    /// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
+    /// <typeparam name="TState">Per-bee state type initialized once before the first step.</typeparam>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="init">Factory creating the per-bee shared state instance.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler receiving the step, parameters, state, and context, yielding follow-up steps.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> for configuring hooks, thresholds, and metadata.</returns>
     public ScenarioBuilder<TParameters> DefineSteps<TParameters, TState, TStep>(
         string name,
         Func<TParameters, ScenarioContext, TState> init,
@@ -326,6 +455,13 @@ public sealed class ScenarioScriptHost
     }
 
     /// <summary>Defines a parameterless step-machine scenario whose step handler yields follow-up steps via <see cref="IAsyncEnumerable{T}"/>.</summary>
+    /// <typeparam name="TStep">The C# 15 <c>union</c> value type declaring the scenario's step cases.</typeparam>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="start">Factory returning the initial step for a bee.</param>
+    /// <param name="run">Step handler yielding follow-up steps in execution order.</param>
+    /// <param name="id">Optional stable scenario identifier; defaults to a slug derived from <paramref name="name"/>.</param>
+    /// <param name="description">Optional description shown in the UI.</param>
+    /// <returns>A fluent <see cref="ScenarioBuilder{TParameters}"/> using <see cref="EmptyScenarioParameters"/>.</returns>
     public ScenarioBuilder<EmptyScenarioParameters> DefineSteps<TStep>(
         string name,
         Func<TStep> start,
@@ -336,8 +472,12 @@ public sealed class ScenarioScriptHost
         DefineSteps<EmptyScenarioParameters, TStep>(name, _ => start(), (step, _, ctx) => run(step, ctx), id, description);
 
     /// <summary>Builds all scenarios registered by the script. Validates their parameter specs immediately.</summary>
+    /// <returns>The list of built <see cref="IScenario"/> instances.</returns>
     public IReadOnlyList<IScenario> BuildAll() => builders.Select(b => b.Build()).ToList();
 
+    /// <summary>Converts a human-readable scenario <paramref name="name"/> into a stable URL-safe scenario identifier.</summary>
+    /// <param name="name">The scenario display name to slugify.</param>
+    /// <returns>A prefixed slug identifier such as <c>script-order-api</c>, or <c>custom-scenario</c> when empty.</returns>
     public static string Slugify(string name)
     {
         var slug = Regex.Replace(name.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
@@ -351,6 +491,7 @@ internal interface IScenarioDefinitionBuilder
 }
 
 /// <summary>Fluent builder returned by <c>Scenario.Define&lt;TParameters&gt;</c> for attaching lifecycle hooks and metadata.</summary>
+/// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
 public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder where TParameters : class
 {
     private string id;
@@ -376,6 +517,9 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
         this.steps = steps ?? [];
     }
 
+    /// <summary>Overrides the scenario's stable identifier.</summary>
+    /// <param name="customId">Non-whitespace scenario identifier to assign.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> WithId(string customId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customId);
@@ -383,6 +527,9 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
         return this;
     }
 
+    /// <summary>Sets or replaces the scenario's human-readable description.</summary>
+    /// <param name="text">Description text shown in the UI (treated as empty when <c>null</c>).</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> WithDescription(string text)
     {
         description = text ?? "";
@@ -390,6 +537,8 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     }
 
     /// <summary>Attaches a lifecycle startup hook that runs once per scenario entry before any bees start.</summary>
+    /// <param name="hook">Asynchronous startup delegate invoked with the bound parameters and entry-level context.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> OnStartup(Func<TParameters, ScenarioContext, Task> hook)
     {
         ArgumentNullException.ThrowIfNull(hook);
@@ -398,6 +547,8 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     }
 
     /// <summary>Attaches a lifecycle teardown hook that runs once per scenario entry after all bees finish.</summary>
+    /// <param name="hook">Asynchronous teardown delegate invoked with the bound parameters and entry-level context.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> OnTeardown(Func<TParameters, ScenarioContext, Task> hook)
     {
         ArgumentNullException.ThrowIfNull(hook);
@@ -406,6 +557,8 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     }
 
     /// <summary>Sets the default slow-call duration threshold for every call in this scenario (brain 0060).</summary>
+    /// <param name="threshold">Duration above which recorded calls are marked slow.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> SlowAbove(TimeSpan threshold)
     {
         slowThresholds = slowThresholds.WithDefault(threshold);
@@ -413,12 +566,17 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     }
 
     /// <summary>Sets a slow-call duration threshold for calls matching <paramref name="endpointPattern"/> (exact or <c>*</c> wildcard, brain 0060).</summary>
+    /// <param name="endpointPattern">Endpoint name pattern (exact match or <c>*</c> wildcard) to configure.</param>
+    /// <param name="threshold">Duration above which matching recorded calls are marked slow.</param>
+    /// <returns>This builder instance for chaining.</returns>
     public ScenarioBuilder<TParameters> SlowAbove(string endpointPattern, TimeSpan threshold)
     {
         slowThresholds = slowThresholds.For(endpointPattern, threshold);
         return this;
     }
 
+    /// <summary>Builds the configured <see cref="IScenario"/> instance and validates its <see cref="ParameterSpec"/>.</summary>
+    /// <returns>The constructed <see cref="DelegateScenario{TParameters}"/> instance.</returns>
     public IScenario Build() => new DelegateScenario<TParameters>(id, name, description, execute, startup, teardown, steps, slowThresholds);
 
     /// <summary>
@@ -427,6 +585,9 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
     /// without executing a bee (brain 0057).
     /// Supports <c>--param Key=Value</c> (repeatable) and <c>--timeout &lt;seconds&gt;</c> in <paramref name="args"/>.
     /// </summary>
+    /// <param name="args">Optional CLI arguments supporting <c>--param Key=Value</c> / <c>-p Key=Value</c> and <c>--timeout &lt;seconds&gt;</c>.</param>
+    /// <param name="ct">Cancellation token that aborts the local debug run.</param>
+    /// <returns>Process exit code: <c>0</c> on success or host registration no-op, <c>1</c> on validation or execution failure.</returns>
     public async Task<int> DebugRunAsync(string[]? args = null, CancellationToken ct = default)
     {
         if (Scenario.IsHostRegistering)
@@ -617,12 +778,22 @@ public sealed class ScenarioBuilder<TParameters> : IScenarioDefinitionBuilder wh
 }
 
 /// <summary>Delegate-backed <see cref="IScenario"/> produced by C# scripts or inline registrations.</summary>
+/// <typeparam name="TParameters">Parameter class or record type whose public properties define the scenario's inputs.</typeparam>
 public sealed class DelegateScenario<TParameters> : IScenario where TParameters : class
 {
     private readonly Func<TParameters, ScenarioContext, CancellationToken, Task<ScenarioOutcome>> execute;
     private readonly Func<TParameters, ScenarioContext, CancellationToken, Task>? startup;
     private readonly Func<TParameters, ScenarioContext, CancellationToken, Task>? teardown;
 
+    /// <summary>Initializes a new delegate-backed scenario with optional lifecycle hooks, steps, and slow thresholds.</summary>
+    /// <param name="id">Stable scenario identifier.</param>
+    /// <param name="name">Human-readable scenario display name.</param>
+    /// <param name="description">Human-readable scenario description.</param>
+    /// <param name="execute">Per-bee execution delegate.</param>
+    /// <param name="startup">Optional entry-level startup hook.</param>
+    /// <param name="teardown">Optional entry-level teardown hook.</param>
+    /// <param name="steps">Optional declared step metadata for step-machine scenarios.</param>
+    /// <param name="slowThresholds">Optional slow-call duration thresholds.</param>
     public DelegateScenario(
         string id,
         string name,
@@ -644,19 +815,33 @@ public sealed class DelegateScenario<TParameters> : IScenario where TParameters 
         this.teardown = teardown;
     }
 
+    /// <inheritdoc />
     public string Id { get; }
+
+    /// <inheritdoc />
     public string Name { get; }
+
+    /// <inheritdoc />
     public string Description { get; }
+
+    /// <inheritdoc />
     public ParameterSpec Spec { get; }
+
+    /// <inheritdoc />
     public IReadOnlyList<StepInfo> Steps { get; }
+
+    /// <inheritdoc />
     public CallThresholds SlowThresholds { get; }
 
+    /// <inheritdoc />
     public Task StartupAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         startup is null ? Task.CompletedTask : startup((TParameters)parameters, context, cancellationToken);
 
+    /// <inheritdoc />
     public Task<ScenarioOutcome> ExecuteAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         execute((TParameters)parameters, context, cancellationToken);
 
+    /// <inheritdoc />
     public Task TeardownAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         teardown is null ? Task.CompletedTask : teardown((TParameters)parameters, context, cancellationToken);
 }
@@ -665,16 +850,38 @@ public sealed class DelegateScenario<TParameters> : IScenario where TParameters 
 /// Client-side proxy for a custom server-compiled scenario: its <see cref="ParameterSpec"/> is reconstructed from the
 /// JSON Schema returned by <c>GET /api/scenarios</c>, so <c>ParameterEditor</c> renders the exact generated form in WASM.
 /// </summary>
+/// <param name="id">Stable scenario identifier.</param>
+/// <param name="name">Human-readable scenario display name.</param>
+/// <param name="description">Human-readable scenario description.</param>
+/// <param name="parameterSchema">JSON Schema describing the scenario's parameters.</param>
+/// <param name="steps">Optional declared step metadata when the server scenario uses steps.</param>
+/// <param name="scriptId">Script id when backed by a Roslyn script file, or <c>null</c> for compiled host scenarios.</param>
 public sealed class RemoteSchemaScenario(string id, string name, string description, JsonObject parameterSchema, IReadOnlyList<StepInfo>? steps = null, string? scriptId = null) : IScenario
 {
+    /// <inheritdoc />
     public string Id { get; } = id;
+
+    /// <inheritdoc />
     public string Name { get; } = name;
+
+    /// <inheritdoc />
     public string Description { get; } = description;
+
+    /// <inheritdoc />
     public ParameterSpec Spec { get; } = ParameterSpec.FromJsonSchema(parameterSchema);
+
+    /// <inheritdoc />
     public IReadOnlyList<StepInfo> Steps { get; } = steps ?? [];
+
     /// <summary>Script id when backed by a Roslyn script file; null for compiled <c>.csproj</c> host scenarios.</summary>
     public string? ScriptId { get; } = scriptId;
 
+    /// <summary>Not supported on the client; server-compiled scenarios can only execute on the server.</summary>
+    /// <param name="parameters">Bound parameter object.</param>
+    /// <param name="context">Per-bee execution context.</param>
+    /// <param name="cancellationToken">Cancellation token for the execution.</param>
+    /// <returns>Never returns normally; always throws <see cref="NotSupportedException"/>.</returns>
+    /// <exception cref="NotSupportedException">Always thrown because remote scenarios only execute on the server.</exception>
     public Task<ScenarioOutcome> ExecuteAsync(object parameters, ScenarioContext context, CancellationToken cancellationToken) =>
         throw new NotSupportedException($"Scenario '{Id}' is a server-side script and can only execute on the server.");
 }

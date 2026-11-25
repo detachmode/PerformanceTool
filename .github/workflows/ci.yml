@@ -1,15 +1,14 @@
 name: CI/CD
 
 # Unified, ordered pipeline:
-#   gate ─► build-test ─┬─► docker-build ─► e2e (amd64, arm64) ─┬─► docker-push (main, v*)
-#                       │                                       └─► nuget-publish (v*)
-#                       └─► pages-build ─► pages-deploy (main, or v* tag at main tip)
+#   gate ─► build-test ─► docker-build ─► e2e (amd64, arm64) ─┬─► docker-push (main, v*)
+#                                                             └─► nuget-publish (v*)
 #
 # Pull requests run build-test -> docker-build -> e2e (no deploys or pushes).
-# Pushes to main only deploy Pages after build-test passes, and only push Docker images after e2e passes.
+# Pushes to main only push Docker images after build-test and e2e pass.
 # Version tags (v*) only push Docker images and NuGet packages after build-test and e2e pass.
 # When main and a v* tag are pushed together (e.g. git push --follow-tags), gate skips the duplicate main run
-# and lets the v* tag run also publish :latest and GitHub Pages.
+# and lets the v* tag run also publish :latest.
 on:
   push:
     branches: [main]
@@ -33,7 +32,7 @@ env:
 
 jobs:
   # 0. Deduplicate simultaneous main + v* tag pushes (e.g. git push --follow-tags):
-  #    skip the main run when HEAD already has a v* tag, and let the tag run also publish :latest and Pages.
+  #    skip the main run when HEAD already has a v* tag, and let the tag run also publish :latest.
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -256,74 +255,3 @@ jobs:
       id-token: write
     uses: ./.github/workflows/nuget.yml
     secrets: inherit
-
-  # 2b. Build the GitHub Pages fake-data demo site (brain 0015), only on main (or a v* tag at main tip) after build-test passes.
-  pages-build:
-    needs: [gate, build-test]
-    if: needs.gate.outputs.is_main == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up .NET 11
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 11.0.x
-          dotnet-quality: preview
-
-      # Release publish = trimmed. Beesharp.Core is a TrimmerRootAssembly so the generated editor keeps its metadata.
-      # BuildSha / BuildTime end up in the UI's build info (brain 0025).
-      - name: Publish client
-        run: |
-          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "BUILD_TIME=$BUILD_TIME" >> "$GITHUB_ENV"
-          dotnet publish src/Beesharp.Client -c Release -o out \
-            -p:BuildSha="${{ github.sha }}" -p:BuildTime="$BUILD_TIME"
-
-      - name: Prepare site
-        working-directory: out/wwwroot
-        run: |
-          # Pre-compressed copies are not used by GitHub Pages.
-          find . -name '*.br' -delete -o -name '*.gz' -delete
-          # The site lives under /PerformanceTool/.
-          sed -i 's|<base href="/" />|<base href="/PerformanceTool/" />|' index.html
-          grep -q '<base href="/PerformanceTool/" />' index.html
-          # Cache-bust the files the fingerprint placeholders do not cover (framework and JS modules are content-hashed by the build).
-          sed -i 's|href="app.css"|href="app.css?v=${{ github.sha }}"|; s|href="favicon.svg"|href="favicon.svg?v=${{ github.sha }}"|' index.html
-          grep -q 'app.css?v=' index.html
-          # SPA deep links (/editor) hit Pages' 404 page, which is the app itself.
-          cp index.html 404.html
-          # GitHub Pages is the fake-data demo site (no server API), so default it to Fake mode.
-          printf '{"DataSource":"Fake"}\n' > appsettings.json
-          # Lets a running page notice a newer deploy (brain 0025). Fetched with cache: no-store.
-          printf '{"sha":"%s","time":"%s"}\n' "${{ github.sha }}" "$BUILD_TIME" > build-info.json
-          # Do not run Jekyll (it would drop the _framework folder).
-          touch .nojekyll
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: out/wwwroot
-
-  # 3b. Deploy the Pages artifact in a separate job so the uploaded artifact is always visible to the API.
-  pages-deploy:
-    needs: pages-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4

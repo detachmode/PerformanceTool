@@ -13,15 +13,23 @@ public sealed class RunManagerLoggerProvider : ILoggerProvider
 
     private volatile RunManager? runs;
 
+    /// <summary>Initializes an unbound <see cref="RunManagerLoggerProvider"/>; call <see cref="Attach"/> once the <see cref="RunManager"/> is built.</summary>
     public RunManagerLoggerProvider() { }
 
+    /// <summary>Initializes a <see cref="RunManagerLoggerProvider"/> bound to the given <see cref="RunManager"/>.</summary>
+    /// <param name="runs">The run manager to forward host logs into.</param>
     public RunManagerLoggerProvider(RunManager runs) => this.runs = runs;
 
     /// <summary>Binds the <see cref="RunManager"/> instance after the DI container is built (avoids an <see cref="ILoggerFactory"/> circular dependency).</summary>
+    /// <param name="manager">The run manager to attach.</param>
     public void Attach(RunManager manager) => runs = manager;
 
+    /// <summary>Creates an <see cref="ILogger"/> for the specified host logging category.</summary>
+    /// <param name="categoryName">The category name of the logger.</param>
+    /// <returns>An <see cref="ILogger"/> that forwards enabled messages to the attached <see cref="RunManager"/>.</returns>
     public ILogger CreateLogger(string categoryName) => new HostLogger(this, categoryName);
 
+    /// <summary>Releases resources used by the logger provider.</summary>
     public void Dispose() { }
 
     private sealed class HostLogger(RunManagerLoggerProvider owner, string category) : ILogger

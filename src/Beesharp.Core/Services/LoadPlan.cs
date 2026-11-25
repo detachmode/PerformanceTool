@@ -10,12 +10,18 @@ namespace Beesharp.Services;
 /// </summary>
 public sealed class LoadPlan
 {
+    /// <summary>Maximum allowed target rate per minute for a scenario entry.</summary>
     public const double MaxRatePerMinute = 60_000;
+    /// <summary>Maximum allowed number of bees started together in a single burst.</summary>
     public const int MaxBeesPerBurst = 1000;
 
+    /// <summary>Scenario entries included in this plan.</summary>
     public List<ScenarioRunConfig> Scenarios { get; set; } = [];
+    /// <summary>Total run duration in seconds.</summary>
     public int DurationSeconds { get; set; } = 30;
+    /// <summary>Plan-wide default maximum number of concurrent bees in flight.</summary>
     public int MaxConcurrency { get; set; } = 50;
+    /// <summary>Per-call/per-execution timeout in seconds.</summary>
     public int TimeoutSeconds { get; set; } = 30;
     /// <summary>Default request/response header allowlist captured on slow or failed HTTP calls when <see cref="CaptureHeaders"/> is null.</summary>
     public static readonly IReadOnlyList<string> DefaultCaptureHeaders = ["X-Correlation-Id", "traceparent", "Server-Timing"];
@@ -34,6 +40,8 @@ public sealed class LoadPlan
     /// </summary>
     public bool MeasureHttpTimingSplit { get; set; }
 
+    /// <summary>Creates a deep copy of this load plan and all its scenario entries.</summary>
+    /// <returns>A cloned <see cref="LoadPlan"/> instance.</returns>
     public LoadPlan Clone() => new()
     {
         Scenarios = Scenarios.Select(s => s.Clone()).ToList(),
@@ -46,6 +54,9 @@ public sealed class LoadPlan
         MeasureHttpTimingSplit = MeasureHttpTimingSplit,
     };
 
+    /// <summary>Validates this load plan and all scenario entries against the supplied catalog.</summary>
+    /// <param name="catalog">Scenario catalog used to look up scenarios and validate entry parameters.</param>
+    /// <returns>A list of validation error messages; empty when the plan is valid.</returns>
     public List<string> Validate(ScenarioCatalog catalog)
     {
         var errors = new List<string>();
@@ -89,10 +100,14 @@ public enum SpawningPattern
     Bursts,
 }
 
+/// <summary>Configuration for one scenario entry inside a <see cref="LoadPlan"/>.</summary>
 public sealed class ScenarioRunConfig
 {
+    /// <summary>Identifier of the scenario to execute.</summary>
     public string ScenarioId { get; set; } = "";
+    /// <summary>Display label for this entry in the plan and run views.</summary>
     public string Label { get; set; } = "";
+    /// <summary>Target arrival rate in bees per minute when <see cref="Pattern"/> is <see cref="SpawningPattern.Linear"/>.</summary>
     public double RatePerMinute { get; set; } = 60;
     /// <summary>Spawning pattern (brain 0034). Missing in old presets = <see cref="SpawningPattern.Linear"/>.</summary>
     public SpawningPattern Pattern { get; set; } = SpawningPattern.Linear;
@@ -104,10 +119,13 @@ public sealed class ScenarioRunConfig
     public int? MaxInFlight { get; set; }
 
     /// <summary>Bees per minute the entry aims at: <see cref="RatePerMinute"/> for linear, bees per burst × bursts per minute for bursts.</summary>
+    /// <returns>Effective target rate in bees per minute.</returns>
     public double EffectiveRatePerMinute() => Pattern == SpawningPattern.Bursts ? BeesPerBurst * BurstsPerMinute : RatePerMinute;
     /// <summary>Parameter values as stored in presets. Shape is defined by the scenario's parameter class (brain 0007).</summary>
     public JsonObject Parameters { get; set; } = new();
 
+    /// <summary>Creates a deep copy of this scenario entry configuration.</summary>
+    /// <returns>A cloned <see cref="ScenarioRunConfig"/> instance.</returns>
     public ScenarioRunConfig Clone() => new()
     {
         ScenarioId = ScenarioId,
@@ -120,6 +138,9 @@ public sealed class ScenarioRunConfig
         Parameters = (JsonObject)Parameters.DeepClone(),
     };
 
+    /// <summary>Creates a default <see cref="ScenarioRunConfig"/> for the specified scenario.</summary>
+    /// <param name="scenario">Scenario whose ID, name, and default parameters populate the entry.</param>
+    /// <returns>A new <see cref="ScenarioRunConfig"/> initialized with the scenario's defaults.</returns>
     public static ScenarioRunConfig CreateFor(IScenario scenario) => new()
     {
         ScenarioId = scenario.Id,
@@ -131,6 +152,8 @@ public sealed class ScenarioRunConfig
     /// Brings stored values into the scenario's current shape: adds defaults for new parameters, drops removed ones
     /// and converts legacy values (e.g. a multiline string into a list). Anything unreadable goes to <paramref name="problems"/>.
     /// </summary>
+    /// <param name="scenario">Scenario defining the target parameter schema.</param>
+    /// <param name="problems">Optional list that receives messages for unreadable or dropped parameter values.</param>
     public void Normalize(IScenario scenario, List<string>? problems = null) =>
         Parameters = scenario.Spec.Normalize(Parameters, problems);
 }

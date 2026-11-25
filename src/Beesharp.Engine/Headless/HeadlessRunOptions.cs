@@ -37,6 +37,11 @@ public sealed record HeadlessRunOptions
 }
 
 /// <summary>Result of parsing <c>run</c> CLI options.</summary>
+/// <param name="IsHelp">True when a help flag (<c>-h</c>, <c>--help</c>, or <c>-?</c>) was encountered.</param>
+/// <param name="Options">Parsed run options when parsing succeeded without help or error.</param>
+/// <param name="Root">Optional workspace root directory passed via <c>--root</c>, resolved to a full path.</param>
+/// <param name="Storage">Optional normalized storage provider name (<c>duckdb</c> or <c>memory</c>) passed via <c>--storage</c>.</param>
+/// <param name="Error">Validation or syntax error message when parsing failed.</param>
 public sealed record ParsedHeadlessRunArgs(
     bool IsHelp,
     HeadlessRunOptions? Options = null,
@@ -49,6 +54,7 @@ public sealed record ParsedHeadlessRunArgs(
 /// </summary>
 public static class HeadlessArgumentParser
 {
+    /// <summary>Help text printed for <c>Beesharp.Host</c> <c>run --help</c>.</summary>
     public const string HostRunUsage = """
         run - execute a load plan headlessly, stream progress & failures, print summary
 
@@ -72,9 +78,17 @@ public static class HeadlessArgumentParser
           2  the run could not run: bad arguments, preset or environment not found, unknown {{placeholder}}, preflight failed
         """;
 
+    /// <summary>Returns whether <paramref name="arg"/> is a recognized help flag (<c>-h</c>, <c>--help</c>, or <c>-?</c>).</summary>
+    /// <param name="arg">The command-line token to check.</param>
+    /// <returns><see langword="true"/> if <paramref name="arg"/> is a help flag; otherwise <see langword="false"/>.</returns>
     public static bool IsHelpFlag(string arg) => arg is "-h" or "--help" or "-?";
 
     /// <summary>Parses arguments starting at <paramref name="startIndex"/> (typically 1, right after <c>run</c>).</summary>
+    /// <param name="args">Full list of command-line arguments.</param>
+    /// <param name="startIndex">Zero-based index in <paramref name="args"/> where <c>run</c> options begin.</param>
+    /// <param name="allowRootAndStorage">Whether <c>--root</c> and <c>--storage</c> options are accepted.</param>
+    /// <param name="requirePreset">Whether <c>--preset</c> is mandatory.</param>
+    /// <returns>A <see cref="ParsedHeadlessRunArgs"/> describing help, parsed options, or a parse error.</returns>
     public static ParsedHeadlessRunArgs ParseRunOptions(
         IReadOnlyList<string> args,
         int startIndex,
@@ -225,6 +239,9 @@ public static class HeadlessArgumentParser
         static ParsedHeadlessRunArgs Fail(string error) => new(IsHelp: false, Error: error);
     }
 
+    /// <summary>Normalizes a CLI log level token (such as <c>info</c> or <c>wrn</c>) to its canonical level name.</summary>
+    /// <param name="raw">Raw log level string from the command line.</param>
+    /// <returns>The canonical level name (<c>Trace</c>, <c>Debug</c>, <c>Information</c>, <c>Warning</c>, or <c>Error</c>), or <see langword="null"/> if unrecognized.</returns>
     public static string? NormalizeLogLevel(string raw) => raw.Trim().ToLowerInvariant() switch
     {
         "trace" or "trc" => "Trace",
@@ -235,10 +252,16 @@ public static class HeadlessArgumentParser
         _ => null,
     };
 
+    /// <summary>Returns whether <paramref name="path"/> represents a directory (ends with a directory separator or already exists as a directory).</summary>
+    /// <param name="path">Destination path to inspect.</param>
+    /// <returns><see langword="true"/> if <paramref name="path"/> is treated as a directory; otherwise <see langword="false"/>.</returns>
     public static bool IsDirectoryPath(string path) =>
         path.EndsWith('/') || path.EndsWith('\\') || Directory.Exists(path);
 
     /// <summary>Infers the export format from <paramref name="exportPath"/> and <paramref name="storageProvider"/> when <c>--export-format</c> is omitted.</summary>
+    /// <param name="exportPath">Target export file or directory path.</param>
+    /// <param name="storageProvider">Active storage provider name (for example <c>DuckDb</c> or <c>Memory</c>).</param>
+    /// <returns>The inferred format string (<c>parquet</c>, <c>duckdb</c>, <c>json</c>, or <c>csv</c>).</returns>
     public static string InferExportFormat(string exportPath, string storageProvider)
     {
         var defaultFormat = string.Equals(storageProvider, "DuckDb", StringComparison.OrdinalIgnoreCase) ? "parquet" : "json";

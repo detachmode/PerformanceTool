@@ -7,12 +7,18 @@ namespace Beesharp.Ai;
 /// <summary>Creates the model client for the configured provider. Tests replace it with a scripted fake <see cref="IChatClient"/>.</summary>
 public interface IAssistantChatClientFactory
 {
+    /// <summary>Creates an <see cref="IChatClient"/> configured from <paramref name="options"/>.</summary>
+    /// <param name="options">Assistant configuration containing provider, model, endpoint, and API key.</param>
+    /// <returns>An <see cref="IChatClient"/> ready to process chat completions.</returns>
     IChatClient Create(AssistantOptions options);
 }
 
 /// <summary>OpenAI and every OpenAI-compatible server (chat completions), through Microsoft.Extensions.AI.OpenAI.</summary>
 public sealed class OpenAiChatClientFactory : IAssistantChatClientFactory
 {
+    /// <summary>Creates an OpenAI-compatible <see cref="IChatClient"/> using <see cref="AssistantOptions.Endpoint"/>, <see cref="AssistantOptions.ApiKey"/>, and <see cref="AssistantOptions.Model"/>.</summary>
+    /// <param name="options">Assistant configuration containing the model name and optional endpoint and API key.</param>
+    /// <returns>An <see cref="IChatClient"/> backed by <see cref="OpenAIClient"/>.</returns>
     public IChatClient Create(AssistantOptions options)
     {
         var clientOptions = new OpenAIClientOptions();

@@ -3,8 +3,12 @@ namespace Beesharp.Services.Storage;
 /// <summary>Which run storage to use and where it keeps its file (brain 0046, 0054). The host binds it from <c>Storage:Provider</c> and <c>Storage:DuckDbPath</c>.</summary>
 public sealed class StorageOptions
 {
+    /// <summary>Provider name for persistent DuckDB storage.</summary>
     public const string DuckDb = "DuckDb";
+
+    /// <summary>Provider name for bounded in-memory storage.</summary>
     public const string Memory = "Memory";
+
     /// <summary>The providers that exist, for messages.</summary>
     public static readonly string[] SupportedProviders = [DuckDb, Memory];
 
@@ -18,6 +22,8 @@ public sealed class StorageOptions
     public string Root { get; set; } = Directory.GetCurrentDirectory();
 
     /// <summary>The normalized provider name; throws <see cref="NotSupportedException"/> naming the supported providers for anything else (SQLite was dropped, brain 0054).</summary>
+    /// <returns>The canonical provider name (<see cref="DuckDb"/> or <see cref="Memory"/>).</returns>
+    /// <exception cref="NotSupportedException">Thrown when <see cref="Provider"/> is not a supported provider.</exception>
     public string ResolveProvider()
     {
         var provider = string.IsNullOrWhiteSpace(Provider) ? DuckDb : Provider.Trim();
@@ -28,6 +34,8 @@ public sealed class StorageOptions
             "SQLite storage was removed: set \"Storage:Provider\" to DuckDb or Memory. Runs kept in an old SQLite file are not read anymore.");
     }
 
+    /// <summary>Resolves <see cref="DuckDbPath"/> to an absolute file path under <see cref="Root"/>, defaulting to <c>data/beesharp.duckdb</c>.</summary>
+    /// <returns>The absolute path to the DuckDB database file.</returns>
     public string ResolveDuckDbPath() =>
         string.IsNullOrWhiteSpace(DuckDbPath)
             ? Path.Combine(Root, "data", "beesharp.duckdb")

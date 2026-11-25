@@ -113,6 +113,7 @@ internal static class ScriptCompiler
         rest.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
         && (rest.Length == keyword.Length || char.IsWhiteSpace(rest[keyword.Length]));
 
+    /// <summary>Converts a Roslyn <see cref="Diagnostic"/> into a <see cref="ScriptDiagnosticDto"/> with 1-based line and column positions.</summary>
     public static ScriptDiagnosticDto ToDiagnosticDto(Diagnostic d)
     {
         var span = d.Location.GetLineSpan();
@@ -152,6 +153,10 @@ internal static class ScriptNames
 /// <summary>The files of one kind of script in one folder: <c>{id}.cs</c> (scenario scripts also read the older <c>{id}.csx</c>).</summary>
 internal sealed class ScriptFolder(string directory, bool includeLegacyCsx)
 {
+    /// <summary>Represents a script source file read from disk.</summary>
+    /// <param name="Id">The script identifier derived from the file name without extension.</param>
+    /// <param name="FileName">The file name including extension.</param>
+    /// <param name="Code">The raw C# script source text.</param>
     public sealed record ScriptFile(string Id, string FileName, string Code);
 
     /// <summary>Every script file in the folder (empty when the folder does not exist), in a stable order.</summary>
@@ -179,6 +184,7 @@ internal sealed class ScriptFolder(string directory, bool includeLegacyCsx)
         }
     }
 
+    /// <summary>Deletes <c>{id}.cs</c> (and <c>{id}.csx</c> when legacy files are enabled) from the folder if present.</summary>
     public void Delete(string id)
     {
         foreach (var ext in includeLegacyCsx ? new[] { ".cs", ".csx" } : [".cs"])

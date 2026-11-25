@@ -8,10 +8,18 @@ namespace Beesharp.Services;
 /// <summary>Inputs to <see cref="HeadlessRunner.RunAsync"/>.</summary>
 public sealed record HeadlessRunRequest
 {
+    /// <summary>The load plan to validate and execute.</summary>
     public required LoadPlan Plan { get; init; }
+
+    /// <summary>Display name of the preset (or plan) being executed.</summary>
     public required string PresetName { get; init; }
+
+    /// <summary>Optional environment name whose values resolve <c>{{Key}}</c> placeholders.</summary>
     public string? EnvironmentName { get; init; }
+
+    /// <summary>Headless execution, logging, output, and export options.</summary>
     public required HeadlessRunOptions Options { get; init; }
+
     /// <summary>Optional root folder displayed in the startup banner (used by <c>Beesharp.Cli</c>).</summary>
     public string? Root { get; init; }
     /// <summary>Optional database file path for the "Saved to" line when storage persists runs on disk.</summary>
@@ -29,6 +37,16 @@ public static class HeadlessRunner
 {
     private const int MaxLiveFailures = 50;
 
+    /// <summary>
+    /// Validates the plan, scripts, environment, and placeholders, runs the load test to completion (or cancellation),
+    /// streams live output, optionally exports results, and writes the final summary.
+    /// </summary>
+    /// <param name="request">The run request containing the plan, preset name, environment, and options.</param>
+    /// <param name="services">Application service provider supplying the scenario catalog, environment store, run manager, storage, and script stores.</param>
+    /// <param name="output">Standard output writer for banners, progress, live logs, and summary output.</param>
+    /// <param name="error">Error output writer for validation, compilation, export, and file-write errors.</param>
+    /// <param name="stop">Cancellation token (typically Ctrl+C) that stops the active run while still allowing the shutdown program to execute.</param>
+    /// <returns>One of the <see cref="HeadlessExitCodes"/> exit codes (<c>0</c>, <c>1</c>, or <c>2</c>).</returns>
     public static async Task<int> RunAsync(
         HeadlessRunRequest request,
         IServiceProvider services,

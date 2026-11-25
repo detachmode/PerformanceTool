@@ -24,6 +24,14 @@ public sealed partial class AssistantToolbox
     private readonly ScenarioCatalog catalog;
     private readonly TurnRecorder rec;
 
+    /// <summary>Initializes a new instance of the <see cref="AssistantToolbox"/> class for a single conversation turn.</summary>
+    /// <param name="plan">Port for reading and editing the Live plan and presets.</param>
+    /// <param name="run">Port for inspecting and controlling the active run.</param>
+    /// <param name="history">Port for querying runs, bees, calls, and logs.</param>
+    /// <param name="environments">Port for reading and managing environments.</param>
+    /// <param name="scripts">Port for managing custom scenario and preflight scripts.</param>
+    /// <param name="catalog">Catalog of built-in and custom scenarios.</param>
+    /// <param name="recorder">Turn recorder capturing tool activity chips and view cards.</param>
     public AssistantToolbox(
         IPlanWorkspacePort plan,
         IRunPort run,
@@ -43,6 +51,7 @@ public sealed partial class AssistantToolbox
     }
 
     /// <summary>All tools as <see cref="AIFunction"/>s, bound to this toolbox (and so to this turn's recorder).</summary>
+    /// <returns>The ordered list of assistant tools exposed to the language model.</returns>
     public IReadOnlyList<AIFunction> Build() =>
         typeof(AssistantToolbox)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
