@@ -13,7 +13,7 @@ public sealed class CanceledBeesTests
         public int LongMs { get; set; } = 5000;
     }
 
-    private sealed class StepScenario : Scenario<StepParams>
+    private sealed class StepScenario(Action? onEnteredLong = null) : Scenario<StepParams>
     {
         public override string Id => "step";
         public override string Name => "Step";
@@ -23,7 +23,11 @@ public sealed class CanceledBeesTests
         {
             ctx.Log("first");
             await ctx.MeasureCallAsync("quick", () => Task.Delay(20, ct));
-            await ctx.MeasureCallAsync("long", () => Task.Delay(p.LongMs, ct));
+            await ctx.MeasureCallAsync("long", () =>
+            {
+                onEnteredLong?.Invoke();
+                return Task.Delay(p.LongMs, ct);
+            });
             return new ScenarioOutcome(200, 0);
         }
     }
@@ -38,9 +42,13 @@ public sealed class CanceledBeesTests
 
     private static async Task<StoredBeeDetail> StopAndReadBack(IRunStorage storage)
     {
-        var manager = new RunManager(new LoadRunner(new ScenarioCatalog([new StepScenario()])), null!, storage);
+        var inLong = 0;
+        var twoInLong = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = new RunManager(new LoadRunner(new ScenarioCatalog([new StepScenario(() => { if (Interlocked.Increment(ref inLong) >= 2) twoInLong.TrySetResult(); })])), null!, storage);
         await manager.StartAsync(Plan(), null);
         for (var i = 0; i < 100 && manager.GetCurrent().Scenarios[0].InFlight < 2; i++) await Task.Delay(50);
+        await twoInLong.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(20);
         await manager.StopAsync();
         for (var i = 0; i < 200 && manager.GetCurrent().State != "Finished"; i++) await Task.Delay(50);
         var status = manager.GetCurrent();
