@@ -120,14 +120,14 @@ public class HostTracingTests : IDisposable
         await using (var plain = NewBuilder([]).Build())
             Assert.Null(plain.Services.GetService<TracerProvider>());
 
-        await using (var configured = NewBuilder([], ("Tracing:OtlpEndpoint", "http://127.0.0.1:4317")).Build())
+        await using (var configured = NewBuilder([], ("Tracing:OtlpEndpoint", "http://127.0.0.1:4318")).Build())
         {
             await configured.InitializeAsync();
             Assert.NotNull(configured.Services.GetService<TracerProvider>());
         }
 
         // Also the standard OpenTelemetry environment variable name works as configuration key.
-        await using (var standard = NewBuilder([], ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")).Build())
+        await using (var standard = NewBuilder([], ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")).Build())
             Assert.NotNull(standard.Services.GetService<TracerProvider>());
     }
 }

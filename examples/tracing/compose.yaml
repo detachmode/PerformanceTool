@@ -1,16 +1,64 @@
-# Two trace backends for a dev cluster, side by side, so Beesharp can fetch traces by ID from either.
+# A dev cluster in miniature: Beesharp loads two traced services, everything sends spans to one OTel collector,
+# and the collector forwards them to Jaeger and/or Elastic. Pick the backend(s) in .env, then:
 #
-#   docker compose --profile jaeger up -d    # Jaeger v2 with Badger on a volume (one container)
-#   docker compose --profile elastic up -d   # Elasticsearch + Kibana + APM Server + OTel Collector (four containers)
-#   docker compose --profile jaeger --profile elastic up -d   # both
+#   docker compose up -d --build
+#   open http://localhost:5281   → run the "Shop journey" preset, copy a trace ID from /calls
+#   open http://localhost:16686  → Jaeger (or http://localhost:5601 for Kibana)
 #
-# Then ./send-test-trace.sh sends the same trace to both and reads it back by trace ID.
-# Dev only: Elastic security is switched off, nothing here is meant for production.
+# Dev only: Elastic security is off, nothing here is tuned for production.
 
 name: beesharp-tracing
 
 services:
-  # ── Jaeger ────────────────────────────────────────────────────────────────
+  # ── The OTLP endpoint of the cluster ──────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector:0.166.0
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    environment:
+      TRACE_EXPORTERS: ${TRACE_EXPORTERS:-[otlp_http/jaeger]}
+    volumes:
+      - ./collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"                  # OTLP http/protobuf (also for services running on the host)
+    restart: unless-stopped
+
+  # ── Beesharp: the root of every trace ─────────────────────────────────────
+  beesharp:
+    build: ../..                     # this repo; switch to image: ghcr.io/detachmode/beesharp once released
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318   # http/protobuf is Beesharp's default
+    volumes:
+      - beesharp-data:/app/data
+      - ./beesharp/shop-journey.cs:/app/scripts/shop-journey.cs:ro
+      - ./beesharp/shop-journey.json:/app/presets/shop-journey.json:ro
+    ports:
+      - "5281:8080"                  # UI and API
+    depends_on: [otel-collector, shop-api]
+    restart: unless-stopped
+
+  # ── The services under test ───────────────────────────────────────────────
+  shop-api:
+    build: ./shop-api
+    environment:
+      OTEL_SERVICE_NAME: shop-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf   # the .NET SDK defaults to gRPC
+      PaymentUrl: http://payment-api:8080
+    ports:
+      - "5290:8080"                  # to try it by hand: curl localhost:5290/products/1
+    depends_on: [otel-collector, payment-api]
+    restart: unless-stopped
+
+  payment-api:                       # same image, another service name: shows a trace across services
+    build: ./shop-api
+    environment:
+      OTEL_SERVICE_NAME: payment-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf   # the .NET SDK defaults to gRPC
+    depends_on: [otel-collector]
+    restart: unless-stopped
+
+  # ── Backend 1: Jaeger (profile jaeger) ────────────────────────────────────
   jaeger:
     profiles: [jaeger]
     image: jaegertracing/jaeger:2.23.0
@@ -21,11 +69,9 @@ services:
       - jaeger-badger:/badger
     ports:
       - "16686:16686"                # UI and query API (/api/v3/traces/{traceId})
-      - "4317:4317"                  # OTLP gRPC
-      - "4318:4318"                  # OTLP HTTP
     restart: unless-stopped
 
-  # ── Elastic ───────────────────────────────────────────────────────────────
+  # ── Backend 2: Elastic (profile elastic) ──────────────────────────────────
   elasticsearch:
     profiles: [elastic]
     image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
@@ -69,18 +115,7 @@ services:
       elasticsearch: { condition: service_healthy }
     restart: unless-stopped
 
-  otel-collector:                    # APM Server only takes OTLP as protobuf on :8200; the collector accepts both
-    profiles: [elastic]
-    image: otel/opentelemetry-collector:0.166.0
-    command: ["--config", "/etc/otelcol/config.yaml"]
-    volumes:
-      - ./elastic/collector.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      - "14317:4317"                 # OTLP gRPC (other host port than Jaeger, so both can run)
-      - "14318:4318"                 # OTLP HTTP
-    depends_on: [apm-server]
-    restart: unless-stopped
-
 volumes:
+  beesharp-data:
   jaeger-badger:
   elastic-data:

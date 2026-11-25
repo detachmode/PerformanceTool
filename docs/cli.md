@@ -65,8 +65,8 @@ Ctrl+C stops the run like Stop in the UI: bees in flight become canceled, the sh
 Every bee is the root of its own trace and every call carries a sampled `traceparent`, whatever you configure; the trace IDs are stored with the run. To also **export** the bees' spans (bee → step → call) over OTLP, set the standard OpenTelemetry environment variables; without an endpoint nothing is exported:
 
 ```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 beesharp run --preset smoke        # gRPC (default)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf beesharp run --preset smoke
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 beesharp run --preset smoke        # http/protobuf (default)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 OTEL_EXPORTER_OTLP_PROTOCOL=grpc beesharp run --preset smoke
 ```
 
 `OTEL_SERVICE_NAME` (default `beesharp`) names the service. A bad endpoint or protocol exits with code 2. The spans are flushed when the run ends; a collector that is down costs at most 3 seconds there and never fails the run.

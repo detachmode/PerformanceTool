@@ -20,12 +20,20 @@ public class TracingSettingsTests
     }
 
     [Fact]
-    public void Appsettings_section_enables_export_over_grpc_by_default()
+    public void Appsettings_section_enables_export_over_http_protobuf_by_default()
     {
-        var settings = TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "http://jaeger:4317")));
+        var settings = TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "http://collector:4318")));
         Assert.True(settings.Enabled);
-        Assert.Equal(new Uri("http://jaeger:4317"), settings.OtlpEndpoint);
+        Assert.Equal(new Uri("http://collector:4318/v1/traces"), settings.OtlpEndpoint);
+        Assert.Equal(OtlpExportProtocol.HttpProtobuf, settings.Protocol);
+    }
+
+    [Fact]
+    public void Grpc_is_used_when_asked_for_and_keeps_the_endpoint_as_written()
+    {
+        var settings = TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "http://collector:4317"), ("Tracing:Protocol", "grpc")));
         Assert.Equal(OtlpExportProtocol.Grpc, settings.Protocol);
+        Assert.Equal(new Uri("http://collector:4317"), settings.OtlpEndpoint);
     }
 
     [Fact]
@@ -43,11 +51,11 @@ public class TracingSettingsTests
     public void The_tracing_section_wins_over_the_otel_environment_variables()
     {
         var settings = TracingSettings.FromConfiguration(Config(
-            ("Tracing:OtlpEndpoint", "http://mine:4317"),
-            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://theirs:4317"),
+            ("Tracing:OtlpEndpoint", "http://mine:4318"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://theirs:4318"),
             ("Tracing:ServiceName", "mine"),
             ("OTEL_SERVICE_NAME", "theirs")));
-        Assert.Equal(new Uri("http://mine:4317"), settings.OtlpEndpoint);
+        Assert.Equal(new Uri("http://mine:4318/v1/traces"), settings.OtlpEndpoint);
         Assert.Equal("mine", settings.ServiceName);
     }
 
@@ -58,7 +66,7 @@ public class TracingSettingsTests
     [InlineData("http://localhost:4318/v1/traces", "http://localhost:4318/v1/traces")]
     public void Http_protobuf_gets_the_traces_path_the_dotnet_exporter_needs(string configured, string expected)
     {
-        var settings = TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", configured), ("Tracing:Protocol", "http/protobuf")));
+        var settings = TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", configured)));
         Assert.Equal(OtlpExportProtocol.HttpProtobuf, settings.Protocol);
         Assert.Equal(new Uri(expected), settings.OtlpEndpoint);
     }
@@ -75,7 +83,7 @@ public class TracingSettingsTests
     [Fact]
     public void Sdk_disabled_turns_export_off_even_with_an_endpoint()
     {
-        var settings = TracingSettings.FromConfiguration(Config(("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317"), ("OTEL_SDK_DISABLED", "true")));
+        var settings = TracingSettings.FromConfiguration(Config(("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"), ("OTEL_SDK_DISABLED", "true")));
         Assert.False(settings.Enabled);
     }
 
@@ -83,8 +91,8 @@ public class TracingSettingsTests
     public void A_bad_protocol_or_endpoint_fails_naming_the_valid_values()
     {
         var protocol = Assert.Throws<InvalidOperationException>(() => TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "http://x:1"), ("Tracing:Protocol", "http/json"))));
-        Assert.Contains("grpc, http/protobuf", protocol.Message);
-        var endpoint = Assert.Throws<InvalidOperationException>(() => TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "localhost:4317"))));
-        Assert.Contains("http://localhost:4317", endpoint.Message);
+        Assert.Contains("http/protobuf (default), grpc", protocol.Message);
+        var endpoint = Assert.Throws<InvalidOperationException>(() => TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "localhost:4318"))));
+        Assert.Contains("http://localhost:4318", endpoint.Message);
     }
 }

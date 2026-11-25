@@ -17,12 +17,12 @@ public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Proto
     public const string DefaultServiceName = "beesharp";
 
     /// <summary>Settings with export off.</summary>
-    public static TracingSettings Off { get; } = new(null, OtlpExportProtocol.Grpc, DefaultServiceName);
+    public static TracingSettings Off { get; } = new(null, OtlpExportProtocol.HttpProtobuf, DefaultServiceName);
 
     /// <summary>Whether spans are exported to a collector.</summary>
     public bool Enabled => OtlpEndpoint is not null;
 
-    /// <summary>Reads the settings. Throws <see cref="InvalidOperationException"/> naming the valid values for an endpoint that is no absolute URL or a protocol that is not <c>grpc</c> or <c>http/protobuf</c>.</summary>
+    /// <summary>Reads the settings. The protocol defaults to <c>http/protobuf</c> (port 4318), the OpenTelemetry spec default. Throws <see cref="InvalidOperationException"/> naming the valid values for an endpoint that is no absolute URL or a protocol that is not <c>http/protobuf</c> or <c>grpc</c>.</summary>
     /// <param name="configuration">Application configuration; in a host it includes the environment variables.</param>
     /// <returns>The resolved settings; <see cref="Enabled"/> is <see langword="false"/> without an endpoint or with <c>OTEL_SDK_DISABLED=true</c>.</returns>
     public static TracingSettings FromConfiguration(IConfiguration configuration)
@@ -41,16 +41,16 @@ public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Proto
         var text = First(tracesSpecific, configured);
         if (text is null || sdkDisabled) return new TracingSettings(null, protocol, serviceName);
         if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-            throw new InvalidOperationException($"Tracing endpoint '{text}' is not an absolute http(s) URL, e.g. http://localhost:4317 (gRPC) or http://localhost:4318 (http/protobuf).");
+            throw new InvalidOperationException($"Tracing endpoint '{text}' is not an absolute http(s) URL, e.g. http://localhost:4318 (http/protobuf, the default) or http://localhost:4317 (grpc).");
 
         return new TracingSettings(tracesSpecific is not null ? uri : ForProtocol(uri, protocol), protocol, serviceName);
     }
 
     private static OtlpExportProtocol ParseProtocol(string? text) => text?.Trim().ToLowerInvariant() switch
     {
-        null or "" or "grpc" => OtlpExportProtocol.Grpc,
-        "http/protobuf" or "httpprotobuf" => OtlpExportProtocol.HttpProtobuf,
-        _ => throw new InvalidOperationException($"Tracing protocol '{text}' is not supported. Supported: grpc, http/protobuf."),
+        null or "" or "http/protobuf" or "httpprotobuf" => OtlpExportProtocol.HttpProtobuf,
+        "grpc" => OtlpExportProtocol.Grpc,
+        _ => throw new InvalidOperationException($"Tracing protocol '{text}' is not supported. Supported: http/protobuf (default), grpc."),
     };
 
     /// <summary>The .NET exporter sends HTTP to exactly the URL it is given, so the base endpoint gets the traces path.</summary>

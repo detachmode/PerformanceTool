@@ -1,0 +1,12 @@
+{
+  "name": "Shop journey",
+  "savedAt": "2026-11-25T00:00:00+00:00",
+  "plan": {
+    "scenarios": [
+      { "scenarioId": "script-shop-journey", "label": "Shop journey", "ratePerMinute": 60, "pattern": "Linear", "parameters": { "products": 3 } }
+    ],
+    "durationSeconds": 120,
+    "maxConcurrency": 50,
+    "timeoutSeconds": 30
+  }
+}

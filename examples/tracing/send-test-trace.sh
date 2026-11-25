@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sends one two-span trace (beesharp → shop-api) over OTLP/HTTP to every running backend,
+# Sends one two-span trace (beesharp → shop-api) over OTLP/HTTP to the collector (:4318),
 # then reads it back by trace ID — the same lookup Beesharp would do for a slow call.
 set -euo pipefail
 
@@ -44,14 +44,15 @@ elastic_spans() {
     | jq -er '[.hits.hits[]._source | "\(.service.name) (\(.processor.event))"] | select(length==2) | join(", ")'
 }
 
+# One send to the collector, which forwards to whichever backends .env names.
+post http://localhost:4318
+
 if curl -fs -o /dev/null http://localhost:16686; then
-  post http://localhost:4318
   echo "jaeger:  $(retry jaeger_spans || echo 'not found')"
   echo "         http://localhost:16686/trace/$trace_id"
 fi
 
 if curl -fs -o /dev/null http://localhost:9200; then
-  post http://localhost:14318
   echo "elastic: $(retry elastic_spans || echo 'not found')"
   echo "         http://localhost:5601/app/apm/link-to/trace/$trace_id"
 fi

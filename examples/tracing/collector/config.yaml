@@ -1,0 +1,23 @@
+# The cluster's one OTLP endpoint (http/protobuf on 4318, the OTel default): Beesharp and every service under test send their spans here.
+# The collector forwards them to the backend(s) named in TRACE_EXPORTERS (.env). Tail sampling would go here too.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  otlp_http/jaeger:
+    endpoint: http://jaeger:4318
+  otlp_http/elastic:
+    endpoint: http://apm-server:8200 # APM Server takes OTLP as protobuf only; the collector sends protobuf
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: ${env:TRACE_EXPORTERS}

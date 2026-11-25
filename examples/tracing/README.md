@@ -1,97 +1,89 @@
-# Trace backends for a dev cluster: Jaeger vs Elastic
+# Tracing example: Beesharp as the root of every trace (brain 0062)
 
-Two dev setups side by side, to compare them before Beesharp fetches traces by trace ID. Dev only: Elastic
-security is off and nothing is tuned for production.
+A dev cluster in miniature. Beesharp loads two traced services; Beesharp and the services all send their spans to
+**one OpenTelemetry collector** (OTLP http/protobuf on port 4318), and the collector forwards them to Jaeger and/or
+Elastic. Every actor (bee) is one trace: actor → steps → calls → the services' own spans.
+
+```
+ beesharp ──calls with traceparent──▶ shop-api ──▶ payment-api
+     │                                   │              │
+     └───────────── spans, OTLP :4318 ───┴──────────────┘
+                          ▼
+                   otel-collector ──▶ Jaeger and/or Elastic (APM Server)
+```
+
+Dev only: Elastic security is off and nothing is tuned for production.
+
+## Run
 
 ```sh
-docker compose --profile jaeger up -d                     # Jaeger only
-docker compose --profile elastic up -d                    # Elastic only
-docker compose --profile jaeger --profile elastic up -d   # both
-./send-test-trace.sh                                      # needs curl, jq, openssl
-docker compose --profile jaeger --profile elastic down    # add -v to delete the stored traces
+docker compose up -d --build      # backend chosen in .env (Jaeger by default)
 ```
 
-`send-test-trace.sh` sends one trace (`beesharp` → `shop-api`) to every running backend and reads it back by
-trace ID, the same lookup Beesharp would do for a slow call:
+1. Open Beesharp at http://localhost:5281, load the preset **Shop journey** and press play.
+2. On `/calls`, pick a slow call and copy its trace ID.
+3. Open it in Jaeger: `http://localhost:16686/trace/<traceId>`, or in Kibana:
+   `http://localhost:5601/app/apm/link-to/trace/<traceId>`.
 
-```
-trace id: 4d7ce6ac47fbe9b3822d67a473ce9774
-jaeger:  beesharp, shop-api
-         http://localhost:16686/trace/4d7ce6ac47fbe9b3822d67a473ce9774
-elastic: beesharp (transaction), shop-api (transaction)
-         http://localhost:5601/app/apm/link-to/trace/4d7ce6ac47fbe9b3822d67a473ce9774
-```
+`./send-test-trace.sh` (needs curl, jq and openssl) checks the pipeline without Beesharp: it sends one trace to the
+collector and reads it back by trace ID from every running backend.
 
-## Point Beesharp at a backend
+`docker compose down` stops everything; add `-v` to also delete the stored runs and traces.
 
-Beesharp makes every bee the root of its own trace (bee → step → call) and sends a sampled `traceparent` on every call, so a service that is instrumented with OpenTelemetry (and keeps traces of a sampled parent) shows its server spans below the call. Exporting Beesharp's own spans is **off until you give it a collector** (brain 0062):
+## Pick the backend (`.env`)
 
-| Backend | gRPC (default) | http/protobuf |
+| Backend | `COMPOSE_PROFILES` | `TRACE_EXPORTERS` |
 |---|---|---|
-| Jaeger | `http://localhost:4317` | `http://localhost:4318` |
-| Elastic (OTel Collector → APM Server) | `http://localhost:14317` | `http://localhost:14318` |
+| Jaeger (default) | `jaeger` | `[otlp_http/jaeger]` |
+| Elastic | `elastic` | `[otlp_http/elastic]` |
+| Both, to compare | `jaeger,elastic` | `[otlp_http/jaeger, otlp_http/elastic]` |
+
+The profiles start the backends and `TRACE_EXPORTERS` tells the collector where to forward, so the two must match.
+
+## What runs
+
+| Service | Port | What it is |
+|---|---|---|
+| `otel-collector` | 4318 | The cluster's one OTLP endpoint (http/protobuf), also for services running on the host. |
+| `beesharp` | 5281 | Built from this repo. `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`; mounts `beesharp/shop-journey.cs` (scenario) and `beesharp/shop-journey.json` (preset). |
+| `shop-api` | 5290 | Demo service under test (`shop-api/`), plain OpenTelemetry .NET. Its fake database queries are spans of their own and sometimes slow, so a trace shows *why* a call was slow. `/pay` calls `payment-api`. |
+| `payment-api` | — | The same image under another service name; fails now and then (503). |
+| `jaeger` (profile `jaeger`) | 16686 | Jaeger v2 with Badger on the `jaeger-badger` volume (72 h TTL). Query: `GET /api/v3/traces/{traceId}` returns OTLP JSON. |
+| `elasticsearch`, `kibana`, `apm-server` (profile `elastic`) | 9200, 5601 | Query: `POST :9200/traces-apm*/_search`, term `trace.id`; Elastic's own field layout. |
+
+## Beesharp's tracing settings
+
+Off unless an endpoint is set. `Tracing:*` wins over the standard `OTEL_*` variables:
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| Endpoint | `Tracing__OtlpEndpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT` | none (export off) |
+| Protocol | `Tracing__Protocol` or `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` (port 4318); `grpc` for 4317 |
+| Service name | `Tracing__ServiceName` or `OTEL_SERVICE_NAME` | `beesharp` |
+
+Beesharp running on the host (not in compose) sends to the same collector:
 
 ```sh
-# server, from the repo root
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 dotnet run --project src/Beesharp
-# or in appsettings / Docker:  Tracing__OtlpEndpoint=http://localhost:4317
-# http/protobuf instead of gRPC:
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf dotnet run --project src/Beesharp
-# headless
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317 dotnet run --project src/Beesharp.Cli -- run --preset smoke
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 dotnet run --project src/Beesharp
 ```
 
-Settings (`Tracing:*` wins over the `OTEL_*` variables): `Tracing:OtlpEndpoint`, `Tracing:Protocol` (`grpc` | `http/protobuf`), `Tracing:ServiceName` (default `beesharp`, also `OTEL_SERVICE_NAME`). Inside Docker Compose use the service name instead of `localhost` (`http://jaeger:4317`).
-
-Run a preset, open a call on `/calls` (or the Calls tab of a bee), copy its trace ID and look it up:
-
-```sh
-curl http://localhost:16686/api/v3/traces/<trace id>      # Jaeger: bee, steps, calls and the services' spans
-open http://localhost:16686/trace/<trace id>
-```
-
-A trace looks like this (checked against Jaeger v2 with a small instrumented `shop-api`):
-
-```
-[beesharp] Shop journey            (the bee)
-  [beesharp] Log in                (a step)
-    [beesharp] GET /login          (a call)
-      [shop-api] GET /login        (the service's server span)
-  [beesharp] Open product
-    [beesharp] GET /products/{id}
-      [shop-api] GET /products/{id}
-  [beesharp] Pay
-    [beesharp] POST /pay
-      [shop-api] POST /pay
-```
-
-## Endpoints
+## Comparison of the backends (measured idle on a Mac, Docker Desktop)
 
 | | Jaeger | Elastic |
 |---|---|---|
-| Services send OTLP to | `:4317` gRPC, `:4318` HTTP | `:14317` gRPC, `:14318` HTTP (OTel Collector → APM Server) |
-| UI | http://localhost:16686 | http://localhost:5601 (Observability → Applications) |
-| Trace by ID | `GET :16686/api/v3/traces/{traceId}` → OTLP JSON | `POST :9200/traces-apm*/_search`, term `trace.id` → Elastic's own field layout |
-
-## Comparison (measured idle on a Mac, Docker Desktop)
-
-| | Jaeger | Elastic |
-|---|---|---|
-| Containers | 1 (`jaeger`) | 4 (`elasticsearch`, `kibana`, `apm-server`, `otel-collector`) |
+| Containers | 1 | 3 (`elasticsearch`, `kibana`, `apm-server`) |
 | Memory | ~20 MB | ~3 GB (Elasticsearch ~1.5 GB, Kibana ~1.5 GB) |
-| Images | ~170 MB | ~4.5 GB |
-| Storage | Badger, embedded, on the `jaeger-badger` volume, 72 h TTL | Elasticsearch on the `elastic-data` volume |
-| Scaling | one replica only (Badger is single-process) | can grow to a real cluster |
-| Same as production? | no, a second adapter in Beesharp | yes, if production is Elastic with APM Server |
+| Images | ~170 MB | ~4.3 GB |
+| Storage | Badger, embedded, one replica only | Elasticsearch, can grow to a real cluster |
 
 ## Notes
 
-- **APM Server takes OTLP as protobuf only.** Sending OTLP JSON straight to `:8200` fails with
-  `400 failed to unmarshal request body`. Real SDKs send protobuf, but the OTel Collector in front accepts both
-  and is also where tail sampling would go in a cluster.
+- **The .NET SDK defaults to gRPC.** Services built with OpenTelemetry .NET need
+  `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` to use port 4318 (see `shop-api` in `compose.yaml`).
+- **APM Server takes OTLP as protobuf only**: OTLP JSON sent straight to `:8200` fails with `400 failed to unmarshal
+  request body`. The collector always forwards protobuf.
 - **Field layout:** APM Server converts OTLP to Elastic's own fields (`trace.id`, `parent.id`, `transaction.*` /
-  `span.*`, durations in µs). Ingesting through Elastic's own OTel collector (EDOT) instead keeps OTel field
-  names; the Beesharp adapter must match what production uses.
+  `span.*`, durations in µs). Ingesting through Elastic's own OTel collector (EDOT) instead keeps OTel field names.
 - **Disk check off:** `cluster.routing.allocation.disk.threshold_enabled: false`, because Elasticsearch refuses new
   data when the Docker disk is over 90% full. Remove it anywhere that is not a laptop.
 - APM Server logs `refresh cache elasticsearch returned status 404` until Kibana has set up APM agent
