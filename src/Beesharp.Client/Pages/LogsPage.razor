@@ -68,7 +68,14 @@
                     <span class="lg-opt-name">Shutdown</span><span class="n">@Format.Num(facets.Shutdown)</span>
                 </button>
             }
-            @if (s.Count == 0 && facets.Preflight == 0 && facets.Shutdown == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
+            @if (facets.Host > 0 || filter.Entry == ProgramLogEntry.Host)
+            {
+                var on = filter.Entry == ProgramLogEntry.Host;
+                <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleEntry(ProgramLogEntry.Host))" title="@(on ? "Remove" : "Show only") Host">
+                    <span class="lg-opt-name">Host</span><span class="n">@Format.Num(facets.Host)</span>
+                </button>
+            }
+            @if (s.Count == 0 && facets.Preflight == 0 && facets.Shutdown == 0 && facets.Host == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
         </div>
 
         @if (stepsOfEntry.Any)
@@ -236,6 +243,7 @@
     {
         if (entry == ProgramLogEntry.Preflight) return "Preflight";
         if (entry == ProgramLogEntry.Shutdown) return "Shutdown";
+        if (entry == ProgramLogEntry.Host) return "Host";
         var s = Sim.Current;
         return entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : "";
     }
@@ -297,6 +305,7 @@
         {
             var label = e == ProgramLogEntry.Preflight ? "Preflight"
                 : e == ProgramLogEntry.Shutdown ? "Shutdown"
+                : e == ProgramLogEntry.Host ? "Host"
                 : e >= 0 && e < s.Labels.Count ? s.Labels[e]
                 : $"#{e + 1}";
             chips.Add(($"Scenario: {label}", f => f.WithEntry(null)));

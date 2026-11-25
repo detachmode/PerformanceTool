@@ -106,13 +106,16 @@
                             {
                                 <span class="cl-ep-limit" title="Author slow threshold">@Format.Ms(lim)</span>
                             }
+                            @if (item.FailedCount > 0) { <span class="cl-badge bad" title="Failed calls">@item.FailedCount</span> }
+                            @if (item.SlowCount > 0) { <span class="cl-badge warn" title="Slow calls">@item.SlowCount</span> }
+                            <span class="cl-badge n" title="Total calls">@Format.Num(item.TotalCount)</span>
                         </div>
-                        <div class="cl-ep-sub tnum">
-                            <span class="muted">typ <b>@Format.Ms(item.TypicalMs)</b> · 5% <b class="@(item.SlowCount > 0 ? "warn" : "")">@Format.Ms(item.P95Ms)</b> · max @Format.Ms(item.MaxMs)</span>
-                            <span class="spacer"></span>
-                            @if (item.FailedCount > 0) { <span class="cl-badge bad">@item.FailedCount</span> }
-                            @if (item.SlowCount > 0) { <span class="cl-badge warn">@item.SlowCount</span> }
-                            <span class="cl-badge n">@Format.Num(item.TotalCount)</span>
+                        <div class="cl-ep-sub muted tnum">
+                            <span title="Typical duration">~ <b>@Format.Ms(item.TypicalMs)</b></span>
+                            <span aria-hidden="true">·</span>
+                            <span title="Slowest 5% (p95)">p95 <b>@Format.Ms(item.P95Ms)</b></span>
+                            <span aria-hidden="true">·</span>
+                            <span title="Max duration">↑ <b>@Format.Ms(item.MaxMs)</b></span>
                         </div>
                     </button>
                 }
@@ -169,12 +172,12 @@
                     </div>
                     <div class="cl-kpi static">
                         <span class="lbl">Slowest 5%</span>
-                        <b class="tnum @(sum.SlowCount > 0 ? "warn" : "")">@Format.Ms(sum.P95Ms)</b>
+                        <b class="tnum">@Format.Ms(sum.P95Ms)</b>
                     </div>
-                    <div class="cl-kpi static">
+                    <button type="button" class="cl-kpi" disabled="@(sum.TotalCount == 0)" @onclick="SelectMaxCall" title="Select the slowest call">
                         <span class="lbl">Max</span>
                         <b class="tnum">@Format.Ms(sum.MaxMs)</b>
-                    </div>
+                    </button>
                     <button type="button" class="cl-kpi warn @(sum.SlowCount == 0 ? "zero" : "") @(filter.Outcome == BeeShow.Slow ? "on" : "")"
                             disabled="@(sum.SlowCount == 0)" @onclick="() => ToggleOutcome(BeeShow.Slow)">
                         <span class="lbl">Slow</span>
@@ -189,8 +192,17 @@
 
                 <div class="cl-filterbar">
                     <div class="cl-adhoc">
-                        <label for="cl-minms">Over</label>
-                        <input id="cl-minms" type="number" min="0" step="50" placeholder="0" value="@minMsText" @oninput="OnMinMsInput" />
+                        <label for="cl-minms-range">Over</label>
+                        @{
+                            var sliderMax = Math.Max(100, Math.Ceiling(sum.MaxMs));
+                            var sliderStep = Math.Max(1, Math.Round(sliderMax / 100));
+                            var sliderVal = Math.Clamp(filter.MinMs ?? 0, 0, sliderMax);
+                        }
+                        <div class="slider with-input">
+                            <input id="cl-minms-range" type="range" min="0" max="@sliderMax.ToString(CultureInfo.InvariantCulture)" step="@sliderStep.ToString(CultureInfo.InvariantCulture)"
+                                   value="@sliderVal.ToString(CultureInfo.InvariantCulture)" aria-label="Minimum duration slider" @oninput="OnMinMsSliderInput" />
+                            <input id="cl-minms" class="slider-num" type="number" min="0" step="50" placeholder="0" value="@minMsText" @oninput="OnMinMsInput" />
+                        </div>
                         <span>ms</span>
                     </div>
 
@@ -225,6 +237,8 @@
                                ToSec="filter.ToSec"
                                MinMs="filter.MinMs"
                                SelectedId="selectedCall?.Id"
+                               SelectedAtSeconds="selectedCall?.AtSeconds"
+                               SelectedDurationMs="selectedCall?.DurationMs"
                                OnSelectCall="SelectCallById"
                                OnZoom="OnChartZoom" />
 
@@ -232,6 +246,7 @@
                            SlowThresholdMs="detail.Summary.SlowThresholdMs"
                            MinMs="filter.MinMs"
                            MaxMs="filter.MaxMs"
+                           SelectedDurationMs="selectedCall?.DurationMs"
                            OnSelectBucket="OnHistogramBucket" />
 
             <CallListPanel Snapshot="s"
@@ -400,9 +415,23 @@
         ApplyFilter(filter.WithSearch(""), reloadEndpoints: true);
     }
 
+    private void OnMinMsSliderInput(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? "";
+        double? parsed = double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
+        minMsText = parsed is { } p ? p.ToString("0", CultureInfo.InvariantCulture) : "";
+        ScheduleMinMsFilter(parsed);
+    }
+
     private void OnMinMsInput(ChangeEventArgs e)
     {
         minMsText = e.Value?.ToString() ?? "";
+        double? parsed = double.TryParse(minMsText, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
+        ScheduleMinMsFilter(parsed);
+    }
+
+    private void ScheduleMinMsFilter(double? parsed)
+    {
         debounceCts?.Cancel();
         debounceCts?.Dispose();
         debounceCts = new CancellationTokenSource();
@@ -412,7 +441,6 @@
             try
             {
                 await Task.Delay(260, ct);
-                double? parsed = double.TryParse(minMsText, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
                 await InvokeAsync(() => ApplyFilter(filter.WithDurationRange(parsed, null)));
             }
             catch (OperationCanceledException) { }
@@ -445,6 +473,19 @@
     {
         if (detail is null) return;
         selectedCall = detail.Calls.FirstOrDefault(c => c.Id == id);
+    }
+
+    private void SelectMaxCall()
+    {
+        if (filter.IsDefaultDetailFilter && string.Equals(filter.Sort, "slowest", StringComparison.Ordinal))
+        {
+            if (detail is { Calls.Count: > 0 })
+                selectedCall = detail.Calls.MaxBy(c => c.DurationMs);
+            return;
+        }
+        minMsText = "";
+        selectedCall = null;
+        ApplyFilter(filter.ClearDetailFilters().WithSort("slowest"));
     }
 
     private Task LoadMoreAsync()

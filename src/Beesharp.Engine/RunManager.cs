@@ -116,6 +116,31 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         }
     }
 
+    /// <summary>Records a host / background-service <see cref="ILogger"/> message into the active run so it streams to the Logs UI and persists for export.</summary>
+    public void RecordHostLog(string level, string category, string message, string? exception = null)
+    {
+        string activeRunId;
+        double atSeconds;
+        lock (sync)
+        {
+            if (!IsActive || string.IsNullOrEmpty(runId)) return;
+            activeRunId = runId;
+            atSeconds = clock.Elapsed.TotalSeconds;
+        }
+
+        var shortCat = ShortCategory(category);
+        var formatted = string.IsNullOrEmpty(shortCat) ? message : $"[{shortCat}] {message}";
+        AppendLiveLog(ProgramLogEntry.Host, ProgramLogEntry.Host, atSeconds, level, formatted, exception, "Host");
+        storage.EnqueueHostLog(activeRunId, atSeconds, level, formatted, exception);
+    }
+
+    private static string ShortCategory(string category)
+    {
+        if (string.IsNullOrWhiteSpace(category)) return "";
+        var dot = category.LastIndexOf('.');
+        return dot >= 0 && dot + 1 < category.Length ? category[(dot + 1)..] : category;
+    }
+
     /// <summary>Restores the most recent persisted run from <see cref="IRunStorage"/> on server startup.</summary>
     public async Task RestoreLatestAsync(CancellationToken ct = default)
     {

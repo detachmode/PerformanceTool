@@ -14,7 +14,7 @@
 
         <div class="cl-insp" aria-label="Selected call details">
             <div class="cl-insp-top">
-                <span class="cl-status @selCls">@StatusText(sel)</span>
+                <span class="cl-status @(sel.Error is not null ? "bad" : "")">@StatusText(sel)</span>
                 <b class="cl-insp-dur @selCls tnum">@Format.Ms(sel.DurationMs)</b>
                 @if (sel.Error is null && Format.OverTypical(selRatio))
                 {
@@ -80,16 +80,16 @@
                     var scLabel = call.Entry >= 0 && call.Entry < Snapshot.Labels.Count ? Snapshot.Labels[call.Entry] : "";
                 }
                 <button type="button" class="cl-row @(active ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(active)" @onclick="() => OnSelect.InvokeAsync(call)">
-                    <span class="cl-status @cls">@StatusText(call)</span>
+                    <span class="cl-status @(call.Error is not null ? "bad" : "")">@StatusText(call)</span>
                     <span class="cl-dur @cls tnum">@Format.Ms(call.DurationMs)</span>
-                    <span class="cl-ratio tnum @(call.Error is null && Format.OverTypical(ratio) ? cls : "muted")">@(call.Error is null && Format.OverTypical(ratio) ? Format.Times(ratio) : "—")</span>
+                    <span class="cl-ratio tnum">@(call.Error is null && Format.OverTypical(ratio) ? Format.Times(ratio) : "—")</span>
                     <span class="cl-raw" title="@displayTarget">@displayTarget</span>
                     @if (ShowScenario && scLabel.Length > 0)
                     {
                         <span class="cl-scn muted" title="@scLabel">@scLabel</span>
                     }
                     <span class="cl-at muted tnum">@Format.Time(call.AtSeconds)</span>
-                    <span class="cl-bee achip @cls">@call.BeeName</span>
+                    <span class="cl-bee achip @(call.Error is not null ? "bad" : "")">@call.BeeName</span>
                 </button>
             </ItemContent>
             <Empty><p class="muted cl-empty">No calls match these filters.</p></Empty>

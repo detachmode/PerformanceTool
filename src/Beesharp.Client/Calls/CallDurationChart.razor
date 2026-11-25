@@ -88,14 +88,20 @@
                     {
                         var wPct = Math.Clamp(p.BucketWidthSeconds / span * 100, 0.9, 8);
                         var medPct = Math.Clamp(p.TypicalMs / Math.Max(1, p.DurationMs) * 100, 2, 98);
+                        var bucketSelected = SelectedAtSeconds is { } sa && sa >= p.AtSeconds && sa <= p.AtSeconds + p.BucketWidthSeconds;
                         <button type="button"
-                                class="cl-bucket @cls"
+                                class="cl-bucket @cls @(bucketSelected ? "on" : "")"
                                 style="left:@Pct(xPct)%;width:@Pct(wPct)%;height:@Pct(hPct)%"
                                 aria-label="@Format.Plural(p.Count, "call", "calls") at @Format.Time(p.AtSeconds), max @Format.Ms(p.DurationMs), typical @Format.Ms(p.TypicalMs)"
                                 @onpointerenter="() => hovered = p"
                                 @onpointerleave="() => { if (hovered == p) hovered = null; }"
                                 @onclick="() => OnZoom.InvokeAsync((p.AtSeconds, p.AtSeconds + p.BucketWidthSeconds))">
                             <span class="cl-bucket-med" style="bottom:@Pct(medPct)%"></span>
+                            @if (bucketSelected && SelectedDurationMs is { } sd)
+                            {
+                                var selPct = Math.Clamp(sd / Math.Max(1, p.DurationMs) * 100, 2, 98);
+                                <span class="cl-bucket-sel" style="bottom:@Pct(selPct)%"></span>
+                            }
                         </button>
                     }
                     else
@@ -134,6 +140,8 @@
     [Parameter] public long? SelectedId { get; set; }
     [Parameter] public EventCallback<long> OnSelectCall { get; set; }
     [Parameter] public EventCallback<(double? From, double? To)> OnZoom { get; set; }
+    [Parameter] public double? SelectedAtSeconds { get; set; }
+    [Parameter] public double? SelectedDurationMs { get; set; }
 
     private ElementReference plotEl;
     private IJSObjectReference? module;

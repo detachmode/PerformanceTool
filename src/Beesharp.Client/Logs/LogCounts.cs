@@ -13,6 +13,7 @@ public static class LogCounts
         long total = 0;
         long preflight = 0;
         long shutdown = 0;
+        long host = 0;
         var levels = new Dictionary<string, long>();
         var entries = new List<long>();
         var steps = new SortedDictionary<int, (long Count, long Errors)>();
@@ -27,6 +28,7 @@ public static class LogCounts
             {
                 if (l.Entry == ProgramLogEntry.Preflight) preflight++;
                 else if (l.Entry == ProgramLogEntry.Shutdown) shutdown++;
+                else if (l.Entry == ProgramLogEntry.Host) host++;
                 else if (l.Entry >= 0)
                 {
                     while (entries.Count <= l.Entry) entries.Add(0);
@@ -39,7 +41,7 @@ public static class LogCounts
                 steps[l.Step] = (c + 1, e + (l.Level == "Error" ? 1 : 0));
             }
         }
-        return new LogFacets(total, levels, entries, steps.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflight, shutdown);
+        return new LogFacets(total, levels, entries, steps.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflight, shutdown, host);
     }
 
     /// <summary>The lines that pass the filter, in their order.</summary>

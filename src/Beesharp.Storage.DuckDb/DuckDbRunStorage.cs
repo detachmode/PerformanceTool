@@ -36,6 +36,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     private abstract record WriteOp;
     private sealed record StartRunOp(string RunId, DateTimeOffset StartedUtc, string PlanJson, string? StepsJson) : WriteOp;
     private sealed record BeeOp(string RunId, ExecutionResult Result, int BeeOutcome, int SlowCalls) : WriteOp;
+    private sealed record HostLogOp(string RunId, double AtSeconds, string Level, string Message, string? Exception) : WriteOp;
     private sealed record FinishRunOp(string RunId, DateTimeOffset FinishedUtc, string State, double ElapsedSeconds, string? Error) : WriteOp;
     private sealed record FlushOp(TaskCompletionSource Done) : WriteOp;
 
@@ -204,6 +205,9 @@ public sealed class DuckDbRunStorage : IRunStorage
     public void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls) =>
         queue.Writer.TryWrite(new BeeOp(runId, result, beeOutcome, slowCalls));
 
+    public void EnqueueHostLog(string runId, double atSeconds, string level, string message, string? exception = null) =>
+        queue.Writer.TryWrite(new HostLogOp(runId, atSeconds, level, message, exception));
+
     public void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error) =>
         queue.Writer.TryWrite(new FinishRunOp(runId, finishedUtc, state, elapsedSeconds, error));
 
@@ -351,6 +355,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     private void WriteBatch(List<WriteOp> batch)
     {
         var beesToAppend = new List<BeeOp>();
+        var hostLogsToAppend = new List<HostLogOp>();
 
         foreach (var op in batch)
         {
@@ -358,6 +363,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             {
                 case StartRunOp s:
                     FlushBees(beesToAppend);
+                    FlushHostLogs(hostLogsToAppend);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = """
@@ -383,8 +389,13 @@ public sealed class DuckDbRunStorage : IRunStorage
                     beesToAppend.Add(a);
                     break;
 
+                case HostLogOp h:
+                    hostLogsToAppend.Add(h);
+                    break;
+
                 case FinishRunOp f:
                     FlushBees(beesToAppend);
+                    FlushHostLogs(hostLogsToAppend);
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = """
@@ -404,6 +415,41 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
 
         FlushBees(beesToAppend);
+        FlushHostLogs(hostLogsToAppend);
+    }
+
+    private void FlushHostLogs(List<HostLogOp> hostLogs)
+    {
+        if (hostLogs.Count == 0) return;
+        int hostEntry = ProgramLogEntry.Host;
+        using (var logApp = conn.CreateAppender("logs"))
+        {
+            foreach (var h in hostLogs)
+            {
+                var isFailed = string.Equals(h.Level, "Error", StringComparison.OrdinalIgnoreCase);
+                var isSlow = string.Equals(h.Level, "Warning", StringComparison.OrdinalIgnoreCase);
+                var outcome = isFailed ? 2 : isSlow ? 1 : 0;
+                logApp.CreateRow()
+                    .AppendValue(Interlocked.Increment(ref nextLogId))
+                    .AppendValue(h.RunId)
+                    .AppendValue(hostEntry)
+                    .AppendValue("Host")
+                    .AppendValue(hostEntry)
+                    .AppendValue(h.AtSeconds)
+                    .AppendValue(LevelRank(h.Level))
+                    .AppendValue(h.Level)
+                    .AppendValue(h.Message)
+                    .AppendValue(h.Exception)
+                    .AppendValue((int?)null)
+                    .AppendValue(outcome)
+                    .AppendValue(isFailed)
+                    .AppendValue(isSlow)
+                    .AppendValue(0)
+                    .AppendValue(0)
+                    .EndRow();
+            }
+        }
+        hostLogs.Clear();
     }
 
     private void FlushBees(List<BeeOp> beesToAppend)
@@ -769,6 +815,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             long total;
             long preflightCount = 0;
             long shutdownCount = 0;
+            long hostCount = 0;
             var levelCounts = new Dictionary<string, long>();
             var entryCounts = new List<long>();
             var stepCounts = new List<LogStepCount>();
@@ -786,6 +833,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 var count = r.GetInt64(1);
                 if (entry == ProgramLogEntry.Preflight) preflightCount = count;
                 else if (entry == ProgramLogEntry.Shutdown) shutdownCount = count;
+                else if (entry == ProgramLogEntry.Host) hostCount = count;
                 else if (entry >= 0)
                 {
                     while (entryCounts.Count <= entry) entryCounts.Add(0);
@@ -800,7 +848,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                     r => stepCounts.Add(new LogStepCount(r.GetInt32(0), r.GetInt64(1), r.GetInt64(2))));
             }
 
-            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts, preflightCount, shutdownCount));
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts, preflightCount, shutdownCount, hostCount));
         }
     }
 

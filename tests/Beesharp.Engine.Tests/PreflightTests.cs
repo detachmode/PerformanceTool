@@ -1,6 +1,7 @@
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Beesharp.Engine.Tests;
@@ -148,6 +149,53 @@ public sealed class PreflightTests : IDisposable
         Assert.True(facets.Shutdown >= 1);
         var pfLogs = await storage.QueryLogsAsync(started.RunId, new LogQuery(Entry: ProgramLogEntry.Preflight));
         Assert.Contains(pfLogs.Items, l => l.Message.Contains("Warming up cache"));
+    }
+
+    [Fact]
+    public async Task Host_and_background_service_logs_are_captured_in_live_logs_storage_and_export()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"beesharp-hostlog-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var catalog = new ScenarioCatalog([new FastStubScenario()]);
+            await using var storage = new DuckDbRunStorage(Path.Combine(tempDir, "runs.duckdb"));
+            var manager = new RunManager(new LoadRunner(catalog), null!, storage);
+            using var provider = new RunManagerLoggerProvider(manager);
+            var bgLogger = provider.CreateLogger("MyApp.Workers.QueueWorker");
+
+            var plan = new LoadPlan
+            {
+                DurationSeconds = 5,
+                MaxConcurrency = 2,
+                TimeoutSeconds = 5,
+                Scenarios = [new ScenarioRunConfig { ScenarioId = "fast-stub", Label = "Fast", RatePerMinute = 60 }],
+            };
+
+            var started = await manager.StartAsync(plan, null);
+            bgLogger.LogInformation("Background worker processed batch {Count}", 42);
+            await manager.StopAsync();
+            await manager.WaitUntilFinishedAsync();
+            await storage.FlushAsync();
+
+            var live = manager.GetLiveLogs(0, 500, entry: ProgramLogEntry.Host);
+            Assert.Contains(live, l => l.Message.Contains("[QueueWorker] Background worker processed batch 42"));
+
+            var facets = await storage.GetLogFacetsAsync(started.RunId, new LogQuery());
+            Assert.True(facets.Host >= 1);
+
+            var stored = await storage.QueryLogsAsync(started.RunId, new LogQuery(Entry: ProgramLogEntry.Host));
+            Assert.Contains(stored.Items, l => l.Message.Contains("[QueueWorker] Background worker processed batch 42"));
+
+            var export = await storage.ExportRunAsync(started.RunId, "json");
+            Assert.NotNull(export);
+            var json = System.Text.Encoding.UTF8.GetString(export!.Content);
+            Assert.Contains("Background worker processed batch 42", json);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     private sealed class EmptyParams { }

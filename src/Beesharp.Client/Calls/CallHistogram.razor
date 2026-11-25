@@ -32,20 +32,29 @@
         var thresholdPct = SlowThresholdMs is { } th && th > histLo && th < histHi && histHi > histLo
             ? (th - histLo) / (histHi - histLo) * 100.0
             : (double?)null;
+        var selectedPct = SelectedDurationMs is { } sd && histHi > histLo
+            ? Math.Clamp((sd - histLo) / (histHi - histLo) * 100.0, 0, 100)
+            : (double?)null;
 
         <div class="cl-hist-plot">
             @if (thresholdPct is { } tp)
             {
                 <div class="cl-hist-limit" style="left:@Pct(tp)%" title="Slow threshold: @Format.Ms(SlowThresholdMs!.Value)" aria-hidden="true"></div>
             }
-            @foreach (var bucket in Buckets)
+            @if (selectedPct is { } sp)
             {
-                var b = bucket;
+                <div class="cl-hist-selected" style="left:@Pct(sp)%" title="Selected call: @Format.Ms(SelectedDurationMs!.Value)" aria-hidden="true"></div>
+            }
+            @for (var i = 0; i < Buckets.Count; i++)
+            {
+                var b = Buckets[i];
+                var isLast = i == Buckets.Count - 1;
                 var hPct = b.Count == 0 ? 0 : Math.Clamp(b.Count * 100.0 / maxCount, 6, 100);
                 var active = MinMs is { } lo && MaxMs is { } hi && Math.Abs(lo - b.FromMs) < 0.01 && Math.Abs(hi - b.ToMs) < 0.01;
+                var hasSel = SelectedDurationMs is { } sm && sm >= b.FromMs && (sm < b.ToMs || (isLast && sm <= b.ToMs));
                 var ok = Math.Max(0, b.Count - b.SlowCount - b.FailedCount);
                 <button type="button"
-                        class="cl-hbar-hit @(active ? "on" : "") @(b.Count == 0 ? "zero" : "")"
+                        class="cl-hbar-hit @(active ? "on" : "") @(hasSel ? "has-sel" : "") @(b.Count == 0 ? "zero" : "")"
                         disabled="@(b.Count == 0)"
                         aria-pressed="@Aria.Bool(active)"
                         aria-label="@Format.Ms(b.FromMs) to @Format.Ms(b.ToMs): @Format.Plural(b.Count, "call", "calls")"
@@ -76,6 +85,7 @@
     [Parameter] public double? SlowThresholdMs { get; set; }
     [Parameter] public double? MinMs { get; set; }
     [Parameter] public double? MaxMs { get; set; }
+    [Parameter] public double? SelectedDurationMs { get; set; }
     [Parameter] public EventCallback<(double? Min, double? Max)> OnSelectBucket { get; set; }
 
     private CallHistogramBucketDto? hovered;

@@ -123,6 +123,24 @@ public sealed class InMemoryRunStorage : IRunStorage
         return Task.CompletedTask;
     }
 
+    public void EnqueueHostLog(string runId, double atSeconds, string level, string message, string? exception = null)
+    {
+        var isFailed = string.Equals(level, "Error", StringComparison.OrdinalIgnoreCase);
+        var isSlow = string.Equals(level, "Warning", StringComparison.OrdinalIgnoreCase);
+        var outcome = isFailed ? 2 : isSlow ? 1 : 0;
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return;
+            if (bucket.Logs.Count >= MaxLogsPerRun) bucket.Logs.RemoveAt(0);
+            bucket.Logs.Add(new StoredLogRow(
+                Interlocked.Increment(ref nextLogId),
+                ProgramLogEntry.Host, "Host", ProgramLogEntry.Host,
+                atSeconds, level, message, exception, null,
+                outcome, isFailed, isSlow, 0));
+        }
+    }
+
     public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<StoredRunSummary>> ListRunsAsync(int limit = 50, CancellationToken ct = default)
@@ -200,6 +218,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             var total = 0L;
             var preflightCount = 0L;
             var shutdownCount = 0L;
+            var hostCount = 0L;
             var levelCounts = new Dictionary<string, long>();
             var entryCounts = new List<long>();
             var stepCounts = new SortedDictionary<int, (long Count, long Errors)>();
@@ -211,6 +230,7 @@ public sealed class InMemoryRunStorage : IRunStorage
                 {
                     if (l.Entry == ProgramLogEntry.Preflight) preflightCount++;
                     else if (l.Entry == ProgramLogEntry.Shutdown) shutdownCount++;
+                    else if (l.Entry == ProgramLogEntry.Host) hostCount++;
                     else if (l.Entry >= 0)
                     {
                         while (entryCounts.Count <= l.Entry) entryCounts.Add(0);
@@ -223,7 +243,7 @@ public sealed class InMemoryRunStorage : IRunStorage
                     stepCounts[l.Step] = (c + 1, err + (string.Equals(l.Level, "Error", StringComparison.OrdinalIgnoreCase) ? 1 : 0));
                 }
             }
-            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflightCount, shutdownCount));
+            return Task.FromResult(new LogFacets(total, levelCounts, entryCounts, stepCounts.Select(kv => new LogStepCount(kv.Key, kv.Value.Count, kv.Value.Errors)).ToList(), preflightCount, shutdownCount, hostCount));
         }
     }
 

@@ -174,6 +174,8 @@ public sealed class BeesharpAppBuilder
             Root = contentRoot,
         };
         Services.AddBeesharpStorage(storageOptions);
+        var hostLoggerProvider = new RunManagerLoggerProvider();
+        Services.AddSingleton<ILoggerProvider>(hostLoggerProvider);
         var savedToPath = storageOptions.ResolveProvider() == StorageOptions.Memory ? null : storageOptions.ResolveDuckDbPath();
 
         if (options.IncludeAiAssistant)
@@ -187,6 +189,7 @@ public sealed class BeesharpAppBuilder
         }
 
         var app = WebApplicationBuilder.Build();
+        hostLoggerProvider.Attach(app.Services.GetRequiredService<RunManager>());
 
         // Trust reverse-proxy headers (e.g. cloudflared in Docker) so X-Forwarded-Proto/For are honoured before HTTPS redirection.
         var forwardedHeadersOptions = new ForwardedHeadersOptions

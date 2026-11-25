@@ -71,11 +71,12 @@ public sealed record LiveRunStatusDto(
     IReadOnlyList<IReadOnlyList<StepInfo>>? Steps = null,
     int NextBeeIndex = 0);
 
-/// <summary>Reserved negative entry indices for run-level program logs (preflight / shutdown) in <see cref="StoredLogRow.Entry"/>.</summary>
+/// <summary>Reserved negative entry indices for run-level logs (preflight / shutdown / host) in <see cref="StoredLogRow.Entry"/>.</summary>
 public static class ProgramLogEntry
 {
     public const int Preflight = -1;
     public const int Shutdown = -2;
+    public const int Host = -3;
 }
 
 /// <summary>Persisted result and log lines of a run's preflight or shutdown program.</summary>
@@ -146,6 +147,7 @@ public sealed record LogFacets(
     IReadOnlyList<long> Entries,
     IReadOnlyList<LogStepCount> Steps,
     long Preflight = 0,
-    long Shutdown = 0);
+    long Shutdown = 0,
+    long Host = 0);
 
 public sealed record StartRunRequest(LoadPlan? Plan = null, string? EnvironmentName = null);

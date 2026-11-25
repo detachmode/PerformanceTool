@@ -77,6 +77,7 @@ public interface IRunStorage : IAsyncDisposable
 
     void EnqueueRunStarted(string runId, DateTimeOffset startedUtc, LoadPlan plan, IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null);
     void EnqueueBeeCompleted(string runId, ExecutionResult result, int beeOutcome, int slowCalls);
+    void EnqueueHostLog(string runId, double atSeconds, string level, string message, string? exception = null);
     void EnqueueRunFinished(string runId, DateTimeOffset finishedUtc, string state, double elapsedSeconds, string? error);
 
     /// <summary>

@@ -94,7 +94,7 @@ public sealed record LogFilter
     {
         var q = new List<KeyValuePair<string, string>>();
         if (Entry is { } e)
-            q.Add(new("scenario", e == ProgramLogEntry.Preflight ? "preflight" : e == ProgramLogEntry.Shutdown ? "shutdown" : (e + 1).ToString()));
+            q.Add(new("scenario", e == ProgramLogEntry.Preflight ? "preflight" : e == ProgramLogEntry.Shutdown ? "shutdown" : e == ProgramLogEntry.Host ? "host" : (e + 1).ToString()));
         if (Step is { } s && Entry is >= 0) q.Add(new("step", (s + 1).ToString()));
         if (Bee is { } b) q.Add(new("bee", (b + 1).ToString()));
         if (Levels.Count > 0) q.Add(new("level", string.Join(',', Levels.Select(l => l.ToLowerInvariant()))));
@@ -116,6 +116,7 @@ public sealed record LogFilter
         {
             "preflight" => ProgramLogEntry.Preflight,
             "shutdown" => ProgramLogEntry.Shutdown,
+            "host" => ProgramLogEntry.Host,
             _ => Number(scenario),
         };
         var levels = (level ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
