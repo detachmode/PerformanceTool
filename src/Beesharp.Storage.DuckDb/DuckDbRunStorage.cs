@@ -1186,6 +1186,317 @@ public sealed class DuckDbRunStorage : IRunStorage
         }
     }
 
+    public async Task<StoredRunSummary> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        await FlushAsync(ct);
+
+        var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
+        if (ext is not (".zip" or ".duckdb" or ".json"))
+            throw new InvalidOperationException("Unsupported file type. Please choose a .zip (Parquet bundle), .duckdb, or .json run export.");
+
+        if (ext == ".json")
+        {
+            using var doc = await JsonDocument.ParseAsync(content, cancellationToken: ct);
+            return ImportJsonRun(doc.RootElement);
+        }
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"perftool-imp-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            var tmpFile = Path.Combine(tmpDir, "upload" + ext);
+            await using (var fs = File.Create(tmpFile))
+                await content.CopyToAsync(fs, ct);
+
+            if (ext == ".zip")
+            {
+                ZipFile.ExtractToDirectory(tmpFile, tmpDir, overwriteFiles: true);
+                return ImportParquetDirectory(tmpDir);
+            }
+
+            return ImportDuckDbFile(tmpFile);
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true);
+        }
+    }
+
+    private StoredRunSummary ImportParquetDirectory(string dir)
+    {
+        var runsPath = Path.Combine(dir, "runs.parquet");
+        if (!File.Exists(runsPath))
+            throw new InvalidOperationException("Invalid Parquet export: runs.parquet is missing.");
+
+        lock (dbLock)
+        {
+            string sourceRunId;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = $"SELECT run_id FROM read_parquet('{EscapeSql(runsPath)}') LIMIT 1;";
+                sourceRunId = cmd.ExecuteScalar() as string ?? throw new InvalidOperationException("runs.parquet does not contain any run.");
+            }
+
+            var targetRunId = ResolveImportRunId(sourceRunId);
+            var escapedTarget = EscapeSql(targetRunId);
+
+            ExecuteSql($"INSERT INTO runs BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM read_parquet('{EscapeSql(runsPath)}') LIMIT 1;");
+
+            var stepsPath = Path.Combine(dir, "run_steps.parquet");
+            if (File.Exists(stepsPath))
+                ExecuteSql($"INSERT INTO run_steps BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM read_parquet('{EscapeSql(stepsPath)}');");
+
+            var beesPath = Path.Combine(dir, "bees.parquet");
+            if (File.Exists(beesPath))
+                ExecuteSql($"INSERT INTO bees BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM read_parquet('{EscapeSql(beesPath)}');");
+
+            var callsPath = Path.Combine(dir, "calls.parquet");
+            if (File.Exists(callsPath))
+            {
+                ExecuteSql($"INSERT INTO calls BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id, {nextCallId} + ROW_NUMBER() OVER () AS id) FROM read_parquet('{EscapeSql(callsPath)}');");
+                RefreshMaxCallId();
+            }
+
+            var logsPath = Path.Combine(dir, "logs.parquet");
+            if (File.Exists(logsPath))
+            {
+                ExecuteSql($"INSERT INTO logs BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id, {nextLogId} + ROW_NUMBER() OVER () AS id) FROM read_parquet('{EscapeSql(logsPath)}');");
+                RefreshMaxLogId();
+            }
+
+            return ReadRunSummary(targetRunId);
+        }
+    }
+
+    private StoredRunSummary ImportDuckDbFile(string filePath)
+    {
+        var alias = $"imp_{Guid.NewGuid():N}";
+        lock (dbLock)
+        {
+            ExecuteSql($"ATTACH '{EscapeSql(filePath)}' AS {alias} (READ_ONLY);");
+            try
+            {
+                string sourceRunId;
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = $"SELECT run_id FROM {alias}.runs LIMIT 1;";
+                    sourceRunId = cmd.ExecuteScalar() as string ?? throw new InvalidOperationException("The DuckDB file does not contain any run.");
+                }
+
+                var targetRunId = ResolveImportRunId(sourceRunId);
+                var escapedTarget = EscapeSql(targetRunId);
+
+                ExecuteSql($"INSERT INTO runs BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM {alias}.runs LIMIT 1;");
+                if (TableExists(alias, "run_steps"))
+                    ExecuteSql($"INSERT INTO run_steps BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM {alias}.run_steps;");
+                if (TableExists(alias, "bees"))
+                    ExecuteSql($"INSERT INTO bees BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM {alias}.bees;");
+                if (TableExists(alias, "calls"))
+                {
+                    ExecuteSql($"INSERT INTO calls BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id, {nextCallId} + ROW_NUMBER() OVER () AS id) FROM {alias}.calls;");
+                    RefreshMaxCallId();
+                }
+                if (TableExists(alias, "logs"))
+                {
+                    ExecuteSql($"INSERT INTO logs BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id, {nextLogId} + ROW_NUMBER() OVER () AS id) FROM {alias}.logs;");
+                    RefreshMaxLogId();
+                }
+
+                return ReadRunSummary(targetRunId);
+            }
+            finally
+            {
+                try { ExecuteSql($"DETACH {alias};"); } catch { }
+            }
+        }
+    }
+
+    private StoredRunSummary ImportJsonRun(JsonElement root)
+    {
+        if (!root.TryGetProperty("runId", out var runIdEl) || runIdEl.GetString() is not { Length: > 0 } sourceRunId)
+            throw new InvalidOperationException("Invalid JSON export: missing runId.");
+
+        var startedUtc = root.TryGetProperty("startedUtc", out var su) && su.GetString() is { } s1 ? s1 : DateTimeOffset.UtcNow.ToString("O");
+        var finishedUtc = root.TryGetProperty("finishedUtc", out var fu) && fu.ValueKind == JsonValueKind.String ? fu.GetString() : null;
+        var state = root.TryGetProperty("state", out var st) && st.GetString() is { } s2 ? s2 : "Finished";
+        var elapsedSeconds = root.TryGetProperty("elapsedSeconds", out var es) && es.TryGetDouble(out var eVal) ? eVal : 0;
+        var error = root.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String ? errEl.GetString() : null;
+        var planJson = root.TryGetProperty("plan", out var planEl) ? planEl.GetRawText() : "{}";
+
+        lock (dbLock)
+        {
+            var targetRunId = ResolveImportRunId(sourceRunId);
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO runs(run_id, started_utc, finished_utc, state, elapsed_seconds, plan_json, error) VALUES ($1, $2, $3, $4, $5, $6, $7);";
+                cmd.Parameters.Add(new DuckDBParameter(targetRunId));
+                cmd.Parameters.Add(new DuckDBParameter(startedUtc));
+                cmd.Parameters.Add(new DuckDBParameter((object?)finishedUtc ?? DBNull.Value));
+                cmd.Parameters.Add(new DuckDBParameter(state));
+                cmd.Parameters.Add(new DuckDBParameter(elapsedSeconds));
+                cmd.Parameters.Add(new DuckDBParameter(planJson));
+                cmd.Parameters.Add(new DuckDBParameter((object?)error ?? DBNull.Value));
+                cmd.ExecuteNonQuery();
+            }
+
+            if (root.TryGetProperty("bees", out var beesEl) && beesEl.ValueKind == JsonValueKind.Array && beesEl.GetArrayLength() > 0)
+            {
+                using var app = conn.CreateAppender("bees");
+                foreach (var b in beesEl.EnumerateArray())
+                {
+                    var seq = b.TryGetProperty("sequence", out var p0) ? p0.GetInt32() : 0;
+                    var name = b.TryGetProperty("beeName", out var p1) ? p1.GetString() ?? $"B{seq + 1}" : $"B{seq + 1}";
+                    var entry = b.TryGetProperty("entry", out var p2) ? p2.GetInt32() : 0;
+                    var startedAt = b.TryGetProperty("startedAt", out var p3) ? p3.GetDouble() : 0;
+                    var durMs = b.TryGetProperty("durationMs", out var p4) ? p4.GetDouble() : 0;
+                    var statusCode = b.TryGetProperty("statusCode", out var p5) && p5.ValueKind == JsonValueKind.Number ? p5.GetInt32() : (int?)null;
+                    var bytes = b.TryGetProperty("bytes", out var p6) ? p6.GetInt64() : 0L;
+                    var bErr = b.TryGetProperty("error", out var p7) && p7.ValueKind == JsonValueKind.String ? p7.GetString() : null;
+                    var outcome = b.TryGetProperty("outcome", out var p8) ? p8.GetInt32() : 0;
+                    var isFailed = b.TryGetProperty("isFailed", out var p9) && p9.GetBoolean();
+                    var isSlow = b.TryGetProperty("isSlow", out var p10) && p10.GetBoolean();
+                    var slowCalls = b.TryGetProperty("slowCalls", out var p11) ? p11.GetInt32() : 0;
+                    var failedStep = b.TryGetProperty("failedStep", out var p12) ? p12.GetInt32() : -1;
+                    var failedRep = b.TryGetProperty("failedRep", out var p13) ? p13.GetInt32() : -1;
+                    app.CreateRow()
+                        .AppendValue(targetRunId).AppendValue(seq).AppendValue(name).AppendValue(entry)
+                        .AppendValue(startedAt).AppendValue(durMs).AppendValue(statusCode).AppendValue(bytes)
+                        .AppendValue(bErr).AppendValue(outcome).AppendValue(isFailed).AppendValue(isSlow)
+                        .AppendValue(slowCalls).AppendValue(0).AppendValue(0)
+                        .AppendValue(failedStep).AppendValue(failedRep).AppendValue((string?)null)
+                        .EndRow();
+                }
+            }
+
+            if (root.TryGetProperty("calls", out var callsEl) && callsEl.ValueKind == JsonValueKind.Array && callsEl.GetArrayLength() > 0)
+            {
+                using var app = conn.CreateAppender("calls");
+                foreach (var c in callsEl.EnumerateArray())
+                {
+                    var id = ++nextCallId;
+                    var seq = c.TryGetProperty("sequence", out var p0) ? p0.GetInt32() : 0;
+                    var callIdx = c.TryGetProperty("callIndex", out var p1) ? p1.GetInt32() : 0;
+                    var name = c.TryGetProperty("name", out var p2) ? p2.GetString() ?? "" : "";
+                    var offsetMs = c.TryGetProperty("offsetMs", out var p3) ? p3.GetDouble() : 0;
+                    var durMs = c.TryGetProperty("durationMs", out var p4) ? p4.GetDouble() : 0;
+                    var statusCode = c.TryGetProperty("statusCode", out var p5) && p5.ValueKind == JsonValueKind.Number ? p5.GetInt32() : (int?)null;
+                    var bytes = c.TryGetProperty("bytes", out var p6) ? p6.GetInt64() : 0L;
+                    var cErr = c.TryGetProperty("error", out var p7) && p7.ValueKind == JsonValueKind.String ? p7.GetString() : null;
+                    var step = c.TryGetProperty("step", out var p8) ? p8.GetInt32() : 0;
+                    var rep = c.TryGetProperty("rep", out var p9) ? p9.GetInt32() : 0;
+                    var endpoint = c.TryGetProperty("endpoint", out var p10) && p10.ValueKind == JsonValueKind.String ? p10.GetString() : null;
+                    var method = c.TryGetProperty("method", out var p11) && p11.ValueKind == JsonValueKind.String ? p11.GetString() : null;
+                    var host = c.TryGetProperty("host", out var p12) && p12.ValueKind == JsonValueKind.String ? p12.GetString() : null;
+                    var url = c.TryGetProperty("url", out var p13) && p13.ValueKind == JsonValueKind.String ? p13.GetString() : null;
+                    var slowThr = c.TryGetProperty("slowThresholdMs", out var p14) && p14.ValueKind == JsonValueKind.Number ? p14.GetDouble() : (double?)null;
+                    app.CreateRow()
+                        .AppendValue(id).AppendValue(targetRunId).AppendValue(seq).AppendValue(callIdx)
+                        .AppendValue(name).AppendValue(offsetMs).AppendValue(durMs).AppendValue(statusCode)
+                        .AppendValue(bytes).AppendValue(cErr).AppendValue(step).AppendValue(rep)
+                        .AppendValue(endpoint).AppendValue(method).AppendValue(host).AppendValue(url).AppendValue(slowThr)
+                        .EndRow();
+                }
+            }
+
+            if (root.TryGetProperty("logs", out var logsEl) && logsEl.ValueKind == JsonValueKind.Array && logsEl.GetArrayLength() > 0)
+            {
+                using var app = conn.CreateAppender("logs");
+                foreach (var l in logsEl.EnumerateArray())
+                {
+                    var id = ++nextLogId;
+                    var seq = l.TryGetProperty("sequence", out var p0) ? p0.GetInt32() : 0;
+                    var beeName = l.TryGetProperty("beeName", out var p1) ? p1.GetString() ?? "" : "";
+                    var entry = l.TryGetProperty("entry", out var p2) ? p2.GetInt32() : 0;
+                    var atSec = l.TryGetProperty("atSeconds", out var p3) ? p3.GetDouble() : 0;
+                    var level = l.TryGetProperty("level", out var p4) ? p4.GetString() ?? "Information" : "Information";
+                    var msg = l.TryGetProperty("message", out var p5) ? p5.GetString() ?? "" : "";
+                    var exc = l.TryGetProperty("exception", out var p6) && p6.ValueKind == JsonValueKind.String ? p6.GetString() : null;
+                    var callIdx = l.TryGetProperty("callIndex", out var p7) && p7.ValueKind == JsonValueKind.Number ? p7.GetInt32() : (int?)null;
+                    var isFailed = l.TryGetProperty("isFailed", out var p8) && p8.GetBoolean();
+                    var isSlow = l.TryGetProperty("isSlow", out var p9) && p9.GetBoolean();
+                    var step = l.TryGetProperty("step", out var p10) ? p10.GetInt32() : 0;
+                    app.CreateRow()
+                        .AppendValue(id).AppendValue(targetRunId).AppendValue(seq).AppendValue(beeName)
+                        .AppendValue(entry).AppendValue(atSec).AppendValue(LevelRank(level)).AppendValue(level)
+                        .AppendValue(msg).AppendValue(exc).AppendValue(callIdx)
+                        .AppendValue(isFailed ? 2 : isSlow ? 1 : 0).AppendValue(isFailed).AppendValue(isSlow)
+                        .AppendValue(step).AppendValue(0)
+                        .EndRow();
+                }
+            }
+
+            return ReadRunSummary(targetRunId);
+        }
+    }
+
+    private string ResolveImportRunId(string sourceRunId)
+    {
+        using var check = conn.CreateCommand();
+        check.CommandText = "SELECT COUNT(*) FROM runs WHERE run_id = $1;";
+        check.Parameters.Add(new DuckDBParameter(sourceRunId));
+        var count = Convert.ToInt64(check.ExecuteScalar());
+        return count == 0 ? sourceRunId : $"{sourceRunId}-imp-{Guid.NewGuid().ToString("N")[..6]}";
+    }
+
+    private bool TableExists(string schema, string table)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = $1 AND table_name = $2;";
+        cmd.Parameters.Add(new DuckDBParameter(schema));
+        cmd.Parameters.Add(new DuckDBParameter(table));
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+    }
+
+    private void ExecuteSql(string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+    }
+
+    private void RefreshMaxCallId()
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(MAX(id), 0) FROM calls;";
+        nextCallId = Convert.ToInt64(cmd.ExecuteScalar());
+    }
+
+    private void RefreshMaxLogId()
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(MAX(id), 0) FROM logs;";
+        nextLogId = Convert.ToInt64(cmd.ExecuteScalar());
+    }
+
+    private StoredRunSummary ReadRunSummary(string targetRunId)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT r.run_id, r.started_utc, r.finished_utc, r.state, r.elapsed_seconds,
+                   (SELECT COUNT(*) FROM bees b WHERE b.run_id = r.run_id),
+                   (SELECT COUNT(*) FROM bees b WHERE b.run_id = r.run_id AND b.is_failed),
+                   (SELECT COUNT(*) FROM logs l WHERE l.run_id = r.run_id),
+                   r.error
+            FROM runs r WHERE r.run_id = $1;
+            """;
+        cmd.Parameters.Add(new DuckDBParameter(targetRunId));
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) throw new InvalidOperationException($"Imported run '{targetRunId}' could not be read.");
+        return new StoredRunSummary(
+            reader.GetString(0),
+            DateTimeOffset.Parse(reader.GetString(1)),
+            reader.IsDBNull(2) ? null : DateTimeOffset.Parse(reader.GetString(2)),
+            reader.GetString(3),
+            reader.GetDouble(4),
+            Convert.ToInt32(reader.GetValue(5)),
+            Convert.ToInt32(reader.GetValue(6)),
+            Convert.ToInt64(reader.GetValue(7)),
+            reader.IsDBNull(8) ? null : reader.GetString(8));
+    }
+
+    private static string EscapeSql(string value) => value.Replace("'", "''");
+
     public async ValueTask DisposeAsync()
     {
         queue.Writer.TryComplete();

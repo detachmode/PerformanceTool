@@ -172,4 +172,55 @@ public sealed class DuckDbStorageTests
                 if (File.Exists(p)) File.Delete(p);
         }
     }
+
+    [Fact]
+    public async Task Export_and_import_roundtrips_parquet_duckdb_and_json()
+    {
+        var srcDb = Path.Combine(Path.GetTempPath(), $"beesharp-src-{Guid.NewGuid():N}.duckdb");
+        var dstDb = Path.Combine(Path.GetTempPath(), $"beesharp-dst-{Guid.NewGuid():N}.duckdb");
+        try
+        {
+            RunExportResult pqZip, duckFile, jsonFile;
+            await using (var src = new DuckDbRunStorage(srcDb))
+            {
+                var plan = new LoadPlan { Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "HTTP GET", RatePerMinute = 60 }] };
+                src.EnqueueRunStarted("run-exp-1", DateTimeOffset.UtcNow, plan);
+                src.EnqueueBeeCompleted("run-exp-1", new ExecutionResult(
+                    0, 0, 0.1, 42, 200, 128, null,
+                    Calls: [new RecordedCall("GET /health", 0, 42, 200, 128, Endpoint: "GET /health", Method: "GET")],
+                    Logs: [new RecordedLog(0.1, "Information", "Checked health", null, 0)]),
+                    beeOutcome: 0, slowCalls: 0);
+                src.EnqueueRunFinished("run-exp-1", DateTimeOffset.UtcNow, "Finished", 1.5, null);
+                await src.FlushAsync();
+
+                pqZip = (await src.ExportRunAsync("run-exp-1", "parquet"))!;
+                duckFile = (await src.ExportRunAsync("run-exp-1", "duckdb"))!;
+                jsonFile = (await src.ExportRunAsync("run-exp-1", "json"))!;
+            }
+
+            await using var dst = new DuckDbRunStorage(dstDb);
+            foreach (var exp in new[] { pqZip, duckFile, jsonFile })
+            {
+                await using var ms = new MemoryStream(exp.Content);
+                var summary = await dst.ImportRunAsync(exp.FileName, ms);
+                Assert.Equal(1, summary.TotalBees);
+                Assert.Equal(1, summary.TotalLogs);
+                var run = await dst.GetRunAsync(summary.RunId);
+                Assert.NotNull(run);
+                Assert.Single(run!.Bees);
+                var detail = await dst.GetBeeDetailAsync(summary.RunId, 0);
+                Assert.NotNull(detail);
+                Assert.Single(detail!.Calls);
+                Assert.Single(detail.Logs);
+            }
+
+            var allRuns = await dst.ListRunsAsync(10);
+            Assert.Equal(3, allRuns.Count);
+        }
+        finally
+        {
+            foreach (var p in new[] { srcDb, srcDb + ".wal", dstDb, dstDb + ".wal" })
+                if (File.Exists(p)) File.Delete(p);
+        }
+    }
 }

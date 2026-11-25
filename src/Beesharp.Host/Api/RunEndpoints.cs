@@ -50,6 +50,21 @@ public static class RunEndpoints
         });
         app.MapPost("/api/runs/unload", (RunManager runs) =>
             runs.UnloadStoredRun() ? Results.Ok() : Results.BadRequest(new { error = "Cannot unload while a live run is in progress." }));
+        app.MapPost("/api/runs/import", async (IFormFile file, IRunStorage storage, CancellationToken ct) =>
+        {
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new { error = "No run file was uploaded." });
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                var summary = await storage.ImportRunAsync(file.FileName, stream, ct);
+                return Results.Ok(summary);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or System.Text.Json.JsonException or InvalidDataException)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).DisableAntiforgery();
         app.MapGet("/api/runs/{runId}/bees/{sequence:int}", async (string runId, int sequence, IRunStorage storage, CancellationToken ct) =>
             await storage.GetBeeDetailAsync(runId, sequence, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
         app.MapGet("/api/runs/{runId}/logs", (

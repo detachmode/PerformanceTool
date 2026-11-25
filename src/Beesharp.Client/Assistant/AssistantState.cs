@@ -66,8 +66,9 @@ public sealed class AssistantState : IDisposable
 
     public event Action? Changed;
 
-    /// <summary>The chat icon only shows in Live mode, and only when the server's assistant has a model.</summary>
-    public bool Available => !mode.IsFakeMode && status is { Configured: true };
+    /// <summary>The chat icon shows in Live mode when the server is reachable; inside the panel it explains how to configure if no model is set.</summary>
+    public bool Available => !mode.IsFakeMode && (status is not null || api.IsServerReachable);
+    public bool Configured => status is { Configured: true };
     public string? Model => status?.Model;
     public bool IsOpen { get; private set; }
     public bool Busy { get; private set; }
@@ -114,6 +115,7 @@ public sealed class AssistantState : IDisposable
     {
         if (!Available) return;
         IsOpen = !IsOpen;
+        if (IsOpen && status is null) _ = CheckStatusAsync();
         Changed?.Invoke();
     }
 

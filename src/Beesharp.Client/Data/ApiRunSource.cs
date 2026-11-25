@@ -331,6 +331,40 @@ public sealed class ApiRunSource : IRunSource
         catch { return []; }
     }
 
+    public async Task<(StoredRunSummary? Summary, string? Error)> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default)
+    {
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            using var streamContent = new StreamContent(content);
+            form.Add(streamContent, "file", fileName);
+            var resp = await http.PostAsync("api/runs/import", form, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await ReadErrorAsync(resp, ct);
+                return (null, err ?? $"Import failed (HTTP {(int)resp.StatusCode}).");
+            }
+            var summary = await resp.Content.ReadFromJsonAsync<StoredRunSummary>(JsonOpts, ct);
+            if (summary is null) return (null, "Import succeeded but returned no run summary.");
+            await LoadStoredRunAsync(summary.RunId, ct);
+            return (summary, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            return doc.RootElement.TryGetProperty("error", out var el) ? el.GetString() : null;
+        }
+        catch { return null; }
+    }
+
     public async Task LoadStoredRunAsync(string targetRunId, CancellationToken ct = default)
     {
         try

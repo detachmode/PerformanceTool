@@ -116,4 +116,7 @@ public interface IRunStorage : IAsyncDisposable
 
     /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
     Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default);
+
+    /// <summary>Imports a previously exported run file (<c>.zip</c> Parquet bundle, <c>.duckdb</c>, or <c>.json</c>) into storage.</summary>
+    Task<StoredRunSummary> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default);
 }

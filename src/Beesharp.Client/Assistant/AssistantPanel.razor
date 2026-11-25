@@ -10,14 +10,30 @@
     <aside class="asst" aria-label="Assistant">
         <header class="asst-head">
             <b>Assistant</b>
-            <span class="muted asst-model" title="Model">@Assistant.Model</span>
+            @if (Assistant.Configured && !string.IsNullOrWhiteSpace(Assistant.Model))
+            {
+                <span class="muted asst-model" title="Model">@Assistant.Model</span>
+            }
             <span class="spacer"></span>
-            <button type="button" class="btn ghost small" @onclick="Assistant.NewChat" disabled="@(Assistant.Entries.Count == 0)" title="Start a new conversation">New chat</button>
+            @if (Assistant.Configured)
+            {
+                <button type="button" class="btn ghost small" @onclick="Assistant.NewChat" disabled="@(Assistant.Entries.Count == 0)" title="Start a new conversation">New chat</button>
+            }
             <button type="button" class="icon-btn" @onclick="Assistant.Close" aria-label="Close the assistant" title="Close">✕</button>
         </header>
 
         <div class="asst-scroll" @ref="scroller" role="log" aria-live="polite" aria-label="Conversation">
-            @if (Assistant.Entries.Count == 0)
+            @if (!Assistant.Configured)
+            {
+                <div class="asst-empty">
+                    <p><b>Assistant is not configured</b></p>
+                    <p class="muted">Set <code>AI__Model</code> (and optionally <code>AI__Endpoint</code> and <code>AI__ApiKey</code>) in the server environment to enable the AI assistant.</p>
+                    <div class="asst-suggest">
+                        <button type="button" class="btn ghost small" @onclick="Assistant.CheckStatusAsync">Recheck</button>
+                    </div>
+                </div>
+            }
+            else if (Assistant.Entries.Count == 0)
             {
                 <div class="asst-empty">
                     <p class="muted">Ask about the runs, bees and logs, or tell me what to change in the plan.</p>
@@ -98,12 +114,15 @@
             }
         </div>
 
-        <footer class="asst-composer">
-            <div class="asst-composer-box">
-                <textarea @ref="composer" rows="1" placeholder="Ask or tell the assistant…" aria-label="Message" @bind="draft" @bind:event="oninput" disabled="@Assistant.Busy"></textarea>
-                <button type="button" class="btn primary small asst-send" @onclick="SendDraftAsync" disabled="@(Assistant.Busy || string.IsNullOrWhiteSpace(draft))" title="Send (Enter)">Send</button>
-            </div>
-        </footer>
+        @if (Assistant.Configured)
+        {
+            <footer class="asst-composer">
+                <div class="asst-composer-box">
+                    <textarea @ref="composer" rows="1" placeholder="Ask or tell the assistant…" aria-label="Message" @bind="draft" @bind:event="oninput" disabled="@Assistant.Busy"></textarea>
+                    <button type="button" class="btn primary small asst-send" @onclick="SendDraftAsync" disabled="@(Assistant.Busy || string.IsNullOrWhiteSpace(draft))" title="Send (Enter)">Send</button>
+                </div>
+            </footer>
+        }
     </aside>
 }
 
@@ -212,7 +231,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var isOpen = Assistant.Available && Assistant.IsOpen;
+        var isOpen = Assistant.Available && Assistant.Configured && Assistant.IsOpen;
         try
         {
             if (isOpen && !wasOpen)

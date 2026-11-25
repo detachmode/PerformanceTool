@@ -284,5 +284,8 @@ public sealed class InMemoryRunStorage : IRunStorage
         return new RunExportResult($"{safeRunId}.json", "application/json; charset=utf-8", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload));
     }
 
+    public Task<StoredRunSummary> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default) =>
+        throw new NotSupportedException("Importing run files requires DuckDB storage.");
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
