@@ -10,10 +10,18 @@
     <!-- The assembly may not be called "beesharp": it would clash with Beesharp.dll (the host) on case-insensitive file systems and in the compiler.
          The command is "beesharp" when installed as a .NET tool (dotnet pack, dotnet tool install). -->
     <AssemblyName>Beesharp.Cli</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>Beesharp.Cli</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>beesharp</ToolCommandName>
     <RootNamespace>Beesharp.Cli</RootNamespace>
+    <Description>Command-line tool (beesharp) for running load-test presets headlessly and inspecting exported or live Beesharp runs.</Description>
+    <PackageTags>beesharp;load-testing;performance;cli;dotnet-tool</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Beesharp.Cli.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- The container implementation (ServiceCollection.BuildServiceProvider); the shared framework of a console app only has the abstractions. -->

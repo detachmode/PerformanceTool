@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Beesharp.Cli.Runs;
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
@@ -7,6 +8,8 @@ using Beesharp.Services.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Beesharp.Cli;
+
+internal sealed class CouldNotRunException(string message) : Exception(message);
 
 /// <summary>
 /// <c>beesharp run</c>: loads the preset and environment from the root folder, then delegates execution
@@ -18,8 +21,18 @@ public static class CliApp
 
     /// <param name="stop">Cancels like the UI's Stop: bees in flight become canceled, the shutdown program still runs.</param>
     /// <param name="configureServices">For tests: extra services (e.g. a stub scenario).</param>
-    public static async Task<int> RunAsync(
-        string[] args, TextWriter output, TextWriter error, CancellationToken stop, Action<IServiceCollection>? configureServices = null)
+    public static Task<int> RunAsync(
+        string[] args, TextWriter output, TextWriter error, CancellationToken stop, Action<IServiceCollection>? configureServices = null) =>
+        RunAsync(args, output, error, stop, configureServices, httpHandler: null, getEnvironmentVariable: null);
+
+    internal static async Task<int> RunAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken stop,
+        Action<IServiceCollection>? configureServices,
+        HttpMessageHandler? httpHandler,
+        Func<string, string?>? getEnvironmentVariable)
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         var parsed = CliArguments.Parse(args);
@@ -31,14 +44,26 @@ public static class CliApp
             case CliCommand.RunHelp:
                 output.WriteLine(CliArguments.RunUsage);
                 return ExitCodes.Ok;
+            case CliCommand.RunsHelp:
+            case CliCommand.RunsSubcommandHelp:
+                output.WriteLine(parsed.HelpText ?? RunsArguments.RunsUsage);
+                return ExitCodes.Ok;
             case CliCommand.Invalid:
                 error.WriteLine($"beesharp: {parsed.Error}");
-                error.WriteLine("Run \"beesharp --help\" for usage.");
+                error.WriteLine(args.Length > 0 && string.Equals(args[0], "runs", StringComparison.OrdinalIgnoreCase)
+                    ? "Run \"beesharp runs --help\" for usage."
+                    : "Run \"beesharp --help\" for usage.");
                 return ExitCodes.CouldNotRun;
         }
 
         try
         {
+            if (parsed.Command is CliCommand.RunsList or CliCommand.RunsSummary or CliCommand.RunsErrors or CliCommand.RunsCalls
+                or CliCommand.RunsLogs or CliCommand.RunsBee or CliCommand.RunsCompare)
+            {
+                return await RunsCommandHandler.ExecuteAsync(parsed, output, httpHandler, getEnvironmentVariable, stop);
+            }
+
             return await RunPresetAsync(parsed.Run!, output, error, stop, configureServices);
         }
         catch (CouldNotRunException ex)
@@ -47,8 +72,6 @@ public static class CliApp
             return ExitCodes.CouldNotRun;
         }
     }
-
-    private sealed class CouldNotRunException(string message) : Exception(message);
 
     private static async Task<int> RunPresetAsync(
         RunOptions options, TextWriter output, TextWriter error, CancellationToken stop, Action<IServiceCollection>? configureServices)

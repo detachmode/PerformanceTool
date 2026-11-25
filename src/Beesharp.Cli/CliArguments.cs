@@ -1,3 +1,4 @@
+using Beesharp.Cli.Runs;
 using Beesharp.Services;
 
 namespace Beesharp.Cli;
@@ -41,23 +42,44 @@ public sealed record RunOptions
     };
 }
 
-public enum CliCommand { Help, RunHelp, Run, Invalid }
+public enum CliCommand
+{
+    Help,
+    RunHelp,
+    Run,
+    RunsHelp,
+    RunsSubcommandHelp,
+    RunsList,
+    RunsSummary,
+    RunsErrors,
+    RunsCalls,
+    RunsLogs,
+    RunsBee,
+    RunsCompare,
+    Invalid,
+}
 
-public sealed record ParsedArguments(CliCommand Command, RunOptions? Run = null, string? Error = null);
+public sealed record ParsedArguments(
+    CliCommand Command,
+    RunOptions? Run = null,
+    string? Error = null,
+    RunsOptions? Runs = null,
+    string? HelpText = null);
 
 /// <summary>A tiny hand-written parser (Proposed, brain 0054 U3): delegates shared <c>run</c> option parsing to <see cref="HeadlessArgumentParser"/>.</summary>
 public static class CliArguments
 {
     public const string Usage = """
-        beesharp - run a preset without the UI (for CI pipelines)
+        beesharp - run presets headlessly and inspect exported run bundles without the UI
 
         Usage:
           beesharp run --preset <name or file> [--env <name>] [options]
+          beesharp runs <subcommand> [options]
           beesharp --help
 
-        Run "beesharp run --help" for the options.
+        Run "beesharp run --help" or "beesharp runs --help" for subcommand options.
 
-        Exit codes: 0 all bees succeeded, 1 a bee failed (or was canceled), 2 the run could not run.
+        Exit codes: 0 all bees succeeded (or inspection succeeded), 1 a bee failed (or was canceled), 2 invalid arguments or could not run.
         """;
 
     public const string RunUsage = """
@@ -98,6 +120,7 @@ public static class CliArguments
     {
         if (args.Count == 0) return new(CliCommand.Invalid, Error: "No command given.");
         if (HeadlessArgumentParser.IsHelpFlag(args[0]) || args[0] == "help") return new(CliCommand.Help);
+        if (string.Equals(args[0], "runs", StringComparison.OrdinalIgnoreCase)) return RunsArguments.Parse(args);
         if (args[0] != "run") return new(CliCommand.Invalid, Error: $"Unknown command '{args[0]}'.");
 
         var parsed = HeadlessArgumentParser.ParseRunOptions(args, startIndex: 1, allowRootAndStorage: true, requirePreset: true);

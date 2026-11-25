@@ -1,6 +1,6 @@
 name: NuGet
 
-# Packs and publishes Beesharp.Core and Beesharp.Host to NuGet.org.
+# Packs and publishes Beesharp.Core, Beesharp.Host, and Beesharp.Cli to NuGet.org.
 # Called by ci.yml on version tags (v*) after build-test and e2e pass, or triggered manually via workflow_dispatch.
 # Supports either NuGet Trusted Publishing (OIDC: set repository variable NUGET_USER)
 # or a classic API key (set repository secret NUGET_API_KEY).
@@ -66,12 +66,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved package version: $VERSION"
 
-      - name: Test Core, Scripting and Host
+      - name: Test Core, Scripting, Host and Cli
         if: github.event_name != 'workflow_call'
         run: |
           dotnet test tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj -c Release
           dotnet test tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj -c Release
           dotnet test tests/Beesharp.Tests/Beesharp.Tests.csproj -c Release
+          dotnet test tests/Beesharp.Cli.Tests/Beesharp.Cli.Tests.csproj -c Release
 
       - name: Publish Beesharp.Client UI
         run: >
@@ -96,6 +97,11 @@ jobs:
             -p:Version="$VERSION" \
             -p:BuildSha="${{ github.sha }}" \
             -p:BeesharpClientWwwroot="$(pwd)/artifacts/client-ui/wwwroot" \
+            -p:ContinuousIntegrationBuild=true
+          dotnet pack src/Beesharp.Cli/Beesharp.Cli.csproj \
+            -c Release \
+            -o artifacts/nuget \
+            -p:Version="$VERSION" \
             -p:ContinuousIntegrationBuild=true
           ls -lh artifacts/nuget/*.nupkg
 
@@ -127,7 +133,7 @@ jobs:
             exit 1
           fi
           VERSION="${{ steps.ver.outputs.version }}"
-          for pkg in Beesharp.Core Beesharp.Host; do
+          for pkg in Beesharp.Core Beesharp.Host Beesharp.Cli; do
             dotnet nuget push "artifacts/nuget/${pkg}.${VERSION}.nupkg" \
               --source https://api.nuget.org/v3/index.json \
               --api-key "$API_KEY" \
@@ -142,5 +148,5 @@ jobs:
             echo "### Beesharp NuGet"
             echo "- **Version:** \`${{ steps.ver.outputs.version }}\`"
             echo "- **Dry run:** \`${{ inputs.dry_run == true }}\`"
-            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Host\`"
+            echo "- **Packages:** \`Beesharp.Core\`, \`Beesharp.Host\`, \`Beesharp.Cli\`"
           } >> "$GITHUB_STEP_SUMMARY"
