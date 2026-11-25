@@ -31,6 +31,9 @@
   <ItemGroup>
     <!-- The container implementation (ServiceCollection.BuildServiceProvider); the shared framework of a console app only has the abstractions. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- OTEL_* environment variables for the optional trace export (brain 0062). -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.0" />
+    <ProjectReference Include="../Beesharp.Tracing/Beesharp.Tracing.csproj" />
     <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
     <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />

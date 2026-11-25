@@ -18,7 +18,7 @@ public static class RemoteBeeDetail
             var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
             calls.Add(new FakeCall(i, c.Name, c.OffsetMs, c.DurationMs, c.StatusCode,
                 store.Errors.Intern(c.Error), Skipped: false, ThinkBeforeMs: 0, Slow: slow, TypicalMs: null, Errors: store.Errors, Step: c.Step, Rep: c.Rep,
-                Endpoint: ep, SlowThresholdMs: c.SlowThresholdMs, RawUrl: c.Url));
+                Endpoint: ep, SlowThresholdMs: c.SlowThresholdMs, RawUrl: c.Url, TraceId: c.TraceId, SpanId: c.SpanId));
         }
         if (calls.Count == 0)
             calls.Add(new FakeCall(0, "Run", 0, detail.DurationMs, detail.StatusCode,
@@ -44,6 +44,7 @@ public static class RemoteBeeDetail
                 l.CallIndex,
                 l.Step,
                 l.Rep)).ToList(),
-            detail.StepVisits);
+            detail.StepVisits,
+            detail.TraceId);
     }
 }

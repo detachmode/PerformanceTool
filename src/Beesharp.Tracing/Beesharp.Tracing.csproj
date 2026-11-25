@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Optional OTLP export of Beesharp's own spans (brain 0062): one small registration shared by the hosts (Beesharp.Host, Beesharp.Cli).
+       The only module with the OpenTelemetry SDK; Core and Engine create spans with System.Diagnostics alone. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Beesharp.Tracing</PackageId>
+    <Description>Optional OpenTelemetry (OTLP) export of Beesharp's actor, step and call spans.</Description>
+    <PackageTags>beesharp;load-testing;opentelemetry;tracing</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+  </ItemGroup>
+
+</Project>

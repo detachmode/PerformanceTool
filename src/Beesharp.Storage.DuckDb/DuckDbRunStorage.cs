@@ -19,7 +19,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     /// <summary>
     /// Current schema version recorded in the <c>schema_meta</c> table of the DuckDB database.
     /// </summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
@@ -134,11 +134,13 @@ public sealed class DuckDbRunStorage : IRunStorage
                     log_count INTEGER NOT NULL,
                     failed_step INTEGER NOT NULL DEFAULT -1,
                     failed_rep INTEGER NOT NULL DEFAULT -1,
-                    step_visits_json VARCHAR
+                    step_visits_json VARCHAR,
+                    trace_id VARCHAR
                 );
                 ALTER TABLE bees ADD COLUMN IF NOT EXISTS failed_step INTEGER DEFAULT -1;
                 ALTER TABLE bees ADD COLUMN IF NOT EXISTS failed_rep INTEGER DEFAULT -1;
                 ALTER TABLE bees ADD COLUMN IF NOT EXISTS step_visits_json VARCHAR;
+                ALTER TABLE bees ADD COLUMN IF NOT EXISTS trace_id VARCHAR;
                 CREATE INDEX IF NOT EXISTS idx_bees_run_seq ON bees(run_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_bees_run_name ON bees(run_id, bee_name);
                 CREATE INDEX IF NOT EXISTS idx_bees_run_failed ON bees(run_id, is_failed);
@@ -165,7 +167,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                     slow_threshold_ms DOUBLE,
                     ttfb_ms DOUBLE,
                     response_read_ms DOUBLE,
-                    headers_json VARCHAR
+                    headers_json VARCHAR,
+                    trace_id VARCHAR,
+                    span_id VARCHAR
                 );
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS step INTEGER DEFAULT 0;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS rep INTEGER DEFAULT 0;
@@ -177,6 +181,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS ttfb_ms DOUBLE;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS response_read_ms DOUBLE;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS headers_json VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS trace_id VARCHAR;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS span_id VARCHAR;
                 CREATE INDEX IF NOT EXISTS idx_calls_run_seq ON calls(run_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_calls_run_endpoint ON calls(run_id, endpoint);
 
@@ -559,6 +565,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                    .AppendValue(r.FailedStep)
                    .AppendValue(r.FailedRep)
                    .AppendValue(r.StepVisits is { Count: > 0 } ? JsonSerializer.Serialize(r.StepVisits, JsonOpts) : null)
+                   .AppendValue(r.TraceId)
                    .EndRow();
             }
         }
@@ -595,6 +602,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                        .AppendValue(c.TtfbMs)
                        .AppendValue(c.ResponseReadMs)
                        .AppendValue(c.Headers is { Count: > 0 } ? JsonSerializer.Serialize(c.Headers, JsonOpts) : null)
+                       .AppendValue(c.TraceId)
+                       .AppendValue(c.SpanId)
                        .EndRow();
                 }
             }
@@ -787,13 +796,14 @@ public sealed class DuckDbRunStorage : IRunStorage
             int? statusCode;
             long bytes;
             string? error;
+            string? traceId;
             IReadOnlyList<RecordedStepVisit>? stepVisits = null;
 
             using (var beeCmd = conn.CreateCommand())
             {
                 beeCmd.CommandText = """
                     SELECT entry, started_at, duration_ms, status_code, bytes, error,
-                           COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json
+                           COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json, trace_id
                     FROM bees
                     WHERE run_id = $1 AND sequence = $2
                     LIMIT 1;
@@ -812,6 +822,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 failedRep = reader.GetInt32(7);
                 if (!reader.IsDBNull(8) && reader.GetString(8) is { Length: > 0 } svJson)
                     stepVisits = JsonSerializer.Deserialize<List<RecordedStepVisit>>(svJson, JsonOpts);
+                traceId = reader.IsDBNull(9) ? null : reader.GetString(9);
             }
 
             var calls = new List<RecordedCall>();
@@ -820,7 +831,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 callCmd.CommandText = """
                     SELECT name, offset_ms, duration_ms, status_code, bytes, error,
                            COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms,
-                           ttfb_ms, response_read_ms, headers_json
+                           ttfb_ms, response_read_ms, headers_json, trace_id, span_id
                     FROM calls
                     WHERE run_id = $1 AND sequence = $2
                     ORDER BY call_index;
@@ -849,7 +860,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                         cr.IsDBNull(11) ? null : cr.GetString(11),
                         cr.IsDBNull(13) ? null : cr.GetDouble(13),
                         cr.IsDBNull(14) ? null : cr.GetDouble(14),
-                        headers));
+                        headers,
+                        cr.IsDBNull(16) ? null : cr.GetString(16),
+                        cr.IsDBNull(17) ? null : cr.GetString(17)));
                 }
             }
 
@@ -908,7 +921,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             }
 
             return Task.FromResult<StoredBeeDetail?>(new StoredBeeDetail(
-                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs, failedStep, failedRep, stepVisits, entryLabel, entrySteps));
+                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs, failedStep, failedRep, stepVisits, entryLabel, entrySteps, traceId));
         }
     }
 
@@ -1205,7 +1218,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             SELECT c.id, c.sequence, b.entry, COALESCE(c.step, 0), COALESCE(c.rep, 0), b.started_at,
                    c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name, c.url,
                    c.endpoint, c.method, c.host, c.slow_threshold_ms,
-                   c.ttfb_ms, c.response_read_ms, c.headers_json
+                   c.ttfb_ms, c.response_read_ms, c.headers_json, c.trace_id, c.span_id
             FROM calls c
             JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence
             WHERE c.run_id = $1
@@ -1238,7 +1251,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                 r.IsDBNull(16) ? null : r.GetDouble(16),
                 r.IsDBNull(17) ? null : r.GetDouble(17),
                 r.IsDBNull(18) ? null : r.GetDouble(18),
-                headers));
+                headers,
+                r.IsDBNull(20) ? null : r.GetString(20),
+                r.IsDBNull(21) ? null : r.GetString(21)));
         }
         return facts;
     }
@@ -1393,7 +1408,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var bees = new List<object>();
             using (var aCmd = conn.CreateCommand())
             {
-                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls, COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json FROM bees WHERE run_id = $1 ORDER BY sequence;";
+                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls, COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json, trace_id FROM bees WHERE run_id = $1 ORDER BY sequence;";
                 aCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var ar = aCmd.ExecuteReader();
                 while (ar.Read())
@@ -1418,6 +1433,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                         failedStep = ar.GetInt32(12),
                         failedRep = ar.GetInt32(13),
                         stepVisits = sv,
+                        traceId = ar.IsDBNull(15) ? null : ar.GetString(15),
                     });
                 }
             }
@@ -1425,7 +1441,7 @@ public sealed class DuckDbRunStorage : IRunStorage
             var calls = new List<object>();
             using (var cCmd = conn.CreateCommand())
             {
-                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms, ttfb_ms, response_read_ms, headers_json FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
+                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms, ttfb_ms, response_read_ms, headers_json, trace_id, span_id FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
                 cCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var cr = cCmd.ExecuteReader();
                 while (cr.Read())
@@ -1453,6 +1469,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                         ttfbMs = cr.IsDBNull(15) ? (double?)null : cr.GetDouble(15),
                         responseReadMs = cr.IsDBNull(16) ? (double?)null : cr.GetDouble(16),
                         headers,
+                        traceId = cr.IsDBNull(18) ? null : cr.GetString(18),
+                        spanId = cr.IsDBNull(19) ? null : cr.GetString(19),
                     });
                 }
             }
@@ -1684,12 +1702,14 @@ public sealed class DuckDbRunStorage : IRunStorage
                     var slowCalls = b.TryGetProperty("slowCalls", out var p11) ? p11.GetInt32() : 0;
                     var failedStep = b.TryGetProperty("failedStep", out var p12) ? p12.GetInt32() : -1;
                     var failedRep = b.TryGetProperty("failedRep", out var p13) ? p13.GetInt32() : -1;
+                    var beeTraceId = b.TryGetProperty("traceId", out var p14) && p14.ValueKind == JsonValueKind.String ? p14.GetString() : null;
                     app.CreateRow()
                         .AppendValue(targetRunId).AppendValue(seq).AppendValue(name).AppendValue(entry)
                         .AppendValue(startedAt).AppendValue(durMs).AppendValue(statusCode).AppendValue(bytes)
                         .AppendValue(bErr).AppendValue(outcome).AppendValue(isFailed).AppendValue(isSlow)
                         .AppendValue(slowCalls).AppendValue(0).AppendValue(0)
                         .AppendValue(failedStep).AppendValue(failedRep).AppendValue((string?)null)
+                        .AppendValue(beeTraceId)
                         .EndRow();
                 }
             }
@@ -1718,12 +1738,15 @@ public sealed class DuckDbRunStorage : IRunStorage
                     var ttfbMs = c.TryGetProperty("ttfbMs", out var p15) && p15.ValueKind == JsonValueKind.Number ? p15.GetDouble() : (double?)null;
                     var respReadMs = c.TryGetProperty("responseReadMs", out var p16) && p16.ValueKind == JsonValueKind.Number ? p16.GetDouble() : (double?)null;
                     var headersJson = c.TryGetProperty("headers", out var p17) && p17.ValueKind == JsonValueKind.Object ? p17.GetRawText() : null;
+                    var callTraceId = c.TryGetProperty("traceId", out var p18) && p18.ValueKind == JsonValueKind.String ? p18.GetString() : null;
+                    var callSpanId = c.TryGetProperty("spanId", out var p19) && p19.ValueKind == JsonValueKind.String ? p19.GetString() : null;
                     app.CreateRow()
                         .AppendValue(id).AppendValue(targetRunId).AppendValue(seq).AppendValue(callIdx)
                         .AppendValue(name).AppendValue(offsetMs).AppendValue(durMs).AppendValue(statusCode)
                         .AppendValue(bytes).AppendValue(cErr).AppendValue(step).AppendValue(rep)
                         .AppendValue(endpoint).AppendValue(method).AppendValue(host).AppendValue(url).AppendValue(slowThr)
                         .AppendValue(ttfbMs).AppendValue(respReadMs).AppendValue(headersJson)
+                        .AppendValue(callTraceId).AppendValue(callSpanId)
                         .EndRow();
                 }
             }

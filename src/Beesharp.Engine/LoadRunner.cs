@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Beesharp.Services.Environments;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios;
+using Beesharp.Services.Tracing;
 
 namespace Beesharp.Services;
 
@@ -31,6 +32,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
     /// <param name="data">Optional runtime data container holding the shared run bag and per-entry bags; a new instance is created when null.</param>
     /// <param name="onBeeContext">Optional callback invoked immediately before a bee executes, providing its sequence number, entry index, and <see cref="ScenarioContext"/>.</param>
     /// <param name="clock">Optional run clock supporting pause and resume; a new clock is created when null.</param>
+    /// <param name="runId">Optional run identifier, put on every actor's root span as <c>beesharp.run.id</c> (brain 0062).</param>
     /// <returns>A task that completes when all scheduled entries and in-flight bees have finished and teardown hooks have run.</returns>
     public async Task RunAsync(
         LoadPlan plan,
@@ -42,7 +44,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         Action<LiveLogEvent>? onLiveLog = null,
         RunData? data = null,
         Action<int, int, ScenarioContext>? onBeeContext = null,
-        RunClock? clock = null)
+        RunClock? clock = null,
+        string? runId = null)
     {
         var scenarios = plan.Scenarios.Select(e => catalog.Find(e.ScenarioId)
             ?? throw new InvalidOperationException($"Unknown scenario '{e.ScenarioId}'.")).ToArray();
@@ -184,6 +187,15 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 var calls = new List<RecordedCall>();
                 var logs = new List<RecordedLog>();
                 var stepVisits = new List<RecordedStepVisit>();
+                // One actor = one trace (brain 0062): the actor's root span, started here so every call and step of the actor hangs below it.
+                var entryConfig = plan.Scenarios[entry];
+                using var trace = ActorTrace.Start(new ActorTraceInfo(
+                    string.IsNullOrWhiteSpace(entryConfig.Label) ? scenario.Name : entryConfig.Label,
+                    runId,
+                    entryConfig.ScenarioId,
+                    entry + 1,
+                    seq + 1,
+                    scenario.Steps));
                 var ctx = new ScenarioContext(
                     http,
                     env,
@@ -201,7 +213,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     stepVisitSink: v => { lock (stepVisits) stepVisits.Add(v); },
                     thresholds: scenario.SlowThresholds,
                     captureHeaders: plan.CaptureHeaders,
-                    measureHttpTimingSplit: plan.MeasureHttpTimingSplit);
+                    measureHttpTimingSplit: plan.MeasureHttpTimingSplit,
+                    trace: trace);
                 onBeeContext?.Invoke(seq, entry, ctx);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;
@@ -238,6 +251,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 var failedRep = !outcome.Success && hasSteps ? (ctx.CurrentStep >= 0 ? ctx.CurrentRep : 0) : -1;
 
                 var elapsed = outcome.Measured ?? sw.Elapsed;
+                // The actor's span ends with the actor, not after the result was stored.
+                trace?.Complete(outcome.Success, outcome.FailureReason, canceled);
+                trace?.Dispose();
                 await onResult(new ExecutionResult(
                     seq,
                     entry,
@@ -251,7 +267,8 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     canceled,
                     failedStep,
                     failedRep,
-                    stepVisits.Count > 0 ? stepVisits : null));
+                    stepVisits.Count > 0 ? stepVisits : null,
+                    trace?.TraceId));
             }
 
             await Task.WhenAll(Enumerable.Range(0, plan.Scenarios.Count).Select(ScheduleEntry));

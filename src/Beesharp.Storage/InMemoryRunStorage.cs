@@ -58,7 +58,7 @@ public sealed class InMemoryRunStorage : IRunStorage
             var beeName = $"B{r.Sequence + 1}";
             bucket.Bees[r.Sequence] = new StoredBeeDetail(
                 runId, r.Sequence, r.Entry, r.StartedAtSeconds, r.ElapsedMs, r.StatusCode, r.Bytes, r.Error,
-                r.Calls ?? [], r.Logs ?? [], r.FailedStep, r.FailedRep, r.StepVisits);
+                r.Calls ?? [], r.Logs ?? [], r.FailedStep, r.FailedRep, r.StepVisits, TraceId: r.TraceId);
             if (r.Logs is { Count: > 0 })
             {
                 foreach (var l in r.Logs)
@@ -359,7 +359,7 @@ public sealed class InMemoryRunStorage : IRunStorage
                     id, bee.Sequence, bee.Entry, c.Step, c.Rep, bee.StartedAt,
                     c.OffsetMs, c.DurationMs, c.StatusCode, c.Bytes, c.Error,
                     c.Name, c.Url, c.Endpoint, c.Method, c.Host, c.SlowThresholdMs,
-                    c.TtfbMs, c.ResponseReadMs, c.Headers));
+                    c.TtfbMs, c.ResponseReadMs, c.Headers, c.TraceId, c.SpanId));
             }
         }
         return facts;

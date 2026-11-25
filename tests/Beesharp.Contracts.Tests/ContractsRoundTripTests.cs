@@ -62,6 +62,28 @@ public class ContractsRoundTripTests
     }
 
     [Fact]
+    public void Trace_and_span_ids_round_trip_under_their_json_names()
+    {
+        const string trace = "4d7ce6ac47fbe9b3822d67a473ce9774";
+        var detail = RoundTrip(new StoredBeeDetail("r1", 2, 0, 1, 50, 200, 10, null,
+            [new RecordedCall("GET /x", 0, 50, 200, 10, TraceId: trace, SpanId: "00f067aa0ba902b7")], [], TraceId: trace));
+        Assert.Equal(trace, detail.TraceId);
+        Assert.Equal(("4d7ce6ac47fbe9b3822d67a473ce9774", "00f067aa0ba902b7"), (detail.Calls[0].TraceId, detail.Calls[0].SpanId));
+
+        var node = JsonNode.Parse(JsonSerializer.Serialize(detail, Web))!.AsObject();
+        Assert.Equal(trace, (string?)node["traceId"]);
+        Assert.Equal("00f067aa0ba902b7", (string?)node["calls"]![0]!["spanId"]);
+
+        var sample = RoundTrip(new CallSampleDto(1, 2, "B3", 0, 0, 0, 1, 0, 50, 200, 10, null, "GET /x", "https://x/x", "GET /x", false, 40, null, trace, "00f067aa0ba902b7"));
+        Assert.Equal((trace, "00f067aa0ba902b7"), (sample.TraceId, sample.SpanId));
+        var slowest = RoundTrip(new SlowestCallDto(1, 2, "B3", 0, null, 0, null, 0, 1, 50, 200, 10, null, "GET /x", null, false, null, TraceId: trace, SpanId: "00f067aa0ba902b7"));
+        Assert.Equal(trace, slowest.TraceId);
+
+        // Runs recorded before tracing have none.
+        Assert.Null(RoundTrip(new StoredBeeDetail("r1", 2, 0, 1, 50, 200, 10, null, [], [])).TraceId);
+    }
+
+    [Fact]
     public void Log_rows_carry_their_step_and_the_facets_round_trip()
     {
         var row = RoundTrip(new StoredLogRow(1, 2, "B3", 0, 0.5, "Error", "bad", null, 0, 2, true, false, Step: 3));
