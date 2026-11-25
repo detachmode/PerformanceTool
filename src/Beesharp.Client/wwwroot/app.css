@@ -1143,6 +1143,9 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .sl-line.sl-out { color: #7dd3fc; }
 .sl-line.sl-wrn { color: #fbbf24; }
 .sl-line.sl-err { color: #f87171; }
+.sl-line.sl-step { margin: .25rem 0 .1rem; padding: .16rem .35rem; background: rgba(255, 255, 255, 0.055); border-left: 2px solid var(--accent); border-radius: 0 5px 5px 0; color: var(--title); font-weight: 600; }
+.sl-line.sl-step:first-child { margin-top: 0; }
+.sl-line.sl-step .sl-ts, .sl-line.sl-step .sl-br { opacity: .55; font-weight: 400; }
 
 @media (max-width: 760px) {
     .sl-console { padding: .2rem .35rem; font-size: .68rem; line-height: 1.28; }
@@ -1539,6 +1542,8 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .lg-lines.nowrap .lg-msg { white-space: pre; }
 .lg-lv, .lg-sc, .lg-bee { margin-left: .55em; } .lg-msg { margin-left: .55em; }
 .lg-line:hover { background: color-mix(in srgb, var(--panel2) 55%, transparent); }
+.lg-line.lg-step { background: rgba(255, 255, 255, 0.045); border-left: 2px solid var(--accent); padding-left: .4rem; margin-top: .18rem; border-radius: 0 4px 4px 0; }
+.lg-line.lg-step .lg-msg { color: var(--title); font-weight: 650; }
 .lg-t { color: var(--faint); }
 .lg-lv { font-weight: 700; display: inline-block; min-width: 2.2em; }
 .lg-line.lv-Error .lg-lv, .lg-line.lv-Error .lg-msg { color: var(--bad); }

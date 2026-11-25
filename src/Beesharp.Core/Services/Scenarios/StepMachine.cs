@@ -136,7 +136,9 @@ internal static class StepMachineRunner
                 throw new InvalidOperationException($"Step type '{payload.GetType().Name}' is not declared in '{typeof(TStep).Name}'.");
 
             var rep = visits[stepIndex]++;
-            context.EnterStep(stepIndex, rep, StepDataCapture.Serialize(payload));
+            var dataJson = StepDataCapture.Serialize(payload);
+            context.EnterStep(stepIndex, rep, dataJson);
+            LogStepExecution(context, union.Steps[stepIndex].Name, rep, dataJson);
             current = await runStep(step, context, ct);
         }
         return new ScenarioOutcome(200, 0);
@@ -169,7 +171,9 @@ internal static class StepMachineRunner
                 throw new InvalidOperationException($"Step type '{payload.GetType().Name}' is not declared in '{typeof(TStep).Name}'.");
 
             var rep = visits[stepIndex]++;
-            context.EnterStep(stepIndex, rep, StepDataCapture.Serialize(payload));
+            var dataJson = StepDataCapture.Serialize(payload);
+            context.EnterStep(stepIndex, rep, dataJson);
+            LogStepExecution(context, union.Steps[stepIndex].Name, rep, dataJson);
 
             emitted.Clear();
             await foreach (var next in runStep(step, context, ct).WithCancellation(ct))
@@ -180,6 +184,20 @@ internal static class StepMachineRunner
         }
 
         return new ScenarioOutcome(200, 0);
+    }
+
+    private const int StepLineWidth = 56;
+
+    private static void LogStepExecution(ScenarioContext context, string stepName, int rep, string? dataJson)
+    {
+        var suffix = rep > 0 ? $" #{rep + 1}" : "";
+        var formattedData = StepDataCapture.FormatForLog(dataJson);
+        var label = string.IsNullOrEmpty(formattedData)
+            ? $"{stepName}{suffix}"
+            : $"{stepName}{suffix} ({formattedData})";
+        var prefix = $"─── ▶ {label} ";
+        var pad = Math.Max(3, StepLineWidth - prefix.Length);
+        context.Log(prefix + new string('─', pad));
     }
 }
 
@@ -215,6 +233,32 @@ internal static class StepDataCapture
 
         var json = JsonSerializer.Serialize(map, JsonOpts);
         return json.Length <= MaxJsonLength ? json : json[..(MaxJsonLength - 1)] + "…";
+    }
+
+    public static string FormatForLog(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return json;
+            var parts = new List<string>();
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                var v = p.Value.ValueKind switch
+                {
+                    JsonValueKind.String => p.Value.GetString() ?? "",
+                    JsonValueKind.Null => "null",
+                    _ => p.Value.GetRawText(),
+                };
+                parts.Add($"{p.Name}: {v}");
+            }
+            return string.Join(" · ", parts);
+        }
+        catch
+        {
+            return json;
+        }
     }
 
     private static string ToCamel(string name) =>
