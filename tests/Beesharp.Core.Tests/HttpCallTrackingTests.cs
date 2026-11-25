@@ -147,6 +147,70 @@ public class HttpCallTrackingTests
         Assert.Equal(333, calls[3].SlowThresholdMs);
     }
 
+    [Fact]
+    public async Task Captures_allowlisted_headers_and_optional_http_timing_split()
+    {
+        var calls = new List<RecordedCall>();
+        var stubHandler = new StubResponseHandler(() =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(new string('a', 1024), Encoding.UTF8, "text/plain"),
+            };
+            resp.Headers.Add("Server-Timing", "db;dur=42");
+            resp.Headers.Add("X-Ignored-Header", "secret");
+            return resp;
+        });
+
+        using var recording = new RecordingHttpHandler(stubHandler);
+        using var http = new HttpClient(recording);
+
+        var ctx = new ScenarioContext(
+            http,
+            callSink: calls.Add,
+            captureHeaders: ["X-Correlation-Id", "Server-Timing"],
+            measureHttpTimingSplit: true);
+
+        using (ctx.Activate())
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.test/orders");
+            req.Headers.Add("X-Correlation-Id", "corr-42");
+            var resp = await http.SendAsync(req);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.Equal(1024, (await resp.Content.ReadAsStringAsync()).Length);
+        }
+
+        var call = Assert.Single(calls);
+        Assert.NotNull(call.TtfbMs);
+        Assert.NotNull(call.ResponseReadMs);
+        Assert.True(call.TtfbMs >= 0);
+        Assert.True(call.ResponseReadMs >= 0);
+        Assert.NotNull(call.Headers);
+        Assert.Equal("corr-42", call.Headers!["X-Correlation-Id"]);
+        Assert.Equal("db;dur=42", call.Headers["Server-Timing"]);
+        Assert.False(call.Headers.ContainsKey("X-Ignored-Header"));
+
+        // Empty allowlist disables header capture
+        calls.Clear();
+        var ctxNoHeaders = new ScenarioContext(http, callSink: calls.Add, captureHeaders: [], measureHttpTimingSplit: false);
+        using (ctxNoHeaders.Activate())
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.test/orders");
+            req.Headers.Add("X-Correlation-Id", "corr-99");
+            await http.SendAsync(req);
+        }
+        var noHdrCall = Assert.Single(calls);
+        Assert.Null(noHdrCall.Headers);
+        Assert.Null(noHdrCall.TtfbMs);
+        Assert.Null(noHdrCall.ResponseReadMs);
+    }
+
+    private sealed class StubResponseHandler(Func<HttpResponseMessage> factory) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(factory());
+    }
+
     private sealed class LoopbackHttpServer : IAsyncDisposable
     {
         private readonly TcpListener listener;

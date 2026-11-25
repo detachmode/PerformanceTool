@@ -59,7 +59,7 @@ public static class CliApp
         try
         {
             if (parsed.Command is CliCommand.RunsList or CliCommand.RunsSummary or CliCommand.RunsErrors or CliCommand.RunsCalls
-                or CliCommand.RunsLogs or CliCommand.RunsBee or CliCommand.RunsCompare)
+                or CliCommand.RunsLogs or CliCommand.RunsBee or CliCommand.RunsCompare or CliCommand.RunsTimeline)
             {
                 return await RunsCommandHandler.ExecuteAsync(parsed, output, httpHandler, getEnvironmentVariable, stop);
             }

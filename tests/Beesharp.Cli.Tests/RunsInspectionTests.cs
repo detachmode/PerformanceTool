@@ -265,12 +265,246 @@ public sealed class RunsInspectionTests : IDisposable
             Assert.Equal(3, stepArr.GetArrayLength());
             Assert.Equal("Log in", stepArr[0].GetProperty("name").GetString());
             Assert.Equal(0, stepArr[0].GetProperty("failed").GetInt32());
+            Assert.Equal(2, stepArr[0].GetProperty("calls").GetInt32());
+            Assert.Equal(0, stepArr[0].GetProperty("slow").GetInt32());
+            Assert.Equal(20, stepArr[0].GetProperty("minMs").GetDouble());
+            Assert.Equal(25, stepArr[0].GetProperty("maxMs").GetDouble());
             Assert.Equal("Search", stepArr[1].GetProperty("name").GetString());
             Assert.Equal(1, stepArr[1].GetProperty("failed").GetInt32());
+            Assert.Equal(3, stepArr[1].GetProperty("calls").GetInt32());
             Assert.Equal("Pay", stepArr[2].GetProperty("name").GetString());
             Assert.Equal(1, stepArr[2].GetProperty("failed").GetInt32());
+            Assert.Equal(3, stepArr[2].GetProperty("calls").GetInt32());
+            Assert.Equal(1, stepArr[2].GetProperty("slow").GetInt32());
+            Assert.Equal(40, stepArr[2].GetProperty("minMs").GetDouble());
+            Assert.Equal(210, stepArr[2].GetProperty("maxMs").GetDouble());
             Assert.Equal(2, checkout.GetProperty("finishedAllSteps").GetInt32());
         }
+    }
+
+    [Theory, MemberData(nameof(BundleFormats))]
+    public async Task Runs_summary_and_calls_by_step_separate_shared_url_across_steps(string format)
+    {
+        var dbPath = Path.Combine(workDir, $"shared-url-{format}.duckdb");
+        var runId = $"run-shared-{format}";
+        await using var storage = new DuckDbRunStorage(dbPath);
+
+        var plan = new LoadPlan
+        {
+            DurationSeconds = 5,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "order-flow", Label = "OrderFlow", RatePerMinute = 60 }],
+        };
+        var steps = new IReadOnlyList<StepInfo>[]
+        {
+            [new StepInfo("Create"), new StepInfo("Update"), new StepInfo("Delete")],
+        };
+
+        var started = new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+        storage.EnqueueRunStarted(runId, started, plan, steps);
+
+        double[] createDurs = [100, 105, 98, 102, 100, 310];
+        double[] updateDurs = [40, 42, 38, 41, 39, 125];
+        double[] delDurs = [15, 16, 14, 15, 15, 17];
+        for (var i = 0; i < 6; i++)
+        {
+            var isSlow = i == 5;
+            storage.EnqueueBeeCompleted(runId, new ExecutionResult(
+                Sequence: i, Entry: 0, StartedAtSeconds: i * 0.5, ElapsedMs: createDurs[i] + updateDurs[i] + delDurs[i],
+                StatusCode: 200, Bytes: 192, Error: null,
+                Calls:
+                [
+                    new RecordedCall("POST /rpc/orders", 0, createDurs[i], 200, 64, null, Step: 0, Rep: 0,
+                        Endpoint: "POST /rpc/orders", Method: "POST", Host: "shop.test", Url: "https://shop.test/rpc/orders"),
+                    new RecordedCall("POST /rpc/orders", createDurs[i], updateDurs[i], 200, 64, null, Step: 1, Rep: 0,
+                        Endpoint: "POST /rpc/orders", Method: "POST", Host: "shop.test", Url: "https://shop.test/rpc/orders"),
+                    new RecordedCall("POST /rpc/orders", createDurs[i] + updateDurs[i], delDurs[i], 200, 64, null, Step: 2, Rep: 0,
+                        Endpoint: "POST /rpc/orders", Method: "POST", Host: "shop.test", Url: "https://shop.test/rpc/orders"),
+                ]),
+                beeOutcome: isSlow ? 1 : 0, slowCalls: isSlow ? 2 : 0);
+        }
+        storage.EnqueueRunFinished(runId, started.AddSeconds(4), "Finished", 4.0, null);
+        await storage.FlushAsync();
+
+        var ext = format == "zip" ? "parquet" : format;
+        var exp = (await storage.ExportRunAsync(runId, ext))!;
+        var bundlePath = Path.Combine(workDir, $"{runId}.{format}");
+        await File.WriteAllBytesAsync(bundlePath, exp.Content);
+
+        // 1. runs summary includes per-step latency and slow counts
+        var sumJson = await CliAsync("runs", "summary", bundlePath, "--json");
+        Assert.Equal(ExitCodes.Ok, sumJson.Exit);
+        using (var doc = JsonDocument.Parse(sumJson.Out))
+        {
+            var entry = doc.RootElement.GetProperty("entries")[0];
+            if (format is "zip" or "duckdb")
+            {
+                var stepArr = entry.GetProperty("steps");
+                Assert.Equal(3, stepArr.GetArrayLength());
+                Assert.Equal(1, stepArr[0].GetProperty("slow").GetInt32());
+                Assert.Equal(100, stepArr[0].GetProperty("p50Ms").GetDouble());
+                Assert.Equal(1, stepArr[1].GetProperty("slow").GetInt32());
+                Assert.Equal(40, stepArr[1].GetProperty("p50Ms").GetDouble());
+                Assert.Equal(0, stepArr[2].GetProperty("slow").GetInt32());
+                Assert.Equal(15, stepArr[2].GetProperty("p50Ms").GetDouble());
+            }
+        }
+
+        // 2. runs calls --by-step splits POST /rpc/orders into 3 rows (1 per step)
+        var byStepJson = await CliAsync("runs", "calls", bundlePath, "--by-step", "--json");
+        Assert.Equal(ExitCodes.Ok, byStepJson.Exit);
+        using (var doc = JsonDocument.Parse(byStepJson.Out))
+        {
+            Assert.Equal(18, doc.RootElement.GetProperty("totalCalls").GetInt64());
+            Assert.Equal(2, doc.RootElement.GetProperty("totalSlowCalls").GetInt64());
+            var eps = doc.RootElement.GetProperty("endpoints");
+            Assert.Equal(3, eps.GetArrayLength());
+            var s1 = eps.EnumerateArray().Single(e => e.GetProperty("step").GetInt32() == 1);
+            var s2 = eps.EnumerateArray().Single(e => e.GetProperty("step").GetInt32() == 2);
+            var s3 = eps.EnumerateArray().Single(e => e.GetProperty("step").GetInt32() == 3);
+            Assert.Equal(100, s1.GetProperty("typicalMs").GetDouble());
+            Assert.Equal(1, s1.GetProperty("slowCount").GetInt32());
+            Assert.Equal(40, s2.GetProperty("typicalMs").GetDouble());
+            Assert.Equal(1, s2.GetProperty("slowCount").GetInt32());
+            Assert.Equal(15, s3.GetProperty("typicalMs").GetDouble());
+            Assert.Equal(0, s3.GetProperty("slowCount").GetInt32());
+            if (format is "zip" or "duckdb")
+            {
+                Assert.Equal("Create", s1.GetProperty("stepName").GetString());
+                Assert.Equal("Update", s2.GetProperty("stepName").GetString());
+                Assert.Equal("Delete", s3.GetProperty("stepName").GetString());
+            }
+        }
+
+        // 3. runs calls --by-step text output renders the Step column
+        var byStepText = await CliAsync("runs", "calls", bundlePath, "--by-step");
+        Assert.Equal(ExitCodes.Ok, byStepText.Exit);
+        Assert.Contains("Step", byStepText.Out);
+        Assert.Contains("step 1", byStepText.Out);
+        Assert.Contains("step 2", byStepText.Out);
+        Assert.Contains("step 3", byStepText.Out);
+
+        // 4. runs calls --step 2 filters to Update only
+        var step2Json = await CliAsync("runs", "calls", bundlePath, "--step", "2", "--json");
+        Assert.Equal(ExitCodes.Ok, step2Json.Exit);
+        using (var doc = JsonDocument.Parse(step2Json.Out))
+        {
+            var ep = Assert.Single(doc.RootElement.GetProperty("endpoints").EnumerateArray());
+            Assert.Equal(6, ep.GetProperty("totalCount").GetInt32());
+            Assert.Equal(40, ep.GetProperty("typicalMs").GetDouble());
+            Assert.Equal(1, ep.GetProperty("slowCount").GetInt32());
+        }
+
+        // 5. runs calls --scenario filters by ScenarioId or Label
+        var scenJson = await CliAsync("runs", "calls", bundlePath, "--scenario", "order-flow", "--by-step", "--json");
+        Assert.Equal(ExitCodes.Ok, scenJson.Exit);
+        using (var doc = JsonDocument.Parse(scenJson.Out))
+            Assert.Equal(3, doc.RootElement.GetProperty("endpoints").GetArrayLength());
+
+        var noScenJson = await CliAsync("runs", "calls", bundlePath, "--scenario", "unknown-scenario", "--json");
+        Assert.Equal(ExitCodes.Ok, noScenJson.Exit);
+        using (var doc = JsonDocument.Parse(noScenJson.Out))
+            Assert.Equal(0, doc.RootElement.GetProperty("endpoints").GetArrayLength());
+
+        // 6. runs calls --slowest returns top-N outlier calls with bee IDs & steps
+        var slowestJson = await CliAsync("runs", "calls", bundlePath, "--slowest", "3", "--endpoint", "rpc/orders", "--json");
+        Assert.Equal(ExitCodes.Ok, slowestJson.Exit);
+        using (var doc = JsonDocument.Parse(slowestJson.Out))
+        {
+            Assert.Equal(18, doc.RootElement.GetProperty("matchingCalls").GetInt64());
+            var arr = doc.RootElement.GetProperty("calls");
+            Assert.Equal(3, arr.GetArrayLength());
+            Assert.Equal(6, arr[0].GetProperty("bee").GetInt32());
+            Assert.Equal("B6", arr[0].GetProperty("beeName").GetString());
+            Assert.Equal(310, arr[0].GetProperty("durationMs").GetDouble());
+            Assert.Equal(1, arr[0].GetProperty("step").GetInt32());
+            Assert.Equal("Create", arr[0].GetProperty("stepName").GetString());
+            Assert.True(arr[0].GetProperty("isSlow").GetBoolean());
+            Assert.Equal(125, arr[1].GetProperty("durationMs").GetDouble());
+            Assert.Equal(2, arr[1].GetProperty("step").GetInt32());
+        }
+
+        var slowestText = await CliAsync("runs", "calls", bundlePath, "--slowest", "3");
+        Assert.Equal(ExitCodes.Ok, slowestText.Exit);
+        Assert.Contains("Slowest calls:", slowestText.Out);
+        Assert.Contains("B6", slowestText.Out);
+        Assert.Contains("Create", slowestText.Out);
+
+        // 7. runs timeline produces time-bucketed concurrency, req/s, latency, slow, failed
+        var tlJson = await CliAsync("runs", "timeline", bundlePath, "--bucket", "1", "--json");
+        Assert.Equal(ExitCodes.Ok, tlJson.Exit);
+        using (var doc = JsonDocument.Parse(tlJson.Out))
+        {
+            Assert.Equal(1.0, doc.RootElement.GetProperty("bucketSeconds").GetDouble());
+            var buckets = doc.RootElement.GetProperty("buckets");
+            Assert.True(buckets.GetArrayLength() >= 4);
+            var totalCallsInTimeline = buckets.EnumerateArray().Sum(b => b.GetProperty("calls").GetInt32());
+            Assert.Equal(18, totalCallsInTimeline);
+            var totalSlowInTimeline = buckets.EnumerateArray().Sum(b => b.GetProperty("slow").GetInt32());
+            Assert.Equal(2, totalSlowInTimeline);
+        }
+
+        var tlText = await CliAsync("runs", "timeline", bundlePath, "--bucket", "2");
+        Assert.Equal(ExitCodes.Ok, tlText.Exit);
+        Assert.Contains("Run timeline:", tlText.Out);
+        Assert.Contains("Active", tlText.Out);
+        Assert.Contains("Req/s", tlText.Out);
+    }
+
+    [Theory, MemberData(nameof(BundleFormats))]
+    public async Task Captured_headers_and_http_timing_split_round_trip_in_bee_and_slowest(string format)
+    {
+        var dbPath = Path.Combine(workDir, $"hdr-timing-{format}.duckdb");
+        var runId = $"run-hdr-{format}";
+        await using var storage = new DuckDbRunStorage(dbPath);
+
+        var plan = new LoadPlan
+        {
+            DurationSeconds = 5,
+            MeasureHttpTimingSplit = true,
+            CaptureHeaders = ["X-Correlation-Id", "traceparent", "Server-Timing"],
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "bulk-upload", Label = "Bulk Upload", RatePerMinute = 60 }],
+        };
+        var steps = new IReadOnlyList<StepInfo>[] { [new StepInfo("Upload Attachment")] };
+
+        var started = new DateTimeOffset(2026, 11, 25, 13, 0, 0, TimeSpan.Zero);
+        storage.EnqueueRunStarted(runId, started, plan, steps);
+        storage.EnqueueBeeCompleted(runId, new ExecutionResult(
+            Sequence: 0, Entry: 0, StartedAtSeconds: 0.2, ElapsedMs: 850, StatusCode: 200, Bytes: 512000, Error: null,
+            Calls:
+            [
+                new RecordedCall(
+                    "POST /files", 0, 820, 200, 512000, null, Step: 0, Rep: 0,
+                    Endpoint: "POST /files", Method: "POST", Host: "shop.test", SlowThresholdMs: 200,
+                    Url: "https://shop.test/files", TtfbMs: 700, ResponseReadMs: 120,
+                    Headers: new Dictionary<string, string>
+                    {
+                        ["X-Correlation-Id"] = "corr-abc-123",
+                        ["Server-Timing"] = "db;dur=640",
+                    }),
+            ]),
+            beeOutcome: 1, slowCalls: 1);
+        storage.EnqueueRunFinished(runId, started.AddSeconds(2), "Finished", 2.0, null);
+        await storage.FlushAsync();
+
+        var ext = format == "zip" ? "parquet" : format;
+        var exp = (await storage.ExportRunAsync(runId, ext))!;
+        var bundlePath = Path.Combine(workDir, $"{runId}.{format}");
+        await File.WriteAllBytesAsync(bundlePath, exp.Content);
+
+        var beeText = await CliAsync("runs", "bee", bundlePath, "B1");
+        Assert.Equal(ExitCodes.Ok, beeText.Exit);
+        Assert.Contains("Bulk Upload", beeText.Out);
+        Assert.Contains("Upload Attachment", beeText.Out);
+        Assert.Contains("ttfb 700 ms, read 120 ms", beeText.Out);
+        Assert.Contains("X-Correlation-Id=corr-abc-123", beeText.Out);
+        Assert.Contains("Server-Timing=db;dur=640", beeText.Out);
+
+        var slowestText = await CliAsync("runs", "calls", bundlePath, "--slowest", "5");
+        Assert.Equal(ExitCodes.Ok, slowestText.Exit);
+        Assert.Contains("TTFB", slowestText.Out);
+        Assert.Contains("700 ms", slowestText.Out);
+        Assert.Contains("120 ms", slowestText.Out);
+        Assert.Contains("X-Correlation-Id=corr-abc-123", slowestText.Out);
     }
 
     [Theory, MemberData(nameof(BundleFormats))]
@@ -464,7 +698,7 @@ public sealed class RunsInspectionTests : IDisposable
     {
         var bundles = await SeedRichRunAsync("lazy");
 
-        // Replace calls.parquet & logs.parquet with invalid bytes to prove summary/errors/compare never touch them.
+        // Replace calls.parquet & logs.parquet with invalid bytes to prove errors/compare never touch them.
         var noLogsOrCallsZip = Path.Combine(workDir, "corrupt-logs-calls.zip");
         File.Copy(bundles.ZipPath, noLogsOrCallsZip, overwrite: true);
         using (var zip = ZipFile.Open(noLogsOrCallsZip, ZipArchiveMode.Update))
@@ -473,7 +707,13 @@ public sealed class RunsInspectionTests : IDisposable
             OverwriteEntry(zip, "logs.parquet", "NOT_A_PARQUET_FILE");
         }
 
-        // Also omit run_steps.parquet completely (older bundle compatibility)
+        // Replace only logs.parquet with invalid bytes to prove summary & calls never touch logs.parquet.
+        var noLogsZip = Path.Combine(workDir, "corrupt-logs-only.zip");
+        File.Copy(bundles.ZipPath, noLogsZip, overwrite: true);
+        using (var zip = ZipFile.Open(noLogsZip, ZipArchiveMode.Update))
+            OverwriteEntry(zip, "logs.parquet", "NOT_A_PARQUET_FILE");
+
+        // Also omit run_steps.parquet and calls.parquet completely (older bundle compatibility)
         var minimalZip = Path.Combine(workDir, "minimal-no-steps.zip");
         File.Copy(bundles.ZipPath, minimalZip, overwrite: true);
         using (var zip = ZipFile.Open(minimalZip, ZipArchiveMode.Update))
@@ -485,7 +725,7 @@ public sealed class RunsInspectionTests : IDisposable
 
         var beforeTempCount = Directory.GetDirectories(Path.GetTempPath(), "beesharp-inspect-*").Length;
 
-        Assert.Equal(ExitCodes.Ok, (await CliAsync("runs", "summary", noLogsOrCallsZip, "--json")).Exit);
+        Assert.Equal(ExitCodes.Ok, (await CliAsync("runs", "summary", noLogsZip, "--json")).Exit);
         Assert.Equal(ExitCodes.Ok, (await CliAsync("runs", "errors", noLogsOrCallsZip, "--json")).Exit);
         Assert.Equal(ExitCodes.Ok, (await CliAsync("runs", "compare", noLogsOrCallsZip, minimalZip, "--json")).Exit);
         Assert.Equal(ExitCodes.Ok, (await CliAsync("runs", "summary", minimalZip)).Exit);
@@ -623,6 +863,7 @@ public sealed class RunsInspectionTests : IDisposable
             new[] { "runs", "logs", "--help" },
             new[] { "runs", "bee", "--help" },
             new[] { "runs", "compare", "--help" },
+            new[] { "runs", "timeline", "--help" },
         })
         {
             var res = await CliAsync(args);
@@ -641,7 +882,12 @@ public sealed class RunsInspectionTests : IDisposable
             new[] { "runs", "summary", "a.zip", "--json=true" },
             new[] { "runs", "errors" },
             new[] { "runs", "calls", "a.zip", "--entry", "0" },
+            new[] { "runs", "calls", "a.zip", "--step", "0" },
+            new[] { "runs", "calls", "a.zip", "--by-step=true" },
+            new[] { "runs", "calls", "a.zip", "--slowest", "0" },
             new[] { "runs", "calls", "a.zip", "--min-ms", "-5" },
+            new[] { "runs", "timeline" },
+            new[] { "runs", "timeline", "a.zip", "--bucket", "0" },
             new[] { "runs", "calls", "a.zip", "--slow=1" },
             new[] { "runs", "logs", "a.zip", "--bee", "0" },
             new[] { "runs", "logs", "a.zip", "--entry", "0" },

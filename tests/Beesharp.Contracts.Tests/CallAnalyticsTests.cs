@@ -75,4 +75,78 @@ public class CallAnalyticsTests
         Assert.Single(filtered.Timeline);
         Assert.True(filtered.Histogram.Count > 1); // histogram keeps full distribution for clicking buckets
     }
+
+    [Fact]
+    public void BuildEndpoints_byStep_and_step_filter_separate_shared_urls_with_independent_baselines()
+    {
+        var calls = new List<CallFact>();
+        long id = 1;
+        // Three steps all hitting POST /rpc/orders with different latency profiles:
+        // Step 0 (Create): ~100ms (with 1 slow at 320ms)
+        // Step 1 (Update): ~40ms (with 1 slow at 120ms)
+        // Step 2 (Delete): ~15ms (no slow, 1 failed)
+        double[] createDurs = [95, 100, 102, 98, 105, 320];
+        double[] updateDurs = [38, 40, 42, 39, 41, 120];
+        double[] delDurs = [14, 15, 16, 15, 14, 18];
+
+        for (var i = 0; i < 6; i++)
+        {
+            calls.Add(new CallFact(id++, i, 0, 0, 0, i, 0, createDurs[i], 200, 64, null,
+                "POST /rpc/orders", "https://api.test/rpc/orders", "POST /rpc/orders", "POST", "api.test", null));
+            calls.Add(new CallFact(id++, i, 0, 1, 0, i, 100, updateDurs[i], 200, 64, null,
+                "POST /rpc/orders", "https://api.test/rpc/orders", "POST /rpc/orders", "POST", "api.test", null));
+            calls.Add(new CallFact(id++, i, 0, 2, 0, i, 200, delDurs[i], i == 5 ? 500 : 200, 64, i == 5 ? "HTTP 500" : null,
+                "POST /rpc/orders", "https://api.test/rpc/orders", "POST /rpc/orders", "POST", "api.test", null));
+        }
+
+        string? ResolveName(int entry, int step) => step switch { 0 => "Create", 1 => "Update", 2 => "Delete", _ => null };
+
+        // Grouped by step -> 3 separate rows with independent typical/slow thresholds
+        var byStep = CallAnalytics.BuildEndpoints(calls, byStep: true, resolveStepName: ResolveName);
+        Assert.Equal(3, byStep.Endpoints.Count);
+        Assert.Equal(18, byStep.TotalCalls);
+        Assert.Equal(2, byStep.TotalSlowCalls); // 1 in Create (320 > 2*100) + 1 in Update (120 > 2*40)
+        Assert.Equal(1, byStep.TotalFailedCalls);
+
+        var create = byStep.Endpoints.Single(e => e.Step == 0);
+        Assert.Equal("Create", create.StepName);
+        Assert.Equal(1, create.SlowCount);
+        Assert.Equal(100, create.TypicalMs);
+
+        var next = byStep.Endpoints.Single(e => e.Step == 1);
+        Assert.Equal("Update", next.StepName);
+        Assert.Equal(1, next.SlowCount);
+        Assert.Equal(40, next.TypicalMs);
+
+        var del = byStep.Endpoints.Single(e => e.Step == 2);
+        Assert.Equal("Delete", del.StepName);
+        Assert.Equal(0, del.SlowCount);
+        Assert.Equal(1, del.FailedCount);
+        Assert.Equal(15, del.TypicalMs);
+
+        // Step filter alone narrows to Update
+        var stepOnly = CallAnalytics.BuildEndpoints(calls, step: 1);
+        var onlyEp = Assert.Single(stepOnly.Endpoints);
+        Assert.Equal(6, onlyEp.TotalCount);
+        Assert.Equal(1, onlyEp.SlowCount);
+        Assert.Equal(40, onlyEp.TypicalMs);
+
+        // Search by step name works when byStep is enabled
+        var searchStep = CallAnalytics.BuildEndpoints(calls, search: "Upd", byStep: true, resolveStepName: ResolveName);
+        Assert.Equal("Update", Assert.Single(searchStep.Endpoints).StepName);
+
+        // BuildStepMetrics agrees with byStep slow counts and latencies
+        var metrics = CallAnalytics.BuildStepMetrics(calls);
+        Assert.Equal(3, metrics.Count);
+        Assert.Equal(6, metrics[(0, 0)].TotalCalls);
+        Assert.Equal(1, metrics[(0, 0)].SlowCalls);
+        Assert.Equal(95, metrics[(0, 0)].MinMs);
+        Assert.Equal(100, metrics[(0, 0)].P50Ms);
+        Assert.Equal(320, metrics[(0, 0)].MaxMs);
+        Assert.Equal(1, metrics[(0, 1)].SlowCalls);
+        Assert.Equal(40, metrics[(0, 1)].P50Ms);
+        Assert.Equal(0, metrics[(0, 2)].SlowCalls);
+        Assert.Equal(1, metrics[(0, 2)].FailedCalls);
+        Assert.Equal(15, metrics[(0, 2)].P50Ms);
+    }
 }

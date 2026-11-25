@@ -66,7 +66,7 @@ Ctrl+C stops the run like Stop in the UI: bees in flight become canceled, the sh
 
 Inspect exported `.zip` (Parquet bundles), `.duckdb`, or `.json` run bundles directly from any directory—or query a running Beesharp instance over HTTP with `--url <url>` (or `BEESHARP_URL`)—without ever touching a live `data/beesharp.duckdb`.
 
-- **Lazy `.zip` querying:** extracts only the `.parquet` table(s) needed by each command into a temporary directory and queries them via DuckDB `read_parquet(...)` (e.g., `summary`, `errors`, and `compare` never extract `calls.parquet` or `logs.parquet`).
+- **Lazy `.zip` querying:** extracts only the `.parquet` table(s) needed by each command into a temporary directory and queries them via DuckDB `read_parquet(...)` (e.g., `summary`, `errors`, `calls`, and `compare` never extract `logs.parquet`, and `errors`/`compare` never extract `calls.parquet`).
 - **Read-only `.duckdb`:** opens exported `.duckdb` files directly with `ACCESS_MODE=READ_ONLY` (no copy).
 - **Remote `--url` / `BEESHARP_URL`:** pass `--url <url>` (or set `BEESHARP_URL` when the target is a run ID or alias rather than a local bundle file). Supports exact run IDs plus `latest` (most recent) and `prev` (second most recent).
 - **1-based numbering:** scenario entries, steps, and bees match the UI (`--entry 1`, `--step 1`, bee `1` or `B1`).
@@ -78,21 +78,23 @@ Inspect exported `.zip` (Parquet bundles), `.duckdb`, or `.json` run bundles dir
 beesharp runs list [--url <url>] [--limit <n>] [--json]
 beesharp runs summary <file|runId|latest|prev> [--url <url>] [--json]
 beesharp runs errors <file|runId|latest|prev> [--url <url>] [--json]
-beesharp runs calls <file|runId|latest|prev> [--url <url>] [--entry <n>] [--slow] [--failed] [--min-ms <ms>] [--search <q>] [--json]
+beesharp runs calls <file|runId|latest|prev> [--url <url>] [--entry <n>] [--scenario <id>] [--step <n>] [--by-step] [--slowest <n>] [--endpoint <ep>] [--slow] [--failed] [--min-ms <ms>] [--search <q>] [--json]
 beesharp runs logs <file|runId|latest|prev> [--url <url>] [--bee <n|Bn>] [--entry <n|preflight|shutdown|host>] [--step <n>] [--level <lvl>] [--search <q>] [--offset <n>] [--limit <n>] [--json]
 beesharp runs bee <file|runId|latest|prev> <bee> [--url <url>] [--json]
 beesharp runs compare <fileA|runA|prev> <fileB|runB|latest> [--url <url>] [--json]
+beesharp runs timeline <file|runId|latest|prev> [--url <url>] [--bucket <sec>] [--entry <n>] [--scenario <id>] [--json]
 ```
 
 | Subcommand | Purpose |
 |---|---|
 | `list` | List stored runs on a running server (`--url` or `BEESHARP_URL`). |
-| `summary <target>` | Run metadata (`runId`, `state`, `startedUtc`, `elapsedSeconds`, `error`), total/ok/failed/canceled/slow bees, per-scenario and per-step counts (including failed per step), and `min`/`p50`/`p95`/`max` durations. |
+| `summary <target>` | Run metadata (`runId`, `state`, `startedUtc`, `elapsedSeconds`, `error`), total/ok/failed/canceled/slow bees, per-scenario and per-step counts + call latency (`min`/`p50`/`p95`/`max`/`avg`) & slow counts, and overall `min`/`p50`/`p95`/`max` durations. |
 | `errors <target>` | Grouped, untruncated error strings with counts, affected scenario entries/steps, and sample bee numbers. |
-| `calls <target>` | Endpoint latency breakdown (brain 0060 normalization/grouping), slow thresholds, and slow/failing call counts. |
+| `calls <target>` | Endpoint latency breakdown (brain 0060 normalization/grouping), slow thresholds, and slow/failing call counts. Use `--scenario <id>`, `--step <n>`, or `--by-step` to isolate shared URLs, or `--slowest <n> [--endpoint <ep>]` to list the slowest outlier calls with bee IDs, timing splits, and captured headers. |
 | `logs <target>` | Filtered, paged log lines (`--level` accepts comma-separated `trace`, `debug`, `info`, `warn`, `error`). |
-| `bee <target> <bee>` | Full step visits, HTTP calls, status codes, errors, and logs for one bee (`1` or `B1`). |
+| `bee <target> <bee>` | Full step visits, HTTP calls (with display labels, optional TTFB/read timing split, and captured headers), status codes, errors, and logs for one bee (`1` or `B1`). |
 | `compare <targetA> <targetB>` | Overall and per-scenario latency (`p50`/`p95`/`max`) and error-rate / failed-bee / slow-bee regression diff between baseline `targetA` and candidate `targetB`. |
+| `timeline <target>` | Time-bucketed concurrency (`active bees`), `req/s`, `p50`/`p95`/`max` latency, and slow/failed counts (`--bucket <seconds>`, default 5 s). |
 
 ### `beesharp runs` exit codes
 

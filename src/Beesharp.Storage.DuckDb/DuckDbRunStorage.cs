@@ -16,7 +16,7 @@ namespace Beesharp.Services.Storage;
 /// </summary>
 public sealed class DuckDbRunStorage : IRunStorage
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
@@ -147,7 +147,10 @@ public sealed class DuckDbRunStorage : IRunStorage
                     method VARCHAR,
                     host VARCHAR,
                     url VARCHAR,
-                    slow_threshold_ms DOUBLE
+                    slow_threshold_ms DOUBLE,
+                    ttfb_ms DOUBLE,
+                    response_read_ms DOUBLE,
+                    headers_json VARCHAR
                 );
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS step INTEGER DEFAULT 0;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS rep INTEGER DEFAULT 0;
@@ -156,6 +159,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS host VARCHAR;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS url VARCHAR;
                 ALTER TABLE calls ADD COLUMN IF NOT EXISTS slow_threshold_ms DOUBLE;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS ttfb_ms DOUBLE;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS response_read_ms DOUBLE;
+                ALTER TABLE calls ADD COLUMN IF NOT EXISTS headers_json VARCHAR;
                 CREATE INDEX IF NOT EXISTS idx_calls_run_seq ON calls(run_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_calls_run_endpoint ON calls(run_id, endpoint);
 
@@ -513,6 +519,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                        .AppendValue(c.Host)
                        .AppendValue(c.Url)
                        .AppendValue(c.SlowThresholdMs)
+                       .AppendValue(c.TtfbMs)
+                       .AppendValue(c.ResponseReadMs)
+                       .AppendValue(c.Headers is { Count: > 0 } ? JsonSerializer.Serialize(c.Headers, JsonOpts) : null)
                        .EndRow();
                 }
             }
@@ -718,7 +727,8 @@ public sealed class DuckDbRunStorage : IRunStorage
             {
                 callCmd.CommandText = """
                     SELECT name, offset_ms, duration_ms, status_code, bytes, error,
-                           COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms
+                           COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms,
+                           ttfb_ms, response_read_ms, headers_json
                     FROM calls
                     WHERE run_id = $1 AND sequence = $2
                     ORDER BY call_index;
@@ -728,6 +738,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                 using var cr = callCmd.ExecuteReader();
                 while (cr.Read())
                 {
+                    IReadOnlyDictionary<string, string>? headers = null;
+                    if (!cr.IsDBNull(15) && cr.GetString(15) is { Length: > 0 } hJson)
+                        headers = JsonSerializer.Deserialize<Dictionary<string, string>>(hJson, JsonOpts);
                     calls.Add(new RecordedCall(
                         cr.GetString(0),
                         cr.GetDouble(1),
@@ -741,7 +754,10 @@ public sealed class DuckDbRunStorage : IRunStorage
                         cr.IsDBNull(9) ? null : cr.GetString(9),
                         cr.IsDBNull(10) ? null : cr.GetString(10),
                         cr.IsDBNull(12) ? null : cr.GetDouble(12),
-                        cr.IsDBNull(11) ? null : cr.GetString(11)));
+                        cr.IsDBNull(11) ? null : cr.GetString(11),
+                        cr.IsDBNull(13) ? null : cr.GetDouble(13),
+                        cr.IsDBNull(14) ? null : cr.GetDouble(14),
+                        headers));
                 }
             }
 
@@ -770,8 +786,37 @@ public sealed class DuckDbRunStorage : IRunStorage
                 }
             }
 
+            string? entryLabel = null;
+            using (var pCmd = conn.CreateCommand())
+            {
+                pCmd.CommandText = "SELECT plan_json FROM runs WHERE run_id = $1 LIMIT 1;";
+                pCmd.Parameters.Add(new DuckDBParameter(runId));
+                if (pCmd.ExecuteScalar() is string pj && !string.IsNullOrWhiteSpace(pj))
+                {
+                    var plan = JsonSerializer.Deserialize<LoadPlan>(pj, JsonOpts);
+                    if (plan is not null && entry >= 0 && entry < plan.Scenarios.Count)
+                    {
+                        var cfg = plan.Scenarios[entry];
+                        entryLabel = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
+                    }
+                }
+            }
+
+            IReadOnlyList<StepInfo>? entrySteps = null;
+            using (var sCmd = conn.CreateCommand())
+            {
+                sCmd.CommandText = "SELECT json FROM run_steps WHERE run_id = $1 LIMIT 1;";
+                sCmd.Parameters.Add(new DuckDBParameter(runId));
+                if (sCmd.ExecuteScalar() is string sj && !string.IsNullOrWhiteSpace(sj))
+                {
+                    var allSteps = JsonSerializer.Deserialize<List<List<StepInfo>>>(sj, JsonOpts);
+                    if (allSteps is not null && entry >= 0 && entry < allSteps.Count)
+                        entrySteps = allSteps[entry];
+                }
+            }
+
             return Task.FromResult<StoredBeeDetail?>(new StoredBeeDetail(
-                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs, failedStep, failedRep, stepVisits));
+                runId, sequence, entry, startedAt, durationMs, statusCode, bytes, error, calls, logs, failedStep, failedRep, stepVisits, entryLabel, entrySteps));
         }
     }
 
@@ -929,11 +974,80 @@ public sealed class DuckDbRunStorage : IRunStorage
     public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
+        IReadOnlyList<IReadOnlyList<StepInfo>>? steps = null;
+        LoadPlan? plan = null;
         lock (dbLock)
         {
             facts = LoadCallFacts(runId);
+            if (query.ByStep)
+                steps = LoadRunStepsLocked(runId);
+            if (!string.IsNullOrWhiteSpace(query.Scenario))
+                plan = LoadRunPlanLocked(runId);
         }
-        return Task.FromResult(CallAnalytics.BuildEndpoints(facts, query.Entry, query.SlowOnly, query.FailedOnly, query.MinMs, query.Search));
+        var scenarioEntries = plan is not null && !string.IsNullOrWhiteSpace(query.Scenario)
+            ? CallAnalytics.ResolveScenarioEntries(plan, query.Scenario)
+            : null;
+        return Task.FromResult(CallAnalytics.BuildEndpoints(
+            facts,
+            query.Entry,
+            query.SlowOnly,
+            query.FailedOnly,
+            query.MinMs,
+            query.Search,
+            query.Step,
+            query.ByStep,
+            steps is null ? null : (e, s) => e >= 0 && e < steps.Count && s >= 0 && s < steps[e].Count ? steps[e][s].Name : null,
+            scenarioEntries,
+            query.Endpoint));
+    }
+
+    public Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        IReadOnlyList<IReadOnlyList<StepInfo>>? steps;
+        LoadPlan? plan;
+        lock (dbLock)
+        {
+            facts = LoadCallFacts(runId);
+            steps = LoadRunStepsLocked(runId);
+            plan = LoadRunPlanLocked(runId);
+        }
+        var scenarioEntries = plan is not null && !string.IsNullOrWhiteSpace(query.Scenario)
+            ? CallAnalytics.ResolveScenarioEntries(plan, query.Scenario)
+            : null;
+        return Task.FromResult(CallAnalytics.BuildSlowestCalls(
+            facts,
+            query.Limit,
+            query.Entry,
+            scenarioEntries,
+            query.Step,
+            query.Endpoint,
+            query.SlowOnly,
+            query.FailedOnly,
+            query.MinMs,
+            query.Search,
+            plan is null ? null : e => e >= 0 && e < plan.Scenarios.Count ? (string.IsNullOrWhiteSpace(plan.Scenarios[e].Label) ? plan.Scenarios[e].ScenarioId : plan.Scenarios[e].Label) : null,
+            steps is null ? null : (e, s) => e >= 0 && e < steps.Count && s >= 0 && s < steps[e].Count ? steps[e][s].Name : null));
+    }
+
+    private LoadPlan? LoadRunPlanLocked(string runId)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT plan_json FROM runs WHERE run_id = $1 LIMIT 1;";
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        return cmd.ExecuteScalar() is string pj && !string.IsNullOrWhiteSpace(pj)
+            ? JsonSerializer.Deserialize<LoadPlan>(pj, JsonOpts)
+            : null;
+    }
+
+    private IReadOnlyList<IReadOnlyList<StepInfo>>? LoadRunStepsLocked(string runId)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT json FROM run_steps WHERE run_id = $1 LIMIT 1;";
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        return cmd.ExecuteScalar() is string sj && !string.IsNullOrWhiteSpace(sj)
+            ? JsonSerializer.Deserialize<List<List<StepInfo>>>(sj, JsonOpts)
+            : null;
     }
 
     public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
@@ -962,7 +1076,8 @@ public sealed class DuckDbRunStorage : IRunStorage
         cmd.CommandText = """
             SELECT c.id, c.sequence, b.entry, COALESCE(c.step, 0), COALESCE(c.rep, 0), b.started_at,
                    c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name, c.url,
-                   c.endpoint, c.method, c.host, c.slow_threshold_ms
+                   c.endpoint, c.method, c.host, c.slow_threshold_ms,
+                   c.ttfb_ms, c.response_read_ms, c.headers_json
             FROM calls c
             JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence
             WHERE c.run_id = $1
@@ -972,6 +1087,9 @@ public sealed class DuckDbRunStorage : IRunStorage
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
+            IReadOnlyDictionary<string, string>? headers = null;
+            if (!r.IsDBNull(19) && r.GetString(19) is { Length: > 0 } hJson)
+                headers = JsonSerializer.Deserialize<Dictionary<string, string>>(hJson, JsonOpts);
             facts.Add(new CallFact(
                 r.GetInt64(0),
                 r.GetInt32(1),
@@ -989,7 +1107,10 @@ public sealed class DuckDbRunStorage : IRunStorage
                 r.IsDBNull(13) ? null : r.GetString(13),
                 r.IsDBNull(14) ? null : r.GetString(14),
                 r.IsDBNull(15) ? null : r.GetString(15),
-                r.IsDBNull(16) ? null : r.GetDouble(16)));
+                r.IsDBNull(16) ? null : r.GetDouble(16),
+                r.IsDBNull(17) ? null : r.GetDouble(17),
+                r.IsDBNull(18) ? null : r.GetDouble(18),
+                headers));
         }
         return facts;
     }
@@ -1132,15 +1253,19 @@ public sealed class DuckDbRunStorage : IRunStorage
                 }
             }
 
-            // Default: JSON bundle with run + bees + calls + logs
+            // Default: JSON bundle with run + steps + bees + calls + logs
+            var steps = LoadRunStepsLocked(runId);
             var bees = new List<object>();
             using (var aCmd = conn.CreateCommand())
             {
-                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls, COALESCE(failed_step, -1), COALESCE(failed_rep, -1) FROM bees WHERE run_id = $1 ORDER BY sequence;";
+                aCmd.CommandText = "SELECT sequence, bee_name, entry, started_at, duration_ms, status_code, bytes, error, outcome, is_failed, is_slow, slow_calls, COALESCE(failed_step, -1), COALESCE(failed_rep, -1), step_visits_json FROM bees WHERE run_id = $1 ORDER BY sequence;";
                 aCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var ar = aCmd.ExecuteReader();
                 while (ar.Read())
                 {
+                    IReadOnlyList<RecordedStepVisit>? sv = null;
+                    if (!ar.IsDBNull(14) && ar.GetString(14) is { Length: > 0 } svJson)
+                        sv = JsonSerializer.Deserialize<List<RecordedStepVisit>>(svJson, JsonOpts);
                     bees.Add(new
                     {
                         sequence = ar.GetInt32(0),
@@ -1157,6 +1282,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                         slowCalls = ar.GetInt32(11),
                         failedStep = ar.GetInt32(12),
                         failedRep = ar.GetInt32(13),
+                        stepVisits = sv,
                     });
                 }
             }
@@ -1164,11 +1290,14 @@ public sealed class DuckDbRunStorage : IRunStorage
             var calls = new List<object>();
             using (var cCmd = conn.CreateCommand())
             {
-                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
+                cCmd.CommandText = "SELECT sequence, call_index, name, offset_ms, duration_ms, status_code, bytes, error, COALESCE(step, 0), COALESCE(rep, 0), endpoint, method, host, url, slow_threshold_ms, ttfb_ms, response_read_ms, headers_json FROM calls WHERE run_id = $1 ORDER BY sequence, call_index;";
                 cCmd.Parameters.Add(new DuckDBParameter(runId));
                 using var cr = cCmd.ExecuteReader();
                 while (cr.Read())
                 {
+                    IReadOnlyDictionary<string, string>? headers = null;
+                    if (!cr.IsDBNull(17) && cr.GetString(17) is { Length: > 0 } hJson)
+                        headers = JsonSerializer.Deserialize<Dictionary<string, string>>(hJson, JsonOpts);
                     calls.Add(new
                     {
                         sequence = cr.GetInt32(0),
@@ -1186,6 +1315,9 @@ public sealed class DuckDbRunStorage : IRunStorage
                         host = cr.IsDBNull(12) ? null : cr.GetString(12),
                         url = cr.IsDBNull(13) ? null : cr.GetString(13),
                         slowThresholdMs = cr.IsDBNull(14) ? (double?)null : cr.GetDouble(14),
+                        ttfbMs = cr.IsDBNull(15) ? (double?)null : cr.GetDouble(15),
+                        responseReadMs = cr.IsDBNull(16) ? (double?)null : cr.GetDouble(16),
+                        headers,
                     });
                 }
             }
@@ -1226,6 +1358,7 @@ public sealed class DuckDbRunStorage : IRunStorage
                 elapsedSeconds,
                 error,
                 plan = JsonDocument.Parse(planJson).RootElement,
+                steps,
                 bees,
                 calls,
                 logs,
@@ -1438,11 +1571,15 @@ public sealed class DuckDbRunStorage : IRunStorage
                     var host = c.TryGetProperty("host", out var p12) && p12.ValueKind == JsonValueKind.String ? p12.GetString() : null;
                     var url = c.TryGetProperty("url", out var p13) && p13.ValueKind == JsonValueKind.String ? p13.GetString() : null;
                     var slowThr = c.TryGetProperty("slowThresholdMs", out var p14) && p14.ValueKind == JsonValueKind.Number ? p14.GetDouble() : (double?)null;
+                    var ttfbMs = c.TryGetProperty("ttfbMs", out var p15) && p15.ValueKind == JsonValueKind.Number ? p15.GetDouble() : (double?)null;
+                    var respReadMs = c.TryGetProperty("responseReadMs", out var p16) && p16.ValueKind == JsonValueKind.Number ? p16.GetDouble() : (double?)null;
+                    var headersJson = c.TryGetProperty("headers", out var p17) && p17.ValueKind == JsonValueKind.Object ? p17.GetRawText() : null;
                     app.CreateRow()
                         .AppendValue(id).AppendValue(targetRunId).AppendValue(seq).AppendValue(callIdx)
                         .AppendValue(name).AppendValue(offsetMs).AppendValue(durMs).AppendValue(statusCode)
                         .AppendValue(bytes).AppendValue(cErr).AppendValue(step).AppendValue(rep)
                         .AppendValue(endpoint).AppendValue(method).AppendValue(host).AppendValue(url).AppendValue(slowThr)
+                        .AppendValue(ttfbMs).AppendValue(respReadMs).AppendValue(headersJson)
                         .EndRow();
                 }
             }

@@ -9,6 +9,21 @@ public sealed record CallEndpointsQuery(
     bool SlowOnly = false,
     bool FailedOnly = false,
     double? MinMs = null,
+    string? Search = null,
+    int? Step = null,
+    bool ByStep = false,
+    string? Scenario = null,
+    string? Endpoint = null);
+
+public sealed record SlowestCallsQuery(
+    int Limit = 20,
+    int? Entry = null,
+    string? Scenario = null,
+    int? Step = null,
+    string? Endpoint = null,
+    bool SlowOnly = false,
+    bool FailedOnly = false,
+    double? MinMs = null,
     string? Search = null);
 
 public sealed record CallDetailQuery(
@@ -114,6 +129,9 @@ public interface IRunStorage : IAsyncDisposable
 
     /// <summary>Duration-over-time timeline, latency histogram, and paged calls for one endpoint (brain 0060).</summary>
     Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default);
+
+    /// <summary>Top-N slowest individual calls matching the optional filters.</summary>
+    Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default);
 
     /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
     Task<RunExportResult?> ExportRunAsync(string runId, string format, CancellationToken ct = default);

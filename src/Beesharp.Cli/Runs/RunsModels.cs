@@ -58,7 +58,14 @@ public sealed record RunSummaryStepDto(
     int Step,
     string Name,
     int Reached,
-    int Failed);
+    int Failed,
+    int Calls = 0,
+    int Slow = 0,
+    double? MinMs = null,
+    double? P50Ms = null,
+    double? P95Ms = null,
+    double? MaxMs = null,
+    double? AvgMs = null);
 
 public sealed record RunSummaryEntryDto(
     int Entry,
@@ -128,7 +135,10 @@ public sealed record RunSummaryReport(
                     foreach (var s in e.Steps)
                     {
                         var failText = s.Failed > 0 ? $", {s.Failed} failed" : "";
-                        sb.AppendLine($"    step {s.Step} {s.Name}: {s.Reached} reached{failText}");
+                        var callText = s.Calls > 0
+                            ? $", {s.Calls} {(s.Calls == 1 ? "call" : "calls")}{(s.Slow > 0 ? $", {s.Slow} slow" : "")}, min {RunSummary.Ms(s.MinMs)}, p50 {RunSummary.Ms(s.P50Ms)}, p95 {RunSummary.Ms(s.P95Ms)}, max {RunSummary.Ms(s.MaxMs)}"
+                            : "";
+                        sb.AppendLine($"    step {s.Step} {s.Name}: {s.Reached} reached{failText}{callText}");
                     }
                     if (e.FinishedAllSteps is { } passedAll)
                         sb.AppendLine($"    finished all steps: {passedAll}");
@@ -204,7 +214,9 @@ public sealed record RunCallEndpointDto(
     double AvgMs,
     double? SlowThresholdMs,
     bool HasCustomThreshold,
-    IReadOnlyList<int> Entries);
+    IReadOnlyList<int> Entries,
+    int? Step = null,
+    string? StepName = null);
 
 public sealed record RunCallsReport(
     string RunId,
@@ -226,17 +238,270 @@ public sealed record RunCallsReport(
         }
 
         sb.AppendLine();
-        var epWidth = Math.Max(12, Endpoints.Max(e => e.Endpoint.Length));
-        sb.AppendLine($"  {"Endpoint".PadRight(epWidth)}  {"Calls",7}  {"Slow",6}  {"Failed",6}  {"Min",8}  {"Typical",8}  {"P95",8}  {"Max",8}  {"Threshold",10}");
-        foreach (var ep in Endpoints)
+        var showStep = Endpoints.Any(e => e.Step is not null);
+        var multiEntry = showStep && Endpoints.SelectMany(e => e.Entries).Distinct().Count() > 1;
+        string FormatStep(RunCallEndpointDto ep)
         {
-            var thr = ep.SlowThresholdMs is { } t ? RunSummary.Ms(t) + (ep.HasCustomThreshold ? " *" : "") : "-";
-            sb.AppendLine(
-                $"  {ep.Endpoint.PadRight(epWidth)}  {ep.TotalCount,7}  {ep.SlowCount,6}  {ep.FailedCount,6}  " +
-                $"{RunSummary.Ms(ep.MinMs),8}  {RunSummary.Ms(ep.TypicalMs),8}  {RunSummary.Ms(ep.P95Ms),8}  {RunSummary.Ms(ep.MaxMs),8}  {thr,10}");
+            if (ep.Step is not { } st) return "-";
+            var entryPrefix = multiEntry && ep.Entries.Count == 1 ? $"#{ep.Entries[0]} " : "";
+            return ep.StepName is { Length: > 0 } name ? $"{entryPrefix}step {st} {name}" : $"{entryPrefix}step {st}";
+        }
+
+        var epWidth = Math.Max(12, Endpoints.Max(e => e.Endpoint.Length));
+        if (showStep)
+        {
+            var stepWidth = Math.Max(6, Endpoints.Max(e => FormatStep(e).Length));
+            sb.AppendLine($"  {"Endpoint".PadRight(epWidth)}  {"Step".PadRight(stepWidth)}  {"Calls",7}  {"Slow",6}  {"Failed",6}  {"Min",8}  {"Typical",8}  {"P95",8}  {"Max",8}  {"Threshold",10}");
+            foreach (var ep in Endpoints)
+            {
+                var thr = ep.SlowThresholdMs is { } t ? RunSummary.Ms(t) + (ep.HasCustomThreshold ? " *" : "") : "-";
+                sb.AppendLine(
+                    $"  {ep.Endpoint.PadRight(epWidth)}  {FormatStep(ep).PadRight(stepWidth)}  {ep.TotalCount,7}  {ep.SlowCount,6}  {ep.FailedCount,6}  " +
+                    $"{RunSummary.Ms(ep.MinMs),8}  {RunSummary.Ms(ep.TypicalMs),8}  {RunSummary.Ms(ep.P95Ms),8}  {RunSummary.Ms(ep.MaxMs),8}  {thr,10}");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"  {"Endpoint".PadRight(epWidth)}  {"Calls",7}  {"Slow",6}  {"Failed",6}  {"Min",8}  {"Typical",8}  {"P95",8}  {"Max",8}  {"Threshold",10}");
+            foreach (var ep in Endpoints)
+            {
+                var thr = ep.SlowThresholdMs is { } t ? RunSummary.Ms(t) + (ep.HasCustomThreshold ? " *" : "") : "-";
+                sb.AppendLine(
+                    $"  {ep.Endpoint.PadRight(epWidth)}  {ep.TotalCount,7}  {ep.SlowCount,6}  {ep.FailedCount,6}  " +
+                    $"{RunSummary.Ms(ep.MinMs),8}  {RunSummary.Ms(ep.TypicalMs),8}  {RunSummary.Ms(ep.P95Ms),8}  {RunSummary.Ms(ep.MaxMs),8}  {thr,10}");
+            }
         }
 
         return sb.ToString();
+    }
+}
+
+public sealed record RunSlowestCallDto(
+    int Bee,
+    string BeeName,
+    int Entry,
+    string EntryLabel,
+    int? Step,
+    string? StepName,
+    int? Rep,
+    double StartedAtSeconds,
+    double DurationMs,
+    int? StatusCode,
+    long Bytes,
+    string Endpoint,
+    string? Url,
+    bool IsSlow,
+    double? SlowThresholdMs,
+    double? TtfbMs = null,
+    double? ResponseReadMs = null,
+    IReadOnlyDictionary<string, string>? Headers = null,
+    string? Error = null);
+
+public sealed record RunSlowestCallsReport(
+    string RunId,
+    long MatchingCalls,
+    int Limit,
+    IReadOnlyList<RunSlowestCallDto> Calls)
+{
+    public string ToText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Slowest calls: {RunId}");
+        sb.AppendLine($"  Showing top {Calls.Count} of {MatchingCalls} matching call(s):");
+        if (Calls.Count == 0)
+        {
+            sb.AppendLine("  No matching calls.");
+            return sb.ToString();
+        }
+
+        sb.AppendLine();
+        var hasTtfb = Calls.Any(c => c.TtfbMs is not null);
+        var hasStep = Calls.Any(c => c.Step is not null);
+        string FormatStep(RunSlowestCallDto c) =>
+            c.Step is { } st
+                ? (c.StepName is { Length: > 0 } name ? $"step {st} {name}" : $"step {st}")
+                : "-";
+
+        var beeWidth = Math.Max(4, Calls.Max(c => c.BeeName.Length));
+        var stepWidth = hasStep ? Math.Max(4, Calls.Max(c => FormatStep(c).Length)) : 0;
+        var epWidth = Math.Max(8, Calls.Max(c => c.Endpoint.Length));
+
+        var header = new StringBuilder();
+        header.Append($"  {"Bee".PadRight(beeWidth)}");
+        if (hasStep) header.Append($"  {"Step".PadRight(stepWidth)}");
+        header.Append($"  {"Started",9}  {"Duration",10}");
+        if (hasTtfb) header.Append($"  {"TTFB",10}  {"Read",10}");
+        header.Append($"  {"Status",6}  {"Endpoint".PadRight(epWidth)}");
+        sb.AppendLine(header.ToString());
+
+        foreach (var c in Calls)
+        {
+            var statusStr = c.StatusCode is { } sc ? sc.ToString(CultureInfo.InvariantCulture) : (c.Error is not null ? "ERR" : "-");
+            var row = new StringBuilder();
+            row.Append($"  {c.BeeName.PadRight(beeWidth)}");
+            if (hasStep) row.Append($"  {FormatStep(c).PadRight(stepWidth)}");
+            row.Append($"  {c.StartedAtSeconds,7:0.00} s  {RunSummary.Ms(c.DurationMs),10}");
+            if (hasTtfb) row.Append($"  {RunSummary.Ms(c.TtfbMs),10}  {RunSummary.Ms(c.ResponseReadMs),10}");
+            row.Append($"  {statusStr,6}  {c.Endpoint}");
+            if (c.Error is not null) row.Append($"  ERROR: {RunSummary.Shorten(c.Error, 80)}");
+            sb.AppendLine(row.ToString());
+
+            if (c.Headers is { Count: > 0 })
+            {
+                var hdrText = string.Join(", ", c.Headers.Select(kv => $"{kv.Key}={kv.Value}"));
+                sb.AppendLine($"    headers: {hdrText}");
+            }
+        }
+
+        return sb.ToString();
+    }
+}
+
+public sealed record RunTimelineBucketDto(
+    double FromSeconds,
+    double ToSeconds,
+    int ActiveBees,
+    int StartedBees,
+    int Calls,
+    double RequestsPerSecond,
+    double? P50Ms,
+    double? P95Ms,
+    double? MaxMs,
+    int Slow,
+    int Failed);
+
+public sealed record RunTimelineReport(
+    string RunId,
+    double ElapsedSeconds,
+    double BucketSeconds,
+    IReadOnlyList<RunTimelineBucketDto> Buckets)
+{
+    public string ToText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Run timeline: {RunId} ({BucketSeconds:0.##} s buckets, elapsed {RunSummary.Duration(ElapsedSeconds)})");
+        if (Buckets.Count == 0)
+        {
+            sb.AppendLine("  No timeline data.");
+            return sb.ToString();
+        }
+
+        sb.AppendLine();
+        string FormatRange(RunTimelineBucketDto b) => $"{b.FromSeconds:0.#}-{b.ToSeconds:0.#}s";
+        var rangeWidth = Math.Max(7, Buckets.Max(b => FormatRange(b).Length));
+        sb.AppendLine($"  {"Elapsed".PadRight(rangeWidth)}  {"Active",6}  {"Req/s",8}  {"P50",9}  {"P95",9}  {"Max",9}  {"Slow",6}  {"Failed",6}");
+        foreach (var b in Buckets)
+        {
+            sb.AppendLine(
+                $"  {FormatRange(b).PadRight(rangeWidth)}  {b.ActiveBees,6}  {b.RequestsPerSecond,8:0.0}  " +
+                $"{RunSummary.Ms(b.P50Ms),9}  {RunSummary.Ms(b.P95Ms),9}  {RunSummary.Ms(b.MaxMs),9}  {b.Slow,6}  {b.Failed,6}");
+        }
+
+        return sb.ToString();
+    }
+}
+
+internal static class RunsTimelineBuilder
+{
+    public static RunTimelineReport Build(
+        string runId,
+        double elapsedSeconds,
+        double bucketSeconds,
+        IReadOnlyList<(double StartedAt, double DurationMs, bool IsFailed, bool IsSlow)> bees,
+        IReadOnlyList<CallFact> calls)
+    {
+        var maxEnd = elapsedSeconds;
+        foreach (var b in bees)
+        {
+            var end = b.StartedAt + b.DurationMs / 1000.0;
+            if (end > maxEnd) maxEnd = end;
+        }
+        foreach (var c in calls)
+        {
+            if (c.AtSeconds > maxEnd) maxEnd = c.AtSeconds;
+        }
+
+        if (bees.Count == 0 && calls.Count == 0 && maxEnd <= 0)
+            return new RunTimelineReport(runId, elapsedSeconds, bucketSeconds, []);
+
+        var bucketCount = Math.Max(1, (int)Math.Ceiling(Math.Max(maxEnd, bucketSeconds) / bucketSeconds));
+        var useCalls = calls.Count > 0;
+
+        Dictionary<long, bool>? callSlowLookup = null;
+        if (useCalls)
+        {
+            callSlowLookup = new Dictionary<long, bool>(calls.Count);
+            var slowestAll = CallAnalytics.BuildSlowestCalls(calls, calls.Count);
+            foreach (var sc in slowestAll.Calls)
+                callSlowLookup[sc.Id] = sc.IsSlow;
+        }
+
+        var buckets = new List<RunTimelineBucketDto>(bucketCount);
+        var durs = new List<double>();
+        var allDurs = new List<double>();
+
+        for (var i = 0; i < bucketCount; i++)
+        {
+            var from = Math.Round(i * bucketSeconds, 3);
+            var to = Math.Round((i + 1) * bucketSeconds, 3);
+            var isLast = i == bucketCount - 1;
+
+            int active = 0, started = 0;
+            int slow = 0, failed = 0;
+            durs.Clear();
+            allDurs.Clear();
+
+            foreach (var b in bees)
+            {
+                var end = b.StartedAt + b.DurationMs / 1000.0;
+                if (b.StartedAt < to && end >= from) active++;
+                var inStart = b.StartedAt >= from && (isLast ? b.StartedAt <= to : b.StartedAt < to);
+                if (inStart)
+                {
+                    started++;
+                    if (!useCalls)
+                    {
+                        allDurs.Add(b.DurationMs);
+                        if (b.IsFailed) failed++;
+                        else durs.Add(b.DurationMs);
+                        if (b.IsSlow) slow++;
+                    }
+                }
+            }
+
+            var callCount = 0;
+            if (useCalls)
+            {
+                foreach (var c in calls)
+                {
+                    var t = c.AtSeconds;
+                    if (t >= from && (isLast ? t <= to : t < to))
+                    {
+                        callCount++;
+                        allDurs.Add(c.DurationMs);
+                        if (c.Error is not null) failed++;
+                        else durs.Add(c.DurationMs);
+                        if (callSlowLookup is not null && callSlowLookup.TryGetValue(c.Id, out var isSlow) && isSlow)
+                            slow++;
+                    }
+                }
+            }
+
+            var sample = durs.Count > 0 ? durs : allDurs;
+            double? p50 = null, p95 = null, max = null;
+            if (sample.Count > 0)
+            {
+                sample.Sort();
+                p50 = sample[(sample.Count - 1) / 2];
+                p95 = sample[Math.Max(0, (int)Math.Ceiling(0.95 * sample.Count) - 1)];
+                max = sample[^1];
+            }
+
+            var reqPerSec = Math.Round((useCalls ? callCount : started) / bucketSeconds, 2);
+            buckets.Add(new RunTimelineBucketDto(from, to, active, started, callCount, reqPerSec, p50, p95, max, slow, failed));
+        }
+
+        return new RunTimelineReport(runId, elapsedSeconds, bucketSeconds, buckets);
     }
 }
 
@@ -320,7 +585,10 @@ public sealed record BeeCallDto(
     int? StatusCode,
     long Bytes,
     double? SlowThresholdMs,
-    string? Error);
+    string? Error,
+    double? TtfbMs = null,
+    double? ResponseReadMs = null,
+    IReadOnlyDictionary<string, string>? Headers = null);
 
 public sealed record BeeLogDto(
     long Id,
@@ -396,9 +664,14 @@ public sealed record RunBeeReport(
             {
                 var stepPart = c.Step is { } st ? $" [step {st}{(c.StepName is not null ? $" {c.StepName}" : "")}]" : "";
                 var statusPart = c.StatusCode is { } code ? $" HTTP {code}" : "";
+                var timingPart = c.TtfbMs is { } ttfb
+                    ? $" (ttfb {RunSummary.Ms(ttfb)}, read {RunSummary.Ms(c.ResponseReadMs)})"
+                    : "";
                 var urlPart = string.IsNullOrWhiteSpace(c.Url) || string.Equals(c.Url, c.Name, StringComparison.Ordinal) ? "" : $"  {c.Url}";
                 var errPart = string.IsNullOrEmpty(c.Error) ? "" : $"  ERROR: {c.Error}";
-                sb.AppendLine($"    #{c.Call}{stepPart} +{c.OffsetMs:0.0} ms  {c.Name}{statusPart}  {RunSummary.Ms(c.DurationMs)}{urlPart}{errPart}");
+                sb.AppendLine($"    #{c.Call}{stepPart} +{c.OffsetMs:0.0} ms  {c.Name}{statusPart}  {RunSummary.Ms(c.DurationMs)}{timingPart}{urlPart}{errPart}");
+                if (c.Headers is { Count: > 0 })
+                    sb.AppendLine($"      headers: {string.Join(", ", c.Headers.Select(kv => $"{kv.Key}={kv.Value}"))}");
             }
         }
 

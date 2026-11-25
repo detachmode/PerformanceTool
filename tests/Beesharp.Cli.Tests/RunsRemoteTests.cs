@@ -189,7 +189,7 @@ public sealed class RunsRemoteTests : IDisposable
     {
         var callsResult = new CallEndpointsResult(
             [
-                new CallEndpointSummaryDto("POST /pay", "POST", "shop.test", 10, 3, 1, 80, 220, 410, 40, 95, 160, true, [0, 1]),
+                new CallEndpointSummaryDto("POST /pay", "POST", "shop.test", 10, 3, 1, 80, 220, 410, 40, 95, 160, true, [0, 1], Step: 1, StepName: "Pay"),
             ],
             10, 3, 1);
 
@@ -209,14 +209,24 @@ public sealed class RunsRemoteTests : IDisposable
             256,
             "Bad gateway",
             [
-                new RecordedCall("POST /pay", 10, 400, 502, 256, "Bad gateway", Step: 1, Rep: 0, Endpoint: "POST /pay", Method: "POST", Host: "shop.test", SlowThresholdMs: 200, Url: "https://shop.test/pay"),
+                new RecordedCall("POST /pay", 10, 400, 502, 256, "Bad gateway", Step: 1, Rep: 0, Endpoint: "POST /pay", Method: "POST", Host: "shop.test", SlowThresholdMs: 200, Url: "https://shop.test/pay",
+                    TtfbMs: 360, ResponseReadMs: 40, Headers: new Dictionary<string, string> { ["X-Correlation-Id"] = "corr-remote-9" }),
             ],
             [
                 new RecordedLog(0.9, "Error", "Checkout error", "Bad gateway", 0, Step: 1, Rep: 0),
             ],
             FailedStep: 1,
             FailedRep: 0,
-            StepVisits: [new RecordedStepVisit(0, 0, null), new RecordedStepVisit(1, 0, """{"amount":99}""")]);
+            StepVisits: [new RecordedStepVisit(0, 0, null), new RecordedStepVisit(1, 0, """{"amount":99}""")],
+            EntryLabel: "Order Checkout",
+            Steps: [new StepInfo("Create"), new StepInfo("Upload Attachment")]);
+
+        var slowestResult = new SlowestCallsResult(
+            [
+                new SlowestCallDto(1, 1, "B2", 0, "Order Checkout", 1, "Upload Attachment", 0, 0.51, 400, 502, 256, "Bad gateway", "POST /pay", "https://shop.test/pay", false, 200, 360, 40,
+                    new Dictionary<string, string> { ["X-Correlation-Id"] = "corr-remote-9" }),
+            ],
+            1);
 
         var handler = new StubHttpHandler(req =>
         {
@@ -225,6 +235,8 @@ public sealed class RunsRemoteTests : IDisposable
                 return JsonResponse(new List<StoredRunSummary> { new("run-abc", DateTimeOffset.UtcNow, null, "Finished", 5, 10, 1, 12, null) });
             if (pq.StartsWith("/api/runs/run-abc/calls/endpoints", StringComparison.Ordinal))
                 return JsonResponse(callsResult);
+            if (pq.StartsWith("/api/runs/run-abc/calls/slowest", StringComparison.Ordinal))
+                return JsonResponse(slowestResult);
             if (pq.StartsWith("/api/runs/run-abc/logs", StringComparison.Ordinal))
                 return JsonResponse(logPage);
             if (pq == "/api/runs/run-abc/bees/1")
@@ -232,16 +244,30 @@ public sealed class RunsRemoteTests : IDisposable
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        var callsRes = await CliAsync(handler, _ => null, "runs", "calls", "latest", "--url", "http://beesharp.test", "--entry", "1", "--slow", "--failed", "--min-ms", "100", "--search", "pay", "--json");
+        var callsRes = await CliAsync(handler, _ => null, "runs", "calls", "latest", "--url", "http://beesharp.test", "--entry", "1", "--step", "2", "--by-step", "--slow", "--failed", "--min-ms", "100", "--search", "pay", "--json");
         Assert.Equal(ExitCodes.Ok, callsRes.Exit);
-        Assert.Contains(handler.Requests, u => u.PathAndQuery == "/api/runs/run-abc/calls/endpoints?entry=0&slowOnly=true&failedOnly=true&minMs=100&search=pay");
+        Assert.Contains(handler.Requests, u => u.PathAndQuery == "/api/runs/run-abc/calls/endpoints?entry=0&step=1&byStep=true&slowOnly=true&failedOnly=true&minMs=100&search=pay");
         using (var cDoc = JsonDocument.Parse(callsRes.Out))
         {
             var ep = Assert.Single(cDoc.RootElement.GetProperty("endpoints").EnumerateArray());
             Assert.Equal("POST /pay", ep.GetProperty("endpoint").GetString());
-            // Converted from 0-based [0, 1] -> 1-based [1, 2]
+            // Converted from 0-based [0, 1] -> 1-based [1, 2], step 1 -> 2
             Assert.Equal(1, ep.GetProperty("entries")[0].GetInt32());
             Assert.Equal(2, ep.GetProperty("entries")[1].GetInt32());
+            Assert.Equal(2, ep.GetProperty("step").GetInt32());
+            Assert.Equal("Pay", ep.GetProperty("stepName").GetString());
+        }
+
+        var slowestRes = await CliAsync(handler, _ => null, "runs", "calls", "run-abc", "--url", "http://beesharp.test", "--slowest", "5", "--scenario", "S2", "--endpoint", "pay", "--json");
+        Assert.Equal(ExitCodes.Ok, slowestRes.Exit);
+        Assert.Contains(handler.Requests, u => u.PathAndQuery == "/api/runs/run-abc/calls/slowest?limit=5&scenario=S2&endpoint=pay");
+        using (var sDoc = JsonDocument.Parse(slowestRes.Out))
+        {
+            var c = Assert.Single(sDoc.RootElement.GetProperty("calls").EnumerateArray());
+            Assert.Equal("B2", c.GetProperty("beeName").GetString());
+            Assert.Equal("Upload Attachment", c.GetProperty("stepName").GetString());
+            Assert.Equal(360, c.GetProperty("ttfbMs").GetDouble());
+            Assert.Equal("corr-remote-9", c.GetProperty("headers").GetProperty("X-Correlation-Id").GetString());
         }
 
         var logsRes = await CliAsync(handler, _ => null, "runs", "logs", "run-abc", "--url", "http://beesharp.test", "--bee", "B2", "--entry", "1", "--step", "2", "--level", "warn,error", "--search", "declined", "--offset", "1", "--limit", "2", "--json");
@@ -264,10 +290,15 @@ public sealed class RunsRemoteTests : IDisposable
         {
             Assert.Equal(2, bDoc.RootElement.GetProperty("bee").GetInt32());
             Assert.Equal("B2", bDoc.RootElement.GetProperty("beeName").GetString());
+            Assert.Equal("Order Checkout", bDoc.RootElement.GetProperty("entryLabel").GetString());
             Assert.Equal(2, bDoc.RootElement.GetProperty("failedStep").GetInt32());
+            Assert.Equal("Upload Attachment", bDoc.RootElement.GetProperty("failedStepName").GetString());
             Assert.Equal(1, bDoc.RootElement.GetProperty("failedRep").GetInt32());
             Assert.Equal("https://shop.test/pay", bDoc.RootElement.GetProperty("calls")[0].GetProperty("url").GetString());
+            Assert.Equal(360, bDoc.RootElement.GetProperty("calls")[0].GetProperty("ttfbMs").GetDouble());
+            Assert.Equal("corr-remote-9", bDoc.RootElement.GetProperty("calls")[0].GetProperty("headers").GetProperty("X-Correlation-Id").GetString());
             Assert.Equal(2, bDoc.RootElement.GetProperty("stepVisits").GetArrayLength());
+            Assert.Equal("Upload Attachment", bDoc.RootElement.GetProperty("stepVisits")[1].GetProperty("name").GetString());
         }
     }
 

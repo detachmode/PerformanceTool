@@ -15,7 +15,22 @@ public sealed record CallEndpointSummaryDto(
     double AvgMs,
     double? SlowThresholdMs,
     bool HasCustomThreshold,
-    IReadOnlyList<int> Entries);
+    IReadOnlyList<int> Entries,
+    int? Step = null,
+    string? StepName = null);
+
+/// <summary>Aggregated call latency and slow/failure counts for one (entry, step) pair.</summary>
+public sealed record CallStepMetrics(
+    int Entry,
+    int Step,
+    int TotalCalls,
+    int SlowCalls,
+    int FailedCalls,
+    double? MinMs,
+    double? P50Ms,
+    double? P95Ms,
+    double? MaxMs,
+    double? AvgMs);
 
 /// <summary>All auto-detected endpoints of a run and aggregate call counts for <c>GET /api/runs/{runId}/calls/endpoints</c>.</summary>
 public sealed record CallEndpointsResult(
@@ -82,3 +97,31 @@ public sealed record CallEndpointDetailDto(
     int Offset,
     int Limit,
     IReadOnlyList<CallSampleDto> Calls);
+
+/// <summary>One individual slow/outlier call returned by <c>GET /api/runs/{runId}/calls/slowest</c> and <c>beesharp runs calls --slowest</c>.</summary>
+public sealed record SlowestCallDto(
+    long Id,
+    int Sequence,
+    string BeeName,
+    int Entry,
+    string? EntryLabel,
+    int Step,
+    string? StepName,
+    int Rep,
+    double StartedAtSeconds,
+    double DurationMs,
+    int? StatusCode,
+    long Bytes,
+    string? Error,
+    string Endpoint,
+    string? Url,
+    bool IsSlow,
+    double? SlowThresholdMs,
+    double? TtfbMs = null,
+    double? ResponseReadMs = null,
+    IReadOnlyDictionary<string, string>? Headers = null);
+
+/// <summary>Top-N slowest outlier calls payload for <c>GET /api/runs/{runId}/calls/slowest</c>.</summary>
+public sealed record SlowestCallsResult(
+    IReadOnlyList<SlowestCallDto> Calls,
+    long MatchingCalls);

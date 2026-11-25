@@ -9,6 +9,7 @@ public static class HttpRequestCallExtensions
     internal static readonly HttpRequestOptionsKey<string> CallNameKey = new("Beesharp.CallName");
     internal static readonly HttpRequestOptionsKey<double> SlowThresholdMsKey = new("Beesharp.SlowThresholdMs");
     internal static readonly HttpRequestOptionsKey<bool> RecordedKey = new("Beesharp.CallRecorded");
+    internal static readonly HttpRequestOptionsKey<bool> TimingSplitKey = new("Beesharp.MeasureTimingSplit");
 
     /// <summary>Overrides the auto-detected call/endpoint name for this HTTP request (brain 0013, 0060).</summary>
     public static HttpRequestMessage AsCall(this HttpRequestMessage request, string name)
@@ -26,6 +27,14 @@ public static class HttpRequestCallExtensions
         if (threshold <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(threshold), "Slow threshold must be greater than zero.");
         request.Options.Set(SlowThresholdMsKey, threshold.TotalMilliseconds);
+        return request;
+    }
+
+    /// <summary>Measures time-to-first-byte (<c>TtfbMs</c>) separately from response body read (<c>ResponseReadMs</c>) for this request.</summary>
+    public static HttpRequestMessage MeasureTimingSplit(this HttpRequestMessage request, bool enabled = true)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Options.Set(TimingSplitKey, enabled);
         return request;
     }
 }
@@ -61,15 +70,31 @@ public sealed class RecordingHttpHandler : DelegatingHandler
         var scope = ctx.CurrentCallScope;
         var sw = Stopwatch.StartNew();
 
+        var measureSplit = ctx.MeasureHttpTimingSplit
+            || (request.Options.TryGetValue(HttpRequestCallExtensions.TimingSplitKey, out var reqSplit) && reqSplit);
+
         request.Options.Set(HttpRequestCallExtensions.RecordedKey, true);
         try
         {
             var response = await base.SendAsync(request, cancellationToken);
-            sw.Stop();
+            double? ttfbMs = null;
+            double? responseReadMs = null;
+            if (measureSplit)
+            {
+                ttfbMs = sw.Elapsed.TotalMilliseconds;
+                await response.Content.LoadIntoBufferAsync(cancellationToken);
+                sw.Stop();
+                responseReadMs = Math.Max(0, sw.Elapsed.TotalMilliseconds - ttfbMs.Value);
+            }
+            else
+            {
+                sw.Stop();
+            }
+
             var bytes = response.Content.Headers.ContentLength ?? 0;
             var status = (int)response.StatusCode;
             var error = status >= 400 ? $"HTTP {status}" : null;
-            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, status, bytes, error, step, rep, scope);
+            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, status, bytes, error, step, rep, scope, response, ttfbMs, responseReadMs);
             return response;
         }
         catch (Exception ex)
@@ -229,7 +254,7 @@ internal static class HttpCallDiagnosticTracker
                 var status = (int)response.StatusCode;
                 var bytes = response.Content.Headers.ContentLength ?? 0;
                 var error = status >= 400 ? $"HTTP {status}" : null;
-                pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, status, bytes, error, pending.Step, pending.Rep, pending.Scope);
+                pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, status, bytes, error, pending.Step, pending.Rep, pending.Scope, response);
                 return;
             }
 

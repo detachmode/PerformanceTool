@@ -53,7 +53,7 @@ internal sealed class DuckDbBundleQueries
         var meta = ReadRunMetadata();
         if (!availableTables.Contains("bees"))
         {
-            var emptyEntries = BuildSummaryEntries(meta, new Dictionary<int, EntryAgg>(), new Dictionary<(int Entry, int Step), int>());
+            var emptyEntries = BuildSummaryEntries(meta, new Dictionary<int, EntryAgg>(), new Dictionary<(int Entry, int Step), int>(), new Dictionary<(int Entry, int Step), CallStepMetrics>());
             return new RunSummaryReport(
                 meta.RunId, meta.State, meta.StartedUtc, meta.FinishedUtc, meta.ElapsedSeconds, meta.Error,
                 0, 0, 0, 0, 0, null, null, null, null, null, emptyEntries);
@@ -161,7 +161,11 @@ internal sealed class DuckDbBundleQueries
                 failedPerStep[(r.GetInt32(0), r.GetInt32(1))] = Convert.ToInt32(r.GetValue(2));
         }
 
-        var entries = BuildSummaryEntries(meta, byEntry, failedPerStep);
+        var stepMetrics = availableTables.Contains("calls")
+            ? CallAnalytics.BuildStepMetrics(LoadCallFacts(meta))
+            : new Dictionary<(int Entry, int Step), CallStepMetrics>();
+
+        var entries = BuildSummaryEntries(meta, byEntry, failedPerStep, stepMetrics);
         return new RunSummaryReport(
             meta.RunId, meta.State, meta.StartedUtc, meta.FinishedUtc, meta.ElapsedSeconds, meta.Error,
             totalBees, okBees, failedBees, canceledBees, slowBees,
@@ -273,60 +277,21 @@ internal sealed class DuckDbBundleQueries
         if (!availableTables.Contains("calls"))
             return new RunCallsReport(meta.RunId, 0, 0, 0, []);
 
-        var callCols = DescribeColumns("calls");
-        var hasBees = availableTables.Contains("bees");
+        var facts = LoadCallFacts(meta);
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(meta.Plan, options.Scenario);
+        var result = CallAnalytics.BuildEndpoints(
+            facts,
+            options.Entry,
+            options.SlowOnly,
+            options.FailedOnly,
+            options.MinMs,
+            options.Search,
+            options.Step,
+            options.ByStep,
+            (e, s) => StepName(meta.Steps, e, s),
+            scenarioEntries,
+            options.Endpoint);
 
-        var idExpr = callCols.Contains("id") ? "c.id" : "ROW_NUMBER() OVER ()";
-        var stepExpr = callCols.Contains("step") ? "COALESCE(c.step, 0)" : "0";
-        var repExpr = callCols.Contains("rep") ? "COALESCE(c.rep, 0)" : "0";
-        var urlExpr = callCols.Contains("url") ? "c.url" : "NULL::VARCHAR";
-        var epExpr = callCols.Contains("endpoint") ? "c.endpoint" : "NULL::VARCHAR";
-        var methodExpr = callCols.Contains("method") ? "c.method" : "NULL::VARCHAR";
-        var hostExpr = callCols.Contains("host") ? "c.host" : "NULL::VARCHAR";
-        var thrExpr = callCols.Contains("slow_threshold_ms") ? "c.slow_threshold_ms" : "NULL::DOUBLE";
-        var entryExpr = hasBees ? "COALESCE(b.entry, 0)" : "0";
-        var startedExpr = hasBees ? "COALESCE(b.started_at, 0.0)" : "0.0";
-        var joinClause = hasBees ? "LEFT JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence" : "";
-        var orderClause = callCols.Contains("id") ? "ORDER BY c.id" : "ORDER BY c.sequence, c.call_index";
-
-        var facts = new List<CallFact>();
-        using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = $"""
-                SELECT {idExpr}, c.sequence, {entryExpr}, {stepExpr}, {repExpr}, {startedExpr},
-                       c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name,
-                       {urlExpr}, {epExpr}, {methodExpr}, {hostExpr}, {thrExpr}
-                FROM calls c
-                {joinClause}
-                WHERE c.run_id = $1
-                {orderClause};
-                """;
-            cmd.Parameters.Add(new DuckDBParameter(meta.RunId));
-            using var r = cmd.ExecuteReader();
-            while (r.Read())
-            {
-                facts.Add(new CallFact(
-                    Convert.ToInt64(r.GetValue(0)),
-                    r.GetInt32(1),
-                    r.GetInt32(2),
-                    r.GetInt32(3),
-                    r.GetInt32(4),
-                    r.GetDouble(5),
-                    r.GetDouble(6),
-                    r.GetDouble(7),
-                    r.IsDBNull(8) ? null : r.GetInt32(8),
-                    r.GetInt64(9),
-                    r.IsDBNull(10) ? null : r.GetString(10),
-                    r.GetString(11),
-                    r.IsDBNull(12) ? null : r.GetString(12),
-                    r.IsDBNull(13) ? null : r.GetString(13),
-                    r.IsDBNull(14) ? null : r.GetString(14),
-                    r.IsDBNull(15) ? null : r.GetString(15),
-                    r.IsDBNull(16) ? null : r.GetDouble(16)));
-            }
-        }
-
-        var result = CallAnalytics.BuildEndpoints(facts, options.Entry, options.SlowOnly, options.FailedOnly, options.MinMs, options.Search);
         var endpoints = result.Endpoints.Select(ep => new RunCallEndpointDto(
             ep.Endpoint,
             ep.Method,
@@ -341,9 +306,167 @@ internal sealed class DuckDbBundleQueries
             ep.AvgMs,
             ep.SlowThresholdMs,
             ep.HasCustomThreshold,
-            ep.Entries.Select(e => e + 1).ToArray())).ToList();
+            ep.Entries.Select(e => e + 1).ToArray(),
+            ep.Step is { } st ? st + 1 : null,
+            ep.StepName)).ToList();
 
         return new RunCallsReport(meta.RunId, result.TotalCalls, result.TotalSlowCalls, result.TotalFailedCalls, endpoints);
+    }
+
+    public RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options)
+    {
+        var meta = ReadRunMetadata();
+        var limit = options.Slowest ?? 20;
+        if (!availableTables.Contains("calls"))
+            return new RunSlowestCallsReport(meta.RunId, 0, limit, []);
+
+        var facts = LoadCallFacts(meta);
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(meta.Plan, options.Scenario);
+        var res = CallAnalytics.BuildSlowestCalls(
+            facts,
+            limit,
+            options.Entry,
+            scenarioEntries,
+            options.Step,
+            options.Endpoint,
+            options.SlowOnly,
+            options.FailedOnly,
+            options.MinMs,
+            options.Search,
+            e => EntryLabel(meta.Plan, e),
+            (e, s) => StepName(meta.Steps, e, s));
+
+        var items = res.Calls.Select(c =>
+        {
+            var hasSteps = HasSteps(meta.Steps, c.Entry);
+            return new RunSlowestCallDto(
+                c.Sequence + 1,
+                c.BeeName,
+                c.Entry + 1,
+                c.EntryLabel ?? EntryLabel(meta.Plan, c.Entry),
+                hasSteps || c.Step > 0 ? c.Step + 1 : null,
+                c.StepName,
+                hasSteps || c.Rep > 0 ? c.Rep + 1 : null,
+                c.StartedAtSeconds,
+                c.DurationMs,
+                c.StatusCode,
+                c.Bytes,
+                c.Endpoint,
+                c.Url,
+                c.IsSlow,
+                c.SlowThresholdMs,
+                c.TtfbMs,
+                c.ResponseReadMs,
+                c.Headers,
+                c.Error);
+        }).ToList();
+
+        return new RunSlowestCallsReport(meta.RunId, res.MatchingCalls, limit, items);
+    }
+
+    public RunTimelineReport GetTimeline(RunsTimelineOptions options)
+    {
+        var meta = ReadRunMetadata();
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(meta.Plan, options.Scenario);
+
+        bool EntryMatches(int e) =>
+            (options.Entry is null || e == options.Entry.Value)
+            && (scenarioEntries is null || scenarioEntries.Contains(e));
+
+        var beesList = new List<(double StartedAt, double DurationMs, bool IsFailed, bool IsSlow)>();
+        if (availableTables.Contains("bees"))
+        {
+            var cols = DescribeColumns("bees");
+            var isFailedExpr = FailedPredicateExpr(cols);
+            var isSlowExpr = SlowPredicateExpr(cols);
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"""
+                SELECT entry, started_at, duration_ms, ({isFailedExpr}), ({isSlowExpr})
+                FROM bees
+                WHERE run_id = $1
+                ORDER BY started_at;
+                """;
+            cmd.Parameters.Add(new DuckDBParameter(meta.RunId));
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var e = r.GetInt32(0);
+                if (!EntryMatches(e)) continue;
+                beesList.Add((r.GetDouble(1), r.GetDouble(2), r.GetBoolean(3), r.GetBoolean(4)));
+            }
+        }
+
+        var callsList = availableTables.Contains("calls")
+            ? LoadCallFacts(meta).Where(c => EntryMatches(c.Entry)).ToList()
+            : [];
+
+        return RunsTimelineBuilder.Build(meta.RunId, meta.ElapsedSeconds, options.BucketSeconds, beesList, callsList);
+    }
+
+    private List<CallFact> LoadCallFacts(RunMetadata meta)
+    {
+        var callCols = DescribeColumns("calls");
+        var hasBees = availableTables.Contains("bees");
+
+        var idExpr = callCols.Contains("id") ? "c.id" : "ROW_NUMBER() OVER ()";
+        var stepExpr = callCols.Contains("step") ? "COALESCE(c.step, 0)" : "0";
+        var repExpr = callCols.Contains("rep") ? "COALESCE(c.rep, 0)" : "0";
+        var urlExpr = callCols.Contains("url") ? "c.url" : "NULL::VARCHAR";
+        var epExpr = callCols.Contains("endpoint") ? "c.endpoint" : "NULL::VARCHAR";
+        var methodExpr = callCols.Contains("method") ? "c.method" : "NULL::VARCHAR";
+        var hostExpr = callCols.Contains("host") ? "c.host" : "NULL::VARCHAR";
+        var thrExpr = callCols.Contains("slow_threshold_ms") ? "c.slow_threshold_ms" : "NULL::DOUBLE";
+        var ttfbExpr = callCols.Contains("ttfb_ms") ? "c.ttfb_ms" : "NULL::DOUBLE";
+        var readExpr = callCols.Contains("response_read_ms") ? "c.response_read_ms" : "NULL::DOUBLE";
+        var hdrExpr = callCols.Contains("headers_json") ? "c.headers_json" : "NULL::VARCHAR";
+        var entryExpr = hasBees ? "COALESCE(b.entry, 0)" : "0";
+        var startedExpr = hasBees ? "COALESCE(b.started_at, 0.0)" : "0.0";
+        var joinClause = hasBees ? "LEFT JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence" : "";
+        var orderClause = callCols.Contains("id") ? "ORDER BY c.id" : "ORDER BY c.sequence, c.call_index";
+
+        var facts = new List<CallFact>();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT {idExpr}, c.sequence, {entryExpr}, {stepExpr}, {repExpr}, {startedExpr},
+                   c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name,
+                   {urlExpr}, {epExpr}, {methodExpr}, {hostExpr}, {thrExpr},
+                   {ttfbExpr}, {readExpr}, {hdrExpr}
+            FROM calls c
+            {joinClause}
+            WHERE c.run_id = $1
+            {orderClause};
+            """;
+        cmd.Parameters.Add(new DuckDBParameter(meta.RunId));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            IReadOnlyDictionary<string, string>? headers = null;
+            if (!r.IsDBNull(19) && r.GetString(19) is { Length: > 0 } hJson)
+                headers = JsonSerializer.Deserialize<Dictionary<string, string>>(hJson, JsonOpts);
+            facts.Add(new CallFact(
+                Convert.ToInt64(r.GetValue(0)),
+                r.GetInt32(1),
+                r.GetInt32(2),
+                r.GetInt32(3),
+                r.GetInt32(4),
+                r.GetDouble(5),
+                r.GetDouble(6),
+                r.GetDouble(7),
+                r.IsDBNull(8) ? null : r.GetInt32(8),
+                r.GetInt64(9),
+                r.IsDBNull(10) ? null : r.GetString(10),
+                r.GetString(11),
+                r.IsDBNull(12) ? null : r.GetString(12),
+                r.IsDBNull(13) ? null : r.GetString(13),
+                r.IsDBNull(14) ? null : r.GetString(14),
+                r.IsDBNull(15) ? null : r.GetString(15),
+                r.IsDBNull(16) ? null : r.GetDouble(16),
+                r.IsDBNull(17) ? null : r.GetDouble(17),
+                r.IsDBNull(18) ? null : r.GetDouble(18),
+                headers));
+        }
+
+        return facts;
     }
 
     public RunLogsReport QueryLogs(RunsLogsOptions options)
@@ -527,13 +650,17 @@ internal sealed class DuckDbBundleQueries
             var hostExpr = callCols.Contains("host") ? "host" : "NULL::VARCHAR";
             var urlExpr = callCols.Contains("url") ? "url" : "NULL::VARCHAR";
             var thrExpr = callCols.Contains("slow_threshold_ms") ? "slow_threshold_ms" : "NULL::DOUBLE";
+            var ttfbExpr = callCols.Contains("ttfb_ms") ? "ttfb_ms" : "NULL::DOUBLE";
+            var readExpr = callCols.Contains("response_read_ms") ? "response_read_ms" : "NULL::DOUBLE";
+            var hdrExpr = callCols.Contains("headers_json") ? "headers_json" : "NULL::VARCHAR";
             var idxExpr = callCols.Contains("call_index") ? "call_index" : "ROW_NUMBER() OVER () - 1";
             var orderCol = callCols.Contains("call_index") ? "call_index" : "offset_ms";
 
             using var cCmd = conn.CreateCommand();
             cCmd.CommandText = $"""
                 SELECT {idxExpr}, name, offset_ms, duration_ms, status_code, bytes, error,
-                       {stepExpr}, {repExpr}, {epExpr}, {methodExpr}, {hostExpr}, {urlExpr}, {thrExpr}
+                       {stepExpr}, {repExpr}, {epExpr}, {methodExpr}, {hostExpr}, {urlExpr}, {thrExpr},
+                       {ttfbExpr}, {readExpr}, {hdrExpr}
                 FROM calls
                 WHERE run_id = $1 AND sequence = $2
                 ORDER BY {orderCol};
@@ -547,6 +674,9 @@ internal sealed class DuckDbBundleQueries
                 var callRep = cr.GetInt32(8);
                 var rawName = cr.GetString(1);
                 var ep = cr.IsDBNull(9) ? null : cr.GetString(9);
+                IReadOnlyDictionary<string, string>? headers = null;
+                if (!cr.IsDBNull(16) && cr.GetString(16) is { Length: > 0 } hJson)
+                    headers = JsonSerializer.Deserialize<Dictionary<string, string>>(hJson, JsonOpts);
                 callsDto.Add(new BeeCallDto(
                     Convert.ToInt32(cr.GetValue(0)) + 1,
                     rawName,
@@ -562,7 +692,10 @@ internal sealed class DuckDbBundleQueries
                     cr.IsDBNull(4) ? null : cr.GetInt32(4),
                     cr.GetInt64(5),
                     cr.IsDBNull(13) ? null : cr.GetDouble(13),
-                    cr.IsDBNull(6) ? null : cr.GetString(6)));
+                    cr.IsDBNull(6) ? null : cr.GetString(6),
+                    cr.IsDBNull(14) ? null : cr.GetDouble(14),
+                    cr.IsDBNull(15) ? null : cr.GetDouble(15),
+                    headers));
             }
         }
 
@@ -704,7 +837,8 @@ internal sealed class DuckDbBundleQueries
     private static List<RunSummaryEntryDto> BuildSummaryEntries(
         RunMetadata meta,
         Dictionary<int, EntryAgg> byEntry,
-        Dictionary<(int Entry, int Step), int> failedPerStep)
+        Dictionary<(int Entry, int Step), int> failedPerStep,
+        Dictionary<(int Entry, int Step), CallStepMetrics> stepMetrics)
     {
         var maxEntryFromBees = byEntry.Count > 0 ? byEntry.Keys.Max() + 1 : 0;
         var maxEntryFromSteps = meta.Steps?.Count ?? 0;
@@ -724,7 +858,10 @@ internal sealed class DuckDbBundleQueries
 
             var declaredSteps = meta.Steps is not null && i < meta.Steps.Count ? meta.Steps[i] : [];
             var maxFailedStep = failedPerStep.Keys.Where(k => k.Entry == i).Select(k => k.Step + 1).DefaultIfEmpty(0).Max();
-            var stepCount = Math.Max(declaredSteps.Count, maxFailedStep);
+            var maxCallStep = declaredSteps.Count > 0 || maxFailedStep > 0
+                ? stepMetrics.Keys.Where(k => k.Entry == i).Select(k => k.Step + 1).DefaultIfEmpty(0).Max()
+                : 0;
+            var stepCount = Math.Max(declaredSteps.Count, Math.Max(maxFailedStep, maxCallStep));
 
             var stepDtos = new List<RunSummaryStepDto>(stepCount);
             int? finishedAllSteps = null;
@@ -737,7 +874,19 @@ internal sealed class DuckDbBundleQueries
                     var failedAtStep = failedPerStep.GetValueOrDefault((i, s));
                     var reached = Math.Max(0, agg.TotalBees - priorFailed);
                     priorFailed += failedAtStep;
-                    stepDtos.Add(new RunSummaryStepDto(s + 1, name, reached, failedAtStep));
+                    stepMetrics.TryGetValue((i, s), out var m);
+                    stepDtos.Add(new RunSummaryStepDto(
+                        s + 1,
+                        name,
+                        reached,
+                        failedAtStep,
+                        m?.TotalCalls ?? 0,
+                        m?.SlowCalls ?? 0,
+                        m?.MinMs,
+                        m?.P50Ms,
+                        m?.P95Ms,
+                        m?.MaxMs,
+                        m?.AvgMs));
                 }
                 finishedAllSteps = Math.Min(agg.OkBees, Math.Max(0, agg.TotalBees - priorFailed));
             }

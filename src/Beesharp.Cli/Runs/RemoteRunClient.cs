@@ -131,6 +131,14 @@ internal sealed class RemoteRunClient : IDisposable
         var query = new List<string>();
         if (options.Entry is { } entry)
             query.Add($"entry={entry.ToString(CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(options.Scenario))
+            query.Add($"scenario={Uri.EscapeDataString(options.Scenario)}");
+        if (options.Step is { } step)
+            query.Add($"step={step.ToString(CultureInfo.InvariantCulture)}");
+        if (options.ByStep)
+            query.Add("byStep=true");
+        if (!string.IsNullOrWhiteSpace(options.Endpoint))
+            query.Add($"endpoint={Uri.EscapeDataString(options.Endpoint)}");
         if (options.SlowOnly)
             query.Add("slowOnly=true");
         if (options.FailedOnly)
@@ -159,9 +167,60 @@ internal sealed class RemoteRunClient : IDisposable
             ep.AvgMs,
             ep.SlowThresholdMs,
             ep.HasCustomThreshold,
-            ep.Entries.Select(e => e + 1).ToArray())).ToList();
+            ep.Entries.Select(e => e + 1).ToArray(),
+            ep.Step is { } st ? st + 1 : null,
+            ep.StepName)).ToList();
 
         return new RunCallsReport(runId, res.TotalCalls, res.TotalSlowCalls, res.TotalFailedCalls, endpoints);
+    }
+
+    public async Task<RunSlowestCallsReport> GetSlowestCallsAsync(string runId, RunsCallsOptions options, CancellationToken ct)
+    {
+        var limit = options.Slowest ?? 20;
+        var query = new List<string> { $"limit={limit.ToString(CultureInfo.InvariantCulture)}" };
+        if (options.Entry is { } entry)
+            query.Add($"entry={entry.ToString(CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(options.Scenario))
+            query.Add($"scenario={Uri.EscapeDataString(options.Scenario)}");
+        if (options.Step is { } step)
+            query.Add($"step={step.ToString(CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(options.Endpoint))
+            query.Add($"endpoint={Uri.EscapeDataString(options.Endpoint)}");
+        if (options.SlowOnly)
+            query.Add("slowOnly=true");
+        if (options.FailedOnly)
+            query.Add("failedOnly=true");
+        if (options.MinMs is { } minMs)
+            query.Add($"minMs={minMs.ToString(CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(options.Search))
+            query.Add($"search={Uri.EscapeDataString(options.Search)}");
+
+        var path = $"api/runs/{Uri.EscapeDataString(runId)}/calls/slowest?{string.Join("&", query)}";
+        var res = await GetJsonAsync<SlowestCallsResult>(path, $"Run '{runId}' was not found on {BaseUrl}.", ct)
+            ?? new SlowestCallsResult([], 0);
+
+        var items = res.Calls.Select(c => new RunSlowestCallDto(
+            c.Sequence + 1,
+            c.BeeName,
+            c.Entry + 1,
+            string.IsNullOrWhiteSpace(c.EntryLabel) ? $"Entry {c.Entry + 1}" : c.EntryLabel,
+            c.StepName is not null || c.Step > 0 ? c.Step + 1 : null,
+            c.StepName,
+            c.StepName is not null || c.Rep > 0 ? c.Rep + 1 : null,
+            c.StartedAtSeconds,
+            c.DurationMs,
+            c.StatusCode,
+            c.Bytes,
+            c.Endpoint,
+            c.Url,
+            c.IsSlow,
+            c.SlowThresholdMs,
+            c.TtfbMs,
+            c.ResponseReadMs,
+            c.Headers,
+            c.Error)).ToList();
+
+        return new RunSlowestCallsReport(runId, res.MatchingCalls, limit, items);
     }
 
     public async Task<RunLogsReport> QueryLogsAsync(string runId, RunsLogsOptions options, CancellationToken ct)
@@ -225,7 +284,10 @@ internal sealed class RemoteRunClient : IDisposable
             $"Bee B{beeNumber} (#{beeNumber}) or run '{runId}' was not found on {BaseUrl}.",
             ct) ?? throw new CouldNotRunException($"Bee B{beeNumber} (#{beeNumber}) or run '{runId}' was not found on {BaseUrl}.");
 
-        var hasSteps = detail.StepVisits is { Count: > 0 } || detail.FailedStep >= 0;
+        var hasSteps = detail.Steps is { Count: > 0 } || detail.StepVisits is { Count: > 0 } || detail.FailedStep >= 0;
+        string? StepNameOf(int stepIdx) =>
+            detail.Steps is not null && stepIdx >= 0 && stepIdx < detail.Steps.Count ? detail.Steps[stepIdx].Name : null;
+
         var slowCalls = detail.Calls.Count(c => c.Error is null && SlowCallRule.IsSlow(c.DurationMs, null, c.SlowThresholdMs));
         var isFailed = detail.Error is not null;
         var isCanceled = ExecutionResult.IsCanceledError(detail.Error);
@@ -233,7 +295,7 @@ internal sealed class RemoteRunClient : IDisposable
         var outcome = isCanceled ? "canceled" : isFailed ? "failed" : isSlow ? "slow" : "ok";
 
         var visitsDto = (detail.StepVisits ?? [])
-            .Select(v => new BeeStepVisitDto(v.Step + 1, $"Step {v.Step + 1}", v.Rep + 1, v.Data))
+            .Select(v => new BeeStepVisitDto(v.Step + 1, StepNameOf(v.Step) ?? $"Step {v.Step + 1}", v.Rep + 1, v.Data))
             .ToList();
 
         var callsDto = detail.Calls.Select((c, idx) => new BeeCallDto(
@@ -244,14 +306,17 @@ internal sealed class RemoteRunClient : IDisposable
             c.Host,
             c.Url,
             hasSteps || c.Step > 0 ? c.Step + 1 : null,
-            null,
+            StepNameOf(c.Step),
             hasSteps || c.Rep > 0 ? c.Rep + 1 : null,
             c.OffsetMs,
             c.DurationMs,
             c.StatusCode,
             c.Bytes,
             c.SlowThresholdMs,
-            c.Error)).ToList();
+            c.Error,
+            c.TtfbMs,
+            c.ResponseReadMs,
+            c.Headers)).ToList();
 
         var logsDto = detail.Logs.Select((l, idx) => new BeeLogDto(
             idx + 1,
@@ -260,7 +325,7 @@ internal sealed class RemoteRunClient : IDisposable
             l.Message,
             l.Exception,
             hasSteps || l.Step > 0 ? l.Step + 1 : null,
-            null,
+            StepNameOf(l.Step),
             hasSteps || l.Rep > 0 ? l.Rep + 1 : null,
             l.CallIndex is { } ci ? ci + 1 : null)).ToList();
 
@@ -269,7 +334,7 @@ internal sealed class RemoteRunClient : IDisposable
             detail.Sequence + 1,
             $"B{detail.Sequence + 1}",
             detail.Entry + 1,
-            $"Entry {detail.Entry + 1}",
+            string.IsNullOrWhiteSpace(detail.EntryLabel) ? $"Entry {detail.Entry + 1}" : detail.EntryLabel,
             detail.StartedAt,
             detail.DurationMs,
             detail.StatusCode,
@@ -281,7 +346,7 @@ internal sealed class RemoteRunClient : IDisposable
             slowCalls,
             detail.Error,
             detail.FailedStep >= 0 ? detail.FailedStep + 1 : null,
-            null,
+            detail.FailedStep >= 0 ? StepNameOf(detail.FailedStep) : null,
             detail.FailedStep >= 0 && detail.FailedRep >= 0 ? detail.FailedRep + 1 : null,
             visitsDto,
             callsDto,
@@ -338,6 +403,8 @@ internal sealed class RemoteRunClient : IDisposable
         public RunSummaryReport GetSummary() => inner.GetSummary();
         public RunErrorsReport GetErrors() => inner.GetErrors();
         public RunCallsReport GetCalls(RunsCallsOptions options) => inner.GetCalls(options);
+        public RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options) => inner.GetSlowestCalls(options);
+        public RunTimelineReport GetTimeline(RunsTimelineOptions options) => inner.GetTimeline(options);
         public RunLogsReport QueryLogs(RunsLogsOptions options) => inner.QueryLogs(options);
         public RunBeeReport GetBee(int beeNumber) => inner.GetBee(beeNumber);
 

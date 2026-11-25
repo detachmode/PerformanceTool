@@ -171,7 +171,16 @@ public sealed class InMemoryRunStorage : IRunStorage
         lock (sync)
         {
             var bucket = runs.FirstOrDefault(x => x.RunId == runId);
-            return Task.FromResult(bucket is not null && bucket.Bees.TryGetValue(sequence, out var d) ? d : null);
+            if (bucket is null || !bucket.Bees.TryGetValue(sequence, out var d))
+                return Task.FromResult<StoredBeeDetail?>(null);
+
+            var entryLabel = d.Entry >= 0 && d.Entry < bucket.Plan.Scenarios.Count
+                ? (string.IsNullOrWhiteSpace(bucket.Plan.Scenarios[d.Entry].Label) ? bucket.Plan.Scenarios[d.Entry].ScenarioId : bucket.Plan.Scenarios[d.Entry].Label)
+                : null;
+            var entrySteps = bucket.Steps is not null && d.Entry >= 0 && d.Entry < bucket.Steps.Count
+                ? bucket.Steps[d.Entry]
+                : null;
+            return Task.FromResult<StoredBeeDetail?>(d with { EntryLabel = entryLabel, Steps = entrySteps });
         }
     }
 
@@ -250,13 +259,58 @@ public sealed class InMemoryRunStorage : IRunStorage
     public Task<CallEndpointsResult> GetCallEndpointsAsync(string runId, CallEndpointsQuery query, CancellationToken ct = default)
     {
         List<CallFact> facts;
+        IReadOnlyList<IReadOnlyList<StepInfo>>? steps;
+        LoadPlan plan;
         lock (sync)
         {
             var bucket = runs.FirstOrDefault(x => x.RunId == runId);
             if (bucket is null) return Task.FromResult(new CallEndpointsResult([], 0, 0, 0));
             facts = ExtractCallFacts(bucket);
+            steps = bucket.Steps;
+            plan = bucket.Plan;
         }
-        return Task.FromResult(CallAnalytics.BuildEndpoints(facts, query.Entry, query.SlowOnly, query.FailedOnly, query.MinMs, query.Search));
+        var scenarioEntries = string.IsNullOrWhiteSpace(query.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(plan, query.Scenario);
+        return Task.FromResult(CallAnalytics.BuildEndpoints(
+            facts,
+            query.Entry,
+            query.SlowOnly,
+            query.FailedOnly,
+            query.MinMs,
+            query.Search,
+            query.Step,
+            query.ByStep,
+            steps is null ? null : (e, s) => e >= 0 && e < steps.Count && s >= 0 && s < steps[e].Count ? steps[e][s].Name : null,
+            scenarioEntries,
+            query.Endpoint));
+    }
+
+    public Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default)
+    {
+        List<CallFact> facts;
+        IReadOnlyList<IReadOnlyList<StepInfo>>? steps;
+        LoadPlan plan;
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            if (bucket is null) return Task.FromResult(new SlowestCallsResult([], 0));
+            facts = ExtractCallFacts(bucket);
+            steps = bucket.Steps;
+            plan = bucket.Plan;
+        }
+        var scenarioEntries = string.IsNullOrWhiteSpace(query.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(plan, query.Scenario);
+        return Task.FromResult(CallAnalytics.BuildSlowestCalls(
+            facts,
+            query.Limit,
+            query.Entry,
+            scenarioEntries,
+            query.Step,
+            query.Endpoint,
+            query.SlowOnly,
+            query.FailedOnly,
+            query.MinMs,
+            query.Search,
+            e => e >= 0 && e < plan.Scenarios.Count ? (string.IsNullOrWhiteSpace(plan.Scenarios[e].Label) ? plan.Scenarios[e].ScenarioId : plan.Scenarios[e].Label) : null,
+            steps is null ? null : (e, s) => e >= 0 && e < steps.Count && s >= 0 && s < steps[e].Count ? steps[e][s].Name : null));
     }
 
     public Task<CallEndpointDetailDto?> GetCallEndpointDetailAsync(string runId, CallDetailQuery query, CancellationToken ct = default)
@@ -287,7 +341,8 @@ public sealed class InMemoryRunStorage : IRunStorage
                 facts.Add(new CallFact(
                     id, bee.Sequence, bee.Entry, c.Step, c.Rep, bee.StartedAt,
                     c.OffsetMs, c.DurationMs, c.StatusCode, c.Bytes, c.Error,
-                    c.Name, c.Url, c.Endpoint, c.Method, c.Host, c.SlowThresholdMs));
+                    c.Name, c.Url, c.Endpoint, c.Method, c.Host, c.SlowThresholdMs,
+                    c.TtfbMs, c.ResponseReadMs, c.Headers));
             }
         }
         return facts;

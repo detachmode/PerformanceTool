@@ -19,6 +19,8 @@ internal interface IRunBundle : IDisposable
     RunSummaryReport GetSummary();
     RunErrorsReport GetErrors();
     RunCallsReport GetCalls(RunsCallsOptions options);
+    RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options);
+    RunTimelineReport GetTimeline(RunsTimelineOptions options);
     RunLogsReport QueryLogs(RunsLogsOptions options);
     RunBeeReport GetBee(int beeNumber);
 }
@@ -155,6 +157,8 @@ internal sealed class ParquetZipRunBundle : IRunBundle
     public RunSummaryReport GetSummary() => queries.GetSummary();
     public RunErrorsReport GetErrors() => queries.GetErrors();
     public RunCallsReport GetCalls(RunsCallsOptions options) => queries.GetCalls(options);
+    public RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options) => queries.GetSlowestCalls(options);
+    public RunTimelineReport GetTimeline(RunsTimelineOptions options) => queries.GetTimeline(options);
     public RunLogsReport QueryLogs(RunsLogsOptions options) => queries.QueryLogs(options);
     public RunBeeReport GetBee(int beeNumber) => queries.GetBee(beeNumber);
 
@@ -232,6 +236,8 @@ internal sealed class DuckDbFileRunBundle : IRunBundle
     public RunSummaryReport GetSummary() => queries.GetSummary();
     public RunErrorsReport GetErrors() => queries.GetErrors();
     public RunCallsReport GetCalls(RunsCallsOptions options) => queries.GetCalls(options);
+    public RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options) => queries.GetSlowestCalls(options);
+    public RunTimelineReport GetTimeline(RunsTimelineOptions options) => queries.GetTimeline(options);
     public RunLogsReport QueryLogs(RunsLogsOptions options) => queries.QueryLogs(options);
     public RunBeeReport GetBee(int beeNumber) => queries.GetBee(beeNumber);
 

@@ -56,6 +56,7 @@ public enum CliCommand
     RunsLogs,
     RunsBee,
     RunsCompare,
+    RunsTimeline,
     Invalid,
 }
 

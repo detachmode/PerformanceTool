@@ -32,13 +32,13 @@ internal static class RunsCommandHandler
                 {
                     using var client = new RemoteRunClient(url, httpHandler);
                     var runId = await client.ResolveRunIdAsync(opts.File, ct);
-                    using var bundle = await client.OpenParquetBundleAsync(runId, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees, ct);
+                    using var bundle = await client.OpenParquetBundleAsync(runId, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls, ct);
                     var report = bundle.GetSummary();
                     WriteResult(output, opts.Json, report, report.ToText());
                 }
                 else
                 {
-                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees);
+                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls);
                     var report = bundle.GetSummary();
                     WriteResult(output, opts.Json, report, report.ToText());
                 }
@@ -68,7 +68,23 @@ internal static class RunsCommandHandler
             {
                 var opts = parsed.Runs!.Calls!;
                 var url = ResolveRemoteUrl(opts.Url, getEnv, opts.File);
-                if (url is not null)
+                if (opts.Slowest is > 0)
+                {
+                    if (url is not null)
+                    {
+                        using var client = new RemoteRunClient(url, httpHandler);
+                        var runId = await client.ResolveRunIdAsync(opts.File, ct);
+                        var report = await client.GetSlowestCallsAsync(runId, opts, ct);
+                        WriteResult(output, opts.Json, report, report.ToText());
+                    }
+                    else
+                    {
+                        using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls);
+                        var report = bundle.GetSlowestCalls(opts);
+                        WriteResult(output, opts.Json, report, report.ToText());
+                    }
+                }
+                else if (url is not null)
                 {
                     using var client = new RemoteRunClient(url, httpHandler);
                     var runId = await client.ResolveRunIdAsync(opts.File, ct);
@@ -77,7 +93,7 @@ internal static class RunsCommandHandler
                 }
                 else
                 {
-                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.Bees | BundleTables.Calls);
+                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls);
                     var report = bundle.GetCalls(opts);
                     WriteResult(output, opts.Json, report, report.ToText());
                 }
@@ -139,6 +155,26 @@ internal static class RunsCommandHandler
                     using var bundleA = RunBundleReader.Open(opts.FileA, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees);
                     using var bundleB = RunBundleReader.Open(opts.FileB, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees);
                     var report = RunsComparer.Compare(bundleA.GetSummary(), bundleB.GetSummary());
+                    WriteResult(output, opts.Json, report, report.ToText());
+                }
+                return ExitCodes.Ok;
+            }
+            case CliCommand.RunsTimeline:
+            {
+                var opts = parsed.Runs!.Timeline!;
+                var url = ResolveRemoteUrl(opts.Url, getEnv, opts.File);
+                if (url is not null)
+                {
+                    using var client = new RemoteRunClient(url, httpHandler);
+                    var runId = await client.ResolveRunIdAsync(opts.File, ct);
+                    using var bundle = await client.OpenParquetBundleAsync(runId, BundleTables.Runs | BundleTables.Bees | BundleTables.Calls, ct);
+                    var report = bundle.GetTimeline(opts);
+                    WriteResult(output, opts.Json, report, report.ToText());
+                }
+                else
+                {
+                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.Bees | BundleTables.Calls);
+                    var report = bundle.GetTimeline(opts);
                     WriteResult(output, opts.Json, report, report.ToText());
                 }
                 return ExitCodes.Ok;

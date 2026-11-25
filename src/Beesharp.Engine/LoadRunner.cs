@@ -182,7 +182,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     runBag: data.RunBagFor(new DataWriter(DataWriterKind.Bee, entry, seq)),
                     runStopped: () => ct.IsCancellationRequested,
                     stepVisitSink: v => { lock (stepVisits) stepVisits.Add(v); },
-                    thresholds: scenario.SlowThresholds);
+                    thresholds: scenario.SlowThresholds,
+                    captureHeaders: plan.CaptureHeaders,
+                    measureHttpTimingSplit: plan.MeasureHttpTimingSplit);
                 onBeeContext?.Invoke(seq, entry, ctx);
                 var sw = Stopwatch.StartNew();
                 ScenarioOutcome outcome;

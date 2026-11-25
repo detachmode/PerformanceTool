@@ -21,7 +21,10 @@ public readonly record struct CallFact(
     string? Endpoint,
     string? Method,
     string? Host,
-    double? SlowThresholdMs)
+    double? SlowThresholdMs,
+    double? TtfbMs = null,
+    double? ResponseReadMs = null,
+    IReadOnlyDictionary<string, string>? Headers = null)
 {
     public double AtSeconds => StartedAtSeconds + OffsetMs / 1000.0;
     public string NormalizedEndpoint => string.IsNullOrWhiteSpace(Endpoint) ? EndpointNormalizer.NormalizeCallName(RawName) : Endpoint.Trim();
@@ -36,44 +39,104 @@ public static class CallAnalytics
     private static readonly double[] NiceTimeWidths = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600, 7200];
     private static readonly double[] NiceMsSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10_000, 20_000, 50_000, 100_000];
 
+    /// <summary>Resolves 0-based scenario entry indices matching a scenario ID or display label (case-insensitive).</summary>
+    public static HashSet<int> ResolveScenarioEntries(LoadPlan plan, string scenarioFilter)
+    {
+        var needle = scenarioFilter.Trim();
+        var set = new HashSet<int>();
+        for (var i = 0; i < plan.Scenarios.Count; i++)
+        {
+            var s = plan.Scenarios[i];
+            if (string.Equals(s.ScenarioId, needle, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s.Label, needle, StringComparison.OrdinalIgnoreCase))
+            {
+                set.Add(i);
+            }
+        }
+        return set;
+    }
+
     public static CallEndpointsResult BuildEndpoints(
         IReadOnlyList<CallFact> allCalls,
         int? entry = null,
         bool slowOnly = false,
         bool failedOnly = false,
         double? minMs = null,
-        string? search = null)
+        string? search = null,
+        int? step = null,
+        bool byStep = false,
+        Func<int, int, string?>? resolveStepName = null,
+        IReadOnlySet<int>? entries = null,
+        string? endpointFilter = null)
     {
-        if (allCalls.Count == 0)
+        if (allCalls.Count == 0 || (entries is not null && entries.Count == 0))
             return new CallEndpointsResult([], 0, 0, 0);
 
         var map = EndpointGrouper.BuildMap(allCalls.Select(c => (c.NormalizedEndpoint, c.Host)));
-        var grouped = new Dictionary<string, List<CallFact>>(StringComparer.OrdinalIgnoreCase);
-
-        for (var i = 0; i < allCalls.Count; i++)
-        {
-            var c = allCalls[i];
-            if (entry is { } e && c.Entry != e) continue;
-            var key = CanonicalOf(map, c);
-            if (!grouped.TryGetValue(key, out var list))
-                grouped[key] = list = [];
-            list.Add(c);
-        }
-
         var needle = search?.Trim() ?? "";
-        var summaries = new List<CallEndpointSummaryDto>(grouped.Count);
+        var epFilter = endpointFilter?.Trim() ?? "";
+        var summaries = new List<CallEndpointSummaryDto>();
 
-        foreach (var (endpoint, list) in grouped)
+        if (byStep)
         {
-            var summary = Summarize(endpoint, list, out _, out _);
-            if (slowOnly && summary.SlowCount == 0) continue;
-            if (failedOnly && summary.FailedCount == 0) continue;
-            if (minMs is > 0 && summary.MaxMs < minMs.Value) continue;
-            if (needle.Length > 0
-                && !summary.Endpoint.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                && (summary.Host is null || !summary.Host.Contains(needle, StringComparison.OrdinalIgnoreCase)))
-                continue;
-            summaries.Add(summary);
+            var groupedByStep = new Dictionary<(string Endpoint, int Entry, int Step), List<CallFact>>(StepGroupKeyComparer.Instance);
+            for (var i = 0; i < allCalls.Count; i++)
+            {
+                var c = allCalls[i];
+                if (entry is { } e && c.Entry != e) continue;
+                if (entries is not null && !entries.Contains(c.Entry)) continue;
+                if (step is { } st && c.Step != st) continue;
+                var key = (CanonicalOf(map, c), c.Entry, c.Step);
+                if (!groupedByStep.TryGetValue(key, out var list))
+                    groupedByStep[key] = list = [];
+                list.Add(c);
+            }
+
+            foreach (var ((endpoint, grpEntry, grpStep), list) in groupedByStep)
+            {
+                var stepName = resolveStepName?.Invoke(grpEntry, grpStep);
+                var summary = Summarize(endpoint, list, out _, out _, grpStep, stepName);
+                if (slowOnly && summary.SlowCount == 0) continue;
+                if (failedOnly && summary.FailedCount == 0) continue;
+                if (minMs is > 0 && summary.MaxMs < minMs.Value) continue;
+                if (epFilter.Length > 0 && !summary.Endpoint.Contains(epFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (needle.Length > 0
+                    && !summary.Endpoint.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    && (summary.Host is null || !summary.Host.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                    && (summary.StepName is null || !summary.StepName.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                summaries.Add(summary);
+            }
+        }
+        else
+        {
+            var grouped = new Dictionary<string, List<CallFact>>(StringComparer.OrdinalIgnoreCase);
+
+            for (var i = 0; i < allCalls.Count; i++)
+            {
+                var c = allCalls[i];
+                if (entry is { } e && c.Entry != e) continue;
+                if (entries is not null && !entries.Contains(c.Entry)) continue;
+                if (step is { } st && c.Step != st) continue;
+                var key = CanonicalOf(map, c);
+                if (!grouped.TryGetValue(key, out var list))
+                    grouped[key] = list = [];
+                list.Add(c);
+            }
+
+            foreach (var (endpoint, list) in grouped)
+            {
+                var summary = Summarize(endpoint, list, out _, out _);
+                if (slowOnly && summary.SlowCount == 0) continue;
+                if (failedOnly && summary.FailedCount == 0) continue;
+                if (minMs is > 0 && summary.MaxMs < minMs.Value) continue;
+                if (epFilter.Length > 0 && !summary.Endpoint.Contains(epFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (needle.Length > 0
+                    && !summary.Endpoint.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    && (summary.Host is null || !summary.Host.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                summaries.Add(summary);
+            }
         }
 
         summaries.Sort(CompareSummaries);
@@ -86,6 +149,195 @@ public static class CallAnalytics
             failed += s.FailedCount;
         }
         return new CallEndpointsResult(summaries, total, slow, failed);
+    }
+
+    /// <summary>
+    /// Returns the top-<paramref name="limit"/> slowest individual calls matching the optional filters,
+    /// with slowness evaluated per (endpoint, entry, step) so shared URLs keep independent baselines.
+    /// </summary>
+    public static SlowestCallsResult BuildSlowestCalls(
+        IReadOnlyList<CallFact> allCalls,
+        int limit,
+        int? entry = null,
+        IReadOnlySet<int>? entries = null,
+        int? step = null,
+        string? endpointFilter = null,
+        bool slowOnly = false,
+        bool failedOnly = false,
+        double? minMs = null,
+        string? search = null,
+        Func<int, string?>? resolveEntryLabel = null,
+        Func<int, int, string?>? resolveStepName = null)
+    {
+        if (allCalls.Count == 0 || limit <= 0 || (entries is not null && entries.Count == 0))
+            return new SlowestCallsResult([], 0);
+
+        limit = Math.Clamp(limit, 1, 1000);
+        var map = EndpointGrouper.BuildMap(allCalls.Select(c => (c.NormalizedEndpoint, c.Host)));
+        var groupedByStep = new Dictionary<(string Endpoint, int Entry, int Step), List<CallFact>>(StepGroupKeyComparer.Instance);
+        for (var i = 0; i < allCalls.Count; i++)
+        {
+            var c = allCalls[i];
+            var key = (CanonicalOf(map, c), c.Entry, c.Step);
+            if (!groupedByStep.TryGetValue(key, out var list))
+                groupedByStep[key] = list = [];
+            list.Add(c);
+        }
+
+        var baselines = new Dictionary<(string Endpoint, int Entry, int Step), (double? AutoTypical, double? GroupCustom)>(StepGroupKeyComparer.Instance);
+        foreach (var (key, list) in groupedByStep)
+        {
+            Summarize(key.Endpoint, list, out var autoTypical, out var custom, key.Step, null);
+            baselines[key] = (autoTypical, custom);
+        }
+
+        var epFilter = endpointFilter?.Trim() ?? "";
+        var needle = search?.Trim() ?? "";
+        var matching = new List<(CallFact Call, string Endpoint, bool IsSlow, double? EffLimit, string? StepName)>();
+
+        for (var i = 0; i < allCalls.Count; i++)
+        {
+            var c = allCalls[i];
+            if (entry is { } e && c.Entry != e) continue;
+            if (entries is not null && !entries.Contains(c.Entry)) continue;
+            if (step is { } st && c.Step != st) continue;
+            if (minMs is > 0 && c.DurationMs < minMs.Value) continue;
+            if (failedOnly && c.Error is null) continue;
+
+            var ep = CanonicalOf(map, c);
+            if (epFilter.Length > 0 && !ep.Contains(epFilter, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var (autoTypical, groupCustom) = baselines[(ep, c.Entry, c.Step)];
+            var effLimit = SlowCallRule.EffectiveThresholdMs(autoTypical, c.SlowThresholdMs ?? groupCustom);
+            var isSlow = c.Error is null && SlowCallRule.IsSlow(c.DurationMs, autoTypical, c.SlowThresholdMs ?? groupCustom);
+            if (slowOnly && !isSlow) continue;
+
+            var stepName = resolveStepName?.Invoke(c.Entry, c.Step);
+            if (needle.Length > 0
+                && !ep.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                && (c.Url is null || !c.Url.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                && (c.Host is null || !c.Host.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                && (stepName is null || !stepName.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            matching.Add((c, ep, isSlow, effLimit, stepName));
+        }
+
+        matching.Sort((a, b) =>
+        {
+            var cmp = b.Call.DurationMs.CompareTo(a.Call.DurationMs);
+            if (cmp != 0) return cmp;
+            cmp = a.Call.AtSeconds.CompareTo(b.Call.AtSeconds);
+            return cmp != 0 ? cmp : a.Call.Id.CompareTo(b.Call.Id);
+        });
+
+        var take = Math.Min(limit, matching.Count);
+        var items = new List<SlowestCallDto>(take);
+        for (var i = 0; i < take; i++)
+        {
+            var (c, ep, isSlow, effLimit, stepName) = matching[i];
+            items.Add(new SlowestCallDto(
+                c.Id,
+                c.Sequence,
+                $"B{c.Sequence + 1}",
+                c.Entry,
+                resolveEntryLabel?.Invoke(c.Entry),
+                c.Step,
+                stepName,
+                c.Rep,
+                c.AtSeconds,
+                c.DurationMs,
+                c.StatusCode,
+                c.Bytes,
+                c.Error,
+                ep,
+                c.Url,
+                isSlow,
+                effLimit,
+                c.TtfbMs,
+                c.ResponseReadMs,
+                c.Headers));
+        }
+
+        return new SlowestCallsResult(items, matching.Count);
+    }
+
+    /// <summary>
+    /// Aggregates per-(entry, step) call latency percentiles (min/p50/p95/max/avg) and slow/failed counts.
+    /// Slowness is evaluated per (endpoint, entry, step) so steps sharing the same URL keep independent baselines.
+    /// </summary>
+    public static Dictionary<(int Entry, int Step), CallStepMetrics> BuildStepMetrics(IReadOnlyList<CallFact> allCalls)
+    {
+        var result = new Dictionary<(int Entry, int Step), CallStepMetrics>();
+        if (allCalls.Count == 0)
+            return result;
+
+        var map = EndpointGrouper.BuildMap(allCalls.Select(c => (c.NormalizedEndpoint, c.Host)));
+        var byStep = new Dictionary<(int Entry, int Step), List<CallFact>>();
+        for (var i = 0; i < allCalls.Count; i++)
+        {
+            var c = allCalls[i];
+            if (c.Entry < 0 || c.Step < 0) continue;
+            var key = (c.Entry, c.Step);
+            if (!byStep.TryGetValue(key, out var list))
+                byStep[key] = list = [];
+            list.Add(c);
+        }
+
+        foreach (var ((entry, step), list) in byStep)
+        {
+            var byEndpoint = new Dictionary<string, List<CallFact>>(StringComparer.OrdinalIgnoreCase);
+            var okDurations = new List<double>(list.Count);
+            var allDurations = new List<double>(list.Count);
+            double sumOk = 0, sumAll = 0;
+            var failedCalls = 0;
+
+            foreach (var c in list)
+            {
+                var ep = CanonicalOf(map, c);
+                if (!byEndpoint.TryGetValue(ep, out var epList))
+                    byEndpoint[ep] = epList = [];
+                epList.Add(c);
+
+                allDurations.Add(c.DurationMs);
+                sumAll += c.DurationMs;
+                if (c.Error is not null)
+                {
+                    failedCalls++;
+                }
+                else
+                {
+                    okDurations.Add(c.DurationMs);
+                    sumOk += c.DurationMs;
+                }
+            }
+
+            var slowCalls = 0;
+            foreach (var (ep, epList) in byEndpoint)
+                slowCalls += Summarize(ep, epList, out _, out _, step, null).SlowCount;
+
+            var baseline = okDurations.Count > 0 ? okDurations : allDurations;
+            baseline.Sort();
+            var minMs = baseline[0];
+            var p50Ms = baseline[(baseline.Count - 1) / 2];
+            var p95Ms = baseline[Math.Max(0, (int)Math.Ceiling(0.95 * baseline.Count) - 1)];
+            var maxMs = baseline[^1];
+            var avgMs = okDurations.Count > 0 ? sumOk / okDurations.Count : sumAll / Math.Max(1, list.Count);
+
+            result[(entry, step)] = new CallStepMetrics(
+                entry,
+                step,
+                list.Count,
+                slowCalls,
+                failedCalls,
+                minMs,
+                p50Ms,
+                p95Ms,
+                maxMs,
+                avgMs);
+        }
+
+        return result;
     }
 
     public static CallEndpointDetailDto? BuildEndpointDetail(
@@ -234,7 +486,9 @@ public static class CallAnalytics
         string endpoint,
         List<CallFact> list,
         out double? autoTypical,
-        out double? customThreshold)
+        out double? customThreshold,
+        int? step = null,
+        string? stepName = null)
     {
         var entries = new SortedSet<int>();
         string? method = null;
@@ -311,7 +565,9 @@ public static class CallAnalytics
             avgMs,
             effectiveThreshold,
             custom is > 0,
-            entries.ToArray());
+            entries.ToArray(),
+            step,
+            stepName);
     }
 
     private static List<CallHistogramBucketDto> BuildHistogram(List<(CallFact Call, bool IsSlow, double? EffectiveThresholdMs)> items)
@@ -433,6 +689,26 @@ public static class CallAnalytics
         cmp = b.P95Ms.CompareTo(a.P95Ms);
         if (cmp != 0) return cmp;
         cmp = b.MaxMs.CompareTo(a.MaxMs);
-        return cmp != 0 ? cmp : string.Compare(a.Endpoint, b.Endpoint, StringComparison.OrdinalIgnoreCase);
+        if (cmp != 0) return cmp;
+        cmp = string.Compare(a.Endpoint, b.Endpoint, StringComparison.OrdinalIgnoreCase);
+        if (cmp != 0) return cmp;
+        var entryA = a.Entries.Count > 0 ? a.Entries[0] : -1;
+        var entryB = b.Entries.Count > 0 ? b.Entries[0] : -1;
+        cmp = entryA.CompareTo(entryB);
+        if (cmp != 0) return cmp;
+        return (a.Step ?? -1).CompareTo(b.Step ?? -1);
+    }
+
+    private sealed class StepGroupKeyComparer : IEqualityComparer<(string Endpoint, int Entry, int Step)>
+    {
+        public static readonly StepGroupKeyComparer Instance = new();
+
+        public bool Equals((string Endpoint, int Entry, int Step) x, (string Endpoint, int Entry, int Step) y) =>
+            x.Entry == y.Entry
+            && x.Step == y.Step
+            && string.Equals(x.Endpoint, y.Endpoint, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Endpoint, int Entry, int Step) obj) =>
+            HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Endpoint), obj.Entry, obj.Step);
     }
 }

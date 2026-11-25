@@ -230,6 +230,9 @@ public sealed class ScenarioContext
         callSink?.Invoke(new RecordedCall(name, offsetMs, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs));
     }
 
+    internal bool MeasureHttpTimingSplit { get; }
+    private readonly IReadOnlyList<string> captureHeaders;
+
     internal void RecordHttpRequest(
         HttpRequestMessage request,
         double offsetMs,
@@ -239,7 +242,10 @@ public sealed class ScenarioContext
         string? error,
         int step,
         int rep,
-        CallScopeOverride? scope = null)
+        CallScopeOverride? scope = null,
+        HttpResponseMessage? response = null,
+        double? ttfbMs = null,
+        double? responseReadMs = null)
     {
         Interlocked.Increment(ref currentCallIndex);
         var norm = EndpointNormalizer.NormalizeHttp(request.Method, request.RequestUri);
@@ -256,6 +262,8 @@ public sealed class ScenarioContext
             ? optMs
             : scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, norm.Method);
 
+        var headers = ExtractAllowedHeaders(request, response, captureHeaders);
+
         callSink?.Invoke(new RecordedCall(
             rawName,
             offsetMs,
@@ -269,7 +277,50 @@ public sealed class ScenarioContext
             norm.Method,
             norm.Host,
             thresholdMs,
-            norm.Url));
+            norm.Url,
+            ttfbMs,
+            responseReadMs,
+            headers));
+    }
+
+    private static Dictionary<string, string>? ExtractAllowedHeaders(
+        HttpRequestMessage request,
+        HttpResponseMessage? response,
+        IReadOnlyList<string> allowlist)
+    {
+        if (allowlist.Count == 0) return null;
+
+        Dictionary<string, string>? captured = null;
+        for (var i = 0; i < allowlist.Count; i++)
+        {
+            var name = allowlist[i];
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            string? value = null;
+
+            if (response is not null)
+            {
+                if (response.Headers.TryGetValues(name, out var respVals))
+                    value = string.Join(", ", respVals);
+                else if (response.Content?.Headers.TryGetValues(name, out var respContentVals) == true)
+                    value = string.Join(", ", respContentVals);
+            }
+
+            if (value is null)
+            {
+                if (request.Headers.TryGetValues(name, out var reqVals))
+                    value = string.Join(", ", reqVals);
+                else if (request.Content?.Headers.TryGetValues(name, out var reqContentVals) == true)
+                    value = string.Join(", ", reqContentVals);
+            }
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                captured ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                captured[name] = value;
+            }
+        }
+
+        return captured;
     }
 
     public ScenarioContext(
@@ -285,11 +336,15 @@ public sealed class ScenarioContext
         BagAccess? runBag = null,
         Func<bool>? runStopped = null,
         Action<RecordedStepVisit>? stepVisitSink = null,
-        CallThresholds? thresholds = null)
+        CallThresholds? thresholds = null,
+        IReadOnlyList<string>? captureHeaders = null,
+        bool measureHttpTimingSplit = false)
     {
         this.runStopped = runStopped;
         this.stepVisitSink = stepVisitSink;
         this.thresholds = thresholds ?? CallThresholds.None;
+        this.captureHeaders = captureHeaders ?? LoadPlan.DefaultCaptureHeaders;
+        MeasureHttpTimingSplit = measureHttpTimingSplit;
         Http = http;
         Environment = environment ?? EnvironmentValues.None;
         CancellationToken = cancellationToken;

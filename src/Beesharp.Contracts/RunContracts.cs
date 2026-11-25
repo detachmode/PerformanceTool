@@ -110,7 +110,9 @@ public sealed record StoredBeeDetail(
     IReadOnlyList<RecordedLog> Logs,
     int FailedStep = -1,
     int FailedRep = -1,
-    IReadOnlyList<RecordedStepVisit>? StepVisits = null);
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null,
+    string? EntryLabel = null,
+    IReadOnlyList<StepInfo>? Steps = null);
 
 public sealed record StoredLogRow(
     long Id,

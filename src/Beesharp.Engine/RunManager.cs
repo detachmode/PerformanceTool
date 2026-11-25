@@ -510,10 +510,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     {
                         int beeSlowCalls;
                         int outcome;
+                        ExecutionResult persistedRes;
                         lock (sync)
                         {
                             byte ratioCode;
-                            (beeSlowCalls, ratioCode) = EvaluateCallsLocked(res);
+                            (beeSlowCalls, ratioCode, persistedRes) = EvaluateCallsLocked(res);
                             outcome = res.Error is not null ? 2 : beeSlowCalls > 0 ? 1 : 0;
                             var compact = new LiveBeeDto(
                                 res.Sequence,
@@ -548,7 +549,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                             bees.Add(compact);
                         }
 
-                        storage.EnqueueBeeCompleted(currentRunId, res, outcome, beeSlowCalls);
+                        storage.EnqueueBeeCompleted(currentRunId, persistedRes, outcome, beeSlowCalls);
                         return ValueTask.CompletedTask;
                     },
                     onDropped: entry =>
@@ -743,22 +744,34 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         return result;
     }
 
-    private (int SlowCalls, byte RatioCode) EvaluateCallsLocked(ExecutionResult res)
+    private (int SlowCalls, byte RatioCode, ExecutionResult Persisted) EvaluateCallsLocked(ExecutionResult res)
     {
-        if (res.Calls is not { Count: > 0 } calls) return (0, 0);
+        if (res.Calls is not { Count: > 0 } calls) return (0, 0, res);
         var slow = 0;
         var worst = 1.0;
-        foreach (var c in calls)
+        List<RecordedCall>? trimmed = null;
+        for (var i = 0; i < calls.Count; i++)
         {
-            if (c.Error is not null) continue;
-            var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
-            var typical = typicals.Typical(ep);
-            var isSlow = SlowCallRule.IsSlow(c.DurationMs, typical, c.SlowThresholdMs);
-            var ratio = SlowCallRule.Ratio(c.DurationMs, typical, c.SlowThresholdMs);
-            typicals.Add(ep, c.DurationMs);
-            if (isSlow) slow++;
-            if (ratio > worst) worst = ratio;
+            var c = calls[i];
+            var isSlow = false;
+            if (c.Error is null)
+            {
+                var ep = string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint;
+                var typical = typicals.Typical(ep);
+                isSlow = SlowCallRule.IsSlow(c.DurationMs, typical, c.SlowThresholdMs);
+                var ratio = SlowCallRule.Ratio(c.DurationMs, typical, c.SlowThresholdMs);
+                typicals.Add(ep, c.DurationMs);
+                if (isSlow) slow++;
+                if (ratio > worst) worst = ratio;
+            }
+
+            // Keep captured headers only on slow or failed calls to avoid bloating storage on healthy traffic.
+            if (c.Headers is { Count: > 0 } && !isSlow && c.Error is null)
+            {
+                trimmed ??= [.. calls];
+                trimmed[i] = c with { Headers = null };
+            }
         }
-        return (slow, SlowCallRule.Encode(worst));
+        return (slow, SlowCallRule.Encode(worst), trimmed is null ? res : res with { Calls = trimmed });
     }
 }

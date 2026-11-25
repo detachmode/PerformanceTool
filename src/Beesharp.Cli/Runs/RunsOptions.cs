@@ -17,6 +17,19 @@ public sealed record RunsCallsOptions(
     double? MinMs,
     string? Search,
     bool Json,
+    string? Url = null,
+    int? Step = null,
+    bool ByStep = false,
+    string? Scenario = null,
+    string? Endpoint = null,
+    int? Slowest = null);
+
+public sealed record RunsTimelineOptions(
+    string File,
+    double BucketSeconds,
+    int? Entry,
+    string? Scenario,
+    bool Json,
     string? Url = null);
 
 public sealed record RunsLogsOptions(
@@ -42,7 +55,8 @@ public sealed record RunsOptions(
     RunsCallsOptions? Calls = null,
     RunsLogsOptions? Logs = null,
     RunsBeeOptions? Bee = null,
-    RunsCompareOptions? Compare = null);
+    RunsCompareOptions? Compare = null,
+    RunsTimelineOptions? Timeline = null);
 
 /// <summary>Parses <c>beesharp runs ...</c> subcommands and prints explicit 1-based help text.</summary>
 internal static class RunsArguments
@@ -61,6 +75,7 @@ internal static class RunsArguments
           logs <target>               Filtered log lines
           bee <target> <bee>          Full step visits, HTTP calls, status codes, errors, and logs for one bee
           compare <targetA> <targetB> Latency and error-rate regression diff between two runs
+          timeline <target>           Time-bucketed concurrency, req/s, latency, slow and failure timeline
 
         Targets & Remote Mode:
           Offline mode: <target> is an exported .zip (Parquet bundle), .duckdb, or .json file.
@@ -122,10 +137,15 @@ internal static class RunsArguments
         Options:
           --url <url>      Query a running Beesharp server (also uses BEESHARP_URL if target is not a local file).
           --entry <n>      Filter to one scenario entry (1-based, e.g. 1).
-          --slow           Only endpoints with at least one slow call.
-          --failed         Only endpoints with at least one failed call.
-          --min-ms <ms>    Only endpoints whose max duration is at least <ms> milliseconds.
-          --search <q>     Filter endpoints whose normalized name or host contains <q>.
+          --scenario <id>  Filter to scenario entry/entries matching this scenario ID or display label.
+          --step <n>       Filter to one scenario step (1-based, e.g. 1).
+          --by-step        Split endpoint latency and slow counts by scenario step (useful when multiple steps share a URL).
+          --slowest <n>    List the top <n> slowest individual calls (1 to 1000) with bee ID, step, duration, status, and headers.
+          --endpoint <ep>  Filter to endpoints containing <ep> (works with summary or --slowest).
+          --slow           Only endpoints/calls marked slow.
+          --failed         Only endpoints/calls with failures.
+          --min-ms <ms>    Minimum duration in milliseconds.
+          --search <q>     Filter endpoints/calls whose normalized name, URL, host, or step name contains <q>.
           --json           Print untruncated JSON to stdout.
           -h, --help       Show this help text.
         """;
@@ -181,6 +201,21 @@ internal static class RunsArguments
           -h, --help    Show this help text.
         """;
 
+    public const string TimelineUsage = """
+        beesharp runs timeline - time-bucketed concurrency, req/s, latency, slow and failure timeline
+
+        Usage:
+          beesharp runs timeline <file|runId|latest|prev> [options]
+
+        Options:
+          --url <url>         Query a running Beesharp server (also uses BEESHARP_URL if target is not a local file).
+          --bucket <seconds>  Bucket width in seconds (default 5, e.g. 1, 5, 10, 30).
+          --entry <n>         Filter to one scenario entry (1-based, e.g. 1).
+          --scenario <id>     Filter to scenario entry/entries matching this scenario ID or display label.
+          --json              Print untruncated JSON to stdout.
+          -h, --help          Show this help text.
+        """;
+
     public static ParsedArguments Parse(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
@@ -199,6 +234,7 @@ internal static class RunsArguments
             "logs" => ParseLogs(args),
             "bee" => ParseBee(args),
             "compare" => ParseCompare(args),
+            "timeline" => ParseTimeline(args),
             _ => Invalid($"Unknown runs subcommand '{sub}'."),
         };
     }
@@ -250,8 +286,8 @@ internal static class RunsArguments
             args,
             startIndex: 2,
             CallsUsage,
-            valueOptions: ["--url", "--entry", "--min-ms", "--search"],
-            boolFlags: ["--slow", "--failed"]);
+            valueOptions: ["--url", "--entry", "--scenario", "--step", "--slowest", "--endpoint", "--min-ms", "--search"],
+            boolFlags: ["--slow", "--failed", "--by-step"]);
         if (scan.HelpText is not null) return new(CliCommand.RunsSubcommandHelp, HelpText: scan.HelpText);
         if (scan.Error is not null) return Invalid(scan.Error);
         if (scan.Positionals.Count == 0) return Invalid("Missing <file> argument for 'runs calls'.");
@@ -266,6 +302,22 @@ internal static class RunsArguments
             entry = entryNum - 1;
         }
 
+        int? step = null;
+        if (scan.TryGetLast("--step", out var stepRaw))
+        {
+            if (!TryParseOneBasedInt(stepRaw, out var stepNum))
+                return Invalid($"--step must be a whole number of 1 or more (1-based), not '{stepRaw}'.");
+            step = stepNum - 1;
+        }
+
+        int? slowest = null;
+        if (scan.TryGetLast("--slowest", out var slowestRaw))
+        {
+            if (!int.TryParse(slowestRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) || n < 1 || n > 1000)
+                return Invalid($"--slowest must be a whole number between 1 and 1000, not '{slowestRaw}'.");
+            slowest = n;
+        }
+
         double? minMs = null;
         if (scan.TryGetLast("--min-ms", out var minRaw))
         {
@@ -275,6 +327,8 @@ internal static class RunsArguments
         }
 
         scan.TryGetLast("--search", out var search);
+        scan.TryGetLast("--scenario", out var scenario);
+        scan.TryGetLast("--endpoint", out var endpoint);
 
         return new(CliCommand.RunsCalls, Runs: new RunsOptions(Calls: new RunsCallsOptions(
             scan.Positionals[0],
@@ -284,7 +338,12 @@ internal static class RunsArguments
             minMs,
             string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
             scan.Json,
-            url)));
+            url,
+            step,
+            scan.HasFlag("--by-step"),
+            string.IsNullOrWhiteSpace(scenario) ? null : scenario.Trim(),
+            string.IsNullOrWhiteSpace(endpoint) ? null : endpoint.Trim(),
+            slowest)));
     }
 
     private static ParsedArguments ParseLogs(IReadOnlyList<string> args)
@@ -404,6 +463,43 @@ internal static class RunsArguments
         if (scan.Positionals.Count > 2) return Invalid($"Unexpected argument '{scan.Positionals[2]}'.");
         if (!TryExtractUrl(scan, out var url, out var urlErr)) return Invalid(urlErr!);
         return new(CliCommand.RunsCompare, Runs: new RunsOptions(Compare: new RunsCompareOptions(scan.Positionals[0], scan.Positionals[1], scan.Json, url)));
+    }
+
+    private static ParsedArguments ParseTimeline(IReadOnlyList<string> args)
+    {
+        var scan = Scan(args, startIndex: 2, TimelineUsage, valueOptions: ["--url", "--bucket", "--entry", "--scenario"]);
+        if (scan.HelpText is not null) return new(CliCommand.RunsSubcommandHelp, HelpText: scan.HelpText);
+        if (scan.Error is not null) return Invalid(scan.Error);
+        if (scan.Positionals.Count == 0) return Invalid("Missing <file> argument for 'runs timeline'.");
+        if (scan.Positionals.Count > 1) return Invalid($"Unexpected argument '{scan.Positionals[1]}'.");
+        if (!TryExtractUrl(scan, out var url, out var urlErr)) return Invalid(urlErr!);
+
+        var bucketSeconds = 5.0;
+        if (scan.TryGetLast("--bucket", out var bucketRaw))
+        {
+            if (!double.TryParse(bucketRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var b)
+                || b <= 0 || b > 3600 || double.IsNaN(b) || double.IsInfinity(b))
+                return Invalid($"--bucket must be a positive number of seconds (up to 3600), not '{bucketRaw}'.");
+            bucketSeconds = b;
+        }
+
+        int? entry = null;
+        if (scan.TryGetLast("--entry", out var entryRaw))
+        {
+            if (!TryParseOneBasedInt(entryRaw, out var entryNum))
+                return Invalid($"--entry must be a whole number of 1 or more (1-based), not '{entryRaw}'.");
+            entry = entryNum - 1;
+        }
+
+        scan.TryGetLast("--scenario", out var scenario);
+
+        return new(CliCommand.RunsTimeline, Runs: new RunsOptions(Timeline: new RunsTimelineOptions(
+            scan.Positionals[0],
+            bucketSeconds,
+            entry,
+            string.IsNullOrWhiteSpace(scenario) ? null : scenario.Trim(),
+            scan.Json,
+            url)));
     }
 
     private static bool TryExtractUrl(ScanResult scan, out string? url, out string? error)

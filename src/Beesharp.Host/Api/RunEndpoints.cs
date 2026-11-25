@@ -106,6 +106,10 @@ public static class RunEndpoints
         app.MapGet("/api/runs/{runId}/calls/endpoints", async (
             string runId,
             int? entry,
+            string? scenario,
+            int? step,
+            bool? byStep,
+            string? endpoint,
             bool? slowOnly,
             bool? failedOnly,
             double? minMs,
@@ -117,7 +121,28 @@ public static class RunEndpoints
             if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
             return Results.Ok(await storage.GetCallEndpointsAsync(
                 runId,
-                new CallEndpointsQuery(entry, slowOnly ?? false, failedOnly ?? false, minMs, search),
+                new CallEndpointsQuery(entry, slowOnly ?? false, failedOnly ?? false, minMs, search, step, byStep ?? false, scenario, endpoint),
+                ct));
+        });
+        app.MapGet("/api/runs/{runId}/calls/slowest", async (
+            string runId,
+            int? limit,
+            int? entry,
+            string? scenario,
+            int? step,
+            string? endpoint,
+            bool? slowOnly,
+            bool? failedOnly,
+            double? minMs,
+            string? search,
+            RunManager runs,
+            IRunStorage storage,
+            CancellationToken ct) =>
+        {
+            if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
+            return Results.Ok(await storage.GetSlowestCallsAsync(
+                runId,
+                new SlowestCallsQuery(limit ?? 20, entry, scenario, step, endpoint, slowOnly ?? false, failedOnly ?? false, minMs, search),
                 ct));
         });
         app.MapGet("/api/runs/{runId}/calls/detail", async (

@@ -59,7 +59,10 @@ internal sealed class JsonRunBundle : IRunBundle
         string? Method,
         string? Host,
         string? Url,
-        double? SlowThresholdMs);
+        double? SlowThresholdMs,
+        double? TtfbMs,
+        double? ResponseReadMs,
+        IReadOnlyDictionary<string, string>? Headers);
 
     private sealed record JsonLog(
         long Id,
@@ -193,6 +196,7 @@ internal sealed class JsonRunBundle : IRunBundle
         var canceledBees = bees.Count(b => ExecutionResult.IsCanceledError(b.Error));
         var slowBees = bees.Count(b => b.IsSlow);
 
+        var stepMetrics = CallAnalytics.BuildStepMetrics(BuildCallFacts());
         var maxEntryFromBees = bees.Count > 0 ? bees.Max(b => b.Entry) + 1 : 0;
         var maxEntryFromSteps = steps?.Count ?? 0;
         var entryCount = Math.Max(plan.Scenarios.Count, Math.Max(maxEntryFromBees, maxEntryFromSteps));
@@ -209,7 +213,10 @@ internal sealed class JsonRunBundle : IRunBundle
 
             var declaredSteps = steps is not null && i < steps.Count ? steps[i] : [];
             var maxFailedStep = entryBees.Where(b => b.IsFailed && b.FailedStep >= 0).Select(b => b.FailedStep + 1).DefaultIfEmpty(0).Max();
-            var stepCount = Math.Max(declaredSteps.Count, maxFailedStep);
+            var maxCallStep = declaredSteps.Count > 0 || maxFailedStep > 0
+                ? stepMetrics.Keys.Where(k => k.Entry == i).Select(k => k.Step + 1).DefaultIfEmpty(0).Max()
+                : 0;
+            var stepCount = Math.Max(declaredSteps.Count, Math.Max(maxFailedStep, maxCallStep));
             var stepDtos = new List<RunSummaryStepDto>(stepCount);
             int? finishedAllSteps = null;
 
@@ -222,7 +229,19 @@ internal sealed class JsonRunBundle : IRunBundle
                     var failedAtStep = entryBees.Count(b => b.IsFailed && b.FailedStep == s);
                     var reached = Math.Max(0, entryBees.Count - priorFailed);
                     priorFailed += failedAtStep;
-                    stepDtos.Add(new RunSummaryStepDto(s + 1, name, reached, failedAtStep));
+                    stepMetrics.TryGetValue((i, s), out var m);
+                    stepDtos.Add(new RunSummaryStepDto(
+                        s + 1,
+                        name,
+                        reached,
+                        failedAtStep,
+                        m?.TotalCalls ?? 0,
+                        m?.SlowCalls ?? 0,
+                        m?.MinMs,
+                        m?.P50Ms,
+                        m?.P95Ms,
+                        m?.MaxMs,
+                        m?.AvgMs));
                 }
                 finishedAllSteps = Math.Min(entryOk, Math.Max(0, entryBees.Count - priorFailed));
             }
@@ -302,6 +321,109 @@ internal sealed class JsonRunBundle : IRunBundle
         if (calls.Count == 0)
             return new RunCallsReport(runId, 0, 0, 0, []);
 
+        var facts = BuildCallFacts();
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(plan, options.Scenario);
+        var result = CallAnalytics.BuildEndpoints(
+            facts,
+            options.Entry,
+            options.SlowOnly,
+            options.FailedOnly,
+            options.MinMs,
+            options.Search,
+            options.Step,
+            options.ByStep,
+            (e, s) => DuckDbBundleQueries.StepName(steps, e, s),
+            scenarioEntries,
+            options.Endpoint);
+
+        var endpoints = result.Endpoints.Select(ep => new RunCallEndpointDto(
+            ep.Endpoint,
+            ep.Method,
+            ep.Host,
+            ep.TotalCount,
+            ep.SlowCount,
+            ep.FailedCount,
+            ep.TypicalMs,
+            ep.P95Ms,
+            ep.MaxMs,
+            ep.MinMs,
+            ep.AvgMs,
+            ep.SlowThresholdMs,
+            ep.HasCustomThreshold,
+            ep.Entries.Select(e => e + 1).ToArray(),
+            ep.Step is { } st ? st + 1 : null,
+            ep.StepName)).ToList();
+
+        return new RunCallsReport(runId, result.TotalCalls, result.TotalSlowCalls, result.TotalFailedCalls, endpoints);
+    }
+
+    public RunSlowestCallsReport GetSlowestCalls(RunsCallsOptions options)
+    {
+        var limit = options.Slowest ?? 20;
+        if (calls.Count == 0)
+            return new RunSlowestCallsReport(runId, 0, limit, []);
+
+        var facts = BuildCallFacts();
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(plan, options.Scenario);
+        var res = CallAnalytics.BuildSlowestCalls(
+            facts,
+            limit,
+            options.Entry,
+            scenarioEntries,
+            options.Step,
+            options.Endpoint,
+            options.SlowOnly,
+            options.FailedOnly,
+            options.MinMs,
+            options.Search,
+            e => DuckDbBundleQueries.EntryLabel(plan, e),
+            (e, s) => DuckDbBundleQueries.StepName(steps, e, s));
+
+        var items = res.Calls.Select(c =>
+        {
+            var hasSteps = DuckDbBundleQueries.HasSteps(steps, c.Entry);
+            return new RunSlowestCallDto(
+                c.Sequence + 1,
+                c.BeeName,
+                c.Entry + 1,
+                c.EntryLabel ?? DuckDbBundleQueries.EntryLabel(plan, c.Entry),
+                hasSteps || c.Step > 0 ? c.Step + 1 : null,
+                c.StepName,
+                hasSteps || c.Rep > 0 ? c.Rep + 1 : null,
+                c.StartedAtSeconds,
+                c.DurationMs,
+                c.StatusCode,
+                c.Bytes,
+                c.Endpoint,
+                c.Url,
+                c.IsSlow,
+                c.SlowThresholdMs,
+                c.TtfbMs,
+                c.ResponseReadMs,
+                c.Headers,
+                c.Error);
+        }).ToList();
+
+        return new RunSlowestCallsReport(runId, res.MatchingCalls, limit, items);
+    }
+
+    public RunTimelineReport GetTimeline(RunsTimelineOptions options)
+    {
+        var scenarioEntries = string.IsNullOrWhiteSpace(options.Scenario) ? null : CallAnalytics.ResolveScenarioEntries(plan, options.Scenario);
+        bool EntryMatches(int e) =>
+            (options.Entry is null || e == options.Entry.Value)
+            && (scenarioEntries is null || scenarioEntries.Contains(e));
+
+        var beesList = bees
+            .Where(b => EntryMatches(b.Entry))
+            .Select(b => (b.StartedAt, b.DurationMs, b.IsFailed, b.IsSlow))
+            .ToList();
+        var callsList = BuildCallFacts().Where(c => EntryMatches(c.Entry)).ToList();
+        return RunsTimelineBuilder.Build(runId, elapsedSeconds, options.BucketSeconds, beesList, callsList);
+    }
+
+    private List<CallFact> BuildCallFacts()
+    {
         var beeBySeq = bees.ToDictionary(b => b.Sequence);
         var facts = new List<CallFact>(calls.Count);
         for (var i = 0; i < calls.Count; i++)
@@ -325,27 +447,13 @@ internal sealed class JsonRunBundle : IRunBundle
                 c.Endpoint,
                 c.Method,
                 c.Host,
-                c.SlowThresholdMs));
+                c.SlowThresholdMs,
+                c.TtfbMs,
+                c.ResponseReadMs,
+                c.Headers));
         }
 
-        var result = CallAnalytics.BuildEndpoints(facts, options.Entry, options.SlowOnly, options.FailedOnly, options.MinMs, options.Search);
-        var endpoints = result.Endpoints.Select(ep => new RunCallEndpointDto(
-            ep.Endpoint,
-            ep.Method,
-            ep.Host,
-            ep.TotalCount,
-            ep.SlowCount,
-            ep.FailedCount,
-            ep.TypicalMs,
-            ep.P95Ms,
-            ep.MaxMs,
-            ep.MinMs,
-            ep.AvgMs,
-            ep.SlowThresholdMs,
-            ep.HasCustomThreshold,
-            ep.Entries.Select(e => e + 1).ToArray())).ToList();
-
-        return new RunCallsReport(runId, result.TotalCalls, result.TotalSlowCalls, result.TotalFailedCalls, endpoints);
+        return facts;
     }
 
     public RunLogsReport QueryLogs(RunsLogsOptions options)
@@ -432,7 +540,10 @@ internal sealed class JsonRunBundle : IRunBundle
                 c.StatusCode,
                 c.Bytes,
                 c.SlowThresholdMs,
-                c.Error))
+                c.Error,
+                c.TtfbMs,
+                c.ResponseReadMs,
+                c.Headers))
             .ToList();
 
         var logsDto = logs
@@ -540,11 +651,25 @@ internal sealed class JsonRunBundle : IRunBundle
                 GetString(c, "method"),
                 GetString(c, "host"),
                 GetString(c, "url"),
-                GetDouble(c, "slowThresholdMs")));
+                GetDouble(c, "slowThresholdMs"),
+                GetDouble(c, "ttfbMs"),
+                GetDouble(c, "responseReadMs"),
+                ParseHeaders(c)));
             fallbackIdx++;
         }
 
         return list;
+    }
+
+    private static IReadOnlyDictionary<string, string>? ParseHeaders(JsonElement c)
+    {
+        if (!TryGetProp(c, "headers", out var hdrEl) || hdrEl.ValueKind != JsonValueKind.Object)
+            return null;
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in hdrEl.EnumerateObject())
+            if (prop.Value.ValueKind == JsonValueKind.String)
+                dict[prop.Name] = prop.Value.GetString() ?? "";
+        return dict.Count == 0 ? null : dict;
     }
 
     private static List<JsonLog> ParseLogs(JsonElement root)

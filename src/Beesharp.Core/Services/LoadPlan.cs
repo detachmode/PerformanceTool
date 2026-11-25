@@ -17,10 +17,22 @@ public sealed class LoadPlan
     public int DurationSeconds { get; set; } = 30;
     public int MaxConcurrency { get; set; } = 50;
     public int TimeoutSeconds { get; set; } = 30;
+    /// <summary>Default request/response header allowlist captured on slow or failed HTTP calls when <see cref="CaptureHeaders"/> is null.</summary>
+    public static readonly IReadOnlyList<string> DefaultCaptureHeaders = ["X-Correlation-Id", "traceparent", "Server-Timing"];
+
     /// <summary>Optional preflight script ID that must complete successfully before scenarios start.</summary>
     public string? PreflightScriptId { get; set; }
     /// <summary>Optional shutdown program script ID. It always runs at the end of the run (brain 0052): after a normal finish, after a stop, and after a failed preflight.</summary>
     public string? ShutdownScriptId { get; set; }
+    /// <summary>
+    /// Optional allowlist of request/response header names captured on slow or failed HTTP calls.
+    /// Null uses <see cref="DefaultCaptureHeaders"/>; an empty list disables header capture.
+    /// </summary>
+    public List<string>? CaptureHeaders { get; set; }
+    /// <summary>
+    /// When true, <see cref="RecordingHttpHandler"/> measures time-to-first-byte (<c>TtfbMs</c>) separately from response body read (<c>ResponseReadMs</c>).
+    /// </summary>
+    public bool MeasureHttpTimingSplit { get; set; }
 
     public LoadPlan Clone() => new()
     {
@@ -30,6 +42,8 @@ public sealed class LoadPlan
         TimeoutSeconds = TimeoutSeconds,
         PreflightScriptId = PreflightScriptId,
         ShutdownScriptId = ShutdownScriptId,
+        CaptureHeaders = CaptureHeaders is null ? null : [.. CaptureHeaders],
+        MeasureHttpTimingSplit = MeasureHttpTimingSplit,
     };
 
     public List<string> Validate(ScenarioCatalog catalog)

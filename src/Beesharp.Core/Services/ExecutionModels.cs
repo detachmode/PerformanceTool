@@ -14,7 +14,10 @@ public sealed record RecordedCall(
     string? Method = null,
     string? Host = null,
     double? SlowThresholdMs = null,
-    string? Url = null);
+    string? Url = null,
+    double? TtfbMs = null,
+    double? ResponseReadMs = null,
+    IReadOnlyDictionary<string, string>? Headers = null);
 
 /// <summary>One log statement emitted by a bee via <c>ctx.Logger</c> or <c>ctx.Log</c>.</summary>
 public sealed record RecordedLog(
