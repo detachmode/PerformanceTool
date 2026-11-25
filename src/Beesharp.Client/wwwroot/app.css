@@ -479,7 +479,11 @@ label { font-size: .74rem; color: var(--muted); }
 .dd-menu.right { left: auto; right: 0; }
 .dd-item { display: flex; align-items: center; gap: .55rem; width: 100%; text-align: left; text-decoration: none; background: transparent; border: 0; padding: .48rem .65rem; font-size: .84rem; color: var(--text); cursor: pointer; border-radius: 10px; transition: background-color .12s, color .12s; }
 .dd-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); color: var(--title); }
+.dd-item.on { color: var(--title); font-weight: 600; background: rgba(255, 255, 255, 0.05); }
 .dd-item:disabled { opacity: .4; cursor: default; }
+.dd-check { width: 1rem; flex: none; text-align: center; color: var(--accent); font-size: .8rem; }
+.dd-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-empty { padding: .45rem .65rem; font-size: .82rem; }
 .dd-sep { height: 1px; background: rgba(255, 232, 198, 0.08); margin: .3rem .35rem; }
 .dd-lbl { font-size: .66rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding: .28rem .65rem .16rem; }
 .more-menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 29px; padding: 0; color: var(--muted); }
@@ -491,11 +495,23 @@ label { font-size: .74rem; color: var(--muted); }
 /* ----- editor ----- */
 .preset-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; margin-bottom: .85rem; }
 .preset-title { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; min-width: 0; flex: 1 1 auto; }
+.preset-title h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .preset-pill { font-size: .74rem; font-weight: 600; color: var(--accent); background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.17); border-radius: 999px; padding: .15rem .65rem; max-width: 14rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .unsaved { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .85rem; font-weight: 500; }
 .unsaved i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); }
 .saved { color: var(--text); font-size: .85rem; font-weight: 600; }
 .preset-actions { display: flex; gap: .4rem; flex-wrap: nowrap; align-items: center; margin-left: auto; flex: none; }
+.preset-pick-btn { display: inline-flex; align-items: center; gap: .45rem; height: 29px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 .6rem; cursor: pointer; font-size: .8rem; max-width: 16rem; transition: border-color .12s, background-color .12s; }
+.preset-pick-btn:hover:not(:disabled), .preset-pick-btn.on { border-color: rgba(255, 255, 255, 0.24); background: var(--panel2); }
+.preset-pick-btn:disabled { opacity: .45; cursor: default; }
+.preset-pick-label { color: var(--faint); font-size: .72rem; flex: none; }
+.preset-pick-name { color: var(--title); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.preset-pick-btn .caret { color: var(--muted); font-size: .7rem; flex: none; }
+.preset-menu { min-width: 230px; }
+.plan-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 3.25rem 1.5rem; margin-top: .5rem; background: var(--panel); border: 1px dashed var(--border); border-radius: var(--radius); }
+.plan-empty h2 { margin: 0; font-size: 1.05rem; font-weight: 600; color: var(--title); }
+.plan-empty p { margin: 0; max-width: 28rem; font-size: .88rem; }
+.plan-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; margin-top: .65rem; }
 .edit-mode-btn { display: inline-flex; align-items: center; gap: .38rem; padding: .3rem .85rem; border-color: rgba(255, 255, 255, 0.27); color: var(--accent); }
 .edit-mode-btn:hover:not(:disabled) { border-color: var(--accent2); background: rgba(255, 255, 255, 0.07); color: var(--title); }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem .9rem; margin-bottom: .75rem; background: var(--panel); border: 1px solid var(--accent2); border-radius: var(--radius); }
@@ -1975,6 +1991,8 @@ html.phone .env-card { padding: .1rem .45rem; }
 
 /* touch: every control reaches 40 px */
 html.phone .btn, html.phone .btn.small { min-height: 40px; }
+html.phone .preset-pick-btn { min-height: 40px; max-width: 11.5rem; }
+html.phone .preset-pick-label { display: none; }
 html.phone .icon-btn { min-width: 40px; min-height: 40px; }
 html.phone .dd-item { min-height: 44px; }
 html.phone .page-head .btn { min-height: 40px; }

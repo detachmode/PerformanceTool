@@ -107,4 +107,25 @@ public sealed class FakeRunSourceLifecycleTests
         Assert.Contains(allLogs, l => l.Level == "Error" && (l.Message.Contains("Timeout after") || l.Message.Contains("→ 500") || l.Message.Contains("→ 503")));
         Assert.Contains(allLogs, l => l.Level == "Debug" && l.Message.StartsWith("Skipped ", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Loading_a_preset_refreshes_the_overview_snapshot_to_that_preset()
+    {
+        using var source = new FakeRunSource(BuiltInCatalog(), simulateSeconds: 30);
+
+        Assert.Equal("Black Friday mix", source.PresetName);
+        Assert.Equal(FakeRunState.Finished, source.Current.State);
+        var originalCount = source.Current.Count;
+
+        source.LoadPreset("Smoke test");
+
+        Assert.Equal("Smoke test", source.PresetName);
+        Assert.Equal(FakeRunState.Idle, source.Current.State);
+        Assert.Equal(source.Plan.Scenarios.Count, source.Current.Count);
+        Assert.NotEqual(originalCount, source.Current.Count);
+        Assert.Equal(
+            source.Plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label),
+            source.Current.Labels);
+        Assert.All(source.Current.Scenarios, v => Assert.Equal(0, v.Finished));
+    }
 }

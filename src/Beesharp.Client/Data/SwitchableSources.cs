@@ -12,24 +12,47 @@ namespace Beesharp.Client.Data;
 public sealed class SwitchableRunSource : IRunSource
 {
     private readonly DataModeState mode;
-    private readonly FakeRunSource fake;
+    private readonly Lazy<FakeRunSource> fake;
     private readonly ApiRunSource api;
     private readonly ScriptApiClient scripts;
+    private bool fakeHooked;
 
     public SwitchableRunSource(DataModeState mode, FakeRunSource fake, ApiRunSource api, ScriptApiClient scripts)
+        : this(mode, new Lazy<FakeRunSource>(() => fake), api, scripts) { }
+
+    public SwitchableRunSource(DataModeState mode, Lazy<FakeRunSource> fake, ApiRunSource api, ScriptApiClient scripts)
     {
         this.mode = mode;
         this.fake = fake;
         this.api = api;
         this.scripts = scripts;
 
-        fake.Changed += OnFakeChanged;
         api.Changed += OnApiChanged;
         mode.Changed += OnModeChanged;
-        if (!mode.IsFakeMode) api.StartSync();
+        if (mode.IsFakeMode)
+        {
+            EnsureFake();
+        }
+        else
+        {
+            _ = scripts.SyncCatalogAsync();
+            _ = api.RefreshAsync();
+            api.StartSync();
+        }
     }
 
-    private IRunSource Active => mode.IsFakeMode ? fake : api;
+    private FakeRunSource EnsureFake()
+    {
+        var f = fake.Value;
+        if (!fakeHooked)
+        {
+            fakeHooked = true;
+            f.Changed += OnFakeChanged;
+        }
+        return f;
+    }
+
+    private IRunSource Active => mode.IsFakeMode ? EnsureFake() : api;
 
     public RunSnapshot Current => Active.Current;
     public bool IsRunning => Active.IsRunning;
@@ -54,6 +77,7 @@ public sealed class SwitchableRunSource : IRunSource
 
     private void OnModeChanged()
     {
+        if (mode.IsFakeMode) EnsureFake();
         Changed?.Invoke();
         if (!mode.IsFakeMode)
         {
@@ -66,10 +90,13 @@ public sealed class SwitchableRunSource : IRunSource
 
     public void Dispose()
     {
-        fake.Changed -= OnFakeChanged;
+        if (fake.IsValueCreated)
+        {
+            fake.Value.Changed -= OnFakeChanged;
+            fake.Value.Dispose();
+        }
         api.Changed -= OnApiChanged;
         mode.Changed -= OnModeChanged;
-        fake.Dispose();
         api.Dispose();
     }
 }
@@ -93,6 +120,7 @@ public sealed class SwitchableEnvironmentSource : IEnvironmentSource, IDisposabl
         fake.Changed += OnFakeChanged;
         api.Changed += OnApiChanged;
         mode.Changed += OnModeChanged;
+        if (!mode.IsFakeMode) _ = api.RefreshAsync();
     }
 
     private IEnvironmentSource CurrentSource => mode.IsFakeMode ? fake : api;

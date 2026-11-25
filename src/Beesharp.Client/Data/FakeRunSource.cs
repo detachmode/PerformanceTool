@@ -169,13 +169,39 @@ public sealed class FakeRunSource : IRunSource
 
     public void LoadPreset(string name)
     {
-        if (Presets.FirstOrDefault(p => p.Name == name) is not { } p) return;
+        if (Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } p) return;
         Plan = p.Plan.Clone();
         Profiles = [.. p.Profiles];
         PresetName = p.Name;
         savedFingerprint = Fingerprint(Plan);
         savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
+        if (!IsRunning) ResetToIdleSnapshot();
         Changed?.Invoke();
+    }
+
+    private void ResetToIdleSnapshot()
+    {
+        runPlan = Plan.Clone();
+        runProfiles = [.. Profiles];
+        var n = runPlan.Scenarios.Count;
+        pending.Clear();
+        store = new RunStore(n, StoreOptions);
+        typicals = new CallTypicals();
+        runtime = new RuntimeData(n);
+        script = new FakeRuntimeScript(runtime);
+        shutdown = null;
+        preflight = null;
+        starts = new int[n];
+        inFlight = new int[n];
+        failed = new int[n];
+        slowBees = new int[n];
+        slowCalls = new int[n];
+        nextFire = new double[n];
+        sequence = 0;
+        elapsed = 0;
+        runId = "";
+        state = FakeRunState.Idle;
+        Current = Snapshot();
     }
 
     public bool IsEntryChanged(ScenarioRunConfig entry) => !savedEntries.Contains(EntryFingerprint(entry));

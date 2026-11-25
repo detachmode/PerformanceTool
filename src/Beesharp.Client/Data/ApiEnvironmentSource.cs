@@ -10,11 +10,30 @@ public sealed class ApiEnvironmentSource(HttpClient http) : IEnvironmentSource
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private List<EnvironmentDefinition> items = [];
     private string? activeName;
+    private string? defaultName;
+    private bool userSelected;
 
     public IReadOnlyList<EnvironmentDefinition> Environments => items;
     public string? ActiveName => activeName;
     public EnvironmentDefinition? Active => activeName is null ? null : items.FirstOrDefault(e => e.Name == activeName);
     public event Action? Changed;
+
+    /// <summary>Applies the server's configured default environment (brain 0058) until the user explicitly chooses one.</summary>
+    public void ApplyDefault(string? name)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        if (string.Equals(defaultName, trimmed, StringComparison.OrdinalIgnoreCase)) return;
+        defaultName = trimmed;
+        if (!userSelected && activeName is null && defaultName is not null)
+        {
+            var match = items.FirstOrDefault(e => string.Equals(e.Name, defaultName, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                activeName = match.Name;
+                Changed?.Invoke();
+            }
+        }
+    }
 
     public async Task RefreshAsync()
     {
@@ -26,6 +45,11 @@ public sealed class ApiEnvironmentSource(HttpClient http) : IEnvironmentSource
                 items = list.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
                 if (activeName is not null && !items.Any(e => e.Name == activeName))
                     activeName = null;
+                if (!userSelected && activeName is null && defaultName is not null)
+                {
+                    var match = items.FirstOrDefault(e => string.Equals(e.Name, defaultName, StringComparison.OrdinalIgnoreCase));
+                    if (match is not null) activeName = match.Name;
+                }
                 Changed?.Invoke();
             }
         }
@@ -37,6 +61,7 @@ public sealed class ApiEnvironmentSource(HttpClient http) : IEnvironmentSource
 
     public void SetActive(string? name)
     {
+        userSelected = true;
         activeName = name is not null && items.Any(e => e.Name == name) ? name : null;
         Changed?.Invoke();
     }

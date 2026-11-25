@@ -158,6 +158,7 @@ public class BeesharpHostTests : IDisposable
         var workspace = app.Services.GetRequiredService<PlanWorkspace>();
         Assert.Equal("staging", workspace.DefaultEnvironment);
         var state = workspace.GetState();
+        Assert.Equal("staging", state.DefaultEnvironment);
         Assert.Equal(90, state.Plan.DurationSeconds);
         Assert.Equal(15, state.Plan.MaxConcurrency);
         Assert.Equal(12, state.Plan.TimeoutSeconds);

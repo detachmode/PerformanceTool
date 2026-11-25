@@ -121,6 +121,9 @@ public sealed class ApiRunSourceTests
 
         source.LoadPreset("Peak");
         Assert.Equal(2, source.Plan.Scenarios.Count);
+        Assert.Equal(2, source.Current.Count);
+        Assert.Equal("Peak", source.PresetName);
+        Assert.Equal(FakeRunState.Idle, source.Current.State);
         await presetLoadedOnServer.Task.WaitAsync(TimeSpan.FromSeconds(3));
         await WaitFor(() => !source.HasUnpushedEdits);
 
@@ -419,6 +422,125 @@ public sealed class ApiRunSourceTests
         Assert.False(source.IsServerReachable);
         Assert.Empty(await source.ListRunsAsync());
         Assert.Empty(await source.FetchLiveLogsAsync());
+    }
+
+    [Fact]
+    public async Task Loading_preset_after_finished_run_refreshes_overview_snapshot()
+    {
+        var catalog = new ScenarioCatalog([new HttpGetScenario()]);
+        var runPlan = new LoadPlan
+        {
+            DurationSeconds = 10,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "Old Run Entry", RatePerMinute = 10 }],
+        };
+        var smokePlan = new LoadPlan
+        {
+            DurationSeconds = 20,
+            Scenarios =
+            [
+                new ScenarioRunConfig { ScenarioId = "http-get", Label = "Smoke A", RatePerMinute = 12 },
+                new ScenarioRunConfig { ScenarioId = "http-get", Label = "Smoke B", RatePerMinute = 18 },
+            ],
+        };
+        var unloaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var handler = new StubHttpHandler(async (req, _) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path == "/api/plan")
+                return StubHttpHandler.JsonResponse(new PlanWorkspaceState(runPlan.Clone(), "Old", runPlan.Clone(), false, 1));
+            if (req.Method == HttpMethod.Get && path == "/api/presets")
+                return StubHttpHandler.JsonResponse(new List<Preset>
+                {
+                    new("Old", DateTimeOffset.UtcNow, runPlan.Clone()),
+                    new("Smoke", DateTimeOffset.UtcNow, smokePlan.Clone()),
+                });
+            if (req.Method == HttpMethod.Post && path == "/api/runs/run-42/load")
+                return StubHttpHandler.JsonResponse(new LiveRunStatusDto(
+                    "run-42", "Finished", 10, DateTimeOffset.UtcNow, runPlan.Clone(),
+                    [new LiveScenarioViewDto(5, 0, 0, 0, 0, 5, 0)], [], 4, 0, "DuckDb", null, NextBeeIndex: 5));
+            if (req.Method == HttpMethod.Get && path == "/api/runs/run-42/runtime")
+                return StubHttpHandler.JsonResponse(RuntimeDataSnapshot.Empty(1));
+            if (req.Method == HttpMethod.Post && path == "/api/runs/unload")
+            {
+                unloaded.TrySetResult();
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
+            }
+            if (req.Method == HttpMethod.Post && path == "/api/presets/Smoke/load")
+            {
+                loaded.TrySetResult();
+                return StubHttpHandler.JsonResponse(new PlanWorkspaceState(smokePlan.Clone(), "Smoke", smokePlan.Clone(), false, 2));
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://beesharp.test/") };
+        using var source = new ApiRunSource(http, catalog, new ApiEnvironmentSource(http));
+
+        source.StartSync();
+        await WaitFor(() => source.PresetNames.Contains("Smoke"));
+
+        await source.LoadStoredRunAsync("run-42");
+        Assert.True(source.IsViewingHistory);
+        Assert.Equal("run-42", source.CurrentRunId);
+        Assert.Single(source.Current.Labels);
+        Assert.Equal("Old Run Entry", source.Current.Labels[0]);
+
+        source.LoadPreset("Smoke");
+
+        Assert.Equal("Smoke", source.PresetName);
+        Assert.False(source.IsViewingHistory);
+        Assert.Equal("", source.CurrentRunId);
+        Assert.Equal(FakeRunState.Idle, source.Current.State);
+        Assert.Equal(["Smoke A", "Smoke B"], source.Current.Labels);
+
+        await unloaded.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await loaded.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        source.StopSync();
+    }
+
+    [Fact]
+    public async Task Default_environment_from_plan_workspace_is_selected_in_ApiEnvironmentSource()
+    {
+        var catalog = new ScenarioCatalog([new HttpGetScenario()]);
+        var plan = new LoadPlan { DurationSeconds = 15, Scenarios = [] };
+        var envsList = new List<Beesharp.Services.Environments.EnvironmentDefinition>
+        {
+            new() { Name = "Local" },
+            new() { Name = "Staging" },
+        };
+
+        var handler = new StubHttpHandler((req, _) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path == "/api/plan")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new PlanWorkspaceState(plan.Clone(), "Default", plan.Clone(), false, 1, DefaultEnvironment: "staging")));
+            if (req.Method == HttpMethod.Get && path == "/api/presets")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new List<Preset>()));
+            if (req.Method == HttpMethod.Get && path == "/api/environments")
+                return Task.FromResult(StubHttpHandler.JsonResponse(envsList));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://beesharp.test/") };
+        var envs = new ApiEnvironmentSource(http);
+        using var source = new ApiRunSource(http, catalog, envs);
+
+        // Case 1: /api/plan arrives before /api/environments.
+        source.StartSync();
+        await WaitFor(() => source.PresetName == "Default");
+        Assert.Null(envs.ActiveName);
+        await envs.RefreshAsync();
+        Assert.Equal("Staging", envs.ActiveName);
+
+        // Explicit user choice ("No environment") is respected on subsequent refreshes.
+        envs.SetActive(null);
+        Assert.Null(envs.ActiveName);
+        await envs.RefreshAsync();
+        Assert.Null(envs.ActiveName);
+
+        source.StopSync();
     }
 
     private static async Task WaitFor(Func<bool> condition)

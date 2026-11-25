@@ -8,7 +8,7 @@ namespace Beesharp.Contracts;
 /// The server's view of the Live plan: the plan being edited, the name of the loaded preset and the plan as last saved
 /// (for "unsaved changes" and per-entry "changed"). <see cref="Version"/> grows with every real change.
 /// </summary>
-public sealed record PlanWorkspaceState(LoadPlan Plan, string PresetName, LoadPlan SavedPlan, bool HasUnsavedChanges, long Version);
+public sealed record PlanWorkspaceState(LoadPlan Plan, string PresetName, LoadPlan SavedPlan, bool HasUnsavedChanges, long Version, string? DefaultEnvironment = null);
 
 public sealed record Preset(string Name, DateTimeOffset SavedAt, LoadPlan Plan);
 

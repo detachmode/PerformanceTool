@@ -88,7 +88,7 @@ public class ContractsRoundTripTests
         RoundTrip(new PreflightCompileResult(true, new PreflightScriptSummary("p", "p.cs", "P", "c", DateTimeOffset.UtcNow), []));
         RoundTrip(new PreflightRunResult(true, 5, null, ["x"]));
         RoundTrip(new ScenarioInfoDto("id", "n", "d", true, "s", new JsonObject { ["type"] = "object" }));
-        RoundTrip(new PlanWorkspaceState(new LoadPlan(), "p", new LoadPlan(), false, 3));
+        RoundTrip(new PlanWorkspaceState(new LoadPlan(), "p", new LoadPlan(), false, 3, "Staging"));
         RoundTrip(new Preset("p", DateTimeOffset.UtcNow, new LoadPlan()));
         RoundTrip(new StartRunRequest(new LoadPlan(), "Staging"));
         RoundTrip(new UploadScriptRequest("i", "f.cs", "code"));

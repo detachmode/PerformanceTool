@@ -38,8 +38,8 @@
 <div class="page @(editMode ? "editor" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
-            <h1>Scenarios</h1>
-            @if (editMode && dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
+            <h1 title="@Sim.PresetName">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Scenarios" : Sim.PresetName)</h1>
+            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
             else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
             @if (!editMode)
             {
@@ -47,6 +47,52 @@
             }
         </div>
         <div class="preset-actions">
+            <div class="dd preset-dd" @onkeydown="OnPresetKey">
+                <button type="button" class="preset-pick-btn @(presetMenuOpen ? "on" : "")"
+                        aria-haspopup="menu" aria-expanded="@Aria.Bool(presetMenuOpen)"
+                        disabled="@locked"
+                        title="@(locked ? "Stop the running test to switch or save presets" : $"Preset: {Sim.PresetName}")"
+                        @onclick="TogglePresetMenu">
+                    <span class="preset-pick-label">Preset</span>
+                    <span class="preset-pick-name">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Default" : Sim.PresetName)</span>
+                    @if (dirty) { <i class="edit-dot" title="Unsaved changes"></i> }
+                    <span class="caret" aria-hidden="true">▾</span>
+                </button>
+                @if (presetMenuOpen)
+                {
+                    <div class="dd-backdrop" @onclick="() => presetMenuOpen = false"></div>
+                    <div class="dd-menu right preset-menu" role="menu" aria-label="Presets">
+                        <div class="dd-lbl">Switch preset</div>
+                        @if (Sim.PresetNames.Count == 0)
+                        {
+                            <div class="muted dd-empty">No saved presets yet.</div>
+                        }
+                        else
+                        {
+                            @foreach (var p in Sim.PresetNames)
+                            {
+                                var preset = p;
+                                var isCurrent = string.Equals(preset, Sim.PresetName, StringComparison.OrdinalIgnoreCase);
+                                <button type="button" class="dd-item @(isCurrent ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCurrent)"
+                                        disabled="@locked" @onclick="() => { presetMenuOpen = false; PickPreset(preset); }">
+                                    <span class="dd-check" aria-hidden="true">@(isCurrent ? "✓" : "")</span>
+                                    <span class="dd-text">@preset</span>
+                                </button>
+                            }
+                        }
+                        <div class="dd-sep" role="separator"></div>
+                        <div class="dd-lbl">Save</div>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" @onclick="() => { presetMenuOpen = false; Save(); }">
+                            <span class="dd-check" aria-hidden="true"></span>
+                            <span class="dd-text">Save “@Sim.PresetName”</span>
+                        </button>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { presetMenuOpen = false; OpenSaveAs(); }">
+                            <span class="dd-check" aria-hidden="true"></span>
+                            <span class="dd-text">Save as new preset…</span>
+                        </button>
+                    </div>
+                }
+            </div>
             @if (editMode)
             {
                 <button type="button" class="btn @(dirty ? "primary" : "ghost") small" @onclick="ExitEditMode" title="Finish editing and return to Overview">Done</button>
@@ -57,54 +103,30 @@
                         title="@(locked ? "Stop the running test to edit scenarios" : (!DataMode.IsFakeMode && ApiRun.IsViewingHistory) ? "Return to Live mode to edit scenarios" : "Edit scenarios, spawning and parameters")">
                     Edit
                 </button>
-            }
-            <div class="dd">
-                <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
-                        aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
-                        @onclick="() => viewMenuOpen = !viewMenuOpen" aria-label="More actions" title="Presets and actions">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <circle cx="5" cy="12" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="19" cy="12" r="2" />
-                    </svg>
-                </button>
-                @if (viewMenuOpen)
-                {
-                    <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
-                    <div class="dd-menu right" role="menu" aria-label="Presets and overview actions">
-                        <div class="dd-lbl">Presets</div>
-                        <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" @onclick="() => { viewMenuOpen = false; Save(); }">
-                            Save “@Sim.PresetName”
-                        </button>
-                        <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { viewMenuOpen = false; OpenSaveAs(); }">
-                            Save as new preset…
-                        </button>
-                        @if (Sim.PresetNames.Count > 0)
-                        {
-                            <div class="dd-sep" role="separator"></div>
-                            <div class="dd-lbl">Load preset</div>
-                            @foreach (var p in Sim.PresetNames)
-                            {
-                                var preset = p;
-                                var isCurrent = string.Equals(preset, Sim.PresetName, StringComparison.OrdinalIgnoreCase);
-                                <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { viewMenuOpen = false; PickPreset(preset); }">
-                                    @(isCurrent ? "✓ " : "")@preset
-                                </button>
-                            }
-                        }
-                        @if (!editMode)
-                        {
-                            <div class="dd-sep" role="separator"></div>
+                <div class="dd">
+                    <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
+                            aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
+                            @onclick="ToggleViewMenu" aria-label="More actions" title="Run actions">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                        </svg>
+                    </button>
+                    @if (viewMenuOpen)
+                    {
+                        <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
+                        <div class="dd-menu right" role="menu" aria-label="Run actions">
                             <div class="dd-lbl">Run</div>
                             <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Logs</button>
                             @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
                             {
                                 <a class="dd-item" role="menuitem" href="@($"api/runs/{Uri.EscapeDataString(ApiRun.CurrentRunId)}/export?format=parquet")" download @onclick="() => viewMenuOpen = false">Export Parquet (.zip)</a>
                             }
-                        }
-                    </div>
-                }
-            </div>
+                        </div>
+                    }
+                </div>
+            }
         </div>
     </section>
 
@@ -537,23 +559,40 @@
     {
         <PreflightStrip Run="s.Preflight" />
         <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
-        <div class="grid" aria-label="Scenarios">
-            @for (var i = 0; i < s.Count; i++)
-            {
-                var idx = i;
-                <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
-                              Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" IsLive="s.Running && !s.Paused"
-                              ScenarioType="@(Catalog.Find(s.Plan.Scenarios[idx].ScenarioId)?.Name)"
-                              OnOpen="i => OpenScenario(i)"
-                              OnOpenFiltered="t => OpenScenario(t.Index, new(t.Filter))"
-                              OnOpenLogs="i => Logs.Show(entry: i)"
-                              OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
-                              Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
-                              InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
-                              OnOpenStep="t => OpenScenario(t.Index, new(FailedStep: t.Step))"
-                              OnOpenStepInFlight="t => OpenScenario(t.Index, new(NowStep: t.Step))" />
-            }
-        </div>
+        @if (s.Count == 0 && (DataMode.IsFakeMode || ApiRun.HasLoadedPlan || !ApiRun.IsServerReachable))
+        {
+            <section class="plan-empty" aria-label="Empty plan">
+                <h2>This plan is empty</h2>
+                <p class="muted">Load a saved preset or edit the current plan to add scenarios.</p>
+                <div class="plan-empty-actions">
+                    @if (!locked && Sim.PresetNames.Count > 0)
+                    {
+                        <button type="button" class="btn ghost" @onclick="TogglePresetMenu">Load preset</button>
+                    }
+                    <button type="button" class="btn primary" @onclick="EnterEditMode" disabled="@(locked || viewingHistory)">Edit plan</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <div class="grid" aria-label="Scenarios">
+                @for (var i = 0; i < s.Count; i++)
+                {
+                    var idx = i;
+                    <ScenarioCard @key="idx" Index="idx" Label="@s.Labels[idx]" View="s.Scenarios[idx]" Bees="s.Store.Bees(idx)" Running="s.BeesInFlight?[idx]"
+                                  Target="s.Plan.Scenarios[idx].EffectiveRatePerMinute()" Shape="@Format.Shape(s.Plan.Scenarios[idx])" Elapsed="s.Elapsed" DurationSeconds="s.Plan.DurationSeconds" IsLive="s.Running && !s.Paused"
+                                  ScenarioType="@(Catalog.Find(s.Plan.Scenarios[idx].ScenarioId)?.Name)"
+                                  OnOpen="i => OpenScenario(i)"
+                                  OnOpenFiltered="t => OpenScenario(t.Index, new(t.Filter))"
+                                  OnOpenLogs="i => Logs.Show(entry: i)"
+                                  OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
+                                  Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
+                                  InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
+                                  OnOpenStep="t => OpenScenario(t.Index, new(FailedStep: t.Step))"
+                                  OnOpenStepInFlight="t => OpenScenario(t.Index, new(NowStep: t.Step))" />
+                }
+            </div>
+        }
     }
 </div>
 
@@ -581,6 +620,7 @@
     }
     private IJSObjectReference? scrollMemory;
     private bool viewMenuOpen;
+    private bool presetMenuOpen;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
     private bool pickerIsShutdown;
@@ -690,10 +730,28 @@
         Sim.Start();
     }
 
+    private void TogglePresetMenu()
+    {
+        viewMenuOpen = false;
+        presetMenuOpen = !presetMenuOpen;
+    }
+
+    private void ToggleViewMenu()
+    {
+        presetMenuOpen = false;
+        viewMenuOpen = !viewMenuOpen;
+    }
+
+    private void OnPresetKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") presetMenuOpen = false;
+    }
+
     private void EnterEditMode()
     {
         if (Sim.IsRunning) return;
         viewMenuOpen = false;
+        presetMenuOpen = false;
         editMode = true;
         selected = -1;
         addOpen = false;
@@ -704,6 +762,7 @@
     private void ExitEditMode()
     {
         editMode = false;
+        presetMenuOpen = false;
         selected = -1;
         addOpen = false;
         preflightPickerOpen = false;
@@ -845,7 +904,7 @@
 
     private void PickPreset(string name)
     {
-        if (editMode && Sim.HasUnsavedChanges) pendingLoad = name;
+        if (Sim.HasUnsavedChanges) pendingLoad = name;
         else DoLoad(name);
     }
 

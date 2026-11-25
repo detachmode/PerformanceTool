@@ -298,6 +298,8 @@ jobs:
           grep -q 'app.css?v=' index.html
           # SPA deep links (/editor) hit Pages' 404 page, which is the app itself.
           cp index.html 404.html
+          # GitHub Pages is the fake-data demo site (no server API), so default it to Fake mode.
+          printf '{"DataSource":"Fake"}\n' > appsettings.json
           # Lets a running page notice a newer deploy (brain 0025). Fetched with cache: no-store.
           printf '{"sha":"%s","time":"%s"}\n' "${{ github.sha }}" "$BUILD_TIME" > build-info.json
           # Do not run Jekyll (it would drop the _framework folder).

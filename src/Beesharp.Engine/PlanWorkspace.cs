@@ -299,7 +299,7 @@ public sealed class PlanWorkspace
     }
 
     private PlanWorkspaceState Snapshot() =>
-        new(plan.Clone(), presetName, saved.Clone(), Fingerprint(plan) != Fingerprint(saved), version);
+        new(plan.Clone(), presetName, saved.Clone(), Fingerprint(plan) != Fingerprint(saved), version, defaultEnvironment);
 
     private static LoadPlan NewPlan() => new() { DurationSeconds = 30, MaxConcurrency = 50, TimeoutSeconds = 15 };
 

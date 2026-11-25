@@ -46,6 +46,8 @@ public sealed class ApiRunSource : IRunSource
     public string PresetName { get; private set; } = "Live plan";
     /// <summary>True while the working copy differs from what the server has (an edit is waiting to be pushed).</summary>
     public bool HasUnpushedEdits => syncedFingerprint.Length > 0 && Fingerprint(Plan) != syncedFingerprint;
+    /// <summary>True once the initial plan workspace state has been fetched from the server.</summary>
+    public bool HasLoadedPlan => serverVersion > 0;
     public IReadOnlyList<string> PresetNames => presets.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
     public bool HasUnsavedChanges => Fingerprint(Plan) != savedFingerprint;
 
@@ -136,9 +138,10 @@ public sealed class ApiRunSource : IRunSource
             // Instant: show the cached copy; the server's answer (normalised to today's scenario shape) replaces it.
             PresetName = presets.Keys.First(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
             Plan = cached.Clone();
+            syncedFingerprint = Fingerprint(Plan);
             savedFingerprint = Fingerprint(Plan);
             savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
-            if (!IsRunning && string.IsNullOrEmpty(activeRunId)) Current = EmptySnapshot(Plan);
+            if (!IsRunning) ResetToIdlePlanSnapshot(IsViewingHistory);
             Changed?.Invoke();
         }
         _ = LoadPresetRemoteAsync(name);
@@ -162,7 +165,7 @@ public sealed class ApiRunSource : IRunSource
         {
             var resp = await http.PostAsync($"api/presets/{Uri.EscapeDataString(name)}/load", null);
             if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<PlanWorkspaceState>(JsonOpts) is { } state)
-                AdoptState(state, replacePlan: true);
+                AdoptState(state, replacePlan: true, refreshOverview: true);
         }
         catch { }
     }
@@ -280,17 +283,46 @@ public sealed class ApiRunSource : IRunSource
     }
 
     /// <summary>Takes the server's state as the truth. With <paramref name="replacePlan"/> false only the bookkeeping (version, preset, saved plan) is taken.</summary>
-    private void AdoptState(PlanWorkspaceState state, bool replacePlan, LoadPlan? syncedWith = null)
+    private void AdoptState(PlanWorkspaceState state, bool replacePlan, LoadPlan? syncedWith = null, bool refreshOverview = false)
     {
+        var presetChanged = !string.Equals(PresetName, state.PresetName, StringComparison.OrdinalIgnoreCase);
         serverVersion = state.Version;
         if (replacePlan)
         {
             Plan = state.Plan.Clone();
             syncedFingerprint = Fingerprint(Plan);
-            if (!IsRunning && string.IsNullOrEmpty(activeRunId)) Current = EmptySnapshot(Plan);
+            if (!IsRunning && (refreshOverview || presetChanged || string.IsNullOrEmpty(activeRunId)))
+                ResetToIdlePlanSnapshot(IsViewingHistory);
         }
         else if (syncedWith is not null) syncedFingerprint = Fingerprint(syncedWith);
         ApplyMeta(state);
+    }
+
+    private void ResetToIdlePlanSnapshot(bool unloadHistory)
+    {
+        IsViewingHistory = false;
+        activeRunId = "";
+        activeStore = new RunStore(Plan.Scenarios.Count);
+        lastSequence = -1;
+        receivedBees = 0;
+        seenSequences.Clear();
+        loadedDetails.Clear();
+        loadingDetails.Clear();
+        detailMissedAt.Clear();
+        PreflightState = null;
+        PreflightScriptName = null;
+        PreflightLogs = [];
+        PreflightError = null;
+        PreflightDismissed = false;
+        runtime = null;
+        runtimeVersion = -1;
+        Current = EmptySnapshot(Plan);
+        if (unloadHistory) _ = UnloadHistoryAsync();
+    }
+
+    private async Task UnloadHistoryAsync()
+    {
+        try { await http.PostAsync("api/runs/unload", null); } catch { }
     }
 
     private void ApplyMeta(PlanWorkspaceState state)
@@ -298,6 +330,8 @@ public sealed class ApiRunSource : IRunSource
         PresetName = state.PresetName;
         savedFingerprint = Fingerprint(state.SavedPlan);
         savedEntries = state.SavedPlan.Scenarios.Select(EntryFingerprint).ToHashSet();
+        if (!string.IsNullOrWhiteSpace(state.DefaultEnvironment))
+            environments.ApplyDefault(state.DefaultEnvironment);
         Changed?.Invoke();
     }
 
@@ -745,12 +779,35 @@ public sealed class ApiRunSource : IRunSource
         finally { runtimeFetching = false; }
     }
 
-    private static RunSnapshot EmptySnapshot(LoadPlan plan)
+    private RunSnapshot EmptySnapshot(LoadPlan plan)
     {
         var count = plan.Scenarios.Count;
         var labels = plan.Scenarios.Select(s => string.IsNullOrWhiteSpace(s.Label) ? s.ScenarioId : s.Label).ToList();
         var views = Enumerable.Range(0, count).Select(_ => new ScenarioView(0, 0, 0, 0, 0, 0)).ToArray();
-        return new RunSnapshot(FakeRunState.Idle, 0, plan.Clone(), labels, views, new RunStore(count));
+        IReadOnlyList<ScenarioSteps>? steps = null;
+        if (count > 0)
+        {
+            var mapped = new ScenarioSteps[count];
+            var anySteps = false;
+            for (var i = 0; i < count; i++)
+            {
+                var raw = catalog.Find(plan.Scenarios[i].ScenarioId)?.Steps;
+                if (raw is { Count: > 0 })
+                {
+                    anySteps = true;
+                    var hasTimes = raw.Any(st => st.Times is > 1);
+                    mapped[i] = new ScenarioSteps(
+                        raw.Select(st => st.Name).ToArray(),
+                        hasTimes ? raw.Select(st => st.Times ?? 1).ToArray() : null);
+                }
+                else
+                {
+                    mapped[i] = ScenarioSteps.None;
+                }
+            }
+            if (anySteps) steps = mapped;
+        }
+        return new RunSnapshot(FakeRunState.Idle, 0, plan.Clone(), labels, views, new RunStore(count), Steps: steps);
     }
 
     private static string Fingerprint(LoadPlan plan) => JsonSerializer.Serialize(plan, JsonOpts);

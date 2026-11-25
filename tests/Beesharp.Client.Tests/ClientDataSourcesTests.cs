@@ -180,4 +180,45 @@ public sealed class ClientDataSourcesTests
         for (var i = 0; i < 80 && !condition(); i++) await Task.Delay(25);
         Assert.True(condition());
     }
+
+    [Fact]
+    public async Task Live_startup_does_not_initialize_fake_source_and_loads_default_plan()
+    {
+        var defaultPlan = new LoadPlan
+        {
+            DurationSeconds = 45,
+            Scenarios = [new ScenarioRunConfig { ScenarioId = "http-get", Label = "Default Health", RatePerMinute = 20 }],
+        };
+        var handler = new StubHttpHandler((req, _) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path == "/api/scenarios")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new List<ScenarioInfoDto>()));
+            if (path == "/api/plan")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new PlanWorkspaceState(defaultPlan.Clone(), "Default Preset", defaultPlan.Clone(), false, 1, "LiveStaging")));
+            if (path == "/api/presets")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new List<Preset> { new("Default Preset", DateTimeOffset.UtcNow, defaultPlan.Clone()) }));
+            if (path == "/api/environments")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new List<EnvironmentDefinition> { new() { Name = "LiveStaging" } }));
+            if (path == "/api/runs/current")
+                return Task.FromResult(StubHttpHandler.JsonResponse(new LiveRunStatusDto("", "Idle", 0, DateTimeOffset.UtcNow, new LoadPlan(), [], [], -1, 0, "Memory", null)));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://beesharp.test/") };
+
+        var catalog = new ScenarioCatalog([new HttpGetScenario()]);
+        var mode = new DataModeState(new FakeJsRuntime(), initialFakeMode: false);
+        var fakeCreated = false;
+        var lazyFake = new Lazy<FakeRunSource>(() => { fakeCreated = true; return new FakeRunSource(catalog, simulateSeconds: 5); });
+        var apiEnv = new ApiEnvironmentSource(http);
+        var apiRun = new ApiRunSource(http, catalog, apiEnv);
+        var scripts = new ScriptApiClient(http, catalog);
+
+        using var switchEnv = new SwitchableEnvironmentSource(mode, new FakeEnvironmentSource(), apiEnv);
+        using var switchRun = new SwitchableRunSource(mode, lazyFake, apiRun, scripts);
+
+        await WaitFor(() => switchRun.PresetName == "Default Preset" && switchRun.Current.Count == 1 && switchEnv.ActiveName == "LiveStaging");
+        Assert.False(fakeCreated);
+        Assert.Equal("Default Health", switchRun.Current.Labels[0]);
+    }
 }

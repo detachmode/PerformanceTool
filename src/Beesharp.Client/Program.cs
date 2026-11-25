@@ -41,22 +41,29 @@ var initialFake = !string.Equals(builder.Configuration["DataSource"], "Api", Str
 builder.Services.AddSingleton(sp => new DataModeState(sp.GetRequiredService<IJSRuntime>(), initialFake));
 
 // Debug: "?burst=100" makes the bursts of the seeded run that big (brain 0044). "?stepcount=1,8,24" adds one entry per number with that many steps (brain 0056). "?simulate=3h" (or 90m, 600s) pre-generates a run that long, to test the UI at scale (brain 0021).
-builder.Services.AddSingleton(sp => new FakeRunSource(
+// Lazy so starting in Live mode never builds or simulates fake data unless the user switches to Fake mode.
+builder.Services.AddSingleton(sp => new Lazy<FakeRunSource>(() => new FakeRunSource(
     sp.GetRequiredService<ScenarioCatalog>(),
     SimulateSeconds(sp.GetRequiredService<NavigationManager>().Uri), null,
     BurstBees(sp.GetRequiredService<NavigationManager>().Uri),
-    StepCounts(sp.GetRequiredService<NavigationManager>().Uri)));
+    StepCounts(sp.GetRequiredService<NavigationManager>().Uri))));
 builder.Services.AddSingleton<FakeEnvironmentSource>();
 builder.Services.AddSingleton<ApiEnvironmentSource>();
 builder.Services.AddSingleton<ApiRunSource>();
 
-builder.Services.AddSingleton<IRunSource, SwitchableRunSource>();
+builder.Services.AddSingleton<IRunSource>(sp => new SwitchableRunSource(
+    sp.GetRequiredService<DataModeState>(),
+    sp.GetRequiredService<Lazy<FakeRunSource>>(),
+    sp.GetRequiredService<ApiRunSource>(),
+    sp.GetRequiredService<ScriptApiClient>()));
 builder.Services.AddSingleton<IEnvironmentSource, SwitchableEnvironmentSource>();
 
 var host = builder.Build();
 
 // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
 host.Services.GetRequiredService<ScenarioCatalog>();
+// Load saved Live/Fake preference before the first render so Live mode never flashes Fake data.
+await host.Services.GetRequiredService<DataModeState>().LoadAsync();
 
 await host.RunAsync();
 
