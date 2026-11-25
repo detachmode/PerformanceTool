@@ -1,0 +1,86 @@
+# Two trace backends for a dev cluster, side by side, so Beesharp can fetch traces by ID from either.
+#
+#   docker compose --profile jaeger up -d    # Jaeger v2 with Badger on a volume (one container)
+#   docker compose --profile elastic up -d   # Elasticsearch + Kibana + APM Server + OTel Collector (four containers)
+#   docker compose --profile jaeger --profile elastic up -d   # both
+#
+# Then ./send-test-trace.sh sends the same trace to both and reads it back by trace ID.
+# Dev only: Elastic security is switched off, nothing here is meant for production.
+
+name: beesharp-tracing
+
+services:
+  # ── Jaeger ────────────────────────────────────────────────────────────────
+  jaeger:
+    profiles: [jaeger]
+    image: jaegertracing/jaeger:2.23.0
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    user: root                       # the Badger volume is owned by root
+    volumes:
+      - ./jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+      - jaeger-badger:/badger
+    ports:
+      - "16686:16686"                # UI and query API (/api/v3/traces/{traceId})
+      - "4317:4317"                  # OTLP gRPC
+      - "4318:4318"                  # OTLP HTTP
+    restart: unless-stopped
+
+  # ── Elastic ───────────────────────────────────────────────────────────────
+  elasticsearch:
+    profiles: [elastic]
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+      # Dev only: keep writing even when the Docker disk is over 90% full (otherwise new traces are refused).
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"                  # Elasticsearch API (trace search)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow || exit 1"]
+      interval: 10s
+      retries: 30
+    restart: unless-stopped
+
+  kibana:
+    profiles: [elastic]
+    image: docker.elastic.co/kibana/kibana:9.5.7
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"                  # Kibana UI (Observability → Applications → Traces)
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    restart: unless-stopped
+
+  apm-server:
+    profiles: [elastic]
+    image: docker.elastic.co/apm/apm-server:9.5.7
+    command:
+      - -e
+      - -E
+      - apm-server.host=0.0.0.0:8200
+      - -E
+      - output.elasticsearch.hosts=["http://elasticsearch:9200"]
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    restart: unless-stopped
+
+  otel-collector:                    # APM Server only takes OTLP as protobuf on :8200; the collector accepts both
+    profiles: [elastic]
+    image: otel/opentelemetry-collector:0.166.0
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    volumes:
+      - ./elastic/collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "14317:4317"                 # OTLP gRPC (other host port than Jaeger, so both can run)
+      - "14318:4318"                 # OTLP HTTP
+    depends_on: [apm-server]
+    restart: unless-stopped
+
+volumes:
+  jaeger-badger:
+  elastic-data:
