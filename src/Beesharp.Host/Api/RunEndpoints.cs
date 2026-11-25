@@ -3,9 +3,42 @@ using Beesharp.Services.Storage;
 
 namespace Beesharp.Api;
 
-/// <summary>REST for runs (brain 0045): start/stop, live status, runtime data, and the stored runs (history, bees, logs, export). Read-only queries by run id for the assistant's cards are in <see cref="RunQueryEndpoints"/>.</summary>
+/// <summary>
+/// REST endpoints for runs (brain 0045): start, stop, pause, resume, live status polling, runtime data,
+/// and stored-run operations (history, load/unload, import/export, bee details, logs, and call analytics).
+/// Read-only queries by run id for the assistant's cards live in <see cref="RunQueryEndpoints"/>.
+/// </summary>
 public static class RunEndpoints
 {
+    /// <summary>
+    /// Maps all <c>/api/runs</c> HTTP endpoints onto <paramref name="app"/>.
+    /// </summary>
+    /// <param name="app">The endpoint route builder to register the run routes on.</param>
+    /// <returns>The same <paramref name="app"/> instance for chaining.</returns>
+    /// <remarks>
+    /// Mapped routes (all indices are 0-based):
+    /// <list type="bullet">
+    /// <item><description><c>GET /api/runs?limit=50</c> — Lists recent stored runs; returns <c>200 OK</c> with <see cref="IReadOnlyList{T}"/> of <see cref="StoredRunSummary"/>.</description></item>
+    /// <item><description><c>GET /api/runs/current?afterSeq=-1&amp;afterIndex=&amp;runId=&amp;maxBees=2000</c> — Incremental poll of the active or loaded run; returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>.</description></item>
+    /// <item><description><c>GET /api/runs/current/runtime</c> — Runtime data (run bag and entry bags) of the active or loaded run; returns <c>200 OK</c> with <see cref="Beesharp.Services.Runtime.RuntimeDataSnapshot"/> or <c>204 No Content</c> when none is available.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/runtime</c> — Runtime data for <c>runId</c> (live if active, otherwise persisted final values); returns <c>200 OK</c> with <see cref="Beesharp.Services.Runtime.RuntimeDataSnapshot"/> or <c>404 Not Found</c>.</description></item>
+    /// <item><description><c>GET /api/runs/live-logs?afterId=0&amp;limit=500&amp;sequence=&amp;entry=</c> — Incremental live log lines from in-flight bees and programs; returns <c>200 OK</c> with <see cref="IReadOnlyList{T}"/> of <see cref="LiveLogEntryDto"/>.</description></item>
+    /// <item><description><c>POST /api/runs/start</c> — Optional JSON body <see cref="StartRunRequest"/> (<c>Plan</c>, <c>EnvironmentName</c>; defaults to the server Live plan and default environment). Starts a new run; returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>, or <c>400 Bad Request</c> with <c>{ error }</c> on invalid plan/scripts or if a run is already active.</description></item>
+    /// <item><description><c>POST /api/runs/stop</c> — Cancels the active run (the shutdown program still runs); returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>.</description></item>
+    /// <item><description><c>POST /api/runs/pause</c> — Pauses a running run (in-flight bees finish, no new bees start); returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>.</description></item>
+    /// <item><description><c>POST /api/runs/resume</c> — Resumes a paused run; returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>.</description></item>
+    /// <item><description><c>POST /api/runs/{runId}/load</c> — Loads a stored run into the active view; returns <c>200 OK</c> with <see cref="LiveRunStatusDto"/>, <c>404 Not Found</c> if missing, or <c>400 Bad Request</c> with <c>{ error }</c> while a live run is active.</description></item>
+    /// <item><description><c>POST /api/runs/unload</c> — Clears a loaded historical run back to idle; returns <c>200 OK</c>, or <c>400 Bad Request</c> with <c>{ error }</c> while a live run is active.</description></item>
+    /// <item><description><c>POST /api/runs/import</c> — <c>multipart/form-data</c> upload with <c>file</c> (<c>.zip</c> Parquet bundle, <c>.duckdb</c>, or <c>.json</c>; antiforgery disabled); returns <c>200 OK</c> with <see cref="StoredRunSummary"/>, or <c>400 Bad Request</c> with <c>{ error }</c> when missing, empty, or invalid.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/bees/{sequence:int}</c> — Full detail (calls and logs) of one bee in <c>runId</c>; returns <c>200 OK</c> with <see cref="StoredBeeDetail"/> or <c>404 Not Found</c>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/logs?entry=&amp;step=&amp;bee=&amp;beeName=&amp;outcome=&amp;failed=&amp;slow=&amp;levels=&amp;search=&amp;offset=0&amp;limit=200</c> — Paged filtered log lines (<c>levels</c> is comma-separated); returns <c>200 OK</c> with <see cref="LogPageResult"/>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/logs/facets?entry=&amp;step=&amp;bee=&amp;beeName=&amp;outcome=&amp;failed=&amp;slow=&amp;levels=&amp;search=</c> — Filter facet counts matching the same filter parameters as <c>/logs</c>; returns <c>200 OK</c> with <see cref="LogFacets"/>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/export?format=parquet</c> — Exports a run (<c>parquet</c>, <c>duckdb</c>, <c>json</c>, or <c>csv</c>); returns <c>200 OK</c> file download or <c>404 Not Found</c>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/calls/endpoints?entry=&amp;scenario=&amp;step=&amp;byStep=false&amp;endpoint=&amp;slowOnly=false&amp;failedOnly=false&amp;minMs=&amp;search=</c> — Aggregated call endpoint metrics (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="CallEndpointsResult"/>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/calls/slowest?limit=20&amp;entry=&amp;scenario=&amp;step=&amp;endpoint=&amp;slowOnly=false&amp;failedOnly=false&amp;minMs=&amp;search=</c> — Top slowest calls (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="SlowestCallsResult"/>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/calls/detail?endpoint=&amp;entry=&amp;show=&amp;minMs=&amp;maxMs=&amp;fromSec=&amp;toSec=&amp;sort=&amp;offset=0&amp;limit=200&amp;maxPoints=240</c> — Timeline, histogram, and paged samples for the required <c>endpoint</c> query param (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="CallEndpointDetailDto"/>, <c>400 Bad Request</c> with <c>{ error }</c> when <c>endpoint</c> is missing, or <c>404 Not Found</c>.</description></item>
+    /// </list>
+    /// </remarks>
     public static IEndpointRouteBuilder MapRunEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/runs", (int? limit, IRunStorage storage, CancellationToken ct) =>

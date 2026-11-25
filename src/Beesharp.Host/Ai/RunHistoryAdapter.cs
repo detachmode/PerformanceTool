@@ -4,11 +4,19 @@ using Beesharp.Services.Storage;
 
 namespace Beesharp.AiAdapters;
 
-/// <summary><see cref="IRunHistoryPort"/> over <see cref="RunManager"/> (the live run) and <see cref="IRunStorage"/> (stored runs, calls and logs).</summary>
+/// <summary>
+/// Adapts <see cref="RunManager"/> (live run state) and <see cref="IRunStorage"/> (persisted runs, bees, calls, and logs)
+/// to <see cref="IRunHistoryPort"/> for the AI assistant.
+/// </summary>
+/// <param name="runs">The active run manager used for the current in-memory run.</param>
+/// <param name="storage">The persistent storage used for historical runs, bee details, call endpoints, and logs.</param>
 public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IRunHistoryPort
 {
     private const int MaxBeesScanned = 200_000;
 
+    /// <summary>Gets the identifier of the current run, or of the most recent stored run if no current run exists.</summary>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The latest run identifier, or <see langword="null"/> when no runs exist.</returns>
     public async Task<string?> LatestRunIdAsync(CancellationToken ct)
     {
         var current = runs.GetCurrent();
@@ -16,9 +24,17 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         return (await storage.ListRunsAsync(1, ct)).FirstOrDefault()?.RunId;
     }
 
+    /// <summary>Lists recent stored runs in reverse chronological order.</summary>
+    /// <param name="limit">Maximum number of runs to return.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>A read-only list of <see cref="RunInfo"/> summaries.</returns>
     public async Task<IReadOnlyList<RunInfo>> ListRunsAsync(int limit, CancellationToken ct) =>
         (await storage.ListRunsAsync(limit, ct)).Select(r => new RunInfo(r.RunId, r.State, r.ElapsedSeconds, r.StartedUtc, r.TotalBees, r.FailedBees, 0, r.TotalLogs, r.Error, [])).ToList();
 
+    /// <summary>Gets summary information and per-entry figures for a live or stored run.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The matching <see cref="RunInfo"/>, or <see langword="null"/> if the run does not exist.</returns>
     public async Task<RunInfo?> GetRunAsync(string runId, CancellationToken ct)
     {
         if (IsCurrent(runId)) return RunAdapter.ToRunInfo(runs.GetCurrent());
@@ -34,6 +50,18 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         return new RunInfo(data.RunId, data.State, data.ElapsedSeconds, data.StartedUtc, data.Bees.Count, entries.Sum(e => e.Failed), entries.Sum(e => e.SlowBees), data.TotalLogs, data.Error, entries);
     }
 
+    /// <summary>
+    /// Lists a page of bees for a run, filtered by entry, outcome, and optional failed step,
+    /// ordered failed first, then slow, then ok, and by start time within each group.
+    /// </summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="entry">Optional 0-based scenario entry index to filter by.</param>
+    /// <param name="outcome">The bee outcome filter (<see cref="BeeOutcomeFilter"/>).</param>
+    /// <param name="offset">The 0-based number of matching bees to skip.</param>
+    /// <param name="limit">The maximum number of bees to return in the page.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <param name="failedStep">Optional 0-based step index; when set, matches only failed bees that failed at that step.</param>
+    /// <returns>A <see cref="BeePage"/> with the total matching count and requested slice of bees.</returns>
     public async Task<BeePage> ListBeesAsync(string runId, int? entry, BeeOutcomeFilter outcome, int offset, int limit, CancellationToken ct, int? failedStep = null)
     {
         var all = await AllBeesAsync(runId, ct);
@@ -51,12 +79,22 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         return new BeePage(ordered.Count, ordered.Skip(offset).Take(limit).ToList());
     }
 
+    /// <summary>Gets compact bee summaries for specific 0-based bee sequence numbers in a run.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="sequences">The 0-based bee sequence numbers to retrieve; unknown sequences are omitted.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>A read-only list of matching <see cref="BeeInfo"/> records.</returns>
     public async Task<IReadOnlyList<BeeInfo>> GetBeesAsync(string runId, IReadOnlyList<int> sequences, CancellationToken ct)
     {
         var wanted = sequences.ToHashSet();
         return (await AllBeesAsync(runId, ct)).Where(b => wanted.Contains(b.Sequence)).ToList();
     }
 
+    /// <summary>Gets full execution details (recorded HTTP calls and logs) for a single bee in a run.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="sequence">The 0-based bee sequence number.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The <see cref="BeeDetailInfo"/> for the bee, or <see langword="null"/> if not found.</returns>
     public async Task<BeeDetailInfo?> GetBeeAsync(string runId, int sequence, CancellationToken ct)
     {
         if (IsCurrent(runId)) await storage.FlushAsync(ct);
@@ -68,6 +106,15 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
             d.Logs.Select(l => new BeeLogInfo(l.AtSeconds, l.Level, l.Message, l.Exception, l.CallIndex)).ToList());
     }
 
+    /// <summary>Lists aggregated HTTP call endpoint statistics for a run.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="entry">Optional 0-based scenario entry index to filter calls by.</param>
+    /// <param name="slowOnly">When <see langword="true"/>, includes only endpoints with slow calls.</param>
+    /// <param name="failedOnly">When <see langword="true"/>, includes only endpoints with failed calls.</param>
+    /// <param name="minMs">Optional minimum call duration in milliseconds.</param>
+    /// <param name="search">Optional substring filter matched against endpoint names.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>A <see cref="CallEndpointsPage"/> with totals and per-endpoint statistics.</returns>
     public async Task<CallEndpointsPage> ListCallEndpointsAsync(string runId, int? entry, bool slowOnly, bool failedOnly, double? minMs, string? search, CancellationToken ct)
     {
         if (IsCurrent(runId)) await storage.FlushAsync(ct);
@@ -75,6 +122,18 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         return new CallEndpointsPage(res.TotalCalls, res.TotalSlowCalls, res.TotalFailedCalls, res.Endpoints.Select(ToEndpointInfo).ToList());
     }
 
+    /// <summary>Gets summary metrics and a paged list of individual call samples for a single endpoint in a run.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="endpoint">The normalized endpoint name.</param>
+    /// <param name="entry">Optional 0-based scenario entry index to filter by.</param>
+    /// <param name="show">Optional call outcome filter (for example, slow or failed).</param>
+    /// <param name="minMs">Optional minimum call duration in milliseconds.</param>
+    /// <param name="maxMs">Optional maximum call duration in milliseconds.</param>
+    /// <param name="sort">Optional sort order for matching call samples.</param>
+    /// <param name="offset">The 0-based number of matching calls to skip.</param>
+    /// <param name="limit">The maximum number of call samples to return.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>The <see cref="CallEndpointDetailInfo"/> for the endpoint, or <see langword="null"/> if not found.</returns>
     public async Task<CallEndpointDetailInfo?> GetCallEndpointDetailAsync(
         string runId,
         string endpoint,
@@ -101,6 +160,11 @@ public sealed class RunHistoryAdapter(RunManager runs, IRunStorage storage) : IR
         new(s.Endpoint, s.Method ?? "", s.TotalCount, s.SlowCount, s.FailedCount, s.TypicalMs, s.P95Ms, s.MaxMs,
             s.SlowThresholdMs ?? SlowCallRule.EffectiveThresholdMs(s.TypicalMs) ?? 0, s.HasCustomThreshold);
 
+    /// <summary>Queries a paged slice of log entries for a run using the specified filter.</summary>
+    /// <param name="runId">The run identifier.</param>
+    /// <param name="f">The log filter and pagination options.</param>
+    /// <param name="ct">A token to cancel the operation.</param>
+    /// <returns>A <see cref="LogPageInfo"/> containing the total matching log count and log lines for the page.</returns>
     public async Task<LogPageInfo> QueryLogsAsync(string runId, LogFilter f, CancellationToken ct)
     {
         if (IsCurrent(runId)) await storage.FlushAsync(ct);

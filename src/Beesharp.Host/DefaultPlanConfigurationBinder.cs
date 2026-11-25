@@ -11,6 +11,15 @@ namespace Beesharp.Services;
 /// </summary>
 internal static class DefaultPlanConfigurationBinder
 {
+    /// <summary>
+    /// Reads the <c>Plan</c> configuration section and binds its top-level settings and scenario entries into a
+    /// <see cref="DefaultPlanOptions"/> instance.
+    /// </summary>
+    /// <param name="configuration">The application configuration containing the optional <c>Plan</c> section.</param>
+    /// <returns>
+    /// A <see cref="DefaultPlanOptions"/> populated from configuration, with each scenario's nested <c>Parameters</c>
+    /// converted into a <see cref="JsonObject"/> when present.
+    /// </returns>
     public static DefaultPlanOptions Bind(IConfiguration configuration)
     {
         var section = configuration.GetSection("Plan");

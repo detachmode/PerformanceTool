@@ -14,20 +14,20 @@ using Microsoft.Extensions.Http;
 
 namespace Beesharp;
 
-/// <summary>Options for <see cref="BeesharpApp.CreateBuilder"/> (brain 0058).</summary>
+/// <summary>Configuration options for <see cref="BeesharpApp.CreateBuilder"/> (brain 0058).</summary>
 public sealed class BeesharpAppOptions
 {
-    /// <summary>Registers the four built-in HTTP scenarios by default.</summary>
+    /// <summary>Gets or sets a value indicating whether the four built-in HTTP scenarios are registered automatically. Defaults to <see langword="true"/>.</summary>
     public bool IncludeBuiltInScenarios { get; set; } = true;
 
-    /// <summary>Registers the AI assistant endpoints and adapters by default (stays hidden unless <c>AI__Model</c> is configured).</summary>
+    /// <summary>Gets or sets a value indicating whether the AI assistant endpoints and service adapters are registered. Defaults to <see langword="true"/> (the assistant UI stays hidden unless <c>AI__Model</c> is configured).</summary>
     public bool IncludeAiAssistant { get; set; } = true;
 
-    /// <summary>Optional default environment name when not overridden by <c>Plan:DefaultEnvironment</c>.</summary>
+    /// <summary>Gets or sets an optional default environment name to use when not overridden by <c>Plan:DefaultEnvironment</c>.</summary>
     public string? DefaultEnvironment { get; set; }
 }
 
-/// <summary>Handle returned by <see cref="BeesharpAppBuilder.AddPreset"/> to mark a code-defined preset as the default.</summary>
+/// <summary>Handle returned by <see cref="BeesharpAppBuilder.AddPreset"/> to configure a code-defined preset.</summary>
 public sealed class PresetRegistrationHandle
 {
     private readonly Action markDefault;
@@ -38,9 +38,11 @@ public sealed class PresetRegistrationHandle
         this.markDefault = markDefault;
     }
 
+    /// <summary>Gets the trimmed name of the registered preset.</summary>
     public string Name { get; }
 
-    /// <summary>Marks this preset as the default plan loaded at startup when no prior run was restored (unless overridden by <c>Plan:DefaultPreset</c>).</summary>
+    /// <summary>Marks this preset as the default plan loaded at startup when no prior run is restored, unless overridden by <c>Plan:DefaultPreset</c>.</summary>
+    /// <returns>This <see cref="PresetRegistrationHandle"/> for fluent chaining.</returns>
     public PresetRegistrationHandle AsDefault()
     {
         markDefault();
@@ -77,12 +79,21 @@ public sealed class BeesharpAppBuilder
             AddBuiltInScenarios();
     }
 
+    /// <summary>Gets the underlying ASP.NET Core <see cref="Microsoft.AspNetCore.Builder.WebApplicationBuilder"/>.</summary>
     public WebApplicationBuilder WebApplicationBuilder { get; }
+
+    /// <summary>Gets the dependency injection service collection for registering scenarios, programs, and application services.</summary>
     public IServiceCollection Services => WebApplicationBuilder.Services;
+
+    /// <summary>Gets the application configuration manager.</summary>
     public ConfigurationManager Configuration => WebApplicationBuilder.Configuration;
+
+    /// <summary>Gets the web host environment.</summary>
     public IWebHostEnvironment Environment => WebApplicationBuilder.Environment;
 
     /// <summary>Registers a scenario in DI so constructor injection of shared services works naturally.</summary>
+    /// <typeparam name="TScenario">The scenario type implementing <see cref="IScenario"/>.</typeparam>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddScenario<TScenario>() where TScenario : class, IScenario
     {
         Services.AddScenario<TScenario>();
@@ -90,6 +101,8 @@ public sealed class BeesharpAppBuilder
     }
 
     /// <summary>Registers a compiled preflight program in DI so constructor injection of shared services works naturally.</summary>
+    /// <typeparam name="TPreflight">The preflight program type implementing <see cref="IPreflightProgram"/>.</typeparam>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddPreflight<TPreflight>() where TPreflight : class, IPreflightProgram
     {
         Services.AddPreflight<TPreflight>();
@@ -97,6 +110,10 @@ public sealed class BeesharpAppBuilder
     }
 
     /// <summary>Registers an inline delegate preflight program.</summary>
+    /// <param name="id">Unique identifier of the preflight program.</param>
+    /// <param name="name">Display name of the preflight program.</param>
+    /// <param name="execute">Delegate invoked before a run starts.</param>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddPreflight(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
     {
         Services.AddSingleton<IPreflightProgram>(new DelegatePreflightProgram(id, name, execute));
@@ -104,6 +121,8 @@ public sealed class BeesharpAppBuilder
     }
 
     /// <summary>Registers a compiled shutdown program in DI so constructor injection of shared services works naturally.</summary>
+    /// <typeparam name="TShutdown">The shutdown program type implementing <see cref="IShutdownProgram"/>.</typeparam>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddShutdown<TShutdown>() where TShutdown : class, IShutdownProgram
     {
         Services.AddShutdown<TShutdown>();
@@ -111,13 +130,18 @@ public sealed class BeesharpAppBuilder
     }
 
     /// <summary>Registers an inline delegate shutdown program.</summary>
+    /// <param name="id">Unique identifier of the shutdown program.</param>
+    /// <param name="name">Display name of the shutdown program.</param>
+    /// <param name="execute">Delegate invoked at the end of a run.</param>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddShutdown(string id, string name, Func<ProgramContext, CancellationToken, Task> execute)
     {
         Services.AddSingleton<IShutdownProgram>(new DelegateShutdownProgram(id, name, execute));
         return this;
     }
 
-    /// <summary>Registers the built-in HTTP scenarios (idempotent).</summary>
+    /// <summary>Registers the built-in HTTP scenarios (<see cref="HttpGetScenario"/>, <see cref="HttpPostJsonScenario"/>, <see cref="CustomRequestScenario"/>, and <see cref="UserJourneyScenario"/>). Calling this more than once has no effect.</summary>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder AddBuiltInScenarios()
     {
         if (builtInsRegistered) return this;
@@ -133,6 +157,9 @@ public sealed class BeesharpAppBuilder
     /// Registers a strongly typed preset in C#. Appears in <c>/api/presets</c> and can be loaded/edited in the UI
     /// (saving edits in the UI writes a disk preset that overrides the code preset by name).
     /// </summary>
+    /// <param name="name">Unique name of the preset.</param>
+    /// <param name="configure">Callback that configures the preset's <see cref="PlanBuilder"/>.</param>
+    /// <returns>A <see cref="PresetRegistrationHandle"/> that can mark the preset as the default.</returns>
     public PresetRegistrationHandle AddPreset(string name, Action<PlanBuilder> configure)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -143,6 +170,8 @@ public sealed class BeesharpAppBuilder
     }
 
     /// <summary>Sets the default environment name (overridden by <c>Plan:DefaultEnvironment</c> in configuration).</summary>
+    /// <param name="environmentName">Name of the environment to select by default.</param>
+    /// <returns>This <see cref="BeesharpAppBuilder"/> for fluent chaining.</returns>
     public BeesharpAppBuilder UseDefaultEnvironment(string environmentName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
@@ -150,6 +179,8 @@ public sealed class BeesharpAppBuilder
         return this;
     }
 
+    /// <summary>Configures Beesharp engine services, storage, AI assistant (when enabled), middleware, and HTTP endpoints, and builds the host.</summary>
+    /// <returns>A configured <see cref="BeesharpApp"/> ready to initialize and run.</returns>
     public BeesharpApp Build()
     {
         var config = Configuration;
@@ -306,17 +337,28 @@ public sealed class BeesharpApp : IAsyncDisposable
         this.savedToPath = savedToPath;
     }
 
+    /// <summary>Creates a new <see cref="BeesharpAppBuilder"/> configured with command-line arguments and host options.</summary>
+    /// <param name="args">Command-line arguments passed to the application. Starting with <c>run</c> enables headless CLI mode.</param>
+    /// <param name="options">Optional host configuration controlling built-in scenarios, AI assistant registration, and default environment.</param>
+    /// <returns>A new <see cref="BeesharpAppBuilder"/> instance.</returns>
     public static BeesharpAppBuilder CreateBuilder(string[]? args = null, BeesharpAppOptions? options = null) =>
         new(args ?? [], options);
 
+    /// <summary>Gets the underlying ASP.NET Core <see cref="Microsoft.AspNetCore.Builder.WebApplication"/>.</summary>
     public WebApplication WebApplication { get; }
+
+    /// <summary>Gets the application's root <see cref="IServiceProvider"/>.</summary>
     public IServiceProvider Services => WebApplication.Services;
+
+    /// <summary>Gets a value indicating whether the host was invoked with the <c>run</c> CLI subcommand for headless execution.</summary>
     public bool IsHeadlessRun => headlessArgs is not null;
 
     /// <summary>
     /// Validates the scenario catalog, loads scripts, registers code presets, restores the latest run (in web mode),
     /// and applies default plan configuration. Idempotent; called automatically by <see cref="RunAsync"/>.
     /// </summary>
+    /// <param name="ct">Cancellation token to abort initialization.</param>
+    /// <returns>A task representing the asynchronous initialization operation.</returns>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         if (initialized) return;
@@ -351,7 +393,9 @@ public sealed class BeesharpApp : IAsyncDisposable
         await workspace.ApplyDefaultPlanAsync(defaultOptions, ct);
     }
 
-    /// <summary>Starts the host (or runs headless CLI mode when invoked with <c>run ...</c>). Returns process exit code.</summary>
+    /// <summary>Starts the host (or runs headless CLI mode when invoked with <c>run ...</c>).</summary>
+    /// <param name="ct">Cancellation token to stop the host or headless run.</param>
+    /// <returns>The process exit code (<c>0</c> when the web host exits cleanly, or the headless exit code).</returns>
     public async Task<int> RunAsync(CancellationToken ct = default)
     {
         await InitializeAsync(ct);
@@ -363,7 +407,12 @@ public sealed class BeesharpApp : IAsyncDisposable
         return 0;
     }
 
-    /// <summary>Executes headless <c>run</c> mode against this host's registered scenarios, DI services, presets and storage using the shared <see cref="HeadlessRunner"/>.</summary>
+    /// <summary>Executes headless <c>run</c> mode against this host's registered scenarios, DI services, presets, and storage using the shared <see cref="HeadlessRunner"/>.</summary>
+    /// <param name="args">Command-line arguments (with or without a leading <c>run</c> token).</param>
+    /// <param name="output">Writer receiving standard run output and usage help.</param>
+    /// <param name="error">Writer receiving diagnostic and error messages.</param>
+    /// <param name="ct">Cancellation token to abort the headless run.</param>
+    /// <returns>The process exit code from <see cref="HeadlessExitCodes"/>.</returns>
     public async Task<int> RunHeadlessAsync(string[] args, TextWriter output, TextWriter error, CancellationToken ct = default)
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -426,6 +475,8 @@ public sealed class BeesharpApp : IAsyncDisposable
         return await HeadlessRunner.RunAsync(request, Services, output, error, ct);
     }
 
+    /// <summary>Disposes the underlying <see cref="Microsoft.AspNetCore.Builder.WebApplication"/> and its services asynchronously.</summary>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous dispose operation.</returns>
     public ValueTask DisposeAsync() => WebApplication.DisposeAsync();
 }
 

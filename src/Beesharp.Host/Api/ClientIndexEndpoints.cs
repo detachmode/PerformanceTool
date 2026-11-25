@@ -14,7 +14,22 @@ namespace Beesharp.Api;
 /// </summary>
 public static class ClientIndexEndpoints
 {
-    /// <summary>Maps /build-info.json and the fallback to index.html. Call after <c>MapStaticAssets()</c>.</summary>
+    /// <summary>
+    /// Maps the client build-info endpoint and SPA HTML fallback route. Call after <c>MapStaticAssets()</c>.
+    /// </summary>
+    /// <param name="app">The endpoint route builder to add the client index endpoints to.</param>
+    /// <returns>The same <see cref="IEndpointRouteBuilder"/> instance for chaining.</returns>
+    /// <remarks>
+    /// Mapped HTTP endpoints:
+    /// <list type="bullet">
+    /// <item>
+    /// <description><c>GET /build-info.json</c> — Returns JSON <c>{ "sha": string? }</c> with the <c>BuildSha</c> assembly metadata value (or <see langword="null"/> if unset) and <c>Cache-Control: no-store</c>. Status: <c>200 OK</c>.</description>
+    /// </item>
+    /// <item>
+    /// <description><c>Fallback (any unmatched route)</c> — Serves the client <c>index.html</c> (<c>text/html; charset=utf-8</c>, <c>Cache-Control: no-cache</c>) resolved from web root <c>index.html</c> via <see cref="ClientIndexHtml.Resolve"/> or, if absent, from the bundled <c>beesharp-ui/index.html</c> file. Status: <c>200 OK</c>, or <c>404 Not Found</c> if neither file exists.</description>
+    /// </item>
+    /// </list>
+    /// </remarks>
     public static IEndpointRouteBuilder MapClientIndex(this IEndpointRouteBuilder app)
     {
         var descriptors = StaticAssetsEndpointDataSourceHelper.HasStaticAssetsDataSource(app, null)
@@ -37,6 +52,7 @@ public static class ClientIndexEndpoints
             return Results.Json(new { sha = string.IsNullOrWhiteSpace(buildSha) ? null : buildSha });
         });
 
+        // Serves the resolved SPA index.html for any unmatched client route (with no-cache so new deploys appear on next load).
         app.MapFallback(async context =>
         {
             if (html is null)
@@ -65,9 +81,21 @@ public static class ClientIndexEndpoints
     }
 }
 
-/// <summary>Fills index.html's fingerprint placeholders and empty importmap from static asset endpoints.</summary>
+/// <summary>Fills <c>index.html</c>'s fingerprint placeholders and empty importmap from static asset endpoints.</summary>
 public static partial class ClientIndexHtml
 {
+    /// <summary>
+    /// Replaces <c>#[.{fingerprint}]</c> asset placeholders and populates the empty importmap script tag in
+    /// <paramref name="html"/> using uncompressed static asset descriptors.
+    /// </summary>
+    /// <param name="html">The raw <c>index.html</c> content containing placeholders and an empty importmap tag.</param>
+    /// <param name="descriptors">The resolved static asset descriptors from the host's static asset endpoints.</param>
+    /// <returns>The updated HTML string with fingerprinted asset paths and generated JSON importmap.</returns>
+    /// <remarks>
+    /// Only descriptors with no selectors (uncompressed assets) that define both <c>label</c> and <c>fingerprint</c>
+    /// properties with a fingerprinted route are used. JavaScript modules (<c>.js</c> and <c>.mjs</c>) are added to
+    /// the <c>imports</c> and <c>integrity</c> maps serialized into <c>&lt;script type="importmap"&gt;</c>.
+    /// </remarks>
     public static string Resolve(string html, IEnumerable<StaticAssetDescriptor> descriptors)
     {
         // label (the plain path, e.g. _framework/dotnet.js) -> fingerprinted route and its integrity. Only uncompressed endpoints.
