@@ -31,3 +31,8 @@ Unified the separate CI, Docker, Pages, and tag-triggered NuGet workflows into o
 `build-test` -> (`docker-build` -> `e2e` on amd64 + arm64 -> `docker-push` / `nuget-publish`) and
 `build-test` -> (`pages-build` -> `pages-deploy` on `main`).
 Nothing deploys to GitHub Pages, GHCR, or NuGet.org unless `build-test` (and `e2e` for Docker/NuGet) passes first.
+
+## Update (2026-11-25)
+Added a lightweight `gate` job at the start of `.github/workflows/ci.yml` to deduplicate simultaneous `main` + `v*` tag pushes (e.g. `git push --follow-tags`):
+- On a `push` to `refs/heads/main`, `gate` checks via `git ls-remote --tags` whether `github.sha` already has a `v*` tag; if so, it sets `run=false` and skips the duplicate `main` pipeline.
+- On a `push` to `refs/tags/v*`, `gate` checks whether `refs/heads/main` points at `github.sha` (`is_main=true`), so the single tag run also publishes the `:latest` Docker tag and deploys GitHub Pages while keeping `docker-push` and `nuget-publish` gated on `e2e`.
