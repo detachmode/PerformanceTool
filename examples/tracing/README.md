@@ -22,6 +22,49 @@ elastic: beesharp (transaction), shop-api (transaction)
          http://localhost:5601/app/apm/link-to/trace/4d7ce6ac47fbe9b3822d67a473ce9774
 ```
 
+## Point Beesharp at a backend
+
+Beesharp makes every bee the root of its own trace (bee → step → call) and sends a sampled `traceparent` on every call, so a service that is instrumented with OpenTelemetry (and keeps traces of a sampled parent) shows its server spans below the call. Exporting Beesharp's own spans is **off until you give it a collector** (brain 0062):
+
+| Backend | gRPC (default) | http/protobuf |
+|---|---|---|
+| Jaeger | `http://localhost:4317` | `http://localhost:4318` |
+| Elastic (OTel Collector → APM Server) | `http://localhost:14317` | `http://localhost:14318` |
+
+```sh
+# server, from the repo root
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 dotnet run --project src/Beesharp
+# or in appsettings / Docker:  Tracing__OtlpEndpoint=http://localhost:4317
+# http/protobuf instead of gRPC:
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf dotnet run --project src/Beesharp
+# headless
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:14317 dotnet run --project src/Beesharp.Cli -- run --preset smoke
+```
+
+Settings (`Tracing:*` wins over the `OTEL_*` variables): `Tracing:OtlpEndpoint`, `Tracing:Protocol` (`grpc` | `http/protobuf`), `Tracing:ServiceName` (default `beesharp`, also `OTEL_SERVICE_NAME`). Inside Docker Compose use the service name instead of `localhost` (`http://jaeger:4317`).
+
+Run a preset, open a call on `/calls` (or the Calls tab of a bee), copy its trace ID and look it up:
+
+```sh
+curl http://localhost:16686/api/v3/traces/<trace id>      # Jaeger: bee, steps, calls and the services' spans
+open http://localhost:16686/trace/<trace id>
+```
+
+A trace looks like this (checked against Jaeger v2 with a small instrumented `shop-api`):
+
+```
+[beesharp] Shop journey            (the bee)
+  [beesharp] Log in                (a step)
+    [beesharp] GET /login          (a call)
+      [shop-api] GET /login        (the service's server span)
+  [beesharp] Open product
+    [beesharp] GET /products/{id}
+      [shop-api] GET /products/{id}
+  [beesharp] Pay
+    [beesharp] POST /pay
+      [shop-api] POST /pay
+```
+
 ## Endpoints
 
 | | Jaeger | Elastic |

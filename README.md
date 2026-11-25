@@ -28,6 +28,8 @@ services:
       # AI__Model: gpt-4.1-mini
       # AI__ApiKey: ${OPENAI_API_KEY}
       # AI__Endpoint: http://ollama:11434/v1   # any OpenAI-compatible server
+      # Optional: send the actors' traces (actor, step and call spans) to an OpenTelemetry collector, e.g. Jaeger. Off without it.
+      # Tracing__OtlpEndpoint: http://jaeger:4317   # gRPC; for http/protobuf use :4318 and Tracing__Protocol: http/protobuf
       # Optional: keep runs in memory only (nothing written to /app/data).
       # Storage__Provider: Memory
 

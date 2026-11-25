@@ -48,7 +48,10 @@ public sealed class ActorTrace : IDisposable
     public static ActorTrace? Start(ActorTraceInfo info)
     {
         ArgumentNullException.ThrowIfNull(info);
-        // A default parent context makes a new root (a new trace ID) whatever Activity.Current is.
+        // A run starts inside a request (the REST call of the UI) or under whatever else the host was doing, and the actors inherit that ambient Activity.Current.
+        // A default parent context would still fall back to it, so the actor first cuts loose from it: its flow starts without a current activity and so gets its own trace ID.
+        // Activity.Current is per async flow: only this actor's flow changes.
+        Activity.Current = null;
         var activity = BeesharpTracing.Source.StartActivity(string.IsNullOrWhiteSpace(info.Name) ? info.ScenarioId : info.Name, ActivityKind.Internal, default(ActivityContext));
         if (activity is null) return null;
 

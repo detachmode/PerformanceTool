@@ -172,6 +172,39 @@ public class ActorTraceTests
     }
 
     [Fact]
+    public async Task A_run_started_inside_a_request_still_gives_every_actor_a_trace_of_its_own()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = a => { lock (stopped) stopped.Add(a); },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // The REST call that starts a run has its own activity (ASP.NET Core makes one); the actors are started from within it.
+        using var requestSource = new ActivitySource("Test.Request");
+        using var request = requestSource.StartActivity("POST /api/runs/start")!;
+
+        await using var server = RecordingServer.Start();
+        var (_, storage, status) = await RunAsync(server.Port, actors: 3);
+
+        var traceIds = new HashSet<string>();
+        foreach (var bee in status.NewBees)
+        {
+            var detail = (await storage.GetBeeDetailAsync(status.RunId, bee.Sequence))!;
+            Assert.NotEqual(request.TraceId.ToHexString(), detail.TraceId);
+            Assert.True(traceIds.Add(detail.TraceId!));
+            Activity[] spans;
+            lock (stopped) spans = stopped.Where(a => a.TraceId.ToHexString() == detail.TraceId && a.Source.Name == BeesharpTracing.SourceName).ToArray();
+            var root = Assert.Single(spans, a => a.ParentSpanId == default);
+            Assert.Equal("Checkout", root.DisplayName);
+        }
+        Assert.Equal(3, traceIds.Count);
+    }
+
+    [Fact]
     public async Task Calls_outside_steps_hang_directly_below_the_actor()
     {
         var stopped = new List<Activity>();
