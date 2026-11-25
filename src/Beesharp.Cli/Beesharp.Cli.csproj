@@ -17,7 +17,12 @@
     <RootNamespace>Beesharp.Cli</RootNamespace>
     <Description>Command-line tool (beesharp) for running load-test presets headlessly and inspecting exported or live Beesharp runs.</Description>
     <PackageTags>beesharp;load-testing;performance;cli;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Beesharp.Cli.Tests" />

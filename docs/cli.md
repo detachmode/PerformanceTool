@@ -5,16 +5,30 @@ exported run bundles offline without locking a live server's database (brain 006
 
 ## Install or run
 
+Install `Beesharp.Cli` from NuGet as a global .NET tool (the command is `beesharp`):
+
 ```bash
-dotnet run --project src/Beesharp.Cli -- run --preset "Black Friday" --env Staging --root ./load-tests
+dotnet tool install --global Beesharp.Cli
+beesharp run --preset "Black Friday" --env Staging
 ```
 
-or install it as a .NET tool (the command is then `beesharp`):
+To update an existing installation:
+
+```bash
+dotnet tool update --global Beesharp.Cli
+```
+
+Or install from a local checkout:
 
 ```bash
 dotnet pack src/Beesharp.Cli -c Release -o ./nupkg
 dotnet tool install --global Beesharp.Cli --add-source ./nupkg
-beesharp run --preset "Black Friday" --env Staging
+```
+
+Or run directly from source without installing:
+
+```bash
+dotnet run --project src/Beesharp.Cli -- run --preset "Black Friday" --env Staging --root ./load-tests
 ```
 
 Output is plain text without colour codes, readable in CI logs.

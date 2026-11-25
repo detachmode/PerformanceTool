@@ -61,6 +61,33 @@ Open http://localhost:5281.
 - **Update:** `docker compose pull && docker compose up -d`. Pin a version (`:1.2.3`) instead of `latest` to
   update on your own schedule.
 
+## Command-line tool (`beesharp`)
+
+Install `Beesharp.Cli` as a global .NET tool (requires the .NET 11 SDK/runtime):
+
+```bash
+dotnet tool install --global Beesharp.Cli
+```
+
+Update an existing installation:
+
+```bash
+dotnet tool update --global Beesharp.Cli
+```
+
+Once installed, the command is `beesharp`:
+
+```bash
+# Run a preset headlessly (e.g. in CI)
+beesharp run --preset "Black Friday" --env Staging --root ./load-tests --export run.zip
+
+# Inspect an exported run bundle offline or query a live server
+beesharp runs summary run.zip
+beesharp runs list --url http://localhost:5281
+```
+
+See [docs/cli.md](docs/cli.md) for all subcommands, options, exit codes, and local build instructions.
+
 ## Examples
 
 `examples/` holds standalone .NET 11 file-based scenario scripts (`#:package Beesharp.Core@0.1.0`) and a full Aspire-style host project:
