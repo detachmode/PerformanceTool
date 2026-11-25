@@ -339,13 +339,6 @@ public sealed class BeesharpApp : IAsyncDisposable
             workspace.RegisterCodePresets(builtPresets);
         }
 
-        if (!IsHeadlessRun)
-        {
-            var runs = Services.GetRequiredService<RunManager>();
-            await runs.RestoreLatestAsync(ct);
-            workspace.SeedIfEmpty(runs.GetCurrent().Plan);
-        }
-
         var defaultOptions = DefaultPlanConfigurationBinder.Bind(WebApplication.Configuration);
         if (string.IsNullOrWhiteSpace(defaultOptions.DefaultPreset) && !string.IsNullOrWhiteSpace(codeDefaultPreset))
             defaultOptions.DefaultPreset = codeDefaultPreset;

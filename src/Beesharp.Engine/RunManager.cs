@@ -125,6 +125,49 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
             await LoadStoredRunAsync(best.RunId, ct);
     }
 
+    /// <summary>Clears a loaded historical run and returns to the idle state (only when no live run is active).</summary>
+    public bool UnloadStoredRun()
+    {
+        lock (sync)
+        {
+            if (IsActive) return false;
+            runId = "";
+            state = "Idle";
+            startedUtc = default;
+            clock = new RunClock();
+            finalElapsed = 0;
+            activePlan = new LoadPlan();
+            starts = [];
+            finished = [];
+            inFlight = [];
+            failed = [];
+            slowBees = [];
+            slowCalls = [];
+            dropped = [];
+            runSteps = [];
+            failedPerStep = [];
+            bees.Clear();
+            activeBees.Clear();
+            activeBeeContexts.Clear();
+            liveLogs.Clear();
+            typicals = new CallTypicals();
+            lastSequence = -1;
+            totalLogs = 0;
+            runError = null;
+            preflightState = null;
+            preflightScriptName = null;
+            preflightLogs.Clear();
+            preflightError = null;
+            shutdownState = null;
+            shutdownScriptName = null;
+            shutdownLogs.Clear();
+            shutdownError = null;
+            runData = null;
+            storedRuntime = null;
+            return true;
+        }
+    }
+
     /// <summary>Loads a persisted historical run from <see cref="IRunStorage"/> into the active view.</summary>
     public async Task<LiveRunStatusDto?> LoadStoredRunAsync(string targetRunId, CancellationToken ct = default)
     {

@@ -355,7 +355,30 @@ public sealed class ApiRunSource : IRunSource
     {
         if (!IsViewingHistory) return;
         IsViewingHistory = false;
+        activeRunId = "";
+        activeStore = new RunStore(Plan.Scenarios.Count);
+        lastSequence = -1;
+        receivedBees = 0;
+        seenSequences.Clear();
+        loadedDetails.Clear();
+        loadingDetails.Clear();
+        detailMissedAt.Clear();
+        PreflightState = null;
+        PreflightScriptName = null;
+        PreflightLogs = [];
+        PreflightError = null;
+        PreflightDismissed = false;
+        runtime = null;
+        runtimeVersion = -1;
+        Current = EmptySnapshot(Plan);
         Changed?.Invoke();
+        _ = UnloadAndResumeAsync();
+    }
+
+    private async Task UnloadAndResumeAsync()
+    {
+        try { await http.PostAsync("api/runs/unload", null); } catch { }
+        StartPolling();
     }
 
     /// <summary>Lazily fetches one bee's full calls and logs from run storage on demand.</summary>
@@ -606,6 +629,13 @@ public sealed class ApiRunSource : IRunSource
             "Finished" => FakeRunState.Finished,
             _ => FakeRunState.Idle,
         };
+
+        if (string.IsNullOrEmpty(dto.RunId) && state == FakeRunState.Idle)
+        {
+            Current = EmptySnapshot(Plan);
+            Changed?.Invoke();
+            return;
+        }
 
         IReadOnlyList<RunningBee>[]? beesInFlight = null;
         if (dto.RunningBees is { Count: > 0 } && count > 0)

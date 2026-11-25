@@ -65,7 +65,7 @@
             }
             else if (tab == Tab.Steps)
             {
-                <StepList @key="fb.Sequence" Steps="StepLogic.ForBee(Steps, detail.Calls, fb.FailedStep, fb.FailedRep, fb.Error, detail.StepVisits)" Logs="detail.Logs" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + fb.Name)" />
+                <StepList @key="fb.Sequence" Steps="StepLogic.ForBee(Steps, detail.Calls, fb.FailedStep, fb.FailedRep, fb.Error, detail.StepVisits)" Logs="detail.Logs" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + fb.Name)" OnCallClick="OpenEndpoint" />
             }
             else if (tab == Tab.Logs)
             {
@@ -127,7 +127,7 @@
             @if (tab == Tab.Steps)
             {
                 var nowCall = ra.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs)?.Name;
-                <StepList @key="ra.Sequence" Steps="StepLogic.ForRunning(Steps, ra, elapsedMs)" NowCall="@nowCall" LiveLogs="@(DataMode.IsFakeMode ? null : runningLogs)" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + ra.Name)" />
+                <StepList @key="ra.Sequence" Steps="StepLogic.ForRunning(Steps, ra, elapsedMs)" NowCall="@nowCall" LiveLogs="@(DataMode.IsFakeMode ? null : runningLogs)" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + ra.Name)" OnCallClick="OpenEndpoint" />
             }
             else if (tab == Tab.Logs)
             {
@@ -158,7 +158,7 @@
                         var cls = !done ? "run" : call.Failed ? "bad" : "good";
                         var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
                         <li class="call @cls">
-                            <span class="call-name" title="@call.Name">@call.Name</span>
+                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="Analyse all durations of @(call.Endpoint ?? call.Name)">@call.Name</button>
                             <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                             <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
                             <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? (ExecutionResult.IsCanceledError(call.Error) ? "canceled" : "timeout")) : call.Status?.ToString() ?? "")</span>

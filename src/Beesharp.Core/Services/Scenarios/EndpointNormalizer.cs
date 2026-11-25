@@ -58,12 +58,18 @@ public static partial class EndpointNormalizer
         if (rest.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || rest.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            if (Uri.TryCreate(rest, UriKind.Absolute, out var abs))
+            var ws = rest.IndexOfAny([' ', '\t']);
+            var urlPart = ws > 0 ? rest[..ws] : rest;
+            if (Uri.TryCreate(urlPart, UriKind.Absolute, out var abs))
                 return NormalizeHttp(new HttpMethod(verb), abs).Endpoint;
         }
 
         if (rest.StartsWith('/'))
-            return $"{verb} {NormalizePath(StripQueryAndFragment(rest))}";
+        {
+            var ws = rest.IndexOfAny([' ', '\t']);
+            var pathPart = ws > 0 ? rest[..ws] : rest;
+            return $"{verb} {NormalizePath(StripQueryAndFragment(pathPart))}";
+        }
 
         return $"{verb} {rest}";
     }

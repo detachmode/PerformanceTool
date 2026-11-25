@@ -19,6 +19,9 @@ public class HttpCallTrackingTests
         Assert.Equal("GET /users/{id}/profile", EndpointNormalizer.NormalizeCallName("GET /users/alice@example.com/profile"));
         Assert.Equal("GET /docs/{id}", EndpointNormalizer.NormalizeCallName("GET /docs/507f1f77bcf86cd799439011"));
         Assert.Equal("POST /cart/items", EndpointNormalizer.NormalizeCallName("POST /cart/items · 2"));
+        Assert.Equal("POST /processes", EndpointNormalizer.NormalizeCallName("POST /processes (#2)"));
+        Assert.Equal("POST /routelistentries", EndpointNormalizer.NormalizeCallName("POST /routelistentries (#1)"));
+        Assert.Equal("GET /orders/{id}", EndpointNormalizer.NormalizeCallName("GET https://api.test/orders/42 (#3)"));
         Assert.Equal("GET /search", EndpointNormalizer.NormalizeCallName("GET /search?q=running+shoes&page=2"));
         Assert.Equal("Place order", EndpointNormalizer.NormalizeCallName("Place order"));
 

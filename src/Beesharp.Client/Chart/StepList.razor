@@ -84,7 +84,14 @@
                                     </li>
                                 }
                                 <li class="stp-call @cls @(step.Repeats ? "in-rep" : "")">
-                                    <span class="call-name" title="@c.Name">@c.Name</span>
+                                    @if (OnCallClick.HasDelegate)
+                                    {
+                                        <button type="button" class="call-name call-link" @onclick="() => OnCallClick.InvokeAsync(c)" title="Analyse all durations of @(c.Endpoint ?? c.Name)">@c.Name</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="call-name" title="@c.Name">@c.Name</span>
+                                    }
                                     <span class="call-dur">@Format.Ms(c.DurationMs)</span>
                                     <span class="call-status">@(c.Failed ? (c.Status?.ToString() ?? (Beesharp.Services.ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "")</span>
                                 </li>
@@ -149,6 +156,8 @@
     /// <summary>Incremented by the parent when clicking Collapse all / Expand all to clear per-row manual overrides.</summary>
     [Parameter] public int ResetKey { get; set; }
     [Parameter] public string AriaLabel { get; set; } = "Steps";
+    /// <summary>Optional callback when a call row is clicked (e.g. to open it on the Calls page).</summary>
+    [Parameter] public EventCallback<FakeCall> OnCallClick { get; set; }
 
     private readonly HashSet<int> toggled = [];
     private bool showPending;
