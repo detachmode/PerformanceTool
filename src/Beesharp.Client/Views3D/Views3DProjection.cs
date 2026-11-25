@@ -16,7 +16,14 @@ public static class Views3DProjection
     public static readonly int[] GoodRgb = [52, 211, 153];     // #34d399
     public static readonly int[] SlowRgb = [251, 191, 36];     // #fbbf24
     public static readonly int[] FailedRgb = [240, 82, 82];    // #f05252
+    public static readonly int[] CanceledRgb = [248, 128, 86]; // #f88056
     public static readonly int[] RunningRgb = [91, 155, 240];  // #5b9bf0
+
+    public const int MinBucketCount = 8;
+    public const int MaxBucketCount = 120;
+    public const int DefaultHistoryMaxBars = 64;
+    public const int MaxErrorCascadeLanes = 8;
+    private const int MaxSwarmDetailedBees = 250;
 
     private static readonly double[] NiceLadderMs =
     [
@@ -35,6 +42,29 @@ public static class Views3DProjection
         if (spanSeconds <= 180) return 24;
         if (spanSeconds <= 2400) return 30;
         return 36;
+    }
+
+    /// <summary>Clamps a manual grid bucket/bar override to [<see cref="MinBucketCount"/>, <see cref="MaxBucketCount"/>].</summary>
+    public static int ClampBucketCount(int count) => Math.Clamp(count, MinBucketCount, MaxBucketCount);
+
+    private static int ResolveBucketCount(double spanSeconds, int? bucketCountOverride)
+    {
+        if (!(spanSeconds > 0)) return 0;
+        return bucketCountOverride is { } v ? ClampBucketCount(v) : ChooseBucketCount(spanSeconds);
+    }
+
+    /// <summary>Coral red for failed bees, shifting to a slightly brighter red-amber tint when canceled bees are present.</summary>
+    public static int[] ErrorCascadeRgb(int count, int canceledCount)
+    {
+        if (count <= 0 || canceledCount <= 0) return FailedRgb;
+        if (canceledCount >= count) return CanceledRgb;
+        var t = canceledCount / (double)count;
+        return
+        [
+            (int)Math.Round(FailedRgb[0] + (CanceledRgb[0] - FailedRgb[0]) * t),
+            (int)Math.Round(FailedRgb[1] + (CanceledRgb[1] - FailedRgb[1]) * t),
+            (int)Math.Round(FailedRgb[2] + (CanceledRgb[2] - FailedRgb[2]) * t),
+        ];
     }
 
     /// <summary>Beesharp's exact outcome colour: red if failed, amber if slow or ratio &gt;= 2×, else graded green-to-amber via <see cref="SlowCallRule.Step"/>.</summary>
@@ -89,13 +119,17 @@ public static class Views3DProjection
     }
 
     /// <summary>Projects Graph 1: Scenario &amp; Step Terrain.</summary>
-    public static TerrainScene BuildTerrain(RunSnapshot snapshot, TerrainGrouping grouping, int? scenarioEntry = null)
+    public static TerrainScene BuildTerrain(
+        RunSnapshot snapshot,
+        TerrainGrouping grouping,
+        int? scenarioEntry = null,
+        int? bucketCountOverride = null)
     {
         if (snapshot.Count == 0)
             return new TerrainScene(grouping, null, [], [], 0, 0, 0, []);
 
         var spanSec = ComputeRunSpanSeconds(snapshot, grouping == TerrainGrouping.Steps ? scenarioEntry : null);
-        var buckets = ChooseBucketCount(spanSec);
+        var buckets = ResolveBucketCount(spanSec, bucketCountOverride);
         if (buckets == 0)
             return new TerrainScene(grouping, scenarioEntry, [], [], 0, 0, 0, []);
 
@@ -105,8 +139,11 @@ public static class Views3DProjection
             : BuildScenarioTerrain(snapshot, spanSec, buckets, ticks);
     }
 
-    /// <summary>Projects Graph 3: Latency Distribution Surface.</summary>
-    public static SurfaceScene BuildSurface(RunSnapshot snapshot, int? entryFilter = null)
+    /// <summary>Projects Graph 2: Latency Distribution Surface.</summary>
+    public static SurfaceScene BuildSurface(
+        RunSnapshot snapshot,
+        int? entryFilter = null,
+        int? bucketCountOverride = null)
     {
         if (snapshot.Count == 0)
             return new SurfaceScene(entryFilter, BuildLatencyBands([], 0), [], 0, 0, 0, [], 0);
@@ -115,7 +152,7 @@ public static class Views3DProjection
             entryFilter = null;
 
         var spanSec = ComputeRunSpanSeconds(snapshot, entryFilter);
-        var buckets = ChooseBucketCount(spanSec);
+        var buckets = ResolveBucketCount(spanSec, bucketCountOverride);
         if (buckets == 0)
             return new SurfaceScene(entryFilter, BuildLatencyBands([], 0), [], 0, 0, 0, [], 0);
 
@@ -418,10 +455,12 @@ public static class Views3DProjection
         IReadOnlyList<HistoryRunInput> previousRuns,
         string? currentRunId = null,
         DateTimeOffset? currentStartedUtc = null,
-        int maxBars = 64)
+        int? maxBarsOverride = null)
     {
         if (currentSnapshot.Count == 0 || entry < 0 || entry >= currentSnapshot.Count)
             return new RunHistoryScene(-1, "", "", [], [], 0, 0, 0, 0, [], "No scenario selected.");
+
+        var maxBars = maxBarsOverride is { } ov ? ClampBucketCount(ov) : DefaultHistoryMaxBars;
 
         var cfg = currentSnapshot.Plan.Scenarios[entry];
         var scnLabel = entry < currentSnapshot.Labels.Count && !string.IsNullOrWhiteSpace(currentSnapshot.Labels[entry])
@@ -852,6 +891,676 @@ public static class Views3DProjection
         }
 
         return new JsScenePayload("surface", 22, 12, scene.TimeBuckets, lanes, scene.TimeTicks, cells);
+    }
+
+    /// <summary>
+    /// Projects Tab 4: Error Cascade (<c>Time × Distinct Error Signature × Count</c>), scanning failed/canceled bees
+    /// across all scenarios (or <paramref name="entryFilter"/>) and grouping up to top 8 distinct error signatures.
+    /// </summary>
+    public static ErrorCascadeScene BuildErrorCascade(
+        RunSnapshot snapshot,
+        ErrorCascadeSort sort = ErrorCascadeSort.FirstSeen,
+        int? entryFilter = null,
+        int? bucketCountOverride = null)
+    {
+        if (snapshot.Count == 0)
+            return new ErrorCascadeScene(sort, entryFilter, [], [], 0, 0, 0, 0, 0, []);
+
+        if (entryFilter is { } ef && (ef < 0 || ef >= snapshot.Count))
+            entryFilter = null;
+
+        var spanSec = ComputeRunSpanSeconds(snapshot, entryFilter);
+        var buckets = ResolveBucketCount(spanSec, bucketCountOverride);
+        if (buckets == 0)
+            return new ErrorCascadeScene(sort, entryFilter, [], [], 0, 0, 0, 0, 0, []);
+
+        var ticks = BuildTimeTicks(spanSec);
+        var startEntry = entryFilter ?? 0;
+        var endEntry = entryFilter ?? snapshot.Count - 1;
+
+        var groupsBySig = new Dictionary<string, ErrorSignatureGroup>(StringComparer.Ordinal);
+        var totalErrors = 0;
+
+        for (var e = startEntry; e <= endEntry; e++)
+        {
+            var bees = snapshot.Store.Bees(e);
+            var count = FinishedCount(snapshot, e, bees.Count);
+            for (var i = 0; i < count; i++)
+            {
+                var bee = bees[i];
+                if (!bee.Failed) continue;
+
+                totalErrors++;
+                var raw = snapshot.Store.Errors.Resolve(bee.ErrorId) ?? bee.Error;
+                var sig = string.IsNullOrWhiteSpace(raw) ? "(No error message)" : raw.Trim();
+
+                if (!groupsBySig.TryGetValue(sig, out var grp))
+                {
+                    grp = new ErrorSignatureGroup(sig);
+                    groupsBySig[sig] = grp;
+                }
+                grp.Add(bee);
+            }
+        }
+
+        if (groupsBySig.Count == 0)
+            return new ErrorCascadeScene(sort, entryFilter, [], [], buckets, spanSec, 0, 0, 0, ticks);
+
+        var orderedGroups = sort == ErrorCascadeSort.MostFrequent
+            ? groupsBySig.Values
+                .OrderByDescending(g => g.TotalCount)
+                .ThenBy(g => g.FirstSeenSec)
+                .ThenBy(g => g.Signature, StringComparer.Ordinal)
+            : groupsBySig.Values
+                .OrderBy(g => g.FirstSeenSec)
+                .ThenByDescending(g => g.TotalCount)
+                .ThenBy(g => g.Signature, StringComparer.Ordinal);
+
+        var selectedGroups = orderedGroups.Take(MaxErrorCascadeLanes).ToList();
+        var bucketWidth = spanSec / buckets;
+        var lanes = new List<ErrorCascadeLane>(selectedGroups.Count);
+        var grid = new List<IReadOnlyList<ErrorCascadeCell>>(selectedGroups.Count);
+        var maxCount = 0;
+
+        for (var l = 0; l < selectedGroups.Count; l++)
+        {
+            var g = selectedGroups[l];
+            var displayLabel = FormatErrorSignature(g.Signature, 34);
+            var laneEntries = g.EntryCounts.Keys.OrderBy(x => x).ToList();
+            var laneEntryLabels = laneEntries.Select(idx => ScenarioDisplayName(snapshot, idx)).ToList();
+            var dominantEntry = g.DominantEntry();
+
+            lanes.Add(new ErrorCascadeLane(
+                l,
+                g.Signature,
+                displayLabel,
+                $"@ {Format.Time(g.FirstSeenSec)} · {Format.Num(g.TotalCount)}",
+                g.FirstSeenSec,
+                g.LastSeenSec,
+                g.TotalCount,
+                g.CanceledCount,
+                laneEntries,
+                laneEntryLabels,
+                dominantEntry,
+                g.SampleBeeSequence,
+                g.SampleStep));
+
+            var acc = new ErrorCellAccumulator[buckets];
+            for (var t = 0; t < buckets; t++) acc[t] = new ErrorCellAccumulator();
+
+            foreach (var bee in g.Bees)
+            {
+                var tIdx = BucketIndex(bee.StartedAt, bucketWidth, buckets);
+                acc[tIdx].Add(bee);
+            }
+
+            var row = new List<ErrorCascadeCell>(buckets);
+            for (var t = 0; t < buckets; t++)
+            {
+                var a = acc[t];
+                var fromSec = t * bucketWidth;
+                var toSec = (t + 1) * bucketWidth;
+                var timeLabel = $"{Format.Time(fromSec)}–{Format.Time(toSec)}";
+                if (a.Count > maxCount) maxCount = a.Count;
+
+                var cellEntries = a.Entries.OrderBy(x => x).ToList();
+                var cellEntryLabels = cellEntries.Select(idx => ScenarioDisplayName(snapshot, idx)).ToList();
+                var color = ErrorCascadeRgb(a.Count, a.CanceledCount);
+
+                row.Add(new ErrorCascadeCell(
+                    l,
+                    g.Signature,
+                    displayLabel,
+                    t,
+                    fromSec,
+                    toSec,
+                    timeLabel,
+                    a.Count,
+                    a.CanceledCount,
+                    a.Count > 0 ? a.FirstOccurrenceSec : 0,
+                    g.TotalCount,
+                    cellEntries,
+                    cellEntryLabels,
+                    a.SampleBeeSequence,
+                    a.SampleEntry,
+                    a.SampleStep,
+                    color));
+            }
+            grid.Add(row);
+        }
+
+        return new ErrorCascadeScene(
+            sort,
+            entryFilter,
+            lanes,
+            grid,
+            buckets,
+            spanSec,
+            maxCount,
+            totalErrors,
+            groupsBySig.Count,
+            ticks);
+    }
+
+    /// <summary>Converts an <see cref="ErrorCascadeScene"/> into the compact JS payload for <c>views-3d.js</c>.</summary>
+    public static JsScenePayload ToJsPayload(ErrorCascadeScene scene)
+    {
+        var lanes = scene.Lanes
+            .Select(l => new JsSceneLane(l.Index, l.DisplayLabel, l.Index == 0))
+            .ToList();
+
+        var cells = new List<JsSceneCell>();
+        var scaleCount = Math.Max(1.0, scene.MaxCount);
+
+        foreach (var row in scene.Grid)
+        {
+            foreach (var c in row)
+            {
+                if (c.Count == 0) continue;
+                var h = Math.Clamp(0.24 + (c.Count / scaleCount) * 6.8, 0.24, 7.2);
+                var lane = scene.Lanes[c.LaneIndex];
+                var scenariosText = c.AffectedEntryLabels.Count > 0
+                    ? string.Join(", ", c.AffectedEntryLabels)
+                    : "–";
+                var countText = c.CanceledCount > 0
+                    ? $"{Format.Num(c.Count)} ({Format.Num(c.CanceledCount)} canceled) / {Format.Num(c.LaneTotalCount)} total"
+                    : $"{Format.Num(c.Count)} in bucket / {Format.Num(c.LaneTotalCount)} total";
+
+                var ttRows = new List<JsTooltipRow>(3)
+                {
+                    new("Occurrences", countText),
+                    new("First seen", $"{Format.Time(lane.FirstSeenSec)} (bucket {Format.Time(c.FirstOccurrenceSec)})"),
+                    new("Scenarios", scenariosText),
+                };
+
+                cells.Add(new JsSceneCell(
+                    c.LaneIndex,
+                    c.BucketIndex,
+                    Math.Round(h, 3),
+                    c.ColorRgb,
+                    $"{lane.DisplayLabel} · {c.TimeLabel}",
+                    ttRows,
+                    c.Signature));
+            }
+        }
+
+        var zSpan = Math.Clamp(scene.Lanes.Count * 1.6, 8.0, 14.0);
+        return new JsScenePayload("errors", 22, zSpan, scene.TimeBuckets, lanes, scene.TimeTicks, cells);
+    }
+
+    /// <summary>Normalizes whitespace/newlines and truncates an error signature cleanly for lane labels.</summary>
+    public static string FormatErrorSignature(string signature, int maxLength = 34)
+    {
+        if (string.IsNullOrWhiteSpace(signature)) return "(No error message)";
+        var normalized = string.Join(' ', signature.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length == 0) return "(No error message)";
+        if (normalized.Length <= maxLength) return normalized;
+        return maxLength <= 1 ? normalized[..maxLength] : normalized[..(maxLength - 1)].TrimEnd() + "…";
+    }
+
+    /// <summary>Active bar colour for Swarm matrix: blue below 1.25×, smoothly lerping toward amber at 2× typical.</summary>
+    public static int[] SwarmActiveColorRgb(double ratio)
+    {
+        if (ratio >= SlowCallRule.Factor) return SlowRgb;
+        if (ratio <= 1.25) return RunningRgb;
+        var t = Math.Clamp((ratio - 1.25) / (SlowCallRule.Factor - 1.25), 0.0, 1.0);
+        return
+        [
+            (int)Math.Round(RunningRgb[0] + (SlowRgb[0] - RunningRgb[0]) * t),
+            (int)Math.Round(RunningRgb[1] + (SlowRgb[1] - RunningRgb[1]) * t),
+            (int)Math.Round(RunningRgb[2] + (SlowRgb[2] - RunningRgb[2]) * t),
+        ];
+    }
+
+    /// <summary>
+    /// Projects Tab 5: Swarm: Dead or Alive (<c>Scenario × Declared Step × Active/Failed</c>) with step-to-step
+    /// transition arcs (<c>next</c>, <c>skip</c>, <c>repeat</c>, <c>loop</c>) and sample bee paths.
+    /// </summary>
+    public static SwarmScene BuildSwarmMatrix(RunSnapshot snapshot, SwarmDisplayMode mode = SwarmDisplayMode.Stacked)
+    {
+        if (snapshot.Count == 0)
+            return new SwarmScene(mode, 0, 0, 0, 0, [], [], [], [], false);
+
+        var stepCounts = new int[snapshot.Count];
+        var maxSteps = 0;
+        for (var e = 0; e < snapshot.Count; e++)
+        {
+            var steps = snapshot.StepsOf(e);
+            stepCounts[e] = steps.Any ? steps.Count : 1;
+            if (stepCounts[e] > maxSteps) maxSteps = stepCounts[e];
+        }
+
+        var stepHeaders = new List<string>(maxSteps);
+        for (var s = 0; s < maxSteps; s++) stepHeaders.Add($"Step {s + 1}");
+
+        var lanes = new List<SwarmLane>(snapshot.Count);
+        var grid = new List<IReadOnlyList<SwarmStepCell>>(snapshot.Count);
+        var arcs = new List<SwarmTransitionArc>();
+        var maxActive = 0;
+        var maxFailed = 0;
+        var maxTotal = 0;
+
+        for (var e = 0; e < snapshot.Count; e++)
+        {
+            var steps = snapshot.StepsOf(e);
+            var hasDeclaredSteps = steps.Any;
+            var stepCount = stepCounts[e];
+            var scnName = ScenarioDisplayName(snapshot, e);
+
+            var activeCounts = new int[stepCount];
+            var failedCounts = new int[stepCount];
+            var slowCounts = new int[stepCount];
+            var repeatCounts = new int[stepCount];
+            var loopCounts = new int[stepCount];
+            var durSums = new double[stepCount];
+            var durCounts = new int[stepCount];
+            var typicalSamples = new List<double>[stepCount];
+            var maxNonFailedRatio = new double[stepCount];
+            var sampleError = new string?[stepCount];
+            var sampleBeeSeq = new int?[stepCount];
+
+            for (var s = 0; s < stepCount; s++)
+            {
+                typicalSamples[s] = [];
+                maxNonFailedRatio[s] = 1.0;
+            }
+
+            var arcCounts = new Dictionary<(int From, int To, string Kind), int>();
+            List<int>? bestPath = null;
+            var bestPathHasJump = false;
+
+            void RecordPath(List<int> path)
+            {
+                if (path.Count == 0) return;
+                var hasJump = false;
+                for (var k = 0; k < path.Count - 1; k++)
+                {
+                    var from = path[k];
+                    var to = path[k + 1];
+                    var kind = to == from ? "repeat" : to < from ? "loop" : to > from + 1 ? "skip" : "next";
+                    if (kind != "next") hasJump = true;
+                    if (kind == "repeat") repeatCounts[from]++;
+                    else if (kind == "loop") loopCounts[from]++;
+                    var key = (from, to, kind);
+                    arcCounts.TryGetValue(key, out var cnt);
+                    arcCounts[key] = cnt + 1;
+                }
+
+                if (bestPath is null
+                    || (hasJump && !bestPathHasJump)
+                    || (hasJump == bestPathHasJump && path.Count >= bestPath.Count))
+                {
+                    bestPath = path;
+                    bestPathHasJump = hasJump;
+                }
+            }
+
+            // 1. Live in-flight bees per step
+            if (snapshot.BeesInFlight is { } bif && e < bif.Length && bif[e].Count > 0)
+            {
+                foreach (var rb in bif[e])
+                {
+                    var elapsedMs = Math.Max(0, (snapshot.Elapsed - rb.StartedAt) * 1000.0);
+                    var curStep = hasDeclaredSteps ? Math.Clamp(StepLogic.CurrentStep(rb, elapsedMs), 0, stepCount - 1) : 0;
+                    activeCounts[curStep]++;
+                    sampleBeeSeq[curStep] ??= rb.Sequence;
+
+                    var hadStepCall = false;
+                    foreach (var c in rb.Calls)
+                    {
+                        if (c.Skipped || c.OffsetMs > elapsedMs) continue;
+                        var cs = hasDeclaredSteps ? c.Step : 0;
+                        if (cs < 0 || cs >= stepCount) continue;
+                        if (cs == curStep) hadStepCall = true;
+                        durSums[cs] += c.DurationMs;
+                        durCounts[cs]++;
+                        if (c.TypicalMs is { } tm && tm > 0) typicalSamples[cs].Add(tm);
+                        if (c.Slow) slowCounts[cs]++;
+                        var r = SlowCallRule.Ratio(c.DurationMs, c.TypicalMs, c.SlowThresholdMs);
+                        if (r > maxNonFailedRatio[cs]) maxNonFailedRatio[cs] = r;
+                    }
+                    if (!hadStepCall && elapsedMs > 0)
+                    {
+                        durSums[curStep] += elapsedMs;
+                        durCounts[curStep]++;
+                    }
+
+                    RecordPath(ExtractStepPath(rb.StepVisits, rb.Calls, hasDeclaredSteps, stepCount, elapsedMs));
+                }
+            }
+            else if (e < snapshot.Scenarios.Length && snapshot.Scenarios[e].InFlight > 0)
+            {
+                activeCounts[0] = snapshot.Scenarios[e].InFlight;
+            }
+
+            // 2. Finished & failed bees per step
+            var bees = snapshot.Store.Bees(e);
+            var finished = FinishedCount(snapshot, e, bees.Count);
+            for (var i = 0; i < finished; i++)
+            {
+                var bee = bees[i];
+                if (!bee.Failed) continue;
+                var fStep = hasDeclaredSteps
+                    ? (bee.FailedStep >= 0 && bee.FailedStep < stepCount ? bee.FailedStep : -1)
+                    : 0;
+                if (fStep < 0) continue;
+                failedCounts[fStep]++;
+                sampleError[fStep] ??= snapshot.Store.Errors.Resolve(bee.ErrorId) ?? bee.Error;
+                sampleBeeSeq[fStep] = bee.Sequence;
+            }
+
+            if (hasDeclaredSteps && finished > 0)
+            {
+                var failedPer = snapshot.Store.FailedPerStep(e);
+                for (var s = 0; s < stepCount && s < failedPer.Count; s++)
+                {
+                    if (failedPer[s] > failedCounts[s])
+                        failedCounts[s] = failedPer[s];
+                }
+            }
+
+            var detailStart = Math.Max(0, finished - MaxSwarmDetailedBees);
+            for (var i = detailStart; i < finished; i++)
+            {
+                var bee = bees[i];
+                var detail = snapshot.Store.Detail(bee.Sequence);
+                if (detail is null || IsPlaceholderDetail(detail))
+                {
+                    if (!hasDeclaredSteps)
+                    {
+                        durSums[0] += bee.DurationMs;
+                        durCounts[0]++;
+                        if (bee.Outcome == BeeOutcome.Slow) slowCounts[0]++;
+                        if (!bee.Failed && bee.Ratio > maxNonFailedRatio[0]) maxNonFailedRatio[0] = bee.Ratio;
+                    }
+                    continue;
+                }
+
+                foreach (var c in detail.Calls)
+                {
+                    if (c.Skipped) continue;
+                    var cs = hasDeclaredSteps ? c.Step : 0;
+                    if (cs < 0 || cs >= stepCount) continue;
+                    durSums[cs] += c.DurationMs;
+                    durCounts[cs]++;
+                    if (c.TypicalMs is { } tm && tm > 0) typicalSamples[cs].Add(tm);
+                    if (c.Failed)
+                    {
+                        sampleError[cs] ??= c.Error;
+                    }
+                    else
+                    {
+                        if (c.Slow) slowCounts[cs]++;
+                        var r = SlowCallRule.Ratio(c.DurationMs, c.TypicalMs, c.SlowThresholdMs);
+                        if (r > maxNonFailedRatio[cs]) maxNonFailedRatio[cs] = r;
+                    }
+                }
+
+                RecordPath(ExtractStepPath(detail.StepVisits, detail.Calls, hasDeclaredSteps, stepCount, double.PositiveInfinity));
+            }
+
+            foreach (var ((fromStep, toStep, kind), count) in arcCounts
+                .OrderBy(kv => kv.Key.From)
+                .ThenBy(kv => kv.Key.To)
+                .ThenBy(kv => kv.Key.Kind, StringComparer.Ordinal))
+            {
+                arcs.Add(new SwarmTransitionArc(e, fromStep, toStep, count, kind));
+            }
+
+            var row = new List<SwarmStepCell>(maxSteps);
+            for (var s = 0; s < maxSteps; s++)
+            {
+                if (s >= stepCount)
+                {
+                    row.Add(new SwarmStepCell(
+                        e,
+                        e,
+                        s,
+                        stepCount,
+                        scnName,
+                        "",
+                        IsEmptyPad: true,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1.0,
+                        null,
+                        null,
+                        [40, 37, 34]));
+                    continue;
+                }
+
+                var stepName = hasDeclaredSteps ? steps.Name(s) : "Run";
+                if (string.IsNullOrWhiteSpace(stepName)) stepName = $"Step {s + 1}";
+
+                var avgMs = durCounts[s] > 0 ? durSums[s] / durCounts[s] : 0;
+                var typicalMs = typicalSamples[s].Count > 0 ? Median(typicalSamples[s]) : avgMs;
+                var ratio = Math.Max(maxNonFailedRatio[s], typicalMs > 0 && avgMs > 0 ? SlowCallRule.Ratio(avgMs, typicalMs) : 1.0);
+                var activeColor = SwarmActiveColorRgb(ratio);
+
+                var act = activeCounts[s];
+                var fail = failedCounts[s];
+                if (act > maxActive) maxActive = act;
+                if (fail > maxFailed) maxFailed = fail;
+                if (act + fail > maxTotal) maxTotal = act + fail;
+
+                row.Add(new SwarmStepCell(
+                    e,
+                    e,
+                    s,
+                    stepCount,
+                    scnName,
+                    stepName,
+                    IsEmptyPad: false,
+                    act,
+                    fail,
+                    slowCounts[s],
+                    repeatCounts[s],
+                    loopCounts[s],
+                    avgMs,
+                    typicalMs,
+                    Math.Round(ratio, 2),
+                    sampleError[s],
+                    sampleBeeSeq[s],
+                    activeColor));
+            }
+
+            var laneActive = activeCounts.Sum();
+            var laneFailed = failedCounts.Sum();
+            var laneSlow = slowCounts.Sum();
+            var samplePath = bestPath is { Count: > 0 }
+                ? string.Join(" → ", bestPath.Select(st => (st + 1).ToString()))
+                : string.Join(" → ", Enumerable.Range(1, stepCount));
+
+            lanes.Add(new SwarmLane(
+                e,
+                e,
+                scnName,
+                $"{Format.Num(laneActive)} act · {Format.Num(laneFailed)} fail",
+                stepCount,
+                laneActive,
+                laneFailed,
+                laneSlow,
+                samplePath));
+            grid.Add(row);
+        }
+
+        return new SwarmScene(
+            mode,
+            maxSteps,
+            maxActive,
+            maxFailed,
+            maxTotal,
+            stepHeaders,
+            lanes,
+            grid,
+            arcs,
+            snapshot.Running);
+    }
+
+    /// <summary>Converts a <see cref="SwarmScene"/> into the compact JS payload for <c>views-3d.js</c>.</summary>
+    public static JsScenePayload ToJsPayload(SwarmScene scene)
+    {
+        var lanes = scene.Lanes
+            .Select(l => new JsSceneLane(l.Index, l.Name, l.FailedBees > 0 || l.ActiveBees > 0, DeclaredSteps: l.DeclaredSteps))
+            .ToList();
+
+        var scaleCount = Math.Max(4.0, scene.Mode switch
+        {
+            SwarmDisplayMode.ActiveOnly => scene.MaxActive,
+            SwarmDisplayMode.FailedOnly => scene.MaxFailed,
+            _ => scene.MaxTotal,
+        });
+
+        var cells = new List<JsSceneCell>();
+        foreach (var row in scene.Grid)
+        {
+            foreach (var c in row)
+            {
+                if (c.IsEmptyPad)
+                {
+                    cells.Add(new JsSceneCell(
+                        c.ScenarioIndex,
+                        c.StepIndex,
+                        0,
+                        [40, 37, 34],
+                        "",
+                        [],
+                        null,
+                        IsEmptyPad: true));
+                    continue;
+                }
+
+                var activeH = c.ActiveCount > 0 ? Math.Clamp(0.24 + (c.ActiveCount / scaleCount) * 5.6, 0.24, 6.0) : 0;
+                var failedH = c.FailedCount > 0 ? Math.Clamp(0.24 + (c.FailedCount / scaleCount) * 4.4, 0.24, 4.6) : 0;
+
+                double primaryH = 0;
+                int[] primaryColor = [40, 37, 34];
+                double secondaryH = 0;
+                int[]? secondaryColor = null;
+
+                switch (scene.Mode)
+                {
+                    case SwarmDisplayMode.ActiveOnly:
+                        if (activeH > 0)
+                        {
+                            primaryH = activeH;
+                            primaryColor = c.ActiveColorRgb;
+                        }
+                        break;
+                    case SwarmDisplayMode.FailedOnly:
+                        if (failedH > 0)
+                        {
+                            primaryH = failedH;
+                            primaryColor = FailedRgb;
+                        }
+                        break;
+                    default:
+                        if (activeH > 0 && failedH > 0)
+                        {
+                            primaryH = activeH;
+                            primaryColor = c.ActiveColorRgb;
+                            secondaryH = failedH;
+                            secondaryColor = FailedRgb;
+                        }
+                        else if (activeH > 0)
+                        {
+                            primaryH = activeH;
+                            primaryColor = c.ActiveColorRgb;
+                        }
+                        else if (failedH > 0)
+                        {
+                            primaryH = failedH;
+                            primaryColor = FailedRgb;
+                        }
+                        break;
+                }
+
+                var showFailed = scene.Mode != SwarmDisplayMode.ActiveOnly;
+                var showActive = scene.Mode != SwarmDisplayMode.FailedOnly;
+                var alertBadge = showFailed && c.FailedCount > 0;
+                string? badgeText = null;
+                if (alertBadge || (showActive && c.ActiveCount > 0))
+                {
+                    badgeText = scene.Mode switch
+                    {
+                        SwarmDisplayMode.FailedOnly => $"{c.StepName} ({c.FailedCount} fail)",
+                        SwarmDisplayMode.ActiveOnly => $"{c.StepName} ({c.ActiveCount} act)",
+                        _ => $"{c.StepName} ({c.ActiveCount}a · {c.FailedCount}f)",
+                    };
+                }
+
+                var ttRows = new List<JsTooltipRow>(4)
+                {
+                    new("Active in-flight", $"{Format.Num(c.ActiveCount)} bees"),
+                    new("Failed (step)", $"{Format.Num(c.FailedCount)} bees"),
+                    new("Slow / Avg", c.AvgDurationMs > 0
+                        ? $"{Format.Num(c.SlowCount)} slow · {Format.Ms(c.AvgDurationMs)} ({Format.Times(c.Ratio)})"
+                        : $"{Format.Num(c.SlowCount)} slow"),
+                    new("Repeats / Loops", $"{Format.Num(c.SelfRepeatCount)} rep · {Format.Num(c.BackLoopCount)} loop"),
+                };
+
+                cells.Add(new JsSceneCell(
+                    c.ScenarioIndex,
+                    c.StepIndex,
+                    Math.Round(primaryH, 3),
+                    primaryColor,
+                    $"{c.ScenarioName} · {c.StepName} (Step {c.StepIndex + 1}/{c.TotalSteps})",
+                    ttRows,
+                    c.SampleError,
+                    Math.Round(secondaryH, 3),
+                    secondaryColor,
+                    IsEmptyPad: false,
+                    StepName: c.StepName,
+                    BadgeText: badgeText,
+                    AlertBadge: alertBadge));
+            }
+        }
+
+        var jsArcs = scene.Arcs
+            .Select(a => new JsSceneArc(a.ScenarioIndex, a.FromStep, a.ToStep, a.Count, a.Kind))
+            .ToList();
+
+        var xSpan = Math.Clamp(scene.MaxSteps * 3.6, 12.0, 24.0);
+        var zSpan = Math.Clamp(scene.Lanes.Count * 2.6, 8.0, 15.0);
+        return new JsScenePayload("swarm", xSpan, zSpan, scene.MaxSteps, lanes, [], cells, jsArcs, scene.StepHeaders, scene.IsRunning);
+    }
+
+    private static List<int> ExtractStepPath(
+        IReadOnlyList<RecordedStepVisit>? stepVisits,
+        IReadOnlyList<FakeCall> calls,
+        bool hasDeclaredSteps,
+        int stepCount,
+        double maxOffsetMs)
+    {
+        var path = new List<int>();
+        if (stepVisits is { Count: > 0 })
+        {
+            foreach (var v in stepVisits)
+            {
+                var st = hasDeclaredSteps ? v.Step : 0;
+                if (st >= 0 && st < stepCount) path.Add(st);
+            }
+            return path;
+        }
+
+        var lastStep = -1;
+        var lastRep = -1;
+        foreach (var c in calls)
+        {
+            if (c.Skipped || c.OffsetMs > maxOffsetMs) continue;
+            var st = hasDeclaredSteps ? c.Step : 0;
+            if (st < 0 || st >= stepCount) continue;
+            if (st == lastStep && c.Rep == lastRep) continue;
+            path.Add(st);
+            lastStep = st;
+            lastRep = c.Rep;
+        }
+        return path;
     }
 
     /// <summary>Builds 7 adaptive logarithmic latency bands around the run's duration distribution.</summary>
@@ -1428,6 +2137,95 @@ public static class Views3DProjection
                 }
             }
             return best;
+        }
+    }
+
+    private static string ScenarioDisplayName(RunSnapshot snapshot, int entry)
+    {
+        var label = entry >= 0 && entry < snapshot.Labels.Count && !string.IsNullOrWhiteSpace(snapshot.Labels[entry])
+            ? snapshot.Labels[entry]
+            : entry >= 0 && entry < snapshot.Plan.Scenarios.Count
+                ? snapshot.Plan.Scenarios[entry].ScenarioId
+                : $"Scenario {entry + 1}";
+        return $"{entry + 1}. {label}";
+    }
+
+    private sealed class ErrorSignatureGroup(string signature)
+    {
+        public string Signature { get; } = signature;
+        public double FirstSeenSec { get; private set; } = double.MaxValue;
+        public double LastSeenSec { get; private set; } = double.MinValue;
+        public int TotalCount { get; private set; }
+        public int CanceledCount { get; private set; }
+        public int? SampleBeeSequence { get; private set; }
+        public int? SampleStep { get; private set; }
+        public Dictionary<int, int> EntryCounts { get; } = [];
+        public List<BeeRecord> Bees { get; } = [];
+
+        public void Add(in BeeRecord bee)
+        {
+            Bees.Add(bee);
+            TotalCount++;
+            if (bee.Canceled) CanceledCount++;
+            EntryCounts.TryGetValue(bee.Entry, out var c);
+            EntryCounts[bee.Entry] = c + 1;
+
+            if (bee.StartedAt < FirstSeenSec
+                || (bee.StartedAt == FirstSeenSec && (SampleBeeSequence is null || bee.Sequence < SampleBeeSequence.Value)))
+            {
+                FirstSeenSec = bee.StartedAt;
+                SampleBeeSequence = bee.Sequence;
+            }
+            if (bee.StartedAt > LastSeenSec) LastSeenSec = bee.StartedAt;
+            if (SampleStep is null && bee.FailedStep >= 0)
+                SampleStep = bee.FailedStep;
+        }
+
+        public int? DominantEntry()
+        {
+            if (EntryCounts.Count == 0) return null;
+            int? best = null;
+            var bestCount = -1;
+            foreach (var (entry, cnt) in EntryCounts)
+            {
+                if (best is null || cnt > bestCount || (cnt == bestCount && entry < best.Value))
+                {
+                    best = entry;
+                    bestCount = cnt;
+                }
+            }
+            return best;
+        }
+    }
+
+    private sealed class ErrorCellAccumulator
+    {
+        public int Count;
+        public int CanceledCount;
+        public double FirstOccurrenceSec = double.MaxValue;
+        public int? SampleBeeSequence;
+        public int? SampleEntry;
+        public int? SampleStep;
+        public HashSet<int> Entries { get; } = [];
+
+        public void Add(in BeeRecord bee)
+        {
+            Count++;
+            if (bee.Canceled) CanceledCount++;
+            Entries.Add(bee.Entry);
+
+            if (bee.StartedAt < FirstOccurrenceSec
+                || (bee.StartedAt == FirstOccurrenceSec && (SampleBeeSequence is null || bee.Sequence < SampleBeeSequence.Value)))
+            {
+                FirstOccurrenceSec = bee.StartedAt;
+                SampleBeeSequence = bee.Sequence;
+                SampleEntry = bee.Entry;
+                if (bee.FailedStep >= 0) SampleStep = bee.FailedStep;
+            }
+            else if (SampleStep is null && bee.FailedStep >= 0)
+            {
+                SampleStep = bee.FailedStep;
+            }
         }
     }
 }

@@ -81,8 +81,8 @@ label { font-size: .74rem; color: var(--muted); }
 .top { position: fixed; top: 0; left: 0; right: 0; z-index: 70; height: var(--top-h); display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; padding: 0 1.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.07); box-shadow: none; }
 /* The blur lives on a pseudo-element: backdrop-filter on .top itself would trap fixed children (dropdown backdrops) inside the bar. */
 .top::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(15, 14, 13, 0.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.brand { display: flex; align-items: center; gap: .5rem; color: var(--title); text-decoration: none; font-weight: 700; font-size: .96rem; letter-spacing: -.01em; flex: none; }
-.brand b { color: #f5b700; font-weight: 700; }   /* the logo keeps its honey colour */
+.brand { display: flex; align-items: center; gap: .5rem; color: var(--title); text-decoration: none; font-weight: 700; font-size: 15px; letter-spacing: -0.015em; flex: none; }
+.brand b { color: var(--title); font-weight: 700; }
 .brand-hex { transition: transform .18s ease; flex: none; }
 .brand:hover .brand-hex { transform: scale(1.06); }
 .nav { display: flex; gap: .2rem; flex: none; height: 100%; align-items: stretch; }
@@ -1109,12 +1109,14 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 /* ----- boot splash screen ----- */
 .boot { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .65rem; padding: 1.5rem; color: var(--muted); text-align: center; }
 .boot-icon { animation: boot-pulse 1.8s ease-in-out infinite; filter: drop-shadow(0 4px 16px rgba(255, 255, 255, 0.21)); }
-.boot.failed .boot-icon { animation: none; opacity: .7; filter: grayscale(.3); }
+.boot-logo { width: min(260px, 72vw); height: auto; animation: boot-pulse 1.8s ease-in-out infinite; filter: drop-shadow(0 4px 18px rgba(255, 255, 255, 0.14)); }
+.boot.failed .boot-icon, .boot.failed .boot-logo { animation: none; opacity: .7; filter: grayscale(.3); }
 .boot-title { font-size: 1.25rem; font-weight: 700; color: var(--title); letter-spacing: -.01em; }
-.boot-title span { color: #f5b700; }
+.boot-title span { color: var(--title); }
 .boot-sub { font-size: .82rem; color: var(--muted); }
 .boot.failed .boot-sub { color: var(--bad); font-weight: 600; }
 .boot-err { margin-top: .4rem; max-width: 520px; width: 100%; padding: .85rem 1rem; border-radius: 8px; background: #f2737d14; border: 1px solid #f2737d55; display: flex; flex-direction: column; align-items: center; gap: .55rem; }
+.boot-err[hidden] { display: none; }
 .boot-err-msg { font-family: var(--mono); font-size: .78rem; color: #ffc2c7; word-break: break-word; }
 .boot-err-hint { font-size: .78rem; color: var(--muted); }
 @keyframes boot-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .88; } }
@@ -1828,6 +1830,8 @@ html.phone .shell .main:has(.scn), html.phone .shell .main:has(.calls-page), htm
 /* top bar: logo or back arrow, the page title, mode, ⋯ */
 html.phone .top-phone { gap: .35rem; padding: env(safe-area-inset-top) max(.5rem, env(safe-area-inset-right)) 0 max(.5rem, env(safe-area-inset-left)); }
 html.phone .top-phone .brand, html.phone .top-back, html.phone .top-more, html.phone .top-phone .asst-toggle { flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--title); }
+html.phone .top-phone .brand.brand-phone-logo { width: auto; border-radius: 8px; padding: 0 4px; }
+html.phone .top-phone .brand-logo-img { height: 34px; width: auto; display: block; }
 html.phone .top-phone .asst-toggle.on { color: var(--accent); background: rgba(255, 255, 255, 0.1); }
 html.phone .top-phone .brand-hex { width: 30px; height: 30px; }
 html.phone .top-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 1.12rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2045,6 +2049,9 @@ html.phone .sb-resizer { display: none; }
 .v3d-page { display: flex; flex-direction: column; height: calc(100dvh - var(--top-h) - 2.4rem); min-height: 520px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .v3d-page.has-player { height: calc(100dvh - var(--top-h) - 7.6rem); }
 .v3d-topbar { flex: none; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .6rem .9rem; border-bottom: 1px solid var(--border); background: var(--bg); }
+.v3d-topbar .seg { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.v3d-topbar .seg::-webkit-scrollbar { display: none; }
+.v3d-topbar .seg button { flex: none; white-space: nowrap; }
 .v3d-run-summary { display: inline-flex; align-items: center; gap: .65rem; font-size: .8rem; font-weight: 600; }
 .v3d-main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
 .v3d-stage-wrap { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--border); background: radial-gradient(circle at 50% 45%, #171614 0%, #0f0e0d 78%); }
@@ -2052,6 +2059,10 @@ html.phone .sb-resizer { display: none; }
 .v3d-toolbar > * { pointer-events: auto; }
 .v3d-sub { display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; background: rgba(26, 25, 23, 0.9); border: 1px solid var(--border); padding: .24rem .38rem; border-radius: 999px; backdrop-filter: blur(8px); }
 .v3d-sub .chip.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+.v3d-res { gap: .45rem; padding-right: .6rem; }
+.v3d-res-label { display: inline-flex; align-items: center; gap: .45rem; cursor: pointer; }
+.v3d-res-text { font-size: .75rem; color: var(--text); white-space: nowrap; min-width: 5.8rem; }
+.v3d-range { width: 5.5rem; height: 18px; margin: 0; accent-color: var(--title); cursor: pointer; }
 .v3d-select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: .22rem .65rem; font-size: .78rem; max-width: 15rem; }
 .v3d-hint { font-size: .75rem; color: var(--muted); background: rgba(26, 25, 23, 0.82); border: 1px solid var(--border); padding: .28rem .68rem; border-radius: 999px; }
 .v3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
@@ -2085,6 +2096,10 @@ html.phone .sb-resizer { display: none; }
 .v3d-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .65rem; }
 .v3d-actions a.chip { text-decoration: none; display: inline-flex; align-items: center; }
 .v3d-page .good { color: var(--good); }
+.v3d-page .running { color: var(--running); }
+.v3d-path-box { margin-top: .6rem; padding: .5rem .65rem; border-radius: var(--radius-sm); background: #131210; border: 1px solid rgba(56, 189, 248, 0.24); }
+.v3d-path-box .k { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+.v3d-path-box .v { font-family: var(--mono); font-size: .74rem; color: #7dd3fc; line-height: 1.45; overflow-wrap: anywhere; }
 .v3d-code { font-family: var(--mono); font-size: .74rem; color: var(--text); }
 .v3d-hist-setup { margin-top: .45rem; font-size: .76rem; color: var(--text); font-family: var(--mono); }
 .v3d-hist-row { display: flex; align-items: stretch; gap: .35rem; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .35rem .5rem; transition: background-color .12s, border-color .12s; }

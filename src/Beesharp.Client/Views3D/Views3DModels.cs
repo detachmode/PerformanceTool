@@ -8,6 +8,23 @@ public enum Views3DKind
     Terrain,
     Surface,
     RunHistory,
+    ErrorCascade,
+    SwarmMatrix,
+}
+
+/// <summary>How error signature lanes are ordered in the 4. Error Cascade view.</summary>
+public enum ErrorCascadeSort
+{
+    FirstSeen,
+    MostFrequent,
+}
+
+/// <summary>Which bar segments are shown in the 5. Swarm: Dead or Alive matrix view.</summary>
+public enum SwarmDisplayMode
+{
+    Stacked,
+    ActiveOnly,
+    FailedOnly,
 }
 
 /// <summary>How depth lanes are grouped in the Terrain view.</summary>
@@ -216,6 +233,115 @@ public sealed record RunHistoryScene(
     public bool HasData => TimeBuckets > 0 && Lanes.Count > 0 && Grid.Any(r => r.Any(c => c.BeeCount > 0 || c.RunningCount > 0));
 }
 
+/// <summary>One distinct error signature lane along the Z axis in the 4. Error Cascade view.</summary>
+public sealed record ErrorCascadeLane(
+    int Index,
+    string Signature,
+    string DisplayLabel,
+    string Meta,
+    double FirstSeenSec,
+    double LastSeenSec,
+    int TotalCount,
+    int CanceledCount,
+    IReadOnlyList<int> AffectedEntries,
+    IReadOnlyList<string> AffectedEntryLabels,
+    int? DominantEntry,
+    int? SampleBeeSequence,
+    int? SampleStep);
+
+/// <summary>One (error signature × time bucket) cell in the 4. Error Cascade view.</summary>
+public sealed record ErrorCascadeCell(
+    int LaneIndex,
+    string Signature,
+    string DisplayLabel,
+    int BucketIndex,
+    double FromSec,
+    double ToSec,
+    string TimeLabel,
+    int Count,
+    int CanceledCount,
+    double FirstOccurrenceSec,
+    int LaneTotalCount,
+    IReadOnlyList<int> AffectedEntries,
+    IReadOnlyList<string> AffectedEntryLabels,
+    int? SampleBeeSequence,
+    int? SampleEntry,
+    int? SampleStep,
+    int[] ColorRgb);
+
+/// <summary>Complete projected data for Tab 4: Error Cascade (Time × Distinct Error Signature × Count).</summary>
+public sealed record ErrorCascadeScene(
+    ErrorCascadeSort Sort,
+    int? ScenarioEntryFilter,
+    IReadOnlyList<ErrorCascadeLane> Lanes,
+    IReadOnlyList<IReadOnlyList<ErrorCascadeCell>> Grid,
+    int TimeBuckets,
+    double RunDurationSec,
+    int MaxCount,
+    int TotalErrors,
+    int DistinctErrorCount,
+    IReadOnlyList<TimeAxisTick> TimeTicks)
+{
+    public bool HasData => TimeBuckets > 0 && Lanes.Count > 0 && MaxCount > 0;
+}
+
+/// <summary>One step-to-step transition edge observed across bees in a scenario.</summary>
+public sealed record SwarmTransitionArc(
+    int ScenarioIndex,
+    int FromStep,
+    int ToStep,
+    int Count,
+    string Kind);
+
+/// <summary>One scenario lane along the Z axis in the 5. Swarm: Dead or Alive matrix view.</summary>
+public sealed record SwarmLane(
+    int Index,
+    int Entry,
+    string Name,
+    string Meta,
+    int DeclaredSteps,
+    int ActiveBees,
+    int FailedBees,
+    int SlowBees,
+    string SamplePath);
+
+/// <summary>One (scenario × step) cell in the 5. Swarm: Dead or Alive matrix view.</summary>
+public sealed record SwarmStepCell(
+    int ScenarioIndex,
+    int Entry,
+    int StepIndex,
+    int TotalSteps,
+    string ScenarioName,
+    string StepName,
+    bool IsEmptyPad,
+    int ActiveCount,
+    int FailedCount,
+    int SlowCount,
+    int SelfRepeatCount,
+    int BackLoopCount,
+    double AvgDurationMs,
+    double TypicalMs,
+    double Ratio,
+    string? SampleError,
+    int? SampleBeeSequence,
+    int[] ActiveColorRgb);
+
+/// <summary>Complete projected data for Tab 5: Swarm: Dead or Alive (Scenario × Step × Active/Failed).</summary>
+public sealed record SwarmScene(
+    SwarmDisplayMode Mode,
+    int MaxSteps,
+    int MaxActive,
+    int MaxFailed,
+    int MaxTotal,
+    IReadOnlyList<string> StepHeaders,
+    IReadOnlyList<SwarmLane> Lanes,
+    IReadOnlyList<IReadOnlyList<SwarmStepCell>> Grid,
+    IReadOnlyList<SwarmTransitionArc> Arcs,
+    bool IsRunning)
+{
+    public bool HasData => Lanes.Count > 0 && MaxSteps > 0;
+}
+
 /// <summary>Key/value row rendered inside the JS hover tooltip.</summary>
 public sealed record JsTooltipRow(string Label, string Value);
 
@@ -227,7 +353,13 @@ public sealed record JsSceneCell(
     int[] Color,
     string TooltipTitle,
     IReadOnlyList<JsTooltipRow> TooltipRows,
-    string? TooltipError);
+    string? TooltipError,
+    double SecondaryHeight = 0,
+    int[]? SecondaryColor = null,
+    bool IsEmptyPad = false,
+    string? StepName = null,
+    string? BadgeText = null,
+    bool AlertBadge = false);
 
 /// <summary>One depth lane label sent to <c>views-3d.js</c>.</summary>
 public sealed record JsSceneLane(
@@ -236,7 +368,16 @@ public sealed record JsSceneLane(
     bool Highlight,
     double? EndFraction = null,
     string? EndLabel = null,
-    bool IsStopped = false);
+    bool IsStopped = false,
+    int? DeclaredSteps = null);
+
+/// <summary>One step-to-step jump/flow arc sent to <c>views-3d.js</c> for Swarm mode.</summary>
+public sealed record JsSceneArc(
+    int ScenarioIndex,
+    int FromStep,
+    int ToStep,
+    int Count,
+    string Kind);
 
 /// <summary>Serialised scene payload consumed by <c>views-3d.js</c>.</summary>
 public sealed record JsScenePayload(
@@ -246,4 +387,7 @@ public sealed record JsScenePayload(
     int TimeBuckets,
     IReadOnlyList<JsSceneLane> Lanes,
     IReadOnlyList<TimeAxisTick> TimeTicks,
-    IReadOnlyList<JsSceneCell> Cells);
+    IReadOnlyList<JsSceneCell> Cells,
+    IReadOnlyList<JsSceneArc>? Arcs = null,
+    IReadOnlyList<string>? StepHeaders = null,
+    bool IsRunning = false);

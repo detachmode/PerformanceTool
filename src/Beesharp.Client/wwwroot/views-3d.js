@@ -42,6 +42,9 @@ export function mount(canvas, tooltip, dotnet) {
   let isolatedLane = null;
   let selected = null; // { laneIndex, bucketIndex }
   let hovered = null;  // { laneIndex, bucketIndex }
+  let showJumpArcs = true;
+  let swarmTime = 0;
+  let lastFrameTs = performance.now();
   let hitTargets = [];
   let dirty = true;
   let rafId = 0;
@@ -106,13 +109,15 @@ export function mount(canvas, tooltip, dotnet) {
     };
   }
 
-  function drawPoly(pts, fill, stroke, lineWidth = 1) {
+  function drawPoly(pts, fill, stroke, lineWidth = 1, dashed = false) {
     ctx.beginPath();
     ctx.moveTo(pts[0].sx, pts[0].sy);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
     ctx.closePath();
+    if (dashed) ctx.setLineDash([4, 4]);
     if (fill) { ctx.fillStyle = fill; ctx.fill(); }
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+    if (dashed) ctx.setLineDash([]);
   }
 
   function drawFloorGrid(xMin, xMax, zMin, zMax, xStep, zStep) {
@@ -139,7 +144,7 @@ export function mount(canvas, tooltip, dotnet) {
 
   function queueBox(queue, cx, cy, cz, w, h, d, baseColor, opts) {
     const hx = w / 2, hz = d / 2;
-    const y0 = cy, y1 = cy + Math.max(0.05, h);
+    const y0 = cy, y1 = cy + Math.max(0.03, h);
     const v = [
       project(cx - hx, y0, cz - hz), // 0
       project(cx + hx, y0, cz - hz), // 1
@@ -151,14 +156,14 @@ export function mount(canvas, tooltip, dotnet) {
       project(cx - hx, y1, cz + hz), // 7
     ];
     const centerDepth = (v[0].depth + v[2].depth + v[4].depth + v[6].depth) / 4;
-    const alpha = opts.dim ? 0.14 : 0.94;
+    const alpha = opts.dim ? 0.14 : (opts.alpha ?? 0.94);
     const stroke = opts.selected
       ? 'rgba(255,255,255,0.95)'
       : opts.hovered
         ? 'rgba(255,255,255,0.65)'
         : opts.dim
           ? 'rgba(255,255,255,0.06)'
-          : 'rgba(15,14,13,0.45)';
+          : (opts.stroke ?? 'rgba(15,14,13,0.45)');
 
     const faces = [
       { idx: [4, 5, 6, 7], shade: 1.12 }, // top
@@ -168,8 +173,17 @@ export function mount(canvas, tooltip, dotnet) {
       { idx: [3, 0, 4, 7], shade: 0.65 }, // left
     ];
 
+    const bounds = {
+      minX: Math.min(...v.map(p => p.sx)),
+      maxX: Math.max(...v.map(p => p.sx)),
+      minY: Math.min(...v.map(p => p.sy)),
+      maxY: Math.max(...v.map(p => p.sy)),
+      depth: centerDepth,
+    };
+
     queue.push({
       depth: centerDepth,
+      yOrder: cy,
       draw() {
         const fList = faces.map(f => {
           const pts = f.idx.map(i => v[i]);
@@ -186,24 +200,326 @@ export function mount(canvas, tooltip, dotnet) {
           );
         }
         if (opts.hit) {
-          const minX = Math.min(...v.map(p => p.sx));
-          const maxX = Math.max(...v.map(p => p.sx));
-          const minY = Math.min(...v.map(p => p.sy));
-          const maxY = Math.max(...v.map(p => p.sy));
           hitTargets.push({
-            box: { minX, maxX, minY, maxY },
+            box: bounds,
             depth: centerDepth,
             data: opts.hit,
           });
         }
       },
     });
+    return bounds;
+  }
+
+  function renderSwarm() {
+    const lanes = scene.lanes;
+    const maxSteps = scene.timeBuckets;
+    const xSpan = scene.xSpan || 18;
+    const zSpan = scene.zSpan || 12;
+
+    const cellX = (stepIdx) => -xSpan / 2 + ((stepIdx + 0.5) / maxSteps) * xSpan;
+    const cellZ = (laneIdx) => -zSpan / 2 + ((laneIdx + 0.5) / lanes.length) * zSpan;
+
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / maxSteps, zSpan / lanes.length);
+
+    // X-axis step headers
+    for (let k = 0; k < maxSteps; k++) {
+      const header = (scene.stepHeaders && scene.stepHeaders[k]) ? scene.stepHeaders[k] : `Step ${k + 1}`;
+      drawLabel3D(header, cellX(k), 0, -zSpan / 2 - 1.05, '#a19c94', 'center', 11.5);
+    }
+
+    // Z-axis scenario lane labels
+    for (let l = 0; l < lanes.length; l++) {
+      const lane = lanes[l];
+      const z = cellZ(l);
+      const isIso = isolatedLane === l;
+      const dim = isolatedLane !== null && !isIso;
+      const col = isIso ? '#ffffff' : (dim ? 'rgba(161,156,148,0.28)' : '#f1efea');
+      const shortName = lane.name.length > 28 ? lane.name.slice(0, 27) + '…' : lane.name;
+      drawLabel3D(shortName, -xSpan / 2 - 1.0, 0.15, z, col, 'right', 11.5);
+    }
+
+    const padW = (xSpan / maxSteps) * 0.74;
+    const padD = (zSpan / lanes.length) * 0.68;
+    const barW = padW * 0.68;
+    const barD = padD * 0.68;
+
+    // Draw connecting flow rails along declared steps
+    for (let l = 0; l < lanes.length; l++) {
+      const lane = lanes[l];
+      const declared = Math.max(1, lane.declaredSteps || maxSteps);
+      const z = cellZ(l);
+      const dim = isolatedLane !== null && isolatedLane !== l;
+      if (declared > 1) {
+        const a = project(cellX(0), 0.04, z);
+        const b = project(cellX(declared - 1), 0.04, z);
+        ctx.beginPath();
+        ctx.moveTo(a.sx, a.sy);
+        ctx.lineTo(b.sx, b.sy);
+        ctx.strokeStyle = dim ? 'rgba(91,155,240,0.06)' : 'rgba(91,155,240,0.28)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    const queue = [];
+    const topYGrid = Array.from({ length: lanes.length }, () => new Array(maxSteps).fill(0.08));
+
+    for (const cell of scene.cells) {
+      const x = cellX(cell.bucketIndex);
+      const z = cellZ(cell.laneIndex);
+      const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
+
+      if (cell.isEmptyPad) {
+        const hx = padW * 0.46, hz = padD * 0.46;
+        const pts = [
+          project(x - hx, 0.01, z - hz),
+          project(x + hx, 0.01, z - hz),
+          project(x + hx, 0.01, z + hz),
+          project(x - hx, 0.01, z + hz),
+        ];
+        const centerDepth = (pts[0].depth + pts[2].depth) / 2;
+        queue.push({
+          depth: centerDepth + 0.02,
+          yOrder: 0,
+          draw() {
+            drawPoly(
+              pts,
+              dim ? 'rgba(255,255,255,0.008)' : 'rgba(255,255,255,0.018)',
+              dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+              1,
+              true
+            );
+          },
+        });
+        continue;
+      }
+
+      const isSel = selected && selected.laneIndex === cell.laneIndex && selected.bucketIndex === cell.bucketIndex;
+      const isHov = hovered && hovered.laneIndex === cell.laneIndex && hovered.bucketIndex === cell.bucketIndex;
+      const primaryH = cell.height > 0 ? cell.height : 0;
+      const secondaryH = cell.secondaryHeight > 0 ? cell.secondaryHeight : 0;
+      const hasBars = primaryH > 0 || secondaryH > 0;
+
+      const padBounds = queueBox(queue, x, 0, z, padW, 0.08, padD, [40, 37, 34], {
+        dim,
+        alpha: 0.92,
+        selected: isSel && !hasBars,
+        hovered: isHov && !hasBars,
+        stroke: isSel ? 'rgba(255,255,255,0.9)' : isHov ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)',
+      });
+
+      let minX = padBounds.minX, maxX = padBounds.maxX;
+      let minY = padBounds.minY, maxY = padBounds.maxY;
+      let hitDepth = padBounds.depth;
+
+      if (primaryH > 0) {
+        const pb = queueBox(queue, x, 0.08, z, barW, primaryH, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+        });
+        minX = Math.min(minX, pb.minX);
+        maxX = Math.max(maxX, pb.maxX);
+        minY = Math.min(minY, pb.minY);
+        maxY = Math.max(maxY, pb.maxY);
+        hitDepth = Math.min(hitDepth, pb.depth);
+      }
+
+      if (secondaryH > 0 && cell.secondaryColor) {
+        const sb = queueBox(queue, x, 0.08 + primaryH, z, barW, secondaryH, barD, cell.secondaryColor, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+        });
+        minX = Math.min(minX, sb.minX);
+        maxX = Math.max(maxX, sb.maxX);
+        minY = Math.min(minY, sb.minY);
+        maxY = Math.max(maxY, sb.maxY);
+        hitDepth = Math.min(hitDepth, sb.depth);
+      }
+
+      hitTargets.push({
+        box: { minX: minX - 3, maxX: maxX + 3, minY: minY - 3, maxY: maxY + 3 },
+        depth: hitDepth,
+        data: cell,
+      });
+
+      const topY = 0.08 + primaryH + secondaryH;
+      topYGrid[cell.laneIndex][cell.bucketIndex] = topY;
+
+      if (cell.stepName || cell.badgeText) {
+        const showTopBadge = (cell.alertBadge || isSel || isHov) && cell.badgeText;
+        const labelPt = project(x, topY + 0.42, z);
+        const footPt = project(x, 0.14, z - padD * 0.56);
+        queue.push({
+          depth: (showTopBadge ? labelPt.depth : footPt.depth) - 0.6,
+          yOrder: topY + 1,
+          draw() {
+            if (dim) return;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (showTopBadge) {
+              ctx.font = '600 10.5px Inter, system-ui, sans-serif';
+              ctx.fillStyle = cell.alertBadge ? '#ff9b9b' : '#ffffff';
+              ctx.fillText(cell.badgeText, labelPt.sx, labelPt.sy);
+            } else if (cell.stepName) {
+              ctx.font = '500 10px Inter, system-ui, sans-serif';
+              ctx.fillStyle = 'rgba(241,239,234,0.58)';
+              ctx.fillText(cell.stepName, footPt.sx, footPt.sy);
+            }
+          },
+        });
+      }
+    }
+
+    function arcPoint(scenarioIdx, fromStep, toStep, t) {
+      const z = cellZ(scenarioIdx);
+      const x0 = cellX(fromStep);
+      const x1 = cellX(toStep);
+      const sCurve = Math.sin(t * Math.PI);
+
+      if (fromStep === toStep) {
+        const top = topYGrid[scenarioIdx]?.[fromStep] ?? 0.08;
+        const yBase = Math.max(0.45, top + 0.14);
+        return {
+          x: x0 + Math.sin(t * Math.PI * 2) * 0.56,
+          y: yBase + sCurve * 1.45,
+          z: z - sCurve * 0.52,
+        };
+      }
+
+      if (toStep < fromStep) {
+        const span = fromStep - toStep;
+        const dip = 1.15 + span * 0.65;
+        return {
+          x: x0 + (x1 - x0) * t,
+          y: -0.06 - sCurve * dip,
+          z: z - sCurve * (0.30 + span * 0.10),
+        };
+      }
+
+      if (toStep > fromStep + 1) {
+        const span = toStep - fromStep;
+        const peak = 1.15 + span * 0.55;
+        return {
+          x: x0 + (x1 - x0) * t,
+          y: 0.22 + sCurve * peak,
+          z: z + sCurve * 0.36,
+        };
+      }
+
+      return {
+        x: x0 + (x1 - x0) * t,
+        y: 0.20 + sCurve * 0.36,
+        z,
+      };
+    }
+
+    const arcs = scene.arcs || [];
+    const COL_LOOP = [251, 191, 36];   // #fbbf24
+    const COL_CYAN = [56, 189, 248];   // #38bdf8
+    const COL_NEXT = [91, 155, 240];   // #5b9bf0
+
+    if (showJumpArcs && arcs.length > 0) {
+      for (const arc of arcs) {
+        if (arc.kind === 'next') continue;
+        const dim = isolatedLane !== null && isolatedLane !== arc.scenarioIndex;
+        const isLoop = arc.kind === 'loop';
+        const isRepeat = arc.kind === 'repeat';
+        const col = isLoop ? COL_LOOP : isRepeat ? COL_CYAN : COL_NEXT;
+        const heat = Math.min(1, 0.25 + Math.log10(1 + arc.count) * 0.45);
+        const alpha = dim ? 0.04 : (0.18 + heat * 0.62);
+        const lw = 1.1 + heat * 1.4;
+
+        const segs = 16;
+        const pts = [];
+        let midDepth = 0;
+        let midY = 0;
+        for (let i = 0; i <= segs; i++) {
+          const p3 = arcPoint(arc.scenarioIndex, arc.fromStep, arc.toStep, i / segs);
+          const pp = project(p3.x, p3.y, p3.z);
+          pts.push(pp);
+          if (i === segs / 2) {
+            midDepth = pp.depth;
+            midY = p3.y;
+          }
+        }
+
+        queue.push({
+          depth: isLoop ? midDepth + 0.15 : midDepth - 0.1,
+          yOrder: midY,
+          draw() {
+            ctx.beginPath();
+            ctx.moveTo(pts[0].sx, pts[0].sy);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+            ctx.strokeStyle = rgb(col, alpha);
+            ctx.lineWidth = lw;
+            if (isLoop) ctx.setLineDash([5, 3]);
+            ctx.stroke();
+            if (isLoop) ctx.setLineDash([]);
+
+            const tip = pts[Math.floor(segs * 0.85)];
+            const prev = pts[Math.floor(segs * 0.78)];
+            const ang = Math.atan2(tip.sy - prev.sy, tip.sx - prev.sx);
+            const head = 5.2;
+            ctx.beginPath();
+            ctx.moveTo(tip.sx, tip.sy);
+            ctx.lineTo(tip.sx - Math.cos(ang - 0.52) * head, tip.sy - Math.sin(ang - 0.52) * head);
+            ctx.lineTo(tip.sx - Math.cos(ang + 0.52) * head, tip.sy - Math.sin(ang + 0.52) * head);
+            ctx.closePath();
+            ctx.fillStyle = rgb(col, Math.min(0.95, alpha + 0.12));
+            ctx.fill();
+          },
+        });
+      }
+    }
+
+    // Animated bee particles gliding along active arcs
+    if (arcs.length > 0 && (scene.isRunning || showJumpArcs)) {
+      for (const arc of arcs) {
+        if (arc.kind === 'next' && !scene.isRunning) continue;
+        if (arc.kind !== 'next' && !showJumpArcs) continue;
+        const dim = isolatedLane !== null && isolatedLane !== arc.scenarioIndex;
+        const isLoop = arc.kind === 'loop';
+        const isNext = arc.kind === 'next';
+        const col = isLoop ? COL_LOOP : isNext ? COL_NEXT : COL_CYAN;
+        const speed = isNext ? 0.95 : 0.65;
+        const particleCount = arc.count >= 20 ? 3 : arc.count >= 4 ? 2 : 1;
+        const phaseBase = (arc.scenarioIndex * 0.31 + arc.fromStep * 0.19 + arc.toStep * 0.13) % 1;
+
+        for (let k = 0; k < particleCount; k++) {
+          const t = (swarmTime * speed + phaseBase + k / particleCount) % 1;
+          const p3 = arcPoint(arc.scenarioIndex, arc.fromStep, arc.toStep, t);
+          const p = project(p3.x, p3.y, p3.z);
+          queue.push({
+            depth: isLoop ? p.depth + 0.08 : p.depth - 0.2,
+            yOrder: p3.y + (isLoop ? -0.1 : 0.2),
+            draw() {
+              ctx.beginPath();
+              ctx.arc(p.sx, p.sy, dim ? 1.5 : (isNext ? 2.8 : 3.3), 0, Math.PI * 2);
+              ctx.fillStyle = rgb(col, dim ? 0.14 : 0.95);
+              ctx.fill();
+            },
+          });
+        }
+      }
+    }
+
+    queue.sort((a, b) => (b.depth - a.depth) || ((a.yOrder ?? 0) - (b.yOrder ?? 0)));
+    for (const item of queue) item.draw();
+    hitTargets.sort((a, b) => a.depth - b.depth);
   }
 
   function renderScene() {
     ctx.clearRect(0, 0, width, height);
     hitTargets = [];
     if (!scene || !scene.lanes || scene.lanes.length === 0 || !scene.timeBuckets) return;
+
+    if (scene.kind === 'swarm') {
+      renderSwarm();
+      return;
+    }
 
     const lanes = scene.lanes;
     const timeBuckets = scene.timeBuckets;
@@ -293,14 +609,23 @@ export function mount(canvas, tooltip, dotnet) {
     hitTargets.sort((a, b) => a.depth - b.depth);
   }
 
-  function frame() {
+  function isSwarmAnimating() {
+    return !!(scene && scene.kind === 'swarm' && scene.arcs && scene.arcs.length > 0 && (scene.isRunning || showJumpArcs));
+  }
+
+  function frame(now) {
     rafId = 0;
     if (disposed) return;
+
+    const ts = typeof now === 'number' ? now : performance.now();
+    const dt = Math.min(0.05, Math.max(0, (ts - lastFrameTs) / 1000));
+    lastFrameTs = ts;
 
     const dy = cam.targetYaw - cam.yaw;
     const dp = cam.targetPitch - cam.pitch;
     const dz = cam.targetZoom - cam.zoom;
     const easing = Math.abs(dy) > 0.0008 || Math.abs(dp) > 0.0008 || Math.abs(dz) > 0.0008;
+    const swarmAnimating = isSwarmAnimating();
 
     if (easing) {
       cam.yaw += dy * 0.16;
@@ -314,12 +639,17 @@ export function mount(canvas, tooltip, dotnet) {
       dirty = true;
     }
 
+    if (swarmAnimating) {
+      swarmTime += dt;
+      dirty = true;
+    }
+
     if (dirty) {
       dirty = false;
       renderScene();
     }
 
-    if (easing) {
+    if (easing || swarmAnimating) {
       rafId = requestAnimationFrame(frame);
     }
   }
@@ -485,6 +815,11 @@ export function mount(canvas, tooltip, dotnet) {
       selected = (typeof laneIdx === 'number' && typeof bucketIdx === 'number')
         ? { laneIndex: laneIdx, bucketIndex: bucketIdx }
         : null;
+      dirty = true;
+      scheduleFrame();
+    },
+    setShowArcs(show) {
+      showJumpArcs = !!show;
       dirty = true;
       scheduleFrame();
     },

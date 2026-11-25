@@ -26,7 +26,9 @@
     {
         Views3DKind.Terrain => terrainScene?.HasData ?? false,
         Views3DKind.Surface => surfaceScene?.HasData ?? false,
-        _ => historyScene?.HasData ?? false,
+        Views3DKind.RunHistory => historyScene?.HasData ?? false,
+        Views3DKind.ErrorCascade => errorScene?.HasData ?? false,
+        _ => (swarmScene?.HasData ?? false) && !(snap.State == FakeRunState.Idle && totalFinished == 0 && snap.Scenarios.Sum(x => x.InFlight) == 0),
     };
 }
 
@@ -53,6 +55,20 @@
                     aria-selected="@Aria.Bool(activeKind == Views3DKind.RunHistory)"
                     @onclick="() => SetViewKind(Views3DKind.RunHistory)">
                 3. Run History
+            </button>
+            <button type="button"
+                    class="@(activeKind == Views3DKind.ErrorCascade ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.ErrorCascade)"
+                    @onclick="() => SetViewKind(Views3DKind.ErrorCascade)">
+                4. Error Cascade
+            </button>
+            <button type="button"
+                    class="@(activeKind == Views3DKind.SwarmMatrix ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.SwarmMatrix)"
+                    @onclick="() => SetViewKind(Views3DKind.SwarmMatrix)">
+                5. Swarm: Dead or Alive
             </button>
         </div>
 
@@ -127,7 +143,7 @@
                         }
                     </div>
                 }
-                else
+                else if (activeKind == Views3DKind.RunHistory)
                 {
                     var chosenHistEntry = historyScene is { ScenarioEntry: >= 0 } hs ? hs.ScenarioEntry : Views3DProjection.ResolveHistoryScenarioEntry(snap, selectedHistoryScenario);
                     <div class="v3d-sub">
@@ -159,8 +175,87 @@
                         }
                     </div>
                 }
+                else if (activeKind == Views3DKind.ErrorCascade)
+                {
+                    <div class="v3d-sub">
+                        <button type="button"
+                                class="chip @(errorSort == ErrorCascadeSort.FirstSeen ? "on" : "")"
+                                title="Order error signatures chronologically by first occurrence"
+                                @onclick="() => SetErrorSort(ErrorCascadeSort.FirstSeen)">
+                            First Seen
+                        </button>
+                        <button type="button"
+                                class="chip @(errorSort == ErrorCascadeSort.MostFrequent ? "on" : "")"
+                                title="Order error signatures by total failure count"
+                                @onclick="() => SetErrorSort(ErrorCascadeSort.MostFrequent)">
+                            Most Frequent
+                        </button>
+                        @if (snap.Count > 1)
+                        {
+                            <select class="v3d-select" aria-label="Filter error cascade by scenario" value="@(errorScenarioFilter?.ToString() ?? "")" @onchange="OnErrorScenarioChanged">
+                                <option value="">All scenarios</option>
+                                @for (var i = 0; i < snap.Count; i++)
+                                {
+                                    var idx = i;
+                                    <option value="@idx">@(idx + 1). @snap.Labels[idx]</option>
+                                }
+                            </select>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="v3d-sub">
+                        <button type="button"
+                                class="chip @(swarmMode == SwarmDisplayMode.Stacked ? "on" : "")"
+                                @onclick="() => SetSwarmMode(SwarmDisplayMode.Stacked)">
+                            Active + Failed
+                        </button>
+                        <button type="button"
+                                class="chip @(swarmMode == SwarmDisplayMode.ActiveOnly ? "on" : "")"
+                                @onclick="() => SetSwarmMode(SwarmDisplayMode.ActiveOnly)">
+                            Active Only
+                        </button>
+                        <button type="button"
+                                class="chip @(swarmMode == SwarmDisplayMode.FailedOnly ? "on" : "")"
+                                @onclick="() => SetSwarmMode(SwarmDisplayMode.FailedOnly)">
+                            Failed Only
+                        </button>
+                        <button type="button"
+                                class="chip @(showJumpArcs ? "on" : "")"
+                                aria-pressed="@Aria.Bool(showJumpArcs)"
+                                title="Show forward skip, self-repeat, and under-floor back-loop jump arcs"
+                                @onclick="ToggleShowJumpArcsAsync">
+                            Show Jump Arcs
+                        </button>
+                    </div>
+                }
 
-                <div class="v3d-hint">Drag to orbit · Scroll to zoom · Click any bar to inspect</div>
+                @if (activeKind != Views3DKind.SwarmMatrix)
+                {
+                    <div class="v3d-sub v3d-res" role="group" aria-label="Grid resolution">
+                        <button type="button"
+                                class="chip @(gridBucketOverride is null ? "on" : "")"
+                                aria-pressed="@Aria.Bool(gridBucketOverride is null)"
+                                title="Use adaptive time bucket count"
+                                @onclick="ToggleGridAuto">
+                            Auto
+                        </button>
+                        <label class="v3d-res-label">
+                            <span class="v3d-res-text tnum">@GridResolutionLabel()</span>
+                            <input type="range"
+                                   class="v3d-range"
+                                   min="@Views3DProjection.MinBucketCount"
+                                   max="@Views3DProjection.MaxBucketCount"
+                                   step="4"
+                                   value="@CurrentSliderValue()"
+                                   aria-label="Time bucket count"
+                                   @oninput="OnGridResolutionInput" />
+                        </label>
+                    </div>
+                }
+
+                <div class="v3d-hint">Drag to orbit · Scroll to zoom · Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : "bar") to inspect</div>
             </div>
 
             <canvas class="v3d-canvas" @ref="canvasEl" aria-label="Interactive 3D run chart"></canvas>
@@ -169,7 +264,11 @@
             @if (!hasSceneData)
             {
                 <div class="v3d-empty">
-                    @if (activeKind == Views3DKind.RunHistory && historyLoading)
+                    @if (activeKind == Views3DKind.ErrorCascade)
+                    {
+                        <p>No errors recorded in this run yet.</p>
+                    }
+                    else if (activeKind == Views3DKind.RunHistory && historyLoading)
                     {
                         <p>Loading matching previous runs…</p>
                     }
@@ -193,12 +292,28 @@
             }
 
             <div class="v3d-legend" aria-hidden="true">
-                <span><i class="dot" style="background:var(--good)"></i>Good</span>
-                <span><i class="dot" style="background:var(--slow)"></i>Slow (&gt;2× typical)</span>
-                <span><i class="dot" style="background:var(--failed)"></i>Failed / Canceled</span>
-                @if (activeKind is Views3DKind.Terrain or Views3DKind.RunHistory)
+                @if (activeKind == Views3DKind.ErrorCascade)
                 {
-                    <span><i class="dot" style="background:var(--running)"></i>In flight</span>
+                    <span><i class="dot" style="background:var(--failed)"></i>Failed</span>
+                    <span><i class="dot" style="background:#f88056"></i>Canceled</span>
+                }
+                else if (activeKind == Views3DKind.SwarmMatrix)
+                {
+                    <span><i class="dot" style="background:var(--running)"></i>Active in flight</span>
+                    <span><i class="dot" style="background:var(--slow)"></i>Slow (&gt;2× typical)</span>
+                    <span><i class="dot" style="background:var(--failed)"></i>Failed</span>
+                    <span><i class="dot" style="background:#38bdf8"></i>Jump / loop arc</span>
+                    <span><i class="dot" style="background:#3a3632;border:1px solid rgba(255,255,255,0.2)"></i>Undeclared pad</span>
+                }
+                else
+                {
+                    <span><i class="dot" style="background:var(--good)"></i>Good</span>
+                    <span><i class="dot" style="background:var(--slow)"></i>Slow (&gt;2× typical)</span>
+                    <span><i class="dot" style="background:var(--failed)"></i>Failed / Canceled</span>
+                    @if (activeKind is Views3DKind.Terrain or Views3DKind.RunHistory)
+                    {
+                        <span><i class="dot" style="background:var(--running)"></i>In flight</span>
+                    }
                 }
             </div>
         </div>
@@ -226,7 +341,7 @@
                         Shows cache-hit ridges vs slow/failed tail mountains over time.
                     </p>
                 }
-                else
+                else if (activeKind == Views3DKind.RunHistory)
                 {
                     <div class="v3d-view-title">3. Run History</div>
                     <p class="v3d-desc">
@@ -240,6 +355,51 @@
                     @if (DataMode.IsFakeMode)
                     {
                         <p class="v3d-note">Fake mode: comparing Current against 3 deterministic simulated runs.</p>
+                    }
+                }
+                else if (activeKind == Views3DKind.ErrorCascade)
+                {
+                    <div class="v3d-view-title">4. Error Cascade</div>
+                    <p class="v3d-desc">
+                        X = run time, Z = distinct error signature (up to 8), Y = failure count.
+                        Shows which failure appeared first and what cascaded afterwards.
+                    </p>
+                    @if (errorScene is { TotalErrors: > 0 } es)
+                    {
+                        @if (es.DistinctErrorCount > Views3DProjection.MaxErrorCascadeLanes)
+                        {
+                            <p class="v3d-note">Showing top @Views3DProjection.MaxErrorCascadeLanes of @Format.Num(es.DistinctErrorCount) distinct signatures (@Format.Num(es.TotalErrors) errors).</p>
+                        }
+                        else
+                        {
+                            <p class="v3d-note">@Format.Num(es.DistinctErrorCount) distinct @(es.DistinctErrorCount == 1 ? "signature" : "signatures") · @Format.Num(es.TotalErrors) total failures.</p>
+                        }
+                    }
+                }
+                else
+                {
+                    var modeTitle = swarmMode switch
+                    {
+                        SwarmDisplayMode.ActiveOnly => "Active In-Flight Only",
+                        SwarmDisplayMode.FailedOnly => "Failed Only",
+                        _ => "Active + Failed (Stacked)",
+                    };
+                    var modeDesc = swarmMode switch
+                    {
+                        SwarmDisplayMode.ActiveOnly => "Isolates live concurrency across every (scenario, step) cell. Columns shift blue → amber when slow.",
+                        SwarmDisplayMode.FailedOnly => "Isolates failing (scenario, step) cells in coral red so the breaking step jumps out.",
+                        _ => "X = declared steps, Z = all scenarios, Y = live in-flight bees (blue → amber) topped with failed bees (red). Forward skips/repeats arc above; back-loops dip underneath.",
+                    };
+                    <div class="v3d-view-title">5. Swarm: Dead or Alive</div>
+                    <div class="v3d-desc" style="font-weight:600;color:var(--text);margin-bottom:.2rem;">@modeTitle</div>
+                    <p class="v3d-desc">@modeDesc</p>
+                    @if (swarmScene is { Arcs.Count: > 0 } swInfo)
+                    {
+                        var jumpCount = swInfo.Arcs.Where(a => a.Kind != "next").Sum(a => a.Count);
+                        @if (jumpCount > 0)
+                        {
+                            <p class="v3d-note">@Format.Num(jumpCount) non-linear step transitions observed (skip / repeat / back-loop).</p>
+                        }
                     }
                 }
             </section>
@@ -319,7 +479,7 @@
                 }
                 else
                 {
-                <h3>@(activeKind == Views3DKind.Terrain ? (terrainGrouping == TerrainGrouping.Steps ? "Isolate Step Lane" : "Isolate Scenario Lane") : "Isolate Latency Band")</h3>
+                <h3>@(activeKind == Views3DKind.Terrain ? (terrainGrouping == TerrainGrouping.Steps ? "Isolate Step Lane" : "Isolate Scenario Lane") : activeKind == Views3DKind.Surface ? "Isolate Latency Band" : activeKind == Views3DKind.ErrorCascade ? "Isolate Error Lane" : "Isolate Scenario")</h3>
                 <div class="v3d-lane-list">
                     @if (activeKind == Views3DKind.Terrain && terrainScene is { Lanes.Count: > 0 } ts)
                     {
@@ -352,9 +512,41 @@
                             </button>
                         }
                     }
+                    else if (activeKind == Views3DKind.ErrorCascade && errorScene is { Lanes.Count: > 0 } esLanes)
+                    {
+                        @foreach (var lane in esLanes.Lanes)
+                        {
+                            var idx = lane.Index;
+                            var iso = isolatedLane == idx;
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    title="@lane.Signature"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(idx)">
+                                <span class="v3d-lane-name">@lane.DisplayLabel</span>
+                                <span class="v3d-lane-meta bad">@lane.Meta</span>
+                            </button>
+                        }
+                    }
+                    else if (activeKind == Views3DKind.SwarmMatrix && swarmScene is { Lanes.Count: > 0 } swLanes)
+                    {
+                        @foreach (var lane in swLanes.Lanes)
+                        {
+                            var idx = lane.Index;
+                            var iso = isolatedLane == idx;
+                            var metaCls = lane.FailedBees > 0 ? "bad" : lane.SlowBees > 0 ? "warn" : lane.ActiveBees > 0 ? "running" : "";
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(idx)">
+                                <span class="v3d-lane-name">@lane.Name <span class="muted">(@lane.DeclaredSteps)</span></span>
+                                <span class="v3d-lane-meta @metaCls">@lane.Meta</span>
+                            </button>
+                        }
+                    }
                     else
                     {
-                        <p class="v3d-desc">No lanes available yet.</p>
+                        <p class="v3d-desc">@(activeKind == Views3DKind.ErrorCascade ? "No errors recorded in this run yet." : "No lanes available yet.")</p>
                     }
                 </div>
                 }
@@ -525,9 +717,93 @@
                         }
                     </div>
                 }
+                else if (activeKind == Views3DKind.ErrorCascade && selectedErrorCell is { } ec)
+                {
+                    var errorLogsFilter = BuildErrorLogFilter(ec);
+                    var targetEntry = ec.SampleEntry ?? (ec.AffectedEntries.Count > 0 ? ec.AffectedEntries[0] : (int?)null);
+                    <div class="v3d-sel-title">@ec.DisplayLabel</div>
+                    <div class="v3d-desc">Window @ec.TimeLabel</div>
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">In bucket</div>
+                            <div class="v bad">@Format.Num(ec.Count)@(ec.CanceledCount > 0 ? $" ({ec.CanceledCount} canceled)" : "")</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Total for error</div>
+                            <div class="v bad">@Format.Num(ec.LaneTotalCount)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">First in bucket</div>
+                            <div class="v">@Format.Time(ec.FirstOccurrenceSec)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Scenarios</div>
+                            <div class="v">@(ec.AffectedEntryLabels.Count > 0 ? string.Join(", ", ec.AffectedEntryLabels) : "–")</div>
+                        </div>
+                    </div>
+                    <div class="v3d-err-box">@ec.Signature</div>
+                    <div class="v3d-actions">
+                        <a class="chip" href="@errorLogsFilter.Href()" @onclick="() => Logs.Last = errorLogsFilter">View Error Logs →</a>
+                        @if (targetEntry is { } entry)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(entry, BuildErrorScenarioFilter(snap, entry, ec))">Open /scenario/@(entry + 1) →</a>
+                        }
+                        @if (ec.SampleBeeSequence is { } seq && ec.SampleEntry is { } bEntry)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(bEntry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                        }
+                    </div>
+                }
+                else if (activeKind == Views3DKind.SwarmMatrix && selectedSwarmCell is { } swc)
+                {
+                    var durCls = swc.FailedCount > 0 ? "bad" : swc.Ratio >= SlowCallRule.Factor ? "warn" : "good";
+                    var lanePath = swarmScene is not null && swc.ScenarioIndex < swarmScene.Lanes.Count
+                        ? swarmScene.Lanes[swc.ScenarioIndex].SamplePath
+                        : "";
+                    var swLogsFilter = BuildSwarmLogFilter(snap, swc);
+                    <div class="v3d-sel-title">@swc.ScenarioName</div>
+                    <div class="v3d-desc">@swc.StepName · Step @(swc.StepIndex + 1) of @swc.TotalSteps</div>
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">Active in-flight</div>
+                            <div class="v running">@Format.Num(swc.ActiveCount) bees</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Failed (step)</div>
+                            <div class="v @(swc.FailedCount > 0 ? "bad" : "good")">@Format.Num(swc.FailedCount)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Slow / Avg</div>
+                            <div class="v @durCls">@(swc.AvgDurationMs > 0 ? $"{Format.Ms(swc.AvgDurationMs)} ({Format.Times(swc.Ratio)})" : "–")</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Repeats / Loops</div>
+                            <div class="v">@Format.Num(swc.SelfRepeatCount) rep · @Format.Num(swc.BackLoopCount) loop</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(lanePath))
+                    {
+                        <div class="v3d-path-box">
+                            <div class="k">Sample Bee Path</div>
+                            <div class="v">@lanePath</div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(swc.SampleError))
+                    {
+                        <div class="v3d-err-box">@swc.SampleError</div>
+                    }
+                    <div class="v3d-actions">
+                        <a class="chip" href="@ScenarioLink.Href(swc.Entry, BuildSwarmScenarioFilter(snap, swc))">Open /scenario/@(swc.Entry + 1) →</a>
+                        <a class="chip" href="@swLogsFilter.Href()" @onclick="() => Logs.Last = swLogsFilter">View Step Logs →</a>
+                        @if (swc.SampleBeeSequence is { } seq)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(swc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                        }
+                    </div>
+                }
                 else
                 {
-                    <p class="v3d-desc">Click any bar in the 3D scene to inspect metrics, view sample errors, and drill down into scenarios or logs.</p>
+                    <p class="v3d-desc">Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : "bar") in the 3D scene to inspect metrics, view sample errors, and drill down into scenarios or logs.</p>
                 }
             </section>
         </aside>
@@ -546,6 +822,11 @@
     private int? selectedStepScenario;
     private int? surfaceScenarioFilter;
     private int? selectedHistoryScenario;
+    private ErrorCascadeSort errorSort = ErrorCascadeSort.FirstSeen;
+    private int? errorScenarioFilter;
+    private SwarmDisplayMode swarmMode = SwarmDisplayMode.Stacked;
+    private bool showJumpArcs = true;
+    private int? gridBucketOverride;
     private bool historySameSetupOnly = true;
     private bool historyLoading;
     private bool loadingStoredRun;
@@ -557,6 +838,8 @@
     private TerrainScene? terrainScene;
     private SurfaceScene? surfaceScene;
     private RunHistoryScene? historyScene;
+    private ErrorCascadeScene? errorScene;
+    private SwarmScene? swarmScene;
     private IReadOnlyList<HistoryRunCandidate> fakeCandidates = [];
     private IReadOnlyList<HistoryRunInput> fakeHistoryInputs = [];
     private readonly List<HistoryRunCandidate> liveCandidates = [];
@@ -567,6 +850,7 @@
     private int pushedSceneRevision = -1;
     private int? pushedIsolatedLane = int.MinValue;
     private (int LaneIndex, int BucketIndex)? pushedSelectedKey;
+    private bool pushedShowArcs = true;
 
     private long lastRebuildTick;
     private FakeRunState lastRunState;
@@ -596,6 +880,21 @@
         && k.LaneIndex >= 0 && k.LaneIndex < hs.Grid.Count
         && k.BucketIndex >= 0 && k.BucketIndex < hs.Grid[k.LaneIndex].Count
             ? hs.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    private ErrorCascadeCell? selectedErrorCell =>
+        activeKind == Views3DKind.ErrorCascade && selectedKey is { } k && errorScene is { } es
+        && k.LaneIndex >= 0 && k.LaneIndex < es.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < es.Grid[k.LaneIndex].Count
+            ? es.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    private SwarmStepCell? selectedSwarmCell =>
+        activeKind == Views3DKind.SwarmMatrix && selectedKey is { } k && swarmScene is { } sw
+        && k.LaneIndex >= 0 && k.LaneIndex < sw.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < sw.Grid[k.LaneIndex].Count
+        && !sw.Grid[k.LaneIndex][k.BucketIndex].IsEmptyPad
+            ? sw.Grid[k.LaneIndex][k.BucketIndex]
             : null;
 
     protected override void OnInitialized()
@@ -657,6 +956,15 @@
                 if (selectedKey is { } sk) await handle.InvokeVoidAsync("setSelected", sk.LaneIndex, sk.BucketIndex);
                 else await handle.InvokeVoidAsync("setSelected", null, null);
             }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        if (pushedShowArcs != showJumpArcs)
+        {
+            pushedShowArcs = showJumpArcs;
+            try { await handle.InvokeVoidAsync("setShowArcs", showJumpArcs); }
             catch (JSException) { }
             catch (JSDisconnectedException) { }
             catch (InvalidOperationException) { }
@@ -732,6 +1040,100 @@
         isolatedLane = null;
         selectedKey = null;
         RebuildScene();
+    }
+
+    private void SetErrorSort(ErrorCascadeSort sort)
+    {
+        if (errorSort == sort) return;
+        errorSort = sort;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void OnErrorScenarioChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        errorScenarioFilter = int.TryParse(raw, out var entry) ? entry : null;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void SetSwarmMode(SwarmDisplayMode mode)
+    {
+        if (swarmMode == mode) return;
+        swarmMode = mode;
+        RebuildScene();
+    }
+
+    private async Task ToggleShowJumpArcsAsync()
+    {
+        showJumpArcs = !showJumpArcs;
+        if (handle is null) return;
+        pushedShowArcs = showJumpArcs;
+        try { await handle.InvokeVoidAsync("setShowArcs", showJumpArcs); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private void ToggleGridAuto()
+    {
+        if (gridBucketOverride is null)
+        {
+            var current = CurrentBucketCount();
+            var fallback = activeKind == Views3DKind.RunHistory ? Views3DProjection.DefaultHistoryMaxBars : 30;
+            var snapped = (int)Math.Round((current > 0 ? current : fallback) / 4.0) * 4;
+            gridBucketOverride = Views3DProjection.ClampBucketCount(snapped);
+        }
+        else
+        {
+            gridBucketOverride = null;
+        }
+        RebuildScene();
+    }
+
+    private void OnGridResolutionInput(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var value)) return;
+        var clamped = Views3DProjection.ClampBucketCount(value);
+        if (gridBucketOverride == clamped) return;
+        gridBucketOverride = clamped;
+        RebuildScene();
+    }
+
+    private int CurrentBucketCount() => activeKind switch
+    {
+        Views3DKind.Terrain => terrainScene?.TimeBuckets ?? 0,
+        Views3DKind.Surface => surfaceScene?.TimeBuckets ?? 0,
+        Views3DKind.RunHistory => historyScene?.TimeBuckets ?? 0,
+        Views3DKind.ErrorCascade => errorScene?.TimeBuckets ?? 0,
+        _ => swarmScene?.MaxSteps ?? 0,
+    };
+
+    private int CurrentLaneCount() => activeKind switch
+    {
+        Views3DKind.Terrain => terrainScene?.Lanes.Count ?? 0,
+        Views3DKind.Surface => surfaceScene?.Bands.Count ?? 0,
+        Views3DKind.RunHistory => historyScene?.Lanes.Count ?? 0,
+        Views3DKind.ErrorCascade => errorScene?.Lanes.Count ?? 0,
+        _ => swarmScene?.Lanes.Count ?? 0,
+    };
+
+    private int CurrentSliderValue()
+    {
+        if (gridBucketOverride is { } ov) return ov;
+        var current = CurrentBucketCount();
+        if (current > 0) return Views3DProjection.ClampBucketCount(current);
+        return activeKind == Views3DKind.RunHistory ? Views3DProjection.DefaultHistoryMaxBars : 30;
+    }
+
+    private string GridResolutionLabel()
+    {
+        if (gridBucketOverride is { } ov) return $"Grid: {ov}";
+        var current = CurrentBucketCount();
+        return current > 0 ? $"Grid: Auto ({current})" : "Grid: Auto";
     }
 
     private async Task ToggleHistorySameSetupAsync()
@@ -868,7 +1270,7 @@
 
         if (activeKind == Views3DKind.Terrain)
         {
-            terrainScene = Views3DProjection.BuildTerrain(snap, terrainGrouping, selectedStepScenario);
+            terrainScene = Views3DProjection.BuildTerrain(snap, terrainGrouping, selectedStepScenario, gridBucketOverride);
             if (terrainGrouping == TerrainGrouping.Steps && terrainScene.ScenarioEntry is { } resolved)
                 selectedStepScenario = resolved;
             currentPayload = Views3DProjection.ToJsPayload(terrainScene);
@@ -876,10 +1278,10 @@
         }
         else if (activeKind == Views3DKind.Surface)
         {
-            surfaceScene = Views3DProjection.BuildSurface(snap, surfaceScenarioFilter);
+            surfaceScene = Views3DProjection.BuildSurface(snap, surfaceScenarioFilter, gridBucketOverride);
             currentPayload = Views3DProjection.ToJsPayload(surfaceScene);
         }
-        else
+        else if (activeKind == Views3DKind.RunHistory)
         {
             var entry = Views3DProjection.ResolveHistoryScenarioEntry(snap, selectedHistoryScenario);
             if (entry >= 0) selectedHistoryScenario = entry;
@@ -922,9 +1324,29 @@
                 entry,
                 previousInputs,
                 DataMode.IsFakeMode ? "fake-current" : ApiRun.CurrentRunId,
-                DataMode.IsFakeMode ? DateTimeOffset.UtcNow : ApiRun.ActiveStartedUtc);
+                DataMode.IsFakeMode ? DateTimeOffset.UtcNow : ApiRun.ActiveStartedUtc,
+                gridBucketOverride);
             currentPayload = Views3DProjection.ToJsPayload(historyScene);
         }
+        else if (activeKind == Views3DKind.ErrorCascade)
+        {
+            errorScene = Views3DProjection.BuildErrorCascade(snap, errorSort, errorScenarioFilter, gridBucketOverride);
+            currentPayload = Views3DProjection.ToJsPayload(errorScene);
+        }
+        else
+        {
+            swarmScene = Views3DProjection.BuildSwarmMatrix(snap, swarmMode);
+            currentPayload = Views3DProjection.ToJsPayload(swarmScene);
+        }
+
+        var bucketCount = CurrentBucketCount();
+        var laneCount = CurrentLaneCount();
+        if (selectedKey is { } sk && (sk.LaneIndex < 0 || sk.LaneIndex >= laneCount || sk.BucketIndex < 0 || sk.BucketIndex >= bucketCount))
+            selectedKey = null;
+        if (activeKind == Views3DKind.SwarmMatrix && selectedSwarmCell is null)
+            selectedKey = null;
+        if (isolatedLane is { } iso && (iso < 0 || iso >= laneCount))
+            isolatedLane = null;
 
         sceneRevision++;
     }
@@ -1224,6 +1646,47 @@
             .WithBee(hc.IsSingleBee ? hc.BeeSequence : null)
             .WithOutcome(hc.IsSingleBee ? BeeShow.All : outcome);
         Logs.Show(filter);
+    }
+
+    private LogFilter BuildErrorLogFilter(ErrorCascadeCell ec)
+    {
+        var entry = errorScenarioFilter ?? (ec.AffectedEntries.Count == 1 ? ec.AffectedEntries[0] : (int?)null);
+        var filter = LogFilter.None
+            .WithEntry(entry)
+            .WithLevels(["Error"]);
+
+        if (string.Equals(ec.Signature, "(No error message)", StringComparison.Ordinal))
+            return filter.WithOutcome(BeeShow.Failed);
+
+        var firstLine = ec.Signature.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+        if (firstLine.Length > 120) firstLine = firstLine[..120].TrimEnd();
+        return firstLine.Length > 0 ? filter.WithSearch(firstLine) : filter.WithOutcome(BeeShow.Failed);
+    }
+
+    private static ScenarioFilter BuildErrorScenarioFilter(RunSnapshot snap, int entry, ErrorCascadeCell ec)
+    {
+        if (ec.SampleStep is { } st && st >= 0 && snap.StepsOf(entry).Any && st < snap.StepsOf(entry).Count)
+            return new ScenarioFilter(DetailFilter.Failed, FailedStep: st);
+        return new ScenarioFilter(DetailFilter.Failed);
+    }
+
+    private static LogFilter BuildSwarmLogFilter(RunSnapshot snap, SwarmStepCell swc)
+    {
+        var hasSteps = snap.StepsOf(swc.Entry).Any;
+        var filter = LogFilter.None
+            .WithEntry(swc.Entry)
+            .WithStep(hasSteps ? swc.StepIndex : null);
+        return swc.FailedCount > 0 ? filter.WithOutcome(BeeShow.Failed) : filter;
+    }
+
+    private static ScenarioFilter BuildSwarmScenarioFilter(RunSnapshot snap, SwarmStepCell swc)
+    {
+        var hasSteps = snap.StepsOf(swc.Entry).Any && swc.StepIndex < snap.StepsOf(swc.Entry).Count;
+        if (swc.FailedCount > 0)
+            return hasSteps ? new ScenarioFilter(DetailFilter.Failed, FailedStep: swc.StepIndex) : new ScenarioFilter(DetailFilter.Failed);
+        if (swc.ActiveCount > 0 && hasSteps)
+            return new ScenarioFilter(DetailFilter.All, NowStep: swc.StepIndex);
+        return ScenarioFilter.Default;
     }
 
     private async Task LoadAndOpenStoredRunAsync(HistoryLane lane, HistoryCell hc)

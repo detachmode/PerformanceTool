@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/beesharp-logo-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/beesharp-logo-light.png" />
+    <img alt="Beesharp" src="docs/assets/beesharp-logo-dark.png" width="320" />
+  </picture>
+</p>
+
 # Beesharp
 
 A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scripts), runs are stored in DuckDB.

@@ -1,0 +1,1797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beesharp — Swarm: Dead or Alive</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0e0d;
+    --panel: #1a1917;
+    --panel2: #252321;
+    --input: #141311;
+    --border: rgba(255, 255, 255, 0.08);
+    --selected: #282623;
+    --text: #f1efea;
+    --title: #ffffff;
+    --muted: #a19c94;
+    --faint: #6f6a63;
+    --bar: #8c8578;
+    --running: #5b9bf0;
+    --good: #34d399;
+    --slow: #fbbf24;
+    --failed: #f05252;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", "Segoe UI Variable Text", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr 44px;
+    height: 100vh;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--title);
+    letter-spacing: -0.015em;
+    margin-right: 6px;
+  }
+  .brand-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--running);
+    box-shadow: 0 0 8px rgba(91, 155, 240, 0.55);
+  }
+  .brand-dot.paused {
+    background: var(--muted);
+    box-shadow: none;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel2);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .seg {
+    display: inline-flex;
+    border-radius: 999px;
+    background: #1c1b19;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg button {
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color .14s, color .14s;
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+  .spacer { flex: 1; }
+  .chip {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    padding: 5px 11px;
+    border: 1px solid transparent;
+    background: #272523;
+    color: var(--text);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color .14s, border-color .14s, color .14s;
+  }
+  .chip:hover { background: #34312e; }
+  .chip.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+  .chip.danger.on {
+    background: rgba(240, 82, 82, 0.2);
+    border-color: rgba(240, 82, 82, 0.65);
+    color: #ff8c8c;
+  }
+  .chip.burst-active {
+    background: rgba(91, 155, 240, 0.22);
+    border-color: rgba(91, 155, 240, 0.65);
+    color: #93c5fd;
+  }
+
+  /* Main layout */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    min-height: 0;
+  }
+  .stage-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border);
+    background: radial-gradient(circle at 50% 45%, #171614 0%, #0f0e0d 75%);
+  }
+  .stage-toolbar {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 5;
+    flex-wrap: wrap;
+  }
+  .stage-toolbar > * { pointer-events: auto; }
+  .sub-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(26, 25, 23, 0.88);
+    border: 1px solid var(--border);
+    padding: 4px 6px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    flex-wrap: wrap;
+  }
+  .hint-pill {
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.8);
+    border: 1px solid var(--border);
+    padding: 5px 11px;
+    border-radius: 999px;
+  }
+  canvas#scene {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  canvas#scene:active { cursor: grabbing; }
+
+  @media (max-width: 820px) {
+    html, body { overflow: auto; height: auto; }
+    .app { grid-template-rows: auto auto auto; height: auto; min-height: 100vh; }
+    .topbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .topbar .seg { max-width: 100%; overflow-x: auto; }
+    .topbar .seg button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+    .main { grid-template-columns: 1fr; }
+    .stage-wrap { height: 58vh; min-height: 360px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .hint-pill { display: none; }
+    .stage-legend { font-size: 11px; gap: 8px; padding: 5px 10px; bottom: 8px; left: 8px; flex-wrap: wrap; }
+    .sidebar { overflow: visible; padding: 12px; }
+    .playerbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .strip { flex-basis: 100%; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(26, 25, 23, 0.96);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    min-width: 225px;
+    max-width: 290px;
+    z-index: 20;
+    display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  }
+  .tooltip .tt-title { font-weight: 600; color: var(--title); margin-bottom: 1px; }
+  .tooltip .tt-sub { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+  .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tooltip .tt-val { color: var(--text); font-family: var(--mono); font-size: 11.5px; }
+  .tooltip .tt-err {
+    color: var(--failed);
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(240,82,82,0.22);
+    font-family: var(--mono);
+    font-size: 11px;
+    word-break: break-word;
+  }
+
+  /* Legend bar inside stage */
+  .stage-legend {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.85);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  /* Inspector sidebar */
+  .sidebar {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    gap: 14px;
+  }
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 14px;
+  }
+  .card h3 {
+    margin: 0 0 6px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .view-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--title);
+    margin: 0 0 6px 0;
+  }
+  .desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .stat .k { font-size: 11px; color: var(--muted); }
+  .stat .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .good { color: var(--good); }
+  .slow { color: var(--slow); }
+  .failed { color: var(--failed); }
+  .running { color: var(--running); }
+
+  .lane-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .lane-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .12s, border-color .12s;
+  }
+  .lane-btn:hover { background: var(--panel2); }
+  .lane-btn.isolated { border-color: rgba(241,239,234,0.55); background: var(--selected); }
+  .lane-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .cli-box {
+    background: #0b0a09;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #d6d2ca;
+    line-height: 1.5;
+    word-break: break-all;
+    margin-top: 8px;
+  }
+  .cli-box .cmd-accent { color: var(--good); }
+  .path-box {
+    background: #131210;
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-top: 8px;
+  }
+  .path-box .k {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 3px;
+  }
+  .path-box .v {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #7dd3fc;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  /* Bottom player / overview strip */
+  .playerbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 12.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .strip {
+    flex: 1;
+    height: 16px;
+    background: #171614;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .strip-mark {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 2px;
+    opacity: 0.85;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot" id="liveDot"></span>
+      <span>Beesharp</span>
+      <span class="badge">Swarm: Dead or Alive</span>
+    </div>
+
+    <div class="seg" id="displayModes" role="tablist" aria-label="Display mode">
+      <button class="on" data-mode="stacked">Active + Failed (Stacked)</button>
+      <button data-mode="active">Active In-Flight Only</button>
+      <button data-mode="failed">Failed Only</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="seg" id="camPresets" aria-label="Camera presets">
+      <button class="on" data-cam="iso">Isometric</button>
+      <button data-cam="top">Top-Down (2D)</button>
+      <button data-cam="front">Front</button>
+      <button data-cam="side">Side</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="main">
+    <div class="stage-wrap">
+      <div class="stage-toolbar">
+        <div class="sub-controls">
+          <button class="chip on" id="toggleLive">Pause</button>
+          <button class="chip" id="triggerBurst">Trigger Burst</button>
+          <button class="chip danger" id="toggleOutage">Inject Step 3 Outage</button>
+          <button class="chip on" id="toggleArcs">Show Jump Arcs</button>
+        </div>
+        <div class="hint-pill">Drag to orbit · Scroll to zoom · Click any step cell to inspect</div>
+      </div>
+
+      <canvas id="scene"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+
+      <div class="stage-legend">
+        <span><span class="dot" style="background:var(--running)"></span>Active in flight</span>
+        <span><span class="dot" style="background:var(--slow)"></span>Slow (&gt;2× typical)</span>
+        <span><span class="dot" style="background:var(--failed)"></span>Failed (recent window)</span>
+        <span><span class="dot" style="background:#38bdf8"></span>Loop / skip / repeat arc</span>
+        <span><span class="dot" style="background:#3a3632;border:1px solid rgba(255,255,255,0.18)"></span>Undeclared step pad</span>
+      </div>
+    </div>
+
+    <!-- Inspector Panel -->
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Current View</h3>
+        <div class="view-title">Swarm: Dead or Alive</div>
+        <div id="modeTitle" style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Active + Failed (Stacked)</div>
+        <p class="desc" id="modeDesc"></p>
+      </div>
+
+      <div class="card">
+        <h3>Isolate Scenario</h3>
+        <div class="lane-list" id="laneList"></div>
+      </div>
+
+      <div class="card">
+        <h3>Step Cell Inspector</h3>
+        <div id="selectionBody">
+          <p class="desc">Click any declared step cell in the 3D matrix to inspect live active/failed bee counts, latency vs typical, drill-down links, and the matching <code style="font-family:var(--mono)">beesharp runs</code> CLI command.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Agent / CLI Equivalent</h3>
+        <p class="desc" style="font-size:12px;">Live step-matrix projection exposed as structured JSON for <code style="font-family:var(--mono)">beesharp</code>:</p>
+        <div class="cli-box" id="cliCmd"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Player / Overview Strip -->
+  <footer class="playerbar">
+    <span>Run: <strong style="color:var(--text)">Live Matrix Simulation</strong> <span id="runStateLabel">(running)</span></span>
+    <span class="running" id="totalActive">0 active</span>
+    <span class="good" id="totalOk">0 ok</span>
+    <span class="slow" id="totalSlow">0 slow</span>
+    <span class="failed" id="totalFailed">0 failed</span>
+    <div class="strip" id="overviewStrip" title="Live recent tick history: blue = normal, amber = slow wave, red = failure spike"></div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // ---------- Color helpers (Beesharp palette) ----------
+  const COLORS = {
+    good: [52, 211, 153],    // #34d399
+    slow: [251, 191, 36],    // #fbbf24
+    failed: [240, 82, 82],   // #f05252
+    running: [91, 155, 240], // #5b9bf0
+    cyan: [56, 189, 248],    // #38bdf8
+    neutral: [140, 133, 120],
+    pad: [40, 37, 34]
+  };
+  function lerpColor(a, b, t) {
+    t = Math.max(0, Math.min(1, t));
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+  }
+  function rgb(c, alpha = 1) {
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+  function shade(c, factor) {
+    return [
+      Math.min(255, Math.max(0, Math.round(c[0] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[1] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[2] * factor)))
+    ];
+  }
+
+  // ---------- Matrix Schema: 5 Scenarios x up to 5 Declared Steps ----------
+  // Reactive step-machine transitions: stepIdx -> [ [nextStepIdx | 'done', weight], ... ]
+  const MAX_STEPS = 5;
+  const MAX_HOPS = 12;
+  const SCENARIOS = [
+    {
+      entry: 1,
+      id: 'browse',
+      name: '1. Browse Catalog',
+      pattern: '14/s linear',
+      arrivalRate: 14,
+      samplePath: '1 → 2 → 3 → 2 → 3 → 3',
+      steps: [
+        { name: 'Auth', typicalMs: 32, endpoint: 'POST /api/auth/token' },
+        { name: 'Search', typicalMs: 64, endpoint: 'GET /api/catalog/search' },
+        { name: 'Open Product', typicalMs: 52, endpoint: 'GET /api/products/{id}' }
+      ],
+      transitions: {
+        0: [[1, 0.90], [2, 0.10]],
+        1: [[2, 0.76], [1, 0.24]],
+        2: [['done', 0.56], [2, 0.24], [1, 0.20]]
+      }
+    },
+    {
+      entry: 2,
+      id: 'search',
+      name: '2. Search Burst',
+      pattern: '10/s + burst',
+      arrivalRate: 10,
+      samplePath: '1 → 2 → 2 → 3 → 2 → 3',
+      steps: [
+        { name: 'Auth', typicalMs: 30, endpoint: 'POST /api/auth/token' },
+        { name: 'Query Index', typicalMs: 85, endpoint: 'POST /api/search/query' },
+        { name: 'Reserve Preview', typicalMs: 110, endpoint: 'POST /api/inventory/reserve', affectedByOutage: true }
+      ],
+      transitions: {
+        0: [[1, 1.0]],
+        1: [[2, 0.68], [1, 0.20], ['done', 0.12]],
+        2: [['done', 0.72], [1, 0.22], [2, 0.06]]
+      }
+    },
+    {
+      entry: 3,
+      id: 'cart',
+      name: '3. Add to Cart',
+      pattern: '9/s linear',
+      arrivalRate: 9,
+      samplePath: '1 → 2 → 3 → 2 → 2 → 3 → 4',
+      steps: [
+        { name: 'Auth', typicalMs: 34, endpoint: 'POST /api/auth/token' },
+        { name: 'Open Product', typicalMs: 58, endpoint: 'GET /api/products/{id}' },
+        { name: 'Reserve Stock', typicalMs: 120, endpoint: 'POST /api/inventory/reserve', affectedByOutage: true },
+        { name: 'Update Cart', typicalMs: 75, endpoint: 'PUT /api/cart/items' }
+      ],
+      transitions: {
+        0: [[1, 0.88], [2, 0.12]],
+        1: [[2, 0.64], [1, 0.24], [3, 0.12]],
+        2: [[3, 0.62], [1, 0.26], [2, 0.12]],
+        3: [['done', 0.76], [1, 0.24]]
+      }
+    },
+    {
+      entry: 4,
+      id: 'checkout',
+      name: '4. Checkout',
+      pattern: '7/s + burst',
+      arrivalRate: 7,
+      samplePath: '1 → 2 → 3 → 2 → 3 → 2 → 2 → 3 → 4 → 5',
+      steps: [
+        { name: 'Auth', typicalMs: 36, endpoint: 'POST /api/auth/token' },
+        { name: 'Load Cart', typicalMs: 55, endpoint: 'GET /api/cart' },
+        { name: 'Reserve Stock', typicalMs: 135, endpoint: 'POST /api/inventory/reserve', affectedByOutage: true },
+        { name: 'Pay', typicalMs: 210, endpoint: 'POST /api/payments/charge' },
+        { name: 'Confirm Order', typicalMs: 115, endpoint: 'POST /api/orders' }
+      ],
+      transitions: {
+        0: [[1, 1.0]],
+        1: [[2, 0.68], [1, 0.20], [3, 0.12]],
+        2: [[3, 0.64], [1, 0.26], [2, 0.10]],
+        3: [[4, 0.72], [3, 0.18], [2, 0.10]],
+        4: [['done', 0.90], [3, 0.10]]
+      }
+    },
+    {
+      entry: 5,
+      id: 'account',
+      name: '5. Account Sync',
+      pattern: '6/s linear',
+      arrivalRate: 6,
+      samplePath: '1 → 2 → 3 → 3 → 2 → 3 → 4',
+      steps: [
+        { name: 'Auth', typicalMs: 34, endpoint: 'POST /api/auth/token' },
+        { name: 'Fetch Profile', typicalMs: 65, endpoint: 'GET /api/account/profile' },
+        { name: 'Sync Orders', typicalMs: 140, endpoint: 'GET /api/orders/history' },
+        { name: 'Save Prefs', typicalMs: 60, endpoint: 'PATCH /api/account/prefs' }
+      ],
+      transitions: {
+        0: [[1, 0.88], [2, 0.12]],
+        1: [[2, 0.80], [3, 0.20]],
+        2: [[3, 0.66], [2, 0.22], [1, 0.12]],
+        3: [['done', 0.88], [1, 0.12]]
+      }
+    }
+  ];
+
+  // ---------- Live Simulation State ----------
+  const FAILURE_WINDOW_SEC = 10;
+  const SLOW_WINDOW_SEC = 10;
+  const HISTORY_TICKS = 48;
+
+  const cells = SCENARIOS.map((sc, sIdx) =>
+    sc.steps.map((st, stepIdx) => ({
+      scenarioIdx: sIdx,
+      stepIdx,
+      entry: sc.entry,
+      scenarioId: sc.id,
+      scenarioName: sc.name,
+      stepName: st.name,
+      totalSteps: sc.steps.length,
+      typicalMs: st.typicalMs,
+      endpoint: st.endpoint,
+      affectedByOutage: !!st.affectedByOutage,
+      active: 0,
+      recentFailures: [], // timestamps in simTime
+      recentSlow: [],     // timestamps in simTime
+      recentRepeats: [],  // self-repeats (i -> i) in window
+      recentLoops: [],    // backward loops (from -> to < from) in window
+      recentDurations: [],// { t, ms }
+      avgMs: st.typicalMs,
+      ratio: 1.0,
+      topError: null,
+      displayActive: 0,
+      displayFailed: 0
+    }))
+  );
+
+  const bees = []; // active in-flight bees
+  const transitions = []; // visual bee dots gliding along rails / jump arcs
+  const arcHeat = new Map(); // `${sIdx}:${from}:${to}` -> 0..1 glow intensity
+  const arrivalAccum = SCENARIOS.map(() => 0);
+  const stripHistory = []; // { status: 'ok'|'slow'|'failed' }
+
+  const totals = {
+    ok: 1840,
+    slow: 36,
+    failed: 8
+  };
+
+  const state = {
+    displayMode: 'stacked', // stacked | active | failed
+    isolatedScenario: null, // null or scenarioIdx (0..4)
+    selected: null,         // { scenarioIdx, stepIdx }
+    hovered: null,          // { scenarioIdx, stepIdx }
+    liveRunning: true,
+    showJumpArcs: true,
+    outageInjected: false,
+    outageIntensity: 0,     // 0..1 ramps up/down smoothly on toggle
+    burstTimer: 0,
+    simTime: 0,
+    stripTimer: 0,
+    uiSyncTimer: 0,
+    cam: { yaw: -0.62, pitch: 0.56, zoom: 1.0, targetYaw: -0.62, targetPitch: 0.56, targetZoom: 1.0 }
+  };
+
+  // Seed initial bees so the matrix opens alive immediately
+  function spawnBee(scenarioIdx, initialStep = 0, fromBurst = false) {
+    const sc = SCENARIOS[scenarioIdx];
+    const st = sc.steps[initialStep];
+    const stepDur = computeStepDurationMs(scenarioIdx, initialStep, fromBurst);
+    const willFail = computeWillFail(scenarioIdx, initialStep, stepDur);
+    const path = [];
+    for (let k = 0; k <= initialStep; k++) path.push(k + 1);
+    bees.push({
+      scenarioIdx,
+      stepIdx: initialStep,
+      elapsedMs: 0,
+      durationMs: stepDur,
+      willFail,
+      wasSlow: stepDur > st.typicalMs * 2.0,
+      hadSlow: stepDur > st.typicalMs * 2.0,
+      fromBurst,
+      hops: 0,
+      hasLoop: false,
+      path
+    });
+  }
+
+  function pickNextStep(bee) {
+    const sc = SCENARIOS[bee.scenarioIdx];
+    const lastIdx = sc.steps.length - 1;
+    // Safety cap so reactive loops always terminate cleanly
+    if (bee.hops >= MAX_HOPS) {
+      return bee.stepIdx >= lastIdx ? 'done' : bee.stepIdx + 1;
+    }
+    const choices = sc.transitions[bee.stepIdx] || [[bee.stepIdx < lastIdx ? bee.stepIdx + 1 : 'done', 1]];
+    let totalW = 0;
+    for (const [, w] of choices) totalW += w;
+    let r = Math.random() * totalW;
+    for (const [target, w] of choices) {
+      r -= w;
+      if (r <= 0) return target;
+    }
+    return choices[choices.length - 1][0];
+  }
+
+  function computeStepDurationMs(scenarioIdx, stepIdx, fromBurst) {
+    const st = SCENARIOS[scenarioIdx].steps[stepIdx];
+    const cell = cells[scenarioIdx][stepIdx];
+    const jitter = 0.78 + Math.random() * 0.48;
+    let mult = jitter;
+
+    // Natural background contention on Step 3 & Pay
+    if (st.affectedByOutage && state.outageIntensity > 0.01) {
+      mult += state.outageIntensity * (2.3 + Math.random() * 1.9);
+    }
+    // Queueing penalty when a cell already has high concurrency
+    const queuePressure = Math.max(0, cell.active - (fromBurst ? 6 : 10));
+    if (st.affectedByOutage) {
+      mult += Math.min(2.6, queuePressure * 0.11);
+    } else if (stepIdx === 3 && scenarioIdx === 3) {
+      // Pay step occasionally slows slightly under heavy waves
+      mult += Math.min(0.9, queuePressure * 0.04);
+    }
+    return Math.round(st.typicalMs * mult * (fromBurst ? 1.15 : 1.0));
+  }
+
+  function computeWillFail(scenarioIdx, stepIdx, stepDurMs) {
+    const st = SCENARIOS[scenarioIdx].steps[stepIdx];
+    if (st.affectedByOutage && state.outageIntensity > 0.05) {
+      const p = 0.14 + state.outageIntensity * 0.34;
+      if (Math.random() < p) return true;
+    }
+    if (stepDurMs > st.typicalMs * 3.1 && Math.random() < 0.22) {
+      return true;
+    }
+    // Tiny baseline error rate on Pay / Reserve Stock
+    if (scenarioIdx === 3 && stepIdx === 3 && Math.random() < 0.018) return true;
+    if (st.affectedByOutage && Math.random() < 0.012) return true;
+    return false;
+  }
+
+  function errorTextFor(scenarioIdx, stepIdx) {
+    const st = SCENARIOS[scenarioIdx].steps[stepIdx];
+    if (st.affectedByOutage) {
+      return state.outageInjected || state.outageIntensity > 0.25
+        ? `HTTP 503 on ${st.endpoint} (inventory lock timeout)`
+        : `HTTP 429 on ${st.endpoint} (stock contention)`;
+    }
+    if (stepIdx === 3 && scenarioIdx === 3) {
+      return `HTTP 504 on ${st.endpoint} (payment gateway timeout)`;
+    }
+    return `HTTP 500 on ${st.endpoint} (upstream reset)`;
+  }
+
+  // Warm up initial state across steps
+  for (let i = 0; i < SCENARIOS.length; i++) {
+    const count = 4 + Math.floor(Math.random() * 4);
+    for (let k = 0; k < count; k++) {
+      const sIdx = Math.floor(Math.random() * SCENARIOS[i].steps.length);
+      spawnBee(i, sIdx, false);
+      bees[bees.length - 1].elapsedMs = Math.random() * bees[bees.length - 1].durationMs;
+    }
+  }
+
+  function stepSimulation(dt) {
+    state.simTime += dt;
+    if (state.burstTimer > 0) state.burstTimer = Math.max(0, state.burstTimer - dt);
+
+    // Smoothly ramp outage intensity up/down
+    const targetOutage = state.outageInjected ? 1 : 0;
+    state.outageIntensity += (targetOutage - state.outageIntensity) * Math.min(1, dt * 2.2);
+
+    // Spawn new arrivals into Step 1 (index 0)
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      arrivalAccum[s] += SCENARIOS[s].arrivalRate * dt;
+      while (arrivalAccum[s] >= 1) {
+        arrivalAccum[s] -= 1;
+        spawnBee(s, 0, false);
+      }
+    }
+
+    // Advance in-flight bees
+    const dtMs = dt * 1000;
+    for (let i = bees.length - 1; i >= 0; i--) {
+      const b = bees[i];
+      // If an outage is active while a bee is in an outage step, slow it down dynamically
+      const sc = SCENARIOS[b.scenarioIdx];
+      const st = sc.steps[b.stepIdx];
+      const pace = (st.affectedByOutage && state.outageIntensity > 0.2)
+        ? Math.max(0.28, 1 - state.outageIntensity * 0.58)
+        : 1.0;
+      b.elapsedMs += dtMs * pace;
+
+      if (b.elapsedMs >= b.durationMs) {
+        const cell = cells[b.scenarioIdx][b.stepIdx];
+        cell.recentDurations.push({ t: state.simTime, ms: b.durationMs });
+
+        if (b.wasSlow) {
+          cell.recentSlow.push(state.simTime);
+        }
+
+        if (b.willFail) {
+          cell.recentFailures.push(state.simTime);
+          cell.topError = errorTextFor(b.scenarioIdx, b.stepIdx);
+          totals.failed++;
+          bees.splice(i, 1);
+          continue;
+        }
+
+        // Reactive step-machine transition (adjacent, skip, self-repeat, or backward loop)
+        const nextStep = pickNextStep(b);
+        if (nextStep !== 'done') {
+          const fromStep = b.stepIdx;
+          const isRepeat = nextStep === fromStep;
+          const isBackLoop = nextStep < fromStep;
+          const isSkip = nextStep > fromStep + 1;
+
+          if (isRepeat) {
+            cells[b.scenarioIdx][nextStep].recentRepeats.push(state.simTime);
+            b.hasLoop = true;
+          } else if (isBackLoop) {
+            cells[b.scenarioIdx][fromStep].recentLoops.push(state.simTime);
+            cells[b.scenarioIdx][nextStep].recentLoops.push(state.simTime);
+            b.hasLoop = true;
+          }
+
+          if (isRepeat || isBackLoop || isSkip) {
+            const key = `${b.scenarioIdx}:${fromStep}:${nextStep}`;
+            arcHeat.set(key, 1.0);
+          }
+
+          transitions.push({
+            scenarioIdx: b.scenarioIdx,
+            fromStep,
+            toStep: nextStep,
+            kind: isRepeat ? 'repeat' : isBackLoop ? 'loop' : isSkip ? 'skip' : 'next',
+            t: 0,
+            slow: b.wasSlow
+          });
+
+          b.hops += 1;
+          b.stepIdx = nextStep;
+          b.path.push(nextStep + 1);
+          if (b.hasLoop && b.path.length >= 4) {
+            sc.samplePath = b.path.join(' → ');
+          }
+          b.elapsedMs = 0;
+          b.durationMs = computeStepDurationMs(b.scenarioIdx, nextStep, b.fromBurst);
+          b.willFail = computeWillFail(b.scenarioIdx, nextStep, b.durationMs);
+          b.wasSlow = b.durationMs > sc.steps[nextStep].typicalMs * 2.0;
+          if (b.wasSlow) b.hadSlow = true;
+        } else {
+          if (b.hasLoop && b.path.length >= 4) {
+            sc.samplePath = b.path.join(' → ');
+          }
+          if (b.hadSlow) totals.slow++;
+          else totals.ok++;
+          bees.splice(i, 1);
+        }
+      }
+    }
+
+    // Advance visual transitions between steps & decay arc heat
+    const arcSpeed = 3.2;
+    for (let i = transitions.length - 1; i >= 0; i--) {
+      const tr = transitions[i];
+      tr.t += dt * (tr.kind === 'next' ? 4.6 : arcSpeed);
+      if (tr.t >= 1) transitions.splice(i, 1);
+    }
+    const heatDecay = Math.exp(-dt * 1.9);
+    for (const [key, val] of arcHeat.entries()) {
+      const nextVal = val * heatDecay;
+      if (nextVal < 0.01) arcHeat.delete(key);
+      else arcHeat.set(key, nextVal);
+    }
+
+    // Recompute per-cell live stats
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      for (let k = 0; k < SCENARIOS[s].steps.length; k++) {
+        cells[s][k].active = 0;
+      }
+    }
+    for (const b of bees) {
+      cells[b.scenarioIdx][b.stepIdx].active++;
+    }
+
+    const failCutoff = state.simTime - FAILURE_WINDOW_SEC;
+    const slowCutoff = state.simTime - SLOW_WINDOW_SEC;
+    const durCutoff = state.simTime - 4.0;
+
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      for (let k = 0; k < SCENARIOS[s].steps.length; k++) {
+        const cell = cells[s][k];
+        while (cell.recentFailures.length && cell.recentFailures[0] < failCutoff) cell.recentFailures.shift();
+        while (cell.recentSlow.length && cell.recentSlow[0] < slowCutoff) cell.recentSlow.shift();
+        while (cell.recentRepeats.length && cell.recentRepeats[0] < slowCutoff) cell.recentRepeats.shift();
+        while (cell.recentLoops.length && cell.recentLoops[0] < slowCutoff) cell.recentLoops.shift();
+        while (cell.recentDurations.length && cell.recentDurations[0].t < durCutoff) cell.recentDurations.shift();
+
+        if (cell.recentFailures.length === 0) cell.topError = null;
+
+        if (cell.recentDurations.length > 0) {
+          const sum = cell.recentDurations.reduce((acc, r) => acc + r.ms, 0);
+          cell.avgMs = Math.round(sum / cell.recentDurations.length);
+        } else {
+          const boost = (cell.affectedByOutage ? state.outageIntensity * 2.2 : 0);
+          cell.avgMs = Math.round(cell.typicalMs * (1 + boost));
+        }
+        cell.ratio = Number((cell.avgMs / cell.typicalMs).toFixed(2));
+      }
+    }
+
+    // Append overview strip tick every 0.5s
+    state.stripTimer += dt;
+    if (state.stripTimer >= 0.5) {
+      state.stripTimer -= 0.5;
+      let anyFail = false;
+      let anySlow = false;
+      for (const row of cells) {
+        for (const c of row) {
+          if (c.recentFailures.length > 0) anyFail = true;
+          if (c.ratio >= 2.0) anySlow = true;
+        }
+      }
+      stripHistory.push(anyFail ? 'failed' : anySlow ? 'slow' : 'ok');
+      if (stripHistory.length > HISTORY_TICKS) stripHistory.shift();
+      renderStrip();
+    }
+  }
+
+  function renderStrip() {
+    const stripEl = document.getElementById('overviewStrip');
+    stripEl.innerHTML = '';
+    const n = HISTORY_TICKS;
+    const startIdx = n - stripHistory.length;
+    for (let i = 0; i < stripHistory.length; i++) {
+      const kind = stripHistory[i];
+      if (kind === 'ok') continue;
+      const m = document.createElement('div');
+      m.className = 'strip-mark';
+      m.style.left = `${((startIdx + i) / n) * 100}%`;
+      m.style.width = `${100 / n}%`;
+      m.style.background = kind === 'failed' ? 'var(--failed)' : 'var(--slow)';
+      stripEl.appendChild(m);
+    }
+  }
+
+  // ---------- Camera Presets ----------
+  const CAM_PRESETS = {
+    iso:   { yaw: -0.62, pitch: 0.56, zoom: 1.0 },
+    top:   { yaw: 0.0,   pitch: 1.54, zoom: 1.06 },
+    front: { yaw: 0.0,   pitch: 0.08, zoom: 1.04 },
+    side:  { yaw: -1.52, pitch: 0.14, zoom: 1.04 }
+  };
+
+  // ---------- 3D Canvas Projection & Drawing ----------
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  let width = 0, height = 0, dpr = 1;
+  let hitTargets = [];
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    width = rect.width;
+    height = rect.height;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function project(x, y, z) {
+    const { yaw, pitch, zoom } = state.cam;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+
+    const x1 = x * cy - z * sy;
+    const z1 = x * sy + z * cy;
+    const y2 = y * cp + z1 * sp;
+    const z2 = z1 * cp - y * sp;
+
+    const fov = 44;
+    const dist = 34;
+    const scale = (fov / (dist + z2)) * Math.min(width, height) * 0.025 * zoom;
+    return {
+      sx: width * 0.5 + x1 * scale,
+      sy: height * 0.55 - y2 * scale,
+      depth: z2,
+      scale
+    };
+  }
+
+  function drawPoly(pts, fill, stroke, lineWidth = 1, dashed = false) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].sx, pts[0].sy);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+    ctx.closePath();
+    if (dashed) ctx.setLineDash([4, 4]);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+    if (dashed) ctx.setLineDash([]);
+  }
+
+  function queueBox(queue, cx, cy, cz, w, h, d, baseColor, opts = {}) {
+    const hx = w / 2, hz = d / 2;
+    const y0 = cy, y1 = cy + Math.max(0.03, h);
+    const v = [
+      project(cx - hx, y0, cz - hz), // 0
+      project(cx + hx, y0, cz - hz), // 1
+      project(cx + hx, y0, cz + hz), // 2
+      project(cx - hx, y0, cz + hz), // 3
+      project(cx - hx, y1, cz - hz), // 4
+      project(cx + hx, y1, cz - hz), // 5
+      project(cx + hx, y1, cz + hz), // 6
+      project(cx - hx, y1, cz + hz)  // 7
+    ];
+    const centerDepth = (v[0].depth + v[2].depth + v[4].depth + v[6].depth) / 4;
+    const alpha = opts.dim ? 0.14 : (opts.alpha ?? 0.94);
+    const stroke = opts.selected
+      ? 'rgba(255,255,255,0.95)'
+      : opts.hovered
+        ? 'rgba(255,255,255,0.68)'
+        : opts.dim
+          ? 'rgba(255,255,255,0.06)'
+          : (opts.stroke ?? 'rgba(15,14,13,0.48)');
+
+    const faces = [
+      { idx: [4, 5, 6, 7], shade: 1.12 }, // top
+      { idx: [0, 1, 5, 4], shade: 0.72 }, // back
+      { idx: [2, 3, 7, 6], shade: 0.88 }, // front
+      { idx: [1, 2, 6, 5], shade: 0.80 }, // right
+      { idx: [3, 0, 4, 7], shade: 0.65 }  // left
+    ];
+
+    queue.push({
+      depth: centerDepth,
+      yOrder: cy,
+      draw() {
+        const fList = faces.map(f => {
+          const pts = f.idx.map(i => v[i]);
+          const fDepth = pts.reduce((s, p) => s + p.depth, 0) / 4;
+          return { pts, fDepth, shade: f.shade };
+        }).sort((a, b) => b.fDepth - a.fDepth);
+
+        for (const f of fList) {
+          drawPoly(
+            f.pts,
+            rgb(shade(baseColor, f.shade), alpha),
+            stroke,
+            opts.selected ? 1.8 : 0.85
+          );
+        }
+      },
+      bounds: {
+        minX: Math.min(...v.map(p => p.sx)),
+        maxX: Math.max(...v.map(p => p.sx)),
+        minY: Math.min(...v.map(p => p.sy)),
+        maxY: Math.max(...v.map(p => p.sy)),
+        depth: centerDepth
+      }
+    });
+    return queue[queue.length - 1].bounds;
+  }
+
+  function drawFloorGrid(xMin, xMax, zMin, zMax, xStep, zStep) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = xMin; x <= xMax + 0.01; x += xStep) {
+      const a = project(x, 0, zMin), b = project(x, 0, zMax);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+    for (let z = zMin; z <= zMax + 0.01; z += zStep) {
+      const a = project(xMin, 0, z), b = project(xMax, 0, z);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+  }
+
+  function drawLabel3D(text, x, y, z, color = '#a19c94', align = 'center', size = 11.5, weight = 500) {
+    const p = project(x, y, z);
+    ctx.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, p.sx, p.sy);
+  }
+
+  // ---------- Matrix Layout Constants ----------
+  const X_SPAN = 18;
+  const Z_SPAN = 14;
+  function cellX(stepIdx) {
+    return -X_SPAN / 2 + ((stepIdx + 0.5) / MAX_STEPS) * X_SPAN;
+  }
+  function cellZ(scenarioIdx) {
+    // 1. Browse at back (+Z, top in Top-Down), 5. Account Sync at front (-Z, bottom in Top-Down)
+    return Z_SPAN / 2 - ((scenarioIdx + 0.5) / SCENARIOS.length) * Z_SPAN;
+  }
+
+  function activeBarColor(cell) {
+    if (cell.ratio >= 2.0) return COLORS.slow;
+    if (cell.ratio > 1.25) return lerpColor(COLORS.running, COLORS.slow, (cell.ratio - 1.25) / 0.75);
+    return COLORS.running;
+  }
+
+  function renderMatrix(dt) {
+    drawFloorGrid(-X_SPAN / 2, X_SPAN / 2, -Z_SPAN / 2, Z_SPAN / 2, X_SPAN / MAX_STEPS, Z_SPAN / SCENARIOS.length);
+
+    // X-axis column headers (Step 1 -> Step 5)
+    for (let k = 0; k < MAX_STEPS; k++) {
+      const x = cellX(k);
+      drawLabel3D(`Step ${k + 1}`, x, 0, -Z_SPAN / 2 - 1.05, '#a19c94', 'center', 11.5, 600);
+    }
+
+    // Z-axis scenario lane labels
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      const z = cellZ(s);
+      const isIso = state.isolatedScenario === s;
+      const dim = state.isolatedScenario !== null && !isIso;
+      drawLabel3D(
+        SCENARIOS[s].name,
+        -X_SPAN / 2 - 1.0,
+        0.15,
+        z,
+        isIso ? '#ffffff' : (dim ? 'rgba(161,156,148,0.28)' : '#f1efea'),
+        'right',
+        11.5,
+        isIso ? 700 : 500
+      );
+    }
+
+    const padW = (X_SPAN / MAX_STEPS) * 0.74;
+    const padD = (Z_SPAN / SCENARIOS.length) * 0.68;
+    const barW = padW * 0.68;
+    const barD = padD * 0.68;
+    const smoothK = Math.min(1, dt * 11);
+
+    // Draw connecting flow rails and empty floor pads on the ground plane
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      const sc = SCENARIOS[s];
+      const z = cellZ(s);
+      const dim = state.isolatedScenario !== null && state.isolatedScenario !== s;
+
+      // Flow rail connecting declared steps 1..M
+      const a = project(cellX(0), 0.04, z);
+      const b = project(cellX(sc.steps.length - 1), 0.04, z);
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.strokeStyle = dim ? 'rgba(91,155,240,0.06)' : 'rgba(91,155,240,0.28)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Empty undeclared pads for steps > sc.steps.length
+      for (let k = sc.steps.length; k < MAX_STEPS; k++) {
+        const x = cellX(k);
+        const hx = padW * 0.46, hz = padD * 0.46;
+        const pts = [
+          project(x - hx, 0.01, z - hz),
+          project(x + hx, 0.01, z - hz),
+          project(x + hx, 0.01, z + hz),
+          project(x - hx, 0.01, z + hz)
+        ];
+        drawPoly(
+          pts,
+          dim ? 'rgba(255,255,255,0.008)' : 'rgba(255,255,255,0.018)',
+          dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.08)',
+          1,
+          true
+        );
+      }
+    }
+
+    const queue = [];
+
+    // Queue declared step pads + stacked/isolated bars
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      const sc = SCENARIOS[s];
+      const z = cellZ(s);
+      const dim = state.isolatedScenario !== null && state.isolatedScenario !== s;
+
+      for (let k = 0; k < sc.steps.length; k++) {
+        const cell = cells[s][k];
+        const x = cellX(k);
+        const isSel = state.selected && state.selected.scenarioIdx === s && state.selected.stepIdx === k;
+        const isHov = state.hovered && state.hovered.scenarioIdx === s && state.hovered.stepIdx === k;
+
+        cell.displayActive += (cell.active - cell.displayActive) * smoothK;
+        cell.displayFailed += (cell.recentFailures.length - cell.displayFailed) * smoothK;
+
+        const padBounds = queueBox(queue, x, 0, z, padW, 0.08, padD, COLORS.pad, {
+          dim,
+          alpha: 0.92,
+          selected: isSel && cell.displayActive < 0.05 && cell.displayFailed < 0.05,
+          hovered: isHov && cell.displayActive < 0.05 && cell.displayFailed < 0.05,
+          stroke: isSel ? 'rgba(255,255,255,0.9)' : isHov ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)'
+        });
+
+        let minX = padBounds.minX, maxX = padBounds.maxX;
+        let minY = padBounds.minY, maxY = padBounds.maxY;
+        let hitDepth = padBounds.depth;
+
+        const showActive = state.displayMode === 'stacked' || state.displayMode === 'active';
+        const showFailed = state.displayMode === 'stacked' || state.displayMode === 'failed';
+
+        const activeH = (showActive && cell.displayActive > 0.04)
+          ? Math.min(6.2, Math.max(0.18, cell.displayActive * 0.28))
+          : 0;
+        const failedH = (showFailed && cell.displayFailed > 0.04)
+          ? Math.min(4.6, Math.max(0.22, cell.displayFailed * 0.36))
+          : 0;
+
+        if (activeH > 0) {
+          const ab = queueBox(queue, x, 0.08, z, barW, activeH, barD, activeBarColor(cell), {
+            dim,
+            selected: isSel,
+            hovered: isHov
+          });
+          minX = Math.min(minX, ab.minX);
+          maxX = Math.max(maxX, ab.maxX);
+          minY = Math.min(minY, ab.minY);
+          maxY = Math.max(maxY, ab.maxY);
+          hitDepth = Math.min(hitDepth, ab.depth);
+        }
+
+        if (failedH > 0) {
+          const fb = queueBox(queue, x, 0.08 + activeH, z, barW, failedH, barD, COLORS.failed, {
+            dim,
+            selected: isSel,
+            hovered: isHov
+          });
+          minX = Math.min(minX, fb.minX);
+          maxX = Math.max(maxX, fb.maxX);
+          minY = Math.min(minY, fb.minY);
+          maxY = Math.max(maxY, fb.maxY);
+          hitDepth = Math.min(hitDepth, fb.depth);
+        }
+
+        hitTargets.push({
+          box: { minX: minX - 3, maxX: maxX + 3, minY: minY - 3, maxY: maxY + 3 },
+          depth: hitDepth,
+          data: { scenarioIdx: s, stepIdx: k }
+        });
+
+        // Step name caption near front of pad + live count badge above bar when active/failing
+        const topY = 0.08 + activeH + failedH;
+        const labelPt = project(x, topY + 0.42, z);
+        const stepTitle = sc.steps[k].name;
+        const showAlert = (cell.recentFailures.length > 0 && showFailed) || isSel || isHov;
+        queue.push({
+          depth: labelPt.depth - 0.6,
+          yOrder: topY + 1,
+          draw() {
+            if (dim) return;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (showAlert) {
+              const countTag = state.displayMode === 'failed'
+                ? `${cell.recentFailures.length} fail`
+                : state.displayMode === 'active'
+                  ? `${cell.active} act`
+                  : `${cell.active}a · ${cell.recentFailures.length}f`;
+              ctx.font = '600 10.5px Inter, system-ui, sans-serif';
+              ctx.fillStyle = cell.recentFailures.length > 0 && showFailed ? '#ff9b9b' : '#ffffff';
+              ctx.fillText(`${stepTitle} (${countTag})`, labelPt.sx, labelPt.sy);
+            } else {
+              const footPt = project(x, 0.14, z - padD * 0.56);
+              ctx.font = '500 10px Inter, system-ui, sans-serif';
+              ctx.fillStyle = 'rgba(241,239,234,0.58)';
+              ctx.fillText(stepTitle, footPt.sx, footPt.sy);
+            }
+          }
+        });
+      }
+    }
+
+    // Helper: 3D position along adjacent rail, forward skip arc, backward loop arc, or self-repeat halo
+    function cellTopY(scenarioIdx, stepIdx) {
+      const c = cells[scenarioIdx][stepIdx];
+      const showActive = state.displayMode === 'stacked' || state.displayMode === 'active';
+      const showFailed = state.displayMode === 'stacked' || state.displayMode === 'failed';
+      const aH = (showActive && c.displayActive > 0.04) ? Math.min(6.2, Math.max(0.18, c.displayActive * 0.28)) : 0;
+      const fH = (showFailed && c.displayFailed > 0.04) ? Math.min(4.6, Math.max(0.22, c.displayFailed * 0.36)) : 0;
+      return 0.08 + aH + fH;
+    }
+
+    function arcPoint(scenarioIdx, fromStep, toStep, t) {
+      const z = cellZ(scenarioIdx);
+      const x0 = cellX(fromStep);
+      const x1 = cellX(toStep);
+      const sCurve = Math.sin(t * Math.PI);
+
+      if (fromStep === toStep) {
+        // Self-repeat halo rising above the step column and returning cleanly
+        const yBase = Math.max(0.45, cellTopY(scenarioIdx, fromStep) + 0.14);
+        const mx = x0 + Math.sin(t * Math.PI * 2) * 0.56;
+        const mz = z - sCurve * 0.52;
+        const my = yBase + sCurve * 1.45;
+        return { x: mx, y: my, z: mz };
+      }
+
+      if (toStep < fromStep) {
+        // Backward loop: dips UNDER the floor (y < 0) so forward flow above stays cleanly separated
+        const span = fromStep - toStep;
+        const dip = 1.15 + span * 0.65;
+        const mx = x0 + (x1 - x0) * t;
+        const mz = z - sCurve * (0.30 + span * 0.10);
+        const my = -0.06 - sCurve * dip;
+        return { x: mx, y: my, z: mz };
+      }
+
+      if (toStep > fromStep + 1) {
+        // Forward skip: arched overhead bridge clearing intermediate columns (+Z bow)
+        const span = toStep - fromStep;
+        const peak = 1.15 + span * 0.55;
+        const mx = x0 + (x1 - x0) * t;
+        const mz = z + sCurve * 0.36;
+        const my = 0.22 + sCurve * peak;
+        return { x: mx, y: my, z: mz };
+      }
+
+      // Adjacent forward glide along lane rail
+      return {
+        x: x0 + (x1 - x0) * t,
+        y: 0.20 + sCurve * 0.36,
+        z
+      };
+    }
+
+    // Queue persistent faint jump-arc trails (brightening as bees traverse them)
+    if (state.showJumpArcs) {
+      for (let s = 0; s < SCENARIOS.length; s++) {
+        const sc = SCENARIOS[s];
+        const dim = state.isolatedScenario !== null && state.isolatedScenario !== s;
+        for (const [fromStr, targets] of Object.entries(sc.transitions)) {
+          const fromStep = Number(fromStr);
+          for (const [toTarget] of targets) {
+            if (toTarget === 'done' || toTarget === fromStep + 1) continue;
+            const toStep = Number(toTarget);
+            const isRepeat = toStep === fromStep;
+            const isLoop = toStep < fromStep;
+            const heat = arcHeat.get(`${s}:${fromStep}:${toStep}`) || 0;
+            const baseCol = isLoop ? COLORS.slow : isRepeat ? COLORS.cyan : COLORS.running;
+            const col = heat > 0.15 ? lerpColor(baseCol, COLORS.cyan, isLoop ? 0.25 : 0.6) : baseCol;
+            const alpha = dim ? 0.04 : (0.12 + heat * 0.68);
+            const lw = 1.05 + heat * 1.5;
+
+            const segs = 16;
+            const pts = [];
+            let midDepth = 0;
+            let midY = 0;
+            for (let i = 0; i <= segs; i++) {
+              const p3 = arcPoint(s, fromStep, toStep, i / segs);
+              const pp = project(p3.x, p3.y, p3.z);
+              pts.push(pp);
+              if (i === segs / 2) {
+                midDepth = pp.depth;
+                midY = p3.y;
+              }
+            }
+
+            queue.push({
+              depth: isLoop ? midDepth + 0.15 : midDepth - 0.1,
+              yOrder: midY,
+              draw() {
+                ctx.beginPath();
+                ctx.moveTo(pts[0].sx, pts[0].sy);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+                ctx.strokeStyle = rgb(col, alpha);
+                ctx.lineWidth = lw;
+                if (isLoop) ctx.setLineDash([5, 3]);
+                ctx.stroke();
+                if (isLoop) ctx.setLineDash([]);
+
+                // Small directional arrowhead near destination (at ~82% along curve)
+                const tip = pts[Math.floor(segs * 0.85)];
+                const prev = pts[Math.floor(segs * 0.78)];
+                const ang = Math.atan2(tip.sy - prev.sy, tip.sx - prev.sx);
+                const head = 5.2;
+                ctx.beginPath();
+                ctx.moveTo(tip.sx, tip.sy);
+                ctx.lineTo(tip.sx - Math.cos(ang - 0.52) * head, tip.sy - Math.sin(ang - 0.52) * head);
+                ctx.lineTo(tip.sx - Math.cos(ang + 0.52) * head, tip.sy - Math.sin(ang + 0.52) * head);
+                ctx.closePath();
+                ctx.fillStyle = rgb(col, Math.min(0.95, alpha + 0.12));
+                ctx.fill();
+              }
+            });
+          }
+        }
+      }
+    }
+
+    // Queue live moving bee dots gliding along rails and jump arcs
+    for (const tr of transitions) {
+      if (tr.kind !== 'next' && !state.showJumpArcs) continue;
+      const dim = state.isolatedScenario !== null && state.isolatedScenario !== tr.scenarioIdx;
+      const p3 = arcPoint(tr.scenarioIdx, tr.fromStep, tr.toStep, tr.t);
+      const p = project(p3.x, p3.y, p3.z);
+      const col = tr.slow
+        ? COLORS.slow
+        : tr.kind === 'loop'
+          ? COLORS.slow
+          : (tr.kind === 'repeat' || tr.kind === 'skip')
+            ? COLORS.cyan
+            : COLORS.running;
+      queue.push({
+        depth: tr.kind === 'loop' ? p.depth + 0.08 : p.depth - 0.2,
+        yOrder: p3.y + (tr.kind === 'loop' ? -0.1 : 0.2),
+        draw() {
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, dim ? 1.5 : (tr.kind === 'next' ? 2.9 : 3.4), 0, Math.PI * 2);
+          ctx.fillStyle = rgb(col, dim ? 0.14 : 0.96);
+          ctx.fill();
+        }
+      });
+    }
+
+    queue.sort((a, b) => (b.depth - a.depth) || ((a.yOrder ?? 0) - (b.yOrder ?? 0)));
+    for (const item of queue) item.draw();
+  }
+
+  // ---------- Main Animation Loop ----------
+  let lastTime = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    if (state.liveRunning) {
+      stepSimulation(dt);
+    }
+
+    // Smooth camera easing
+    state.cam.yaw += (state.cam.targetYaw - state.cam.yaw) * 0.14;
+    state.cam.pitch += (state.cam.targetPitch - state.cam.pitch) * 0.14;
+    state.cam.zoom += (state.cam.targetZoom - state.cam.zoom) * 0.14;
+
+    ctx.clearRect(0, 0, width, height);
+    hitTargets = [];
+
+    renderMatrix(dt);
+    hitTargets.sort((a, b) => a.depth - b.depth);
+
+    state.uiSyncTimer += dt;
+    if (state.uiSyncTimer >= 0.12) {
+      state.uiSyncTimer = 0;
+      refreshLiveUI();
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- Pointer Orbit / Zoom / Pick ----------
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  const tooltip = document.getElementById('tooltip');
+
+  function pick(mx, my) {
+    for (const ht of hitTargets) {
+      const b = ht.box;
+      if (mx >= b.minX && mx <= b.maxX && my >= b.minY && my <= b.maxY) {
+        return ht.data;
+      }
+    }
+    return null;
+  }
+
+  function renderTooltip(hit, mx, my) {
+    if (!hit) {
+      tooltip.style.display = 'none';
+      return;
+    }
+    const cell = cells[hit.scenarioIdx][hit.stepIdx];
+    const sc = SCENARIOS[hit.scenarioIdx];
+    const failCount = cell.recentFailures.length;
+    const slowCount = cell.recentSlow.length;
+    const repCount = cell.recentRepeats.length;
+    const loopCount = cell.recentLoops.length;
+    const durClass = failCount > 0 ? 'failed' : cell.ratio >= 2.0 ? 'slow' : 'good';
+
+    tooltip.style.display = 'block';
+    tooltip.style.left = `${Math.min(width - 300, Math.max(10, mx + 14))}px`;
+    tooltip.style.top = `${Math.max(12, my - 14)}px`;
+    tooltip.innerHTML = `
+      <div class="tt-title">${cell.scenarioName}</div>
+      <div class="tt-sub">${cell.stepName} · Step ${cell.stepIdx + 1} of ${cell.totalSteps}</div>
+      <div class="tt-row"><span>Active in-flight</span><span class="tt-val running">${cell.active} bees</span></div>
+      <div class="tt-row"><span>Failed (${FAILURE_WINDOW_SEC}s window)</span><span class="tt-val ${failCount > 0 ? 'failed' : ''}">${failCount} bees</span></div>
+      <div class="tt-row"><span>Slow (${SLOW_WINDOW_SEC}s window)</span><span class="tt-val ${slowCount > 0 ? 'slow' : ''}">${slowCount} bees</span></div>
+      <div class="tt-row"><span>Repeats / Loops</span><span class="tt-val" style="color:#7dd3fc">${repCount} rep · ${loopCount} loop</span></div>
+      <div class="tt-row"><span>Avg duration</span><span class="tt-val ${durClass}">${cell.avgMs} ms (${cell.ratio}×)</span></div>
+      <div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.08);font-size:10.5px;color:var(--muted);">
+        Sample path: <span style="font-family:var(--mono);color:#7dd3fc;">${sc.samplePath}</span>
+      </div>
+      ${cell.topError ? `<div class="tt-err">${cell.topError}</div>` : ''}
+    `;
+  }
+
+  let lastMouseX = 0, lastMouseY = 0;
+
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true;
+    moved = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    lastMouseX = mx;
+    lastMouseY = my;
+
+    if (dragging) {
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      state.cam.targetYaw += dx * 0.008;
+      state.cam.targetPitch = Math.max(0.05, Math.min(1.54, state.cam.targetPitch + dy * 0.008));
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    const hit = pick(mx, my);
+    state.hovered = hit;
+    canvas.style.cursor = hit ? 'pointer' : 'grab';
+    renderTooltip(hit, mx, my);
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    state.hovered = null;
+    tooltip.style.display = 'none';
+  });
+
+  canvas.addEventListener('pointerup', e => {
+    dragging = false;
+    if (!moved) {
+      const rect = canvas.getBoundingClientRect();
+      const hit = pick(e.clientX - rect.left, e.clientY - rect.top);
+      state.selected = hit;
+      buildInspectorStructure();
+      refreshLiveUI();
+    }
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    state.cam.targetZoom = Math.max(0.55, Math.min(2.1, state.cam.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+  }, { passive: false });
+
+  // ---------- Sidebar & Inspector UI ----------
+  const MODE_META = {
+    stacked: {
+      title: 'Active + Failed (Stacked)',
+      desc: 'X = Step 1 → Step 5, Z = all 5 scenarios, Y = live in-flight bees (blue → amber when >2× typical) topped with coral-red recent failures. Undeclared steps render as flat floor pads.'
+    },
+    active: {
+      title: 'Active In-Flight Only',
+      desc: 'Isolates pure live concurrency pressure across every (scenario, step) cell. Watch waves travel Step 1 → Step 2 → Step 3 when you trigger a burst.'
+    },
+    failed: {
+      title: 'Failed Only',
+      desc: 'Isolates only failing (scenario, step) cells in coral red so the exact failing step across scenarios jumps out immediately.'
+    }
+  };
+
+  function buildScenarioLanes() {
+    const list = document.getElementById('laneList');
+    list.innerHTML = '';
+    SCENARIOS.forEach((sc, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'lane-btn' + (state.isolatedScenario === idx ? ' isolated' : '');
+      btn.innerHTML = `
+        <span>${sc.name} <span style="color:var(--faint);font-size:11px;">(${sc.steps.length} steps)</span></span>
+        <span class="lane-meta" id="laneMeta-${idx}">0 act · 0 fail</span>
+      `;
+      btn.onclick = () => {
+        state.isolatedScenario = state.isolatedScenario === idx ? null : idx;
+        buildScenarioLanes();
+        refreshLiveUI();
+      };
+      list.appendChild(btn);
+    });
+  }
+
+  function buildInspectorStructure() {
+    const body = document.getElementById('selectionBody');
+    const s = state.selected;
+    if (!s) {
+      body.innerHTML = `<p class="desc">Click any declared step cell in the 3D matrix to inspect live active/failed bee counts, latency vs typical, drill-down links, and the matching <code style="font-family:var(--mono)">beesharp runs</code> CLI command.</p>`;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs matrix latest --by step --include-active --json`;
+      return;
+    }
+
+    const cell = cells[s.scenarioIdx][s.stepIdx];
+    const stepNum = cell.stepIdx + 1;
+    body.innerHTML = `
+      <div style="font-weight:700;color:var(--title)">${cell.scenarioName}</div>
+      <div class="desc" style="font-size:12px;margin-top:2px;">
+        ${cell.stepName} · Step ${stepNum} of ${cell.totalSteps} · <code style="font-family:var(--mono)">${cell.endpoint}</code>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><div class="k">Active in-flight</div><div class="v running" id="insActive">0</div></div>
+        <div class="stat"><div class="k">Failed (${FAILURE_WINDOW_SEC}s)</div><div class="v" id="insFailed">0</div></div>
+        <div class="stat"><div class="k">Slow (${SLOW_WINDOW_SEC}s)</div><div class="v" id="insSlow">0</div></div>
+        <div class="stat"><div class="k">Avg duration</div><div class="v" id="insDur">0 ms</div></div>
+        <div class="stat"><div class="k">Self-repeats (${SLOW_WINDOW_SEC}s)</div><div class="v" style="color:#7dd3fc" id="insRepeats">0</div></div>
+        <div class="stat"><div class="k">Back loops (${SLOW_WINDOW_SEC}s)</div><div class="v slow" id="insLoops">0</div></div>
+      </div>
+      <div class="path-box">
+        <div class="k">Sample Live Bee Path</div>
+        <div class="v" id="insSamplePath">${SCENARIOS[s.scenarioIdx].samplePath}</div>
+      </div>
+      <div class="cli-box" id="insErrorBox" style="display:none;color:var(--failed);border-color:rgba(240,82,82,0.3)"></div>
+      <div class="actions">
+        <button class="chip" id="btnDrillScenario">Open /scenario/${cell.entry}?step=${stepNum} →</button>
+        <button class="chip" id="btnDrillLogs">View Step Logs →</button>
+      </div>
+    `;
+
+    document.getElementById('btnDrillScenario').onclick = () => {
+      alert(`Drill-down → /scenario/${cell.entry}?step=${stepNum}`);
+    };
+    document.getElementById('btnDrillLogs').onclick = () => {
+      alert(`Drill-down → /logs?scenario=${cell.entry}&step=${stepNum}&level=error`);
+    };
+    document.getElementById('cliCmd').innerHTML =
+      `<span class="cmd-accent">$</span> beesharp runs bees latest --entry ${cell.entry} --step ${stepNum} --json`;
+  }
+
+  function refreshLiveUI() {
+    // Update scenario lane badges
+    let totalActive = 0;
+    for (let s = 0; s < SCENARIOS.length; s++) {
+      let sActive = 0;
+      let sFail = 0;
+      for (const c of cells[s]) {
+        sActive += c.active;
+        sFail += c.recentFailures.length;
+      }
+      totalActive += sActive;
+      const metaEl = document.getElementById(`laneMeta-${s}`);
+      if (metaEl) {
+        metaEl.textContent = `${sActive} act · ${sFail} fail`;
+        metaEl.className = 'lane-meta ' + (sFail > 0 ? 'failed' : sActive > 14 ? 'slow' : '');
+      }
+    }
+
+    // Update bottom playerbar
+    document.getElementById('totalActive').textContent = `${totalActive} active`;
+    document.getElementById('totalOk').textContent = `${totals.ok.toLocaleString()} ok`;
+    document.getElementById('totalSlow').textContent = `${totals.slow.toLocaleString()} slow`;
+    document.getElementById('totalFailed').textContent = `${totals.failed.toLocaleString()} failed`;
+
+    // Update live inspector numbers without recreating buttons
+    if (state.selected) {
+      const cell = cells[state.selected.scenarioIdx][state.selected.stepIdx];
+      const sc = SCENARIOS[state.selected.scenarioIdx];
+      const insActive = document.getElementById('insActive');
+      const insFailed = document.getElementById('insFailed');
+      const insSlow = document.getElementById('insSlow');
+      const insDur = document.getElementById('insDur');
+      const insRepeats = document.getElementById('insRepeats');
+      const insLoops = document.getElementById('insLoops');
+      const insSamplePath = document.getElementById('insSamplePath');
+      const insErr = document.getElementById('insErrorBox');
+
+      if (insActive) insActive.textContent = `${cell.active} bees`;
+      if (insFailed) {
+        insFailed.textContent = `${cell.recentFailures.length}`;
+        insFailed.className = 'v ' + (cell.recentFailures.length > 0 ? 'failed' : 'good');
+      }
+      if (insSlow) {
+        insSlow.textContent = `${cell.recentSlow.length}`;
+        insSlow.className = 'v ' + (cell.recentSlow.length > 0 ? 'slow' : '');
+      }
+      if (insDur) {
+        insDur.textContent = `${cell.avgMs} ms (${cell.ratio}×)`;
+        insDur.className = 'v ' + (cell.ratio >= 2.0 ? 'slow' : 'good');
+      }
+      if (insRepeats) insRepeats.textContent = `${cell.recentRepeats.length}`;
+      if (insLoops) insLoops.textContent = `${cell.recentLoops.length}`;
+      if (insSamplePath) insSamplePath.textContent = sc.samplePath;
+      if (insErr) {
+        if (cell.topError) {
+          insErr.style.display = 'block';
+          insErr.textContent = cell.topError;
+        } else {
+          insErr.style.display = 'none';
+        }
+      }
+    }
+
+    // Update hover tooltip live if pointer is hovering a cell
+    if (state.hovered && !dragging) {
+      renderTooltip(state.hovered, lastMouseX, lastMouseY);
+    }
+  }
+
+  function updateModeMeta() {
+    const meta = MODE_META[state.displayMode];
+    document.getElementById('modeTitle').textContent = meta.title;
+    document.getElementById('modeDesc').textContent = meta.desc;
+  }
+
+  // ---------- Event Bindings ----------
+  document.querySelectorAll('#displayModes button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#displayModes button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.displayMode = btn.dataset.mode;
+      updateModeMeta();
+    };
+  });
+
+  document.querySelectorAll('#camPresets button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      const p = CAM_PRESETS[btn.dataset.cam];
+      state.cam.targetYaw = p.yaw;
+      state.cam.targetPitch = p.pitch;
+      state.cam.targetZoom = p.zoom;
+    };
+  });
+
+  document.getElementById('toggleLive').onclick = e => {
+    state.liveRunning = !state.liveRunning;
+    e.target.textContent = state.liveRunning ? 'Pause' : 'Resume';
+    e.target.classList.toggle('on', state.liveRunning);
+    document.getElementById('liveDot').classList.toggle('paused', !state.liveRunning);
+    document.getElementById('runStateLabel').textContent = state.liveRunning ? '(running)' : '(paused)';
+  };
+
+  document.getElementById('triggerBurst').onclick = e => {
+    // Inject a 25-bee wave split across Search Burst (idx 1) and Checkout (idx 3)
+    for (let i = 0; i < 13; i++) spawnBee(1, 0, true);
+    for (let i = 0; i < 12; i++) spawnBee(3, 0, true);
+    state.burstTimer = 2.0;
+    e.target.classList.add('burst-active');
+    setTimeout(() => e.target.classList.remove('burst-active'), 1400);
+    if (!state.liveRunning) {
+      // Allow immediate visual update even if paused, or resume? Keep current pause state, update active counts
+      for (const row of cells) for (const c of row) c.active = 0;
+      for (const b of bees) cells[b.scenarioIdx][b.stepIdx].active++;
+      refreshLiveUI();
+    }
+  };
+
+  document.getElementById('toggleOutage').onclick = e => {
+    state.outageInjected = !state.outageInjected;
+    e.target.classList.toggle('on', state.outageInjected);
+    e.target.textContent = state.outageInjected ? 'Recover Step 3 Outage' : 'Inject Step 3 Outage';
+  };
+
+  document.getElementById('toggleArcs').onclick = e => {
+    state.showJumpArcs = !state.showJumpArcs;
+    e.target.classList.toggle('on', state.showJumpArcs);
+  };
+
+  updateModeMeta();
+  buildScenarioLanes();
+  buildInspectorStructure();
+  refreshLiveUI();
+})();
+</script>
+</body>
+</html>
