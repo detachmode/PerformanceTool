@@ -1,0 +1,1275 @@
+@* 3D Views page (/3d): interactive Canvas 2D 3D terrain (Scenario/Step × Time × Duration), latency distribution surface
+   (Latency Band × Time × Bee Count), and Run History comparison across previous runs of one scenario. *@
+@page "/3d"
+@layout MainLayout
+@implements IAsyncDisposable
+@inject IRunSource Sim
+@inject DataModeState DataMode
+@inject ApiRunSource ApiRun
+@inject LogsLinks Logs
+@inject CallsLinks Calls
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject PhoneState Phone
+
+<PageTitle>3D Views · Beesharp</PageTitle>
+
+@{
+    var snap = Sim.Current;
+    var hasStepsScenarios = HasAnySteps(snap);
+    var activeRunHasPlayer = snap.Running || snap.Paused;
+    var totalFinished = snap.Scenarios.Sum(x => x.Finished);
+    var totalSlow = snap.Scenarios.Sum(x => x.SlowBees);
+    var totalFailed = snap.Scenarios.Sum(x => x.Failed);
+    var totalOk = Math.Max(0, totalFinished - totalSlow - totalFailed);
+    var hasSceneData = activeKind switch
+    {
+        Views3DKind.Terrain => terrainScene?.HasData ?? false,
+        Views3DKind.Surface => surfaceScene?.HasData ?? false,
+        _ => historyScene?.HasData ?? false,
+    };
+}
+
+<div class="v3d-page @(activeRunHasPlayer ? "has-player" : "") @(Phone.IsPhone ? "v3d-phone" : "")">
+    <header class="v3d-topbar">
+        <div class="seg" role="tablist" aria-label="3D view">
+            <button type="button"
+                    class="@(activeKind == Views3DKind.Terrain ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.Terrain)"
+                    @onclick="() => SetViewKind(Views3DKind.Terrain)">
+                1. Scenario Terrain
+            </button>
+            <button type="button"
+                    class="@(activeKind == Views3DKind.Surface ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.Surface)"
+                    @onclick="() => SetViewKind(Views3DKind.Surface)">
+                2. Latency Surface
+            </button>
+            <button type="button"
+                    class="@(activeKind == Views3DKind.RunHistory ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.RunHistory)"
+                    @onclick="() => SetViewKind(Views3DKind.RunHistory)">
+                3. Run History
+            </button>
+        </div>
+
+        <div class="v3d-run-summary tnum" aria-label="Run totals">
+            <span class="muted">@(DataMode.IsFakeMode ? "Fake" : ApiRun.IsViewingHistory ? "History" : "Live") · @Format.Time(snap.Elapsed)</span>
+            <span class="good">@Format.Num(totalOk) ok</span>
+            <span class="warn">@Format.Num(totalSlow) slow</span>
+            <span class="bad">@Format.Num(totalFailed) failed</span>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="seg v3d-cams" role="group" aria-label="Camera presets">
+            <button type="button" class="@(activePreset == CameraPreset.Iso ? "on" : "")" @onclick="() => SetCameraAsync(CameraPreset.Iso)">Isometric</button>
+            <button type="button" class="@(activePreset == CameraPreset.Top ? "on" : "")" @onclick="() => SetCameraAsync(CameraPreset.Top)">Top-Down (2D)</button>
+            <button type="button" class="@(activePreset == CameraPreset.Front ? "on" : "")" @onclick="() => SetCameraAsync(CameraPreset.Front)">Front</button>
+            <button type="button" class="@(activePreset == CameraPreset.Side ? "on" : "")" @onclick="() => SetCameraAsync(CameraPreset.Side)">Side</button>
+        </div>
+    </header>
+
+    <div class="v3d-main">
+        <div class="v3d-stage-wrap">
+            <div class="v3d-toolbar">
+                @if (activeKind == Views3DKind.Terrain)
+                {
+                    <div class="v3d-sub">
+                        <button type="button"
+                                class="chip @(terrainGrouping == TerrainGrouping.Scenarios ? "on" : "")"
+                                @onclick="() => SetTerrainGrouping(TerrainGrouping.Scenarios)">
+                            By Scenario (@snap.Count)
+                        </button>
+                        @if (hasStepsScenarios)
+                        {
+                            <button type="button"
+                                    class="chip @(terrainGrouping == TerrainGrouping.Steps ? "on" : "")"
+                                    @onclick="() => SetTerrainGrouping(TerrainGrouping.Steps)">
+                                By Step
+                            </button>
+                            @if (terrainGrouping == TerrainGrouping.Steps)
+                            {
+                                var chosenEntry = terrainScene?.ScenarioEntry ?? Views3DProjection.ResolveStepScenarioEntry(snap, selectedStepScenario);
+                                <select class="v3d-select" aria-label="Scenario for step breakdown" value="@chosenEntry" @onchange="OnStepScenarioChanged">
+                                    @for (var i = 0; i < snap.Count; i++)
+                                    {
+                                        var idx = i;
+                                        if (!snap.StepsOf(idx).Any) continue;
+                                        <option value="@idx">@(idx + 1). @snap.Labels[idx] (@snap.StepsOf(idx).Count steps)</option>
+                                    }
+                                </select>
+                            }
+                        }
+                    </div>
+                }
+                else if (activeKind == Views3DKind.Surface)
+                {
+                    <div class="v3d-sub">
+                        <button type="button"
+                                class="chip @(surfaceScenarioFilter is null ? "on" : "")"
+                                @onclick="() => SetSurfaceScenarioFilter(null)">
+                            All Scenarios
+                        </button>
+                        @if (snap.Count > 1)
+                        {
+                            <select class="v3d-select" aria-label="Filter latency surface by scenario" value="@(surfaceScenarioFilter?.ToString() ?? "")" @onchange="OnSurfaceScenarioChanged">
+                                <option value="">Choose scenario…</option>
+                                @for (var i = 0; i < snap.Count; i++)
+                                {
+                                    var idx = i;
+                                    <option value="@idx">@(idx + 1). @snap.Labels[idx]</option>
+                                }
+                            </select>
+                        }
+                    </div>
+                }
+                else
+                {
+                    var chosenHistEntry = historyScene is { ScenarioEntry: >= 0 } hs ? hs.ScenarioEntry : Views3DProjection.ResolveHistoryScenarioEntry(snap, selectedHistoryScenario);
+                    <div class="v3d-sub">
+                        @if (snap.Count > 0)
+                        {
+                            <select class="v3d-select" aria-label="Scenario to compare across runs" value="@chosenHistEntry" @onchange="OnHistoryScenarioChanged">
+                                @for (var i = 0; i < snap.Count; i++)
+                                {
+                                    var idx = i;
+                                    <option value="@idx">@(idx + 1). @snap.Labels[idx]</option>
+                                }
+                            </select>
+                        }
+                        <button type="button"
+                                class="chip @(historySameSetupOnly ? "on" : "")"
+                                title="Only include previous runs with the same scenario setup (rate / burst shape)"
+                                @onclick="ToggleHistorySameSetupAsync">
+                            Same setup only
+                        </button>
+                        @if (!DataMode.IsFakeMode)
+                        {
+                            <button type="button"
+                                    class="chip"
+                                    disabled="@historyLoading"
+                                    title="Re-scan stored runs from the server"
+                                    @onclick="RefreshLiveHistoryAsync">
+                                @(historyLoading ? "Loading…" : "Refresh")
+                            </button>
+                        }
+                    </div>
+                }
+
+                <div class="v3d-hint">Drag to orbit · Scroll to zoom · Click any bar to inspect</div>
+            </div>
+
+            <canvas class="v3d-canvas" @ref="canvasEl" aria-label="Interactive 3D run chart"></canvas>
+            <div class="v3d-tooltip" @ref="tooltipEl" role="status" aria-live="off"></div>
+
+            @if (!hasSceneData)
+            {
+                <div class="v3d-empty">
+                    @if (activeKind == Views3DKind.RunHistory && historyLoading)
+                    {
+                        <p>Loading matching previous runs…</p>
+                    }
+                    else if (snap.State == FakeRunState.Idle && totalFinished == 0 && !(activeKind == Views3DKind.RunHistory && historyScene is { Lanes.Count: > 1 }))
+                    {
+                        <p>No run data yet. Start a run from the player bar or pick a stored run to explore it in 3D.</p>
+                    }
+                    else if (activeKind == Views3DKind.Terrain && terrainGrouping == TerrainGrouping.Steps && !string.IsNullOrEmpty(terrainScene?.Note))
+                    {
+                        <p>@terrainScene.Note</p>
+                    }
+                    else if (activeKind == Views3DKind.RunHistory && !string.IsNullOrEmpty(historyScene?.Note))
+                    {
+                        <p>@historyScene.Note</p>
+                    }
+                    else
+                    {
+                        <p>Waiting for finished bees…</p>
+                    }
+                </div>
+            }
+
+            <div class="v3d-legend" aria-hidden="true">
+                <span><i class="dot" style="background:var(--good)"></i>Good</span>
+                <span><i class="dot" style="background:var(--slow)"></i>Slow (&gt;2× typical)</span>
+                <span><i class="dot" style="background:var(--failed)"></i>Failed / Canceled</span>
+                @if (activeKind is Views3DKind.Terrain or Views3DKind.RunHistory)
+                {
+                    <span><i class="dot" style="background:var(--running)"></i>In flight</span>
+                }
+            </div>
+        </div>
+
+        <aside class="v3d-sidebar" aria-label="3D Inspector">
+            <section class="v3d-card">
+                <h3>Current View</h3>
+                @if (activeKind == Views3DKind.Terrain)
+                {
+                    <div class="v3d-view-title">1. Scenario &amp; Step Terrain</div>
+                    <p class="v3d-desc">
+                        X = run time, Z = @(terrainGrouping == TerrainGrouping.Steps ? "declared steps" : "scenario entries"), Y = avg duration.
+                        Switch to Top-Down (2D) for exact time alignment.
+                    </p>
+                    @if (!string.IsNullOrEmpty(terrainScene?.Note))
+                    {
+                        <p class="v3d-note">@terrainScene.Note</p>
+                    }
+                }
+                else if (activeKind == Views3DKind.Surface)
+                {
+                    <div class="v3d-view-title">2. Latency Distribution Surface</div>
+                    <p class="v3d-desc">
+                        X = run time, Z = adaptive duration band, Y = bee count.
+                        Shows cache-hit ridges vs slow/failed tail mountains over time.
+                    </p>
+                }
+                else
+                {
+                    <div class="v3d-view-title">3. Run History</div>
+                    <p class="v3d-desc">
+                        X = shared run time, Z = runs (Current in front), Y = longest bee (<code class="v3d-code">MaxMs</code>).
+                        Switch to Front view to stack the 2D scenario bar charts behind one another.
+                    </p>
+                    @if (historyScene is { ScenarioLabel.Length: > 0 } hsInfo)
+                    {
+                        <div class="v3d-hist-setup">@hsInfo.ScenarioLabel · @hsInfo.ScenarioSetup</div>
+                    }
+                    @if (DataMode.IsFakeMode)
+                    {
+                        <p class="v3d-note">Fake mode: comparing Current against 3 deterministic simulated runs.</p>
+                    }
+                }
+            </section>
+
+            <section class="v3d-card">
+                @if (activeKind == Views3DKind.RunHistory)
+                {
+                    var allCandidates = VisibleHistoryCandidates();
+                    var hiddenDiffCount = historySameSetupOnly ? AllHistoryCandidates().Count(c => !c.SetupMatches) : 0;
+                    var currentLane = historyScene?.Lanes.FirstOrDefault(l => l.IsCurrent);
+                    <h3>Compared Runs (@(historyScene?.Lanes.Count ?? 0)/6)</h3>
+                    <div class="v3d-lane-list">
+                        @if (currentLane is not null)
+                        {
+                            var iso = isolatedLane == currentLane.Index;
+                            var metaCls = currentLane.FailedBees > 0 ? "bad" : currentLane.SlowBees > 0 ? "warn" : "";
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(currentLane.Index)">
+                                <span class="v3d-lane-name">@currentLane.Name</span>
+                                <span class="v3d-lane-meta @metaCls">@currentLane.Meta</span>
+                            </button>
+                        }
+                        @foreach (var cand in allCandidates)
+                        {
+                            var checkedRun = IsCandidateSelected(cand.RunId);
+                            var activeLane = historyScene?.Lanes.FirstOrDefault(l => !l.IsCurrent && string.Equals(l.RunId, cand.RunId, StringComparison.Ordinal));
+                            var iso = activeLane is not null && isolatedLane == activeLane.Index;
+                            var isStopped = string.Equals(cand.State, "Stopped", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(cand.State, "Canceled", StringComparison.OrdinalIgnoreCase);
+                            var statusCls = isStopped || cand.FailedBees > 0 ? "bad" : cand.SlowBees > 0 ? "warn" : "";
+                            var canCheckMore = checkedRun || SelectedPreviousCount() < 5;
+                            <div class="v3d-hist-row @(iso ? "isolated" : "") @(checkedRun ? "checked" : "")">
+                                <label class="v3d-hist-chk" title="@(canCheckMore ? "Include or exclude this run (max 5 previous runs)" : "Maximum 5 previous runs selected")">
+                                    <input type="checkbox"
+                                           checked="@checkedRun"
+                                           disabled="@(!canCheckMore)"
+                                           @onchange="() => ToggleHistoryCandidateAsync(cand)" />
+                                </label>
+                                <button type="button"
+                                        class="v3d-hist-pick"
+                                        @onclick="() => OnHistoryCandidateClickedAsync(cand, activeLane)">
+                                    <div class="v3d-hist-top">
+                                        <span class="v3d-lane-name">@cand.Label</span>
+                                        <span class="v3d-lane-meta @statusCls">
+                                            @(isStopped ? $"Stopped @ {Format.Time(cand.ElapsedSeconds)}" : Format.Time(cand.ElapsedSeconds))
+                                        </span>
+                                    </div>
+                                    <div class="v3d-hist-sub">
+                                        <span class="v3d-badge @(cand.SetupMatches ? "match" : "diff")">@cand.SetupBadge</span>
+                                        <span>@cand.StartedUtc.LocalDateTime.ToString("MMM d HH:mm")</span>
+                                        <span>@Format.Num(cand.TotalBees) bees</span>
+                                        @if (cand.FailedBees > 0)
+                                        {
+                                            <span class="bad">@cand.FailedBees failed</span>
+                                        }
+                                    </div>
+                                </button>
+                            </div>
+                        }
+                        @if (allCandidates.Count == 0)
+                        {
+                            <p class="v3d-desc">
+                                @(historyLoading
+                                    ? "Scanning stored runs…"
+                                    : "No matching previous runs found.")
+                            </p>
+                        }
+                        @if (hiddenDiffCount > 0)
+                        {
+                            <button type="button" class="chip v3d-hist-more" @onclick="ToggleHistorySameSetupAsync">
+                                Show @hiddenDiffCount @(hiddenDiffCount == 1 ? "run" : "runs") with different setup
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                <h3>@(activeKind == Views3DKind.Terrain ? (terrainGrouping == TerrainGrouping.Steps ? "Isolate Step Lane" : "Isolate Scenario Lane") : "Isolate Latency Band")</h3>
+                <div class="v3d-lane-list">
+                    @if (activeKind == Views3DKind.Terrain && terrainScene is { Lanes.Count: > 0 } ts)
+                    {
+                        @foreach (var lane in ts.Lanes)
+                        {
+                            var idx = lane.Index;
+                            var iso = isolatedLane == idx;
+                            var metaCls = lane.FailedBees > 0 ? "bad" : lane.SlowBees > 0 ? "warn" : "";
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(idx)">
+                                <span class="v3d-lane-name">@lane.Name</span>
+                                <span class="v3d-lane-meta @metaCls">@lane.Meta</span>
+                            </button>
+                        }
+                    }
+                    else if (activeKind == Views3DKind.Surface && surfaceScene is { Bands.Count: > 0 } ss)
+                    {
+                        @foreach (var band in ss.Bands)
+                        {
+                            var idx = band.Index;
+                            var iso = isolatedLane == idx;
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(idx)">
+                                <span class="v3d-lane-name">@band.Label</span>
+                                <span class="v3d-lane-meta @(band.IsSlow ? "warn" : "good")">@(band.IsSlow ? "slow band" : "typical")</span>
+                            </button>
+                        }
+                    }
+                    else
+                    {
+                        <p class="v3d-desc">No lanes available yet.</p>
+                    }
+                </div>
+                }
+            </section>
+
+            <section class="v3d-card">
+                <h3>Selection Inspector</h3>
+                @if (activeKind == Views3DKind.Terrain && selectedTerrainCell is { } tc)
+                {
+                    var laneName = terrainScene is not null && tc.LaneIndex < terrainScene.Lanes.Count
+                        ? terrainScene.Lanes[tc.LaneIndex].Name
+                        : $"Scenario {tc.Entry + 1}";
+                    var durCls = tc.FailedCount > 0 ? "bad" : tc.SlowCount > 0 || tc.Ratio >= SlowCallRule.Factor ? "warn" : "good";
+                    var scnFilter = BuildTerrainScenarioFilter(tc);
+                    <div class="v3d-sel-title">@laneName</div>
+                    <div class="v3d-desc">Window @tc.TimeLabel</div>
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">Avg duration</div>
+                            <div class="v @durCls">@(tc.BeeCount > 0 ? Format.Ms(tc.AvgDurationMs) : "–")</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Max duration</div>
+                            <div class="v @durCls">@Format.Ms(tc.MaxDurationMs)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Bees</div>
+                            <div class="v">@Format.Num(tc.BeeCount)@(tc.InFlightCount > 0 ? $" (+{tc.InFlightCount})" : "")</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Slow / Failed</div>
+                            <div class="v">
+                                <span class="@(tc.SlowCount > 0 ? "warn" : "")">@tc.SlowCount</span>
+                                <span class="muted"> / </span>
+                                <span class="@(tc.FailedCount > 0 ? "bad" : "")">@tc.FailedCount</span>
+                            </div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(tc.SampleError))
+                    {
+                        <div class="v3d-err-box">@tc.SampleError</div>
+                    }
+                    <div class="v3d-actions">
+                        <a class="chip" href="@ScenarioLink.Href(tc.Entry, scnFilter)">Open /scenario/@(tc.Entry + 1) →</a>
+                        @if (tc.SampleBeeSequence is { } seq)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(tc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                        }
+                        <button type="button" class="chip" @onclick="() => OpenTerrainLogs(tc)">View Logs →</button>
+                    </div>
+                }
+                else if (activeKind == Views3DKind.Surface && selectedSurfaceCell is { } sc)
+                {
+                    var statusCls = sc.FailedCount > 0 ? "bad" : sc.SlowCount > 0 ? "warn" : "good";
+                    var targetEntry = sc.ScenarioEntryFilter ?? sc.DominantEntry;
+                    <div class="v3d-sel-title">Latency Band: @sc.BandLabel</div>
+                    <div class="v3d-desc">Window @sc.TimeLabel</div>
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">Bees in band</div>
+                            <div class="v">@Format.Num(sc.Count)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Slow / Failed</div>
+                            <div class="v">
+                                <span class="@(sc.SlowCount > 0 ? "warn" : "")">@sc.SlowCount</span>
+                                <span class="muted"> / </span>
+                                <span class="@(sc.FailedCount > 0 ? "bad" : "")">@sc.FailedCount</span>
+                            </div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Avg duration</div>
+                            <div class="v @statusCls">@Format.Ms(sc.AvgDurationMs)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Max duration</div>
+                            <div class="v @statusCls">@Format.Ms(sc.MaxDurationMs)</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(sc.SampleError))
+                    {
+                        <div class="v3d-err-box">@sc.SampleError</div>
+                    }
+                    <div class="v3d-actions">
+                        @if (targetEntry is { } entry)
+                        {
+                            var sf = sc.FailedCount > 0 ? new ScenarioFilter(DetailFilter.Failed)
+                                : sc.SlowCount > 0 ? new ScenarioFilter(DetailFilter.Slow)
+                                : ScenarioFilter.Default;
+                            <a class="chip" href="@ScenarioLink.Href(entry, sf)">Open /scenario/@(entry + 1) →</a>
+                        }
+                        @if (sc.SampleBeeSequence is { } seq && targetEntry is { } bEntry)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(bEntry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                        }
+                        <button type="button" class="chip" @onclick="() => OpenSurfaceLogs(sc)">View Logs →</button>
+                        <button type="button" class="chip" @onclick="() => OpenSurfaceCalls(sc)">Filter /calls →</button>
+                    </div>
+                }
+                else if (activeKind == Views3DKind.RunHistory && selectedHistoryCell is { } hc && historyScene is not null && hc.LaneIndex < historyScene.Lanes.Count)
+                {
+                    var lane = historyScene.Lanes[hc.LaneIndex];
+                    var durCls = hc.FailedCount > 0 ? "bad" : hc.SlowCount > 0 || hc.Step >= SlowCallRule.MaxStep ? "warn" : "good";
+                    <div class="v3d-hist-sel-meta">
+                        <span class="v3d-badge @(lane.IsStopped ? "bad" : lane.IsCurrent ? "match" : "")">@(lane.EndLabel ?? lane.State)</span>
+                        <span>@lane.Name</span>
+                        <span class="muted">@lane.StartedUtc.LocalDateTime.ToString("MMM d HH:mm")</span>
+                    </div>
+                    @if (hc.IsSingleBee && hc.BeeSequence is { } seq)
+                    {
+                        <div class="v3d-sel-title">Bee #@(seq + 1) · @Format.Ms(hc.MaxDurationMs)</div>
+                        <div class="v3d-desc">Single bee · started @Format.Time(hc.StartSec)</div>
+                    }
+                    else
+                    {
+                        <div class="v3d-sel-title">Group · @Format.Num(hc.BeeCount + hc.RunningCount) bees · longest @Format.Ms(hc.MaxDurationMs)</div>
+                        <div class="v3d-desc">@hc.FailedCount failed · @hc.SlowCount slow · window @hc.TimeLabel</div>
+                    }
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">Longest bee</div>
+                            <div class="v @durCls">@Format.Ms(hc.MaxDurationMs)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Bees</div>
+                            <div class="v">@(hc.IsSingleBee ? "1" : Format.Num(hc.BeeCount))@(hc.RunningCount > 0 ? $" (+{hc.RunningCount})" : "")</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Slow / Failed</div>
+                            <div class="v">
+                                <span class="@(hc.SlowCount > 0 ? "warn" : "")">@hc.SlowCount</span>
+                                <span class="muted"> / </span>
+                                <span class="@(hc.FailedCount > 0 ? "bad" : "")">@hc.FailedCount</span>
+                            </div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">@(hc.IsSingleBee ? "Started" : "Window")</div>
+                            <div class="v">@(hc.IsSingleBee ? Format.Time(hc.StartSec) : hc.TimeLabel)</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(hc.SampleError))
+                    {
+                        <div class="v3d-err-box">@hc.SampleError</div>
+                    }
+                    <div class="v3d-actions">
+                        @if (lane.IsCurrent)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(hc.Entry, BuildHistoryScenarioFilter(hc))">Open /scenario/@(hc.Entry + 1) →</a>
+                            @if (hc.BeeSequence is { } bseq)
+                            {
+                                <a class="chip" href="@ScenarioLink.Href(hc.Entry, new ScenarioFilter(Bee: bseq))">Bee B@(bseq + 1) →</a>
+                            }
+                            <button type="button" class="chip" @onclick="() => OpenHistoryLogs(hc)">View Logs →</button>
+                        }
+                        else if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(lane.RunId))
+                        {
+                            <button type="button"
+                                    class="chip"
+                                    disabled="@(Sim.IsRunning || loadingStoredRun)"
+                                    title="@(Sim.IsRunning ? "Stop the active run before loading a stored run" : $"Load run {lane.RunId} and open /scenario/{hc.Entry + 1}")"
+                                    @onclick="() => LoadAndOpenStoredRunAsync(lane, hc)">
+                                @(loadingStoredRun ? "Loading…" : $"Load run & open /scenario/{hc.Entry + 1} →")
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="v3d-desc">Simulated previous run (stored-run drill-down works in Live mode).</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="v3d-desc">Click any bar in the 3D scene to inspect metrics, view sample errors, and drill down into scenarios or logs.</p>
+                }
+            </section>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private ElementReference canvasEl;
+    private ElementReference tooltipEl;
+    private IJSObjectReference? module;
+    private IJSObjectReference? handle;
+    private DotNetObjectReference<Views3DPage>? self;
+
+    private Views3DKind activeKind = Views3DKind.Terrain;
+    private TerrainGrouping terrainGrouping = TerrainGrouping.Scenarios;
+    private int? selectedStepScenario;
+    private int? surfaceScenarioFilter;
+    private int? selectedHistoryScenario;
+    private bool historySameSetupOnly = true;
+    private bool historyLoading;
+    private bool loadingStoredRun;
+    private string? historyLoadedForKey;
+    private CameraPreset? activePreset = CameraPreset.Iso;
+    private int? isolatedLane;
+    private (int LaneIndex, int BucketIndex)? selectedKey;
+
+    private TerrainScene? terrainScene;
+    private SurfaceScene? surfaceScene;
+    private RunHistoryScene? historyScene;
+    private IReadOnlyList<HistoryRunCandidate> fakeCandidates = [];
+    private IReadOnlyList<HistoryRunInput> fakeHistoryInputs = [];
+    private readonly List<HistoryRunCandidate> liveCandidates = [];
+    private readonly Dictionary<string, HistoryRunInput> liveRunInputs = new(StringComparer.Ordinal);
+    private HashSet<string>? selectedHistoryRunIds;
+    private JsScenePayload? currentPayload;
+    private int sceneRevision;
+    private int pushedSceneRevision = -1;
+    private int? pushedIsolatedLane = int.MinValue;
+    private (int LaneIndex, int BucketIndex)? pushedSelectedKey;
+
+    private long lastRebuildTick;
+    private FakeRunState lastRunState;
+    private bool lastFakeMode;
+    private string lastRunId = "";
+    private CancellationTokenSource? throttleCts;
+    private CancellationTokenSource? stepDetailCts;
+    private CancellationTokenSource? historyCts;
+    private bool disposed;
+
+    private TerrainCell? selectedTerrainCell =>
+        activeKind == Views3DKind.Terrain && selectedKey is { } k && terrainScene is { } ts
+        && k.LaneIndex >= 0 && k.LaneIndex < ts.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < ts.Grid[k.LaneIndex].Count
+            ? ts.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    private SurfaceCell? selectedSurfaceCell =>
+        activeKind == Views3DKind.Surface && selectedKey is { } k && surfaceScene is { } ss
+        && k.LaneIndex >= 0 && k.LaneIndex < ss.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < ss.Grid[k.LaneIndex].Count
+            ? ss.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    private HistoryCell? selectedHistoryCell =>
+        activeKind == Views3DKind.RunHistory && selectedKey is { } k && historyScene is { } hs
+        && k.LaneIndex >= 0 && k.LaneIndex < hs.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < hs.Grid[k.LaneIndex].Count
+            ? hs.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    protected override void OnInitialized()
+    {
+        Sim.Changed += OnRunChanged;
+        Phone.Changed += OnPhoneChanged;
+        RebuildScene();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (disposed) return;
+
+        if (handle is null)
+        {
+            try
+            {
+                module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./views-3d.js");
+            }
+            catch (JSException) { return; }
+            catch (JSDisconnectedException) { return; }
+            catch (InvalidOperationException) { return; }
+
+            try
+            {
+                self ??= DotNetObjectReference.Create(this);
+                handle = await module.InvokeAsync<IJSObjectReference>("mount", canvasEl, tooltipEl, self);
+            }
+            catch (JSException) { return; }
+            catch (JSDisconnectedException) { return; }
+            catch (InvalidOperationException) { return; }
+        }
+
+        if (handle is null) return;
+
+        if (pushedSceneRevision != sceneRevision && currentPayload is not null)
+        {
+            pushedSceneRevision = sceneRevision;
+            try { await handle.InvokeVoidAsync("setScene", currentPayload); }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        if (pushedIsolatedLane != isolatedLane)
+        {
+            pushedIsolatedLane = isolatedLane;
+            try { await handle.InvokeVoidAsync("setIsolated", isolatedLane); }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        if (pushedSelectedKey != selectedKey)
+        {
+            pushedSelectedKey = selectedKey;
+            try
+            {
+                if (selectedKey is { } sk) await handle.InvokeVoidAsync("setSelected", sk.LaneIndex, sk.BucketIndex);
+                else await handle.InvokeVoidAsync("setSelected", null, null);
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    [JSInvokable]
+    public void OnCellSelected(int? laneIndex, int? bucketIndex)
+    {
+        selectedKey = laneIndex is { } l && bucketIndex is { } b ? (l, b) : null;
+        pushedSelectedKey = selectedKey;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnCameraCustom()
+    {
+        if (activePreset is null) return;
+        activePreset = null;
+        StateHasChanged();
+    }
+
+    private void SetViewKind(Views3DKind kind)
+    {
+        if (activeKind == kind) return;
+        activeKind = kind;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void SetTerrainGrouping(TerrainGrouping grouping)
+    {
+        if (terrainGrouping == grouping) return;
+        terrainGrouping = grouping;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void OnStepScenarioChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var entry)) return;
+        selectedStepScenario = entry;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void SetSurfaceScenarioFilter(int? entry)
+    {
+        surfaceScenarioFilter = entry;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void OnSurfaceScenarioChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        surfaceScenarioFilter = int.TryParse(raw, out var entry) ? entry : null;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private void OnHistoryScenarioChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var entry)) return;
+        selectedHistoryScenario = entry;
+        selectedHistoryRunIds = null;
+        historyLoadedForKey = null;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+    }
+
+    private async Task ToggleHistorySameSetupAsync()
+    {
+        historySameSetupOnly = !historySameSetupOnly;
+        selectedHistoryRunIds = null;
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+        if (!DataMode.IsFakeMode && activeKind == Views3DKind.RunHistory)
+            await EnsureSelectedLiveRunBeesLoadedAsync();
+    }
+
+    private async Task RefreshLiveHistoryAsync()
+    {
+        if (DataMode.IsFakeMode) return;
+        historyLoadedForKey = null;
+        var entry = Views3DProjection.ResolveHistoryScenarioEntry(Sim.Current, selectedHistoryScenario);
+        if (entry >= 0)
+            await LoadLiveHistoryAsync(entry);
+    }
+
+    private async Task ToggleHistoryCandidateAsync(HistoryRunCandidate cand)
+    {
+        var currentSet = EnsureSelectedHistorySet();
+        if (currentSet.Contains(cand.RunId))
+        {
+            currentSet.Remove(cand.RunId);
+        }
+        else if (currentSet.Count < 5)
+        {
+            currentSet.Add(cand.RunId);
+        }
+        isolatedLane = null;
+        selectedKey = null;
+        RebuildScene();
+        if (!DataMode.IsFakeMode && currentSet.Contains(cand.RunId) && !liveRunInputs.ContainsKey(cand.RunId))
+            await EnsureSelectedLiveRunBeesLoadedAsync();
+    }
+
+    private async Task OnHistoryCandidateClickedAsync(HistoryRunCandidate cand, HistoryLane? activeLane)
+    {
+        if (activeLane is not null)
+        {
+            await ToggleIsolatedLaneAsync(activeLane.Index);
+            return;
+        }
+        var currentSet = EnsureSelectedHistorySet();
+        if (currentSet.Count < 5)
+        {
+            currentSet.Add(cand.RunId);
+            selectedKey = null;
+            RebuildScene();
+            if (!DataMode.IsFakeMode && !liveRunInputs.ContainsKey(cand.RunId))
+                await EnsureSelectedLiveRunBeesLoadedAsync();
+        }
+    }
+
+    private IReadOnlyList<HistoryRunCandidate> AllHistoryCandidates() =>
+        DataMode.IsFakeMode ? fakeCandidates : liveCandidates;
+
+    private IReadOnlyList<HistoryRunCandidate> VisibleHistoryCandidates()
+    {
+        var all = AllHistoryCandidates();
+        return historySameSetupOnly ? all.Where(c => c.SetupMatches).ToList() : all;
+    }
+
+    private bool IsCandidateSelected(string runId) =>
+        selectedHistoryRunIds is null
+            ? VisibleHistoryCandidates().Take(5).Any(c => string.Equals(c.RunId, runId, StringComparison.Ordinal))
+            : selectedHistoryRunIds.Contains(runId);
+
+    private int SelectedPreviousCount() =>
+        selectedHistoryRunIds is null
+            ? Math.Min(5, VisibleHistoryCandidates().Count)
+            : VisibleHistoryCandidates().Count(c => selectedHistoryRunIds.Contains(c.RunId));
+
+    private HashSet<string> EnsureSelectedHistorySet()
+    {
+        if (selectedHistoryRunIds is not null) return selectedHistoryRunIds;
+        selectedHistoryRunIds = VisibleHistoryCandidates()
+            .Take(5)
+            .Select(c => c.RunId)
+            .ToHashSet(StringComparer.Ordinal);
+        return selectedHistoryRunIds;
+    }
+
+    private async Task SetCameraAsync(CameraPreset preset)
+    {
+        activePreset = preset;
+        if (handle is null) return;
+        var name = preset switch
+        {
+            CameraPreset.Top => "top",
+            CameraPreset.Front => "front",
+            CameraPreset.Side => "side",
+            _ => "iso",
+        };
+        try { await handle.InvokeVoidAsync("setCamera", name); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task ToggleIsolatedLaneAsync(int laneIndex)
+    {
+        isolatedLane = isolatedLane == laneIndex ? null : laneIndex;
+        if (handle is null) return;
+        pushedIsolatedLane = isolatedLane;
+        try { await handle.InvokeVoidAsync("setIsolated", isolatedLane); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private void RebuildScene()
+    {
+        var snap = Sim.Current;
+        var fakeModeChanged = lastFakeMode != DataMode.IsFakeMode;
+        var modeOrRunChanged = fakeModeChanged
+            || !string.Equals(lastRunId, ApiRun.CurrentRunId, StringComparison.Ordinal)
+            || (lastRunState != FakeRunState.Finished && snap.State == FakeRunState.Finished);
+        lastRebuildTick = Environment.TickCount64;
+        lastRunState = snap.State;
+        lastFakeMode = DataMode.IsFakeMode;
+        lastRunId = ApiRun.CurrentRunId;
+
+        if (modeOrRunChanged)
+        {
+            historyLoadedForKey = null;
+            if (fakeModeChanged)
+                selectedHistoryRunIds = null;
+        }
+
+        if (activeKind == Views3DKind.Terrain)
+        {
+            terrainScene = Views3DProjection.BuildTerrain(snap, terrainGrouping, selectedStepScenario);
+            if (terrainGrouping == TerrainGrouping.Steps && terrainScene.ScenarioEntry is { } resolved)
+                selectedStepScenario = resolved;
+            currentPayload = Views3DProjection.ToJsPayload(terrainScene);
+            MaybePrefetchStepDetails(snap, terrainScene);
+        }
+        else if (activeKind == Views3DKind.Surface)
+        {
+            surfaceScene = Views3DProjection.BuildSurface(snap, surfaceScenarioFilter);
+            currentPayload = Views3DProjection.ToJsPayload(surfaceScene);
+        }
+        else
+        {
+            var entry = Views3DProjection.ResolveHistoryScenarioEntry(snap, selectedHistoryScenario);
+            if (entry >= 0) selectedHistoryScenario = entry;
+
+            IReadOnlyList<HistoryRunInput> previousInputs;
+            if (DataMode.IsFakeMode)
+            {
+                fakeHistoryInputs = entry >= 0 ? Views3DProjection.SynthesizeFakeHistoryRuns(snap, entry) : [];
+                fakeCandidates = fakeHistoryInputs
+                    .Select(r => new HistoryRunCandidate(r.RunId, r.Label, r.StartedUtc, r.State, r.ElapsedSeconds, r.Entry, r.SetupMatches, r.SetupBadge, r.TotalBeesOverride ?? r.Bees.Count, r.FailedBeesOverride ?? 0, r.SlowBeesOverride ?? 0))
+                    .ToList();
+                previousInputs = fakeHistoryInputs
+                    .Where(r => (!historySameSetupOnly || r.SetupMatches) && IsCandidateSelected(r.RunId))
+                    .Take(5)
+                    .ToList();
+            }
+            else
+            {
+                var key = $"{ApiRun.CurrentRunId}|{entry}";
+                if (entry >= 0 && !string.Equals(historyLoadedForKey, key, StringComparison.Ordinal))
+                {
+                    historyLoadedForKey = key;
+                    _ = LoadLiveHistoryAsync(entry);
+                }
+
+                var selected = VisibleHistoryCandidates()
+                    .Where(c => IsCandidateSelected(c.RunId))
+                    .Take(5);
+                var list = new List<HistoryRunInput>();
+                foreach (var cand in selected)
+                {
+                    if (liveRunInputs.TryGetValue(cand.RunId, out var input))
+                        list.Add(input);
+                }
+                previousInputs = list;
+            }
+
+            historyScene = Views3DProjection.BuildRunHistory(
+                snap,
+                entry,
+                previousInputs,
+                DataMode.IsFakeMode ? "fake-current" : ApiRun.CurrentRunId,
+                DataMode.IsFakeMode ? DateTimeOffset.UtcNow : ApiRun.ActiveStartedUtc);
+            currentPayload = Views3DProjection.ToJsPayload(historyScene);
+        }
+
+        sceneRevision++;
+    }
+
+    private async Task LoadLiveHistoryAsync(int entry)
+    {
+        if (disposed || DataMode.IsFakeMode || entry < 0) return;
+        var snap = Sim.Current;
+        if (entry >= snap.Count) return;
+
+        historyCts?.Cancel();
+        historyCts?.Dispose();
+        historyCts = new CancellationTokenSource();
+        var ct = historyCts.Token;
+
+        historyLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var cfg = snap.Plan.Scenarios[entry];
+            var targetLabel = entry < snap.Labels.Count ? snap.Labels[entry] : cfg.ScenarioId;
+            var runs = await ApiRun.ListRunsAsync(limit: 30, ct);
+            if (ct.IsCancellationRequested || disposed) return;
+
+            var summaryTasks = runs
+                .Where(r => !string.Equals(r.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal))
+                .Select(r => ApiRun.GetRunSummaryAsync(r.RunId, ct))
+                .ToArray();
+            var summaries = await Task.WhenAll(summaryTasks);
+            if (ct.IsCancellationRequested || disposed) return;
+
+            var candidates = new List<HistoryRunCandidate>();
+            foreach (var s in summaries)
+            {
+                if (s is null) continue;
+                var match = Views3DProjection.MatchHistoryEntry(cfg, targetLabel, s, entry);
+                if (match is null) continue;
+                var (matchedEntry, setupMatches, badge) = match.Value;
+                var shortId = s.RunId.Length > 8 ? s.RunId[..8] : s.RunId;
+                candidates.Add(new HistoryRunCandidate(
+                    s.RunId,
+                    $"Run {shortId}",
+                    s.StartedUtc,
+                    s.State,
+                    s.ElapsedSeconds,
+                    matchedEntry.Entry,
+                    setupMatches,
+                    badge,
+                    matchedEntry.Finished,
+                    matchedEntry.Failed,
+                    matchedEntry.SlowBees));
+            }
+
+            candidates.Sort((a, b) => b.StartedUtc.CompareTo(a.StartedUtc));
+            liveCandidates.Clear();
+            liveCandidates.AddRange(candidates);
+            liveRunInputs.Clear();
+
+            await FetchSelectedCandidateBeesAsync(ct);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            historyLoading = false;
+            if (!disposed)
+            {
+                await InvokeAsync(() =>
+                {
+                    if (disposed) return;
+                    RebuildScene();
+                    StateHasChanged();
+                });
+            }
+        }
+    }
+
+    private async Task EnsureSelectedLiveRunBeesLoadedAsync()
+    {
+        if (disposed || DataMode.IsFakeMode) return;
+        historyCts?.Cancel();
+        historyCts?.Dispose();
+        historyCts = new CancellationTokenSource();
+        var ct = historyCts.Token;
+        historyLoading = true;
+        try
+        {
+            await FetchSelectedCandidateBeesAsync(ct);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            historyLoading = false;
+            if (!disposed)
+            {
+                await InvokeAsync(() =>
+                {
+                    if (disposed) return;
+                    RebuildScene();
+                    StateHasChanged();
+                });
+            }
+        }
+    }
+
+    private async Task FetchSelectedCandidateBeesAsync(CancellationToken ct)
+    {
+        var selected = VisibleHistoryCandidates()
+            .Where(c => IsCandidateSelected(c.RunId))
+            .Take(5)
+            .Where(c => !liveRunInputs.ContainsKey(c.RunId))
+            .ToList();
+        if (selected.Count == 0) return;
+
+        var tasks = selected.Select(async cand =>
+        {
+            var page = await ApiRun.GetRunBeesAsync(cand.RunId, cand.Entry, 5000, ct);
+            return (cand, page);
+        }).ToArray();
+
+        var results = await Task.WhenAll(tasks);
+        foreach (var (cand, page) in results)
+        {
+            if (page is null) continue;
+            var (records, _) = Views3DProjection.ToBeeRecords(page.Items, cand.Entry);
+            liveRunInputs[cand.RunId] = new HistoryRunInput(
+                cand.RunId,
+                cand.Label,
+                cand.StartedUtc,
+                cand.State,
+                cand.ElapsedSeconds,
+                cand.Entry,
+                IsCurrent: false,
+                cand.SetupMatches,
+                cand.SetupBadge,
+                records,
+                records.Count,
+                TotalBeesOverride: Math.Max(cand.TotalBees, records.Count),
+                FailedBeesOverride: cand.FailedBees,
+                SlowBeesOverride: cand.SlowBees);
+        }
+    }
+
+    private void MaybePrefetchStepDetails(RunSnapshot snap, TerrainScene scene)
+    {
+        if (DataMode.IsFakeMode || string.IsNullOrEmpty(ApiRun.CurrentRunId) || scene.MissingDetailCount <= 0 || scene.ScenarioEntry is not { } entry)
+            return;
+
+        stepDetailCts?.Cancel();
+        stepDetailCts?.Dispose();
+        stepDetailCts = new CancellationTokenSource();
+        var ct = stepDetailCts.Token;
+
+        var bees = snap.Store.Bees(entry);
+        var count = entry < snap.Scenarios.Length ? Math.Min(bees.Count, snap.Scenarios[entry].Finished) : bees.Count;
+        if (count <= 0) return;
+
+        // Pick up to 48 evenly distributed bees whose detail is still a placeholder.
+        var toFetch = new List<int>(48);
+        var stride = Math.Max(1, count / 48);
+        for (var i = 0; i < count && toFetch.Count < 48; i += stride)
+        {
+            var seq = bees[i].Sequence;
+            var d = snap.Store.Detail(seq);
+            if (d is null || Views3DProjection.IsPlaceholderDetail(d))
+                toFetch.Add(seq);
+        }
+        if (toFetch.Count == 0) return;
+
+        _ = Task.Run(async () =>
+        {
+            foreach (var seq in toFetch)
+            {
+                if (ct.IsCancellationRequested) break;
+                try { await ApiRun.EnsureBeeDetailLoadedAsync(seq, ct); }
+                catch (OperationCanceledException) { break; }
+                catch { }
+            }
+        }, CancellationToken.None);
+    }
+
+    private void OnRunChanged()
+    {
+        if (disposed) return;
+        var now = Environment.TickCount64;
+        var stateChanged = Sim.Current.State != lastRunState;
+
+        if (stateChanged || now - lastRebuildTick >= 250)
+        {
+            throttleCts?.Cancel();
+            throttleCts?.Dispose();
+            throttleCts = null;
+            _ = InvokeAsync(() =>
+            {
+                if (disposed) return;
+                RebuildScene();
+                StateHasChanged();
+            });
+            return;
+        }
+
+        if (throttleCts is not null) return;
+        throttleCts = new CancellationTokenSource();
+        var ct = throttleCts.Token;
+        var delay = (int)Math.Clamp(250 - (now - lastRebuildTick), 50, 250);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, ct);
+                if (ct.IsCancellationRequested || disposed) return;
+                await InvokeAsync(() =>
+                {
+                    if (disposed) return;
+                    throttleCts?.Dispose();
+                    throttleCts = null;
+                    RebuildScene();
+                    StateHasChanged();
+                });
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
+        }, CancellationToken.None);
+    }
+
+    private void OnPhoneChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private static bool HasAnySteps(RunSnapshot snap)
+    {
+        for (var i = 0; i < snap.Count; i++)
+            if (snap.StepsOf(i).Any) return true;
+        return false;
+    }
+
+    private static ScenarioFilter BuildTerrainScenarioFilter(TerrainCell tc)
+    {
+        if (tc.FailedCount > 0)
+            return tc.StepIndex is { } st
+                ? new ScenarioFilter(DetailFilter.Failed, FailedStep: st)
+                : new ScenarioFilter(DetailFilter.Failed);
+        if (tc.SlowCount > 0)
+            return new ScenarioFilter(DetailFilter.Slow);
+        return ScenarioFilter.Default;
+    }
+
+    private void OpenTerrainLogs(TerrainCell tc)
+    {
+        var outcome = tc.FailedCount > 0 ? BeeShow.Failed : tc.SlowCount > 0 ? BeeShow.Slow : BeeShow.All;
+        var filter = LogFilter.None
+            .WithEntry(tc.Entry)
+            .WithStep(tc.StepIndex)
+            .WithOutcome(outcome);
+        Logs.Show(filter);
+    }
+
+    private void OpenSurfaceLogs(SurfaceCell sc)
+    {
+        var outcome = sc.FailedCount > 0 ? BeeShow.Failed : sc.SlowCount > 0 ? BeeShow.Slow : BeeShow.All;
+        var filter = LogFilter.None
+            .WithEntry(sc.ScenarioEntryFilter ?? sc.DominantEntry)
+            .WithOutcome(outcome);
+        Logs.Show(filter);
+    }
+
+    private void OpenSurfaceCalls(SurfaceCell sc)
+    {
+        var maxMs = double.IsInfinity(sc.BandMaxMs) ? (double?)null : sc.BandMaxMs;
+        var outcome = sc.FailedCount > 0 ? BeeShow.Failed : sc.SlowCount > 0 ? BeeShow.Slow : BeeShow.All;
+        var filter = CallsFilter.None
+            .WithEntry(sc.ScenarioEntryFilter)
+            .WithOutcome(outcome)
+            .WithDurationRange(sc.BandMinMs > 0 ? sc.BandMinMs : null, maxMs)
+            .WithTimeWindow(sc.FromSec, sc.ToSec);
+        Calls.Show(filter);
+    }
+
+    private static ScenarioFilter BuildHistoryScenarioFilter(HistoryCell hc)
+    {
+        if (hc.IsSingleBee && hc.BeeSequence is { } seq)
+            return new ScenarioFilter(Bee: seq);
+        if (hc.FailedCount > 0)
+            return new ScenarioFilter(DetailFilter.Failed);
+        if (hc.SlowCount > 0)
+            return new ScenarioFilter(DetailFilter.Slow);
+        return ScenarioFilter.Default;
+    }
+
+    private void OpenHistoryLogs(HistoryCell hc)
+    {
+        var outcome = hc.FailedCount > 0 ? BeeShow.Failed : hc.SlowCount > 0 ? BeeShow.Slow : BeeShow.All;
+        var filter = LogFilter.None
+            .WithEntry(hc.Entry)
+            .WithBee(hc.IsSingleBee ? hc.BeeSequence : null)
+            .WithOutcome(hc.IsSingleBee ? BeeShow.All : outcome);
+        Logs.Show(filter);
+    }
+
+    private async Task LoadAndOpenStoredRunAsync(HistoryLane lane, HistoryCell hc)
+    {
+        if (Sim.IsRunning || loadingStoredRun || string.IsNullOrEmpty(lane.RunId)) return;
+        loadingStoredRun = true;
+        try
+        {
+            await ApiRun.LoadStoredRunAsync(lane.RunId);
+            Nav.NavigateTo(ScenarioLink.Href(hc.Entry, BuildHistoryScenarioFilter(hc)));
+        }
+        finally
+        {
+            loadingStoredRun = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        Sim.Changed -= OnRunChanged;
+        Phone.Changed -= OnPhoneChanged;
+
+        throttleCts?.Cancel();
+        throttleCts?.Dispose();
+        throttleCts = null;
+
+        stepDetailCts?.Cancel();
+        stepDetailCts?.Dispose();
+        stepDetailCts = null;
+
+        historyCts?.Cancel();
+        historyCts?.Dispose();
+        historyCts = null;
+
+        if (handle is not null)
+        {
+            var h = handle;
+            handle = null;
+            try { await h.InvokeVoidAsync("dispose"); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+            try { await h.DisposeAsync(); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+        }
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); } catch (JSException) { } catch (JSDisconnectedException) { } catch (InvalidOperationException) { }
+        }
+        self?.Dispose();
+    }
+}

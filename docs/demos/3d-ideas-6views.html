@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beesharp — 6 New 3D Visualization Ideas</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0e0d;
+    --panel: #1a1917;
+    --panel2: #252321;
+    --input: #141311;
+    --border: rgba(255, 255, 255, 0.08);
+    --selected: #282623;
+    --text: #f1efea;
+    --title: #ffffff;
+    --muted: #a19c94;
+    --faint: #6f6a63;
+    --bar: #8c8578;
+    --running: #5b9bf0;
+    --good: #34d399;
+    --slow: #fbbf24;
+    --failed: #f05252;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", "Segoe UI Variable Text", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr 44px;
+    height: 100vh;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    min-width: 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--title);
+    letter-spacing: -0.015em;
+    flex-shrink: 0;
+  }
+  .brand-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--good);
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel2);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .seg {
+    display: inline-flex;
+    border-radius: 999px;
+    background: #1c1b19;
+    padding: 3px;
+    gap: 2px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .seg::-webkit-scrollbar { display: none; }
+  .seg button {
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    padding: 6px 11px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background-color .14s, color .14s;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+  .spacer { flex: 1; min-width: 6px; }
+  #camPresets { flex-shrink: 0; }
+  .chip {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    padding: 5px 11px;
+    border: 1px solid transparent;
+    background: #272523;
+    color: var(--text);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: background-color .14s, border-color .14s, color .14s;
+  }
+  .chip:hover { background: #34312e; }
+  .chip.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+
+  /* Main layout */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 336px;
+    min-height: 0;
+  }
+  .stage-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border);
+    background: radial-gradient(circle at 50% 45%, #171614 0%, #0f0e0d 75%);
+  }
+  .stage-toolbar {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 5;
+    flex-wrap: wrap;
+  }
+  .stage-toolbar > * { pointer-events: auto; }
+  .sub-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(26, 25, 23, 0.88);
+    border: 1px solid var(--border);
+    padding: 4px 6px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    flex-wrap: wrap;
+  }
+  .hint-pill {
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.8);
+    border: 1px solid var(--border);
+    padding: 5px 11px;
+    border-radius: 999px;
+  }
+  canvas#scene {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  canvas#scene:active { cursor: grabbing; }
+
+  @media (max-width: 820px) {
+    html, body { overflow: auto; height: auto; }
+    .app { grid-template-rows: auto auto auto; height: auto; min-height: 100vh; }
+    .topbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .topbar .seg { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .topbar .seg button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+    .main { grid-template-columns: 1fr; }
+    .stage-wrap { height: 56vh; min-height: 340px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .hint-pill { display: none; }
+    .stage-legend { font-size: 11px; gap: 8px; padding: 5px 10px; bottom: 8px; left: 8px; right: 8px; flex-wrap: wrap; }
+    .sidebar { overflow: visible; padding: 12px; }
+    .playerbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .strip { flex-basis: 100%; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(26, 25, 23, 0.96);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    max-width: 280px;
+    z-index: 20;
+    display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  }
+  .tooltip .tt-title { font-weight: 600; color: var(--title); margin-bottom: 3px; }
+  .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tooltip .tt-val { color: var(--text); font-family: var(--mono); font-size: 11.5px; }
+
+  /* Legend bar inside stage */
+  .stage-legend {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.85);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  /* Inspector sidebar */
+  .sidebar {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    gap: 14px;
+  }
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 14px;
+  }
+  .card h3 {
+    margin: 0 0 6px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .view-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--title);
+    margin: 0 0 6px 0;
+  }
+  .desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .stat .k { font-size: 11px; color: var(--muted); }
+  .stat .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .good { color: var(--good); }
+  .slow { color: var(--slow); }
+  .failed { color: var(--failed); }
+  .running { color: var(--running); }
+
+  .lane-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .lane-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .12s, border-color .12s;
+  }
+  .lane-btn:hover { background: var(--panel2); }
+  .lane-btn.isolated { border-color: rgba(241,239,234,0.55); background: var(--selected); }
+  .lane-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+  .cli-box {
+    background: #0b0a09;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #d6d2ca;
+    line-height: 1.5;
+    word-break: break-all;
+    margin-top: 8px;
+  }
+  .cli-box .cmd-accent { color: var(--good); }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  /* Bottom player / overview strip */
+  .playerbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 12.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .strip {
+    flex: 1;
+    height: 16px;
+    background: #171614;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .strip-mark {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 2px;
+    opacity: 0.78;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Beesharp</span>
+      <span class="badge">6 Ideas</span>
+    </div>
+
+    <div class="seg" id="viewTabs" role="tablist">
+      <button class="on" data-view="diff">1. Run Diff Terrain</button>
+      <button data-view="staircase">2. Burst Staircase</button>
+      <button data-view="saturation">3. Saturation Loop</button>
+      <button data-view="cascade">4. Error Cascade</button>
+      <button data-view="matrix">5. Endpoint Matrix</button>
+      <button data-view="curtains">6. Event Curtains</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="seg" id="camPresets" aria-label="Camera presets">
+      <button class="on" data-cam="iso">Isometric</button>
+      <button data-cam="top">Top-Down (2D)</button>
+      <button data-cam="front">Front</button>
+      <button data-cam="side">Side</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="main">
+    <div class="stage-wrap">
+      <div class="stage-toolbar">
+        <div class="sub-controls" id="diffSub">
+          <button class="chip on" data-diff="all">All Deltas</button>
+          <button class="chip" data-diff="regressions">Regressions Only (+ms)</button>
+          <button class="chip" data-diff="improvements">Improvements Only (-ms)</button>
+        </div>
+        <div class="sub-controls" id="staircaseSub" style="display:none;">
+          <button class="chip on" data-stair="serialized">Serialized Lock (Contention)</button>
+          <button class="chip" data-stair="parallel">Healthy Parallel</button>
+        </div>
+        <div class="sub-controls" id="satSub" style="display:none;">
+          <button class="chip on" data-sat="all">Full 30m Loop</button>
+          <button class="chip" data-sat="ramp">Ramp-Up (0–14m)</button>
+          <button class="chip" data-sat="recovery">Hysteresis Hangover (14–30m)</button>
+        </div>
+        <div class="sub-controls" id="cascadeSub" style="display:none;">
+          <button class="chip on" data-cascade="full">Full 30m Run</button>
+          <button class="chip" data-cascade="onset">Chain Onset (10–19m)</button>
+          <button class="chip on" id="toggleLinks">Cascade Links: On</button>
+        </div>
+        <div class="sub-controls" id="matrixSub" style="display:none;">
+          <button class="chip on" data-matrix="impact">Slow + Failed Calls</button>
+          <button class="chip" data-matrix="p95">p95 Latency (ms)</button>
+        </div>
+        <div class="sub-controls" id="curtainsSub" style="display:none;">
+          <button class="chip on" id="toggleCurtains">Event Curtains: On</button>
+        </div>
+        <div class="hint-pill">Drag to orbit · Scroll to zoom · Click any bar, marker, or curtain to inspect</div>
+      </div>
+
+      <canvas id="scene"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+
+      <div class="stage-legend" id="stageLegend">
+        <span><span class="dot" style="background:var(--good)"></span>Good / Improved</span>
+        <span><span class="dot" style="background:var(--slow)"></span>Slow (&gt;2× typical)</span>
+        <span><span class="dot" style="background:var(--failed)"></span>Failed / Bottleneck</span>
+        <span><span class="dot" style="background:var(--running)"></span>Runtime / In-flight</span>
+      </div>
+    </div>
+
+    <!-- Inspector Panel -->
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Current View</h3>
+        <div class="view-title" id="viewTitle">1. Run Diff Terrain</div>
+        <p class="desc" id="viewDesc"></p>
+      </div>
+
+      <div class="card" id="laneCard">
+        <h3 id="laneCardTitle">Isolate Scenario</h3>
+        <div class="lane-list" id="laneList"></div>
+      </div>
+
+      <div class="card" id="selectionCard">
+        <h3>Selection Inspector</h3>
+        <div id="selectionBody">
+          <p class="desc">Click any bar, marker, or curtain in the 3D scene to inspect metrics, drill down, and see the matching CLI command.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Agent / CLI Equivalent</h3>
+        <p class="desc" style="font-size:12px;">The same underlying projection exposed as structured JSON for <code style="font-family:var(--mono)">beesharp</code>:</p>
+        <div class="cli-box" id="cliCmd"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Player / Overview Strip -->
+  <footer class="playerbar">
+    <span>Run: <strong style="color:var(--text)">Black Friday Checkout</strong> (30m · fake data)</span>
+    <span class="good">14,280 ok</span>
+    <span class="slow">412 slow</span>
+    <span class="failed">138 failed</span>
+    <div class="strip" id="overviewStrip" title="Overview strip: amber = slow wave, red = failure spike"></div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // ---------- Seeded deterministic RNG ----------
+  let seed = 88421;
+  function rand() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  }
+
+  // ---------- Color helpers (Beesharp palette, brain 0018 & 0041) ----------
+  const COLORS = {
+    good: [52, 211, 153],    // #34d399
+    slow: [251, 191, 36],    // #fbbf24
+    failed: [240, 82, 82],   // #f05252
+    running: [91, 155, 240], // #5b9bf0
+    neutral: [140, 133, 120] // #8c8578
+  };
+  function lerpColor(a, b, t) {
+    t = Math.max(0, Math.min(1, t));
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+  }
+  function rgb(c, alpha = 1) {
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+  function shade(c, factor) {
+    return [
+      Math.min(255, Math.max(0, Math.round(c[0] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[1] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[2] * factor)))
+    ];
+  }
+  function outcomeColor(ratio, failedCount) {
+    if (failedCount > 0) return COLORS.failed;
+    if (ratio >= 2.0) return COLORS.slow;
+    if (ratio > 1.15) return lerpColor(COLORS.good, COLORS.slow, (ratio - 1.15) / 0.85);
+    return COLORS.good;
+  }
+
+  const TIME_BUCKETS = 30;
+  const SCENARIOS = [
+    { id: 'checkout', name: '4. Checkout', short: 'Checkout', pattern: '45/min linear', typicalMs: 280 },
+    { id: 'cart',     name: '3. Add to Cart', short: 'Add to Cart', pattern: '60/min linear', typicalMs: 160 },
+    { id: 'search',   name: '2. Search Burst', short: 'Search Burst', pattern: '30 × 2/min burst', typicalMs: 110 },
+    { id: 'browse',   name: '1. Browse', short: 'Browse', pattern: '120/min linear', typicalMs: 75 }
+  ];
+
+  // =========================================================================
+  // VIEW 1 DATA: Run Diff Terrain (Baseline vs Candidate)
+  // =========================================================================
+  const diffGrid = [];
+  for (let l = 0; l < SCENARIOS.length; l++) {
+    const sc = SCENARIOS[l];
+    const row = [];
+    for (let t = 0; t < TIME_BUCKETS; t++) {
+      let baseMs = sc.typicalMs * (0.94 + rand() * 0.12);
+      let deltaMs = 0;
+      if (sc.id === 'browse') {
+        // Improved across the entire run (-18ms to -32ms, avg -25ms)
+        deltaMs = -21 - Math.sin(t * 0.35) * 6 - rand() * 7;
+      } else if (sc.id === 'search') {
+        // Near parity with a mild burst ripple around min 12
+        const ripple = Math.exp(-Math.pow(t - 12, 2) / 3.0) * 44;
+        deltaMs = -6 + rand() * 14 + ripple;
+      } else if (sc.id === 'cart') {
+        // Gentle climb from +14ms to +95ms around min 22
+        const wave = Math.exp(-Math.pow(t - 22, 2) / 14) * 78;
+        deltaMs = 14 + t * 1.4 + wave + (rand() - 0.5) * 14;
+      } else {
+        // Checkout: mild +38..+55ms before min 14, then pool/memory leak climbs +40 -> +680ms
+        if (t < 14) {
+          deltaMs = 36 + t * 1.2 + rand() * 16;
+        } else {
+          const p = (t - 14) / 15; // 0..1
+          deltaMs = 55 + Math.pow(p, 1.38) * 615 + rand() * 24;
+        }
+      }
+      deltaMs = Math.round(deltaMs);
+      baseMs = Math.round(baseMs);
+      const candMs = Math.max(12, baseMs + deltaMs);
+      const pct = Math.round((deltaMs / baseMs) * 100);
+      let color;
+      if (deltaMs < -4) {
+        color = COLORS.good;
+      } else if (deltaMs <= 25) {
+        color = lerpColor(COLORS.neutral, COLORS.slow, Math.max(0, deltaMs) / 45);
+      } else if (deltaMs < 180) {
+        color = lerpColor(COLORS.slow, COLORS.failed, (deltaMs - 25) / 220);
+      } else {
+        color = COLORS.failed;
+      }
+      row.push({
+        kind: 'diff',
+        laneIndex: l,
+        laneId: sc.id,
+        laneName: sc.name,
+        shortName: sc.short,
+        minute: t,
+        timeLabel: `${String(t).padStart(2, '0')}:00–${String(t + 1).padStart(2, '0')}:00`,
+        baseMs,
+        candMs,
+        deltaMs,
+        pct,
+        color
+      });
+    }
+    diffGrid.push(row);
+  }
+
+  // =========================================================================
+  // VIEW 2 DATA: Burst Staircase (24 Bees, Lock Contention vs Healthy Parallel)
+  // =========================================================================
+  function buildBurstBees(serialized) {
+    const bees = [];
+    let lockCursor = 54;
+    for (let i = 0; i < 24; i++) {
+      const authMs = Math.round(44 + rand() * 18); // fast green Auth/Catalog 44..62ms
+      let waitMs = 0;
+      let reserveMs = 0;
+      let payMs = 0;
+      if (serialized) {
+        waitMs = Math.max(0, Math.round(lockCursor - authMs));
+        reserveMs = Math.round(56 + rand() * 14);
+        lockCursor += reserveMs;
+        payMs = Math.round(48 + rand() * 18);
+      } else {
+        waitMs = Math.round(rand() * 12);
+        reserveMs = Math.round(72 + rand() * 32);
+        payMs = Math.round(50 + rand() * 20);
+      }
+      const totalMs = authMs + waitMs + reserveMs + payMs;
+      const ratio = Number((totalMs / 210).toFixed(2));
+      const failed = serialized && totalMs > 1420;
+      bees.push({
+        kind: 'staircase',
+        mode: serialized ? 'serialized' : 'parallel',
+        beeIndex: i,
+        beeLabel: `Bee #${i + 1}`,
+        authStart: 0,
+        authEnd: authMs,
+        authMs,
+        waitStart: authMs,
+        waitEnd: authMs + waitMs,
+        waitMs,
+        reserveStart: authMs + waitMs,
+        reserveEnd: authMs + waitMs + reserveMs,
+        reserveMs,
+        payStart: authMs + waitMs + reserveMs,
+        payEnd: totalMs,
+        payMs,
+        totalMs,
+        ratio,
+        failed,
+        color: failed ? COLORS.failed : totalMs > 420 ? lerpColor(COLORS.slow, COLORS.failed, Math.min(1, (totalMs - 420) / 900)) : COLORS.good
+      });
+    }
+    // Sort by finish time (ascending)
+    bees.sort((a, b) => a.totalMs - b.totalMs);
+    bees.forEach((b, idx) => { b.sortedIndex = idx; b.beeLabel = `Bee #${idx + 1}`; });
+    return bees;
+  }
+  const burstSerialized = buildBurstBees(true);
+  const burstParallel = buildBurstBees(false);
+
+  // =========================================================================
+  // VIEW 3 DATA: Saturation Loop (In-Flight x Time x Latency Hysteresis)
+  // =========================================================================
+  const SAT_POINTS = [];
+  const satCount = 36;
+  for (let i = 0; i < satCount; i++) {
+    const minute = Number(((i / (satCount - 1)) * 30).toFixed(1));
+    let inFlight, latencyMs, phase, phaseId;
+    if (minute <= 10.5) {
+      // Healthy ramp: 12 -> 84 bees, 76ms -> 150ms
+      const p = minute / 10.5;
+      inFlight = Math.round(12 + p * 72);
+      latencyMs = Math.round(74 + Math.pow(p, 1.5) * 76 + rand() * 10);
+      phase = 'Healthy Ramp';
+      phaseId = 'ramp';
+    } else if (minute <= 15.0) {
+      // Saturation knee: 84 -> 112 bees, latency rockets 150ms -> 790ms
+      const p = (minute - 10.5) / 4.5;
+      inFlight = Math.round(84 + p * 28);
+      latencyMs = Math.round(160 + Math.pow(p, 1.25) * 635 + rand() * 22);
+      phase = 'Saturation Knee';
+      phaseId = 'ramp';
+    } else if (minute <= 24.0) {
+      // Concurrency drops back down to 40, BUT latency stays stuck high (hysteresis!)
+      const p = (minute - 15.0) / 9.0;
+      inFlight = Math.round(112 - Math.pow(p, 0.72) * 72); // drops fast to 40
+      latencyMs = Math.round(770 - Math.pow(p, 1.7) * 430 + (rand() - 0.5) * 26); // lingers 770 -> 340ms!
+      phase = 'Hysteresis Hangover';
+      phaseId = 'recovery';
+    } else {
+      // Final recovery back down to ~115ms at 38-42 bees
+      const p = (minute - 24.0) / 6.0;
+      inFlight = Math.round(40 - Math.sin(p * Math.PI) * 3);
+      latencyMs = Math.round(330 - Math.pow(p, 0.7) * 215 + rand() * 12);
+      phase = 'Recovered';
+      phaseId = 'recovery';
+    }
+    const ratio = Number((latencyMs / 135).toFixed(2));
+    const failedRate = latencyMs > 580 ? Number(((latencyMs - 550) / 28).toFixed(1)) : 0;
+    SAT_POINTS.push({
+      kind: 'saturation',
+      index: i,
+      minute,
+      timeLabel: `${String(Math.floor(minute)).padStart(2, '0')}:${String(Math.round((minute % 1) * 60)).padStart(2, '0')}`,
+      inFlight,
+      latencyMs,
+      ratio,
+      failedRate,
+      phase,
+      phaseId,
+      color: outcomeColor(ratio, failedRate > 3 ? 1 : 0)
+    });
+  }
+
+  // =========================================================================
+  // VIEW 4 DATA: Error Cascade (Time x Error Signature x Count)
+  // =========================================================================
+  const ERROR_SIGS = [
+    { id: '429', name: 'HTTP 429 Rate Limit', onset: '11:00', role: 'Trigger #1 · Upstream throttle' },
+    { id: 'sock', name: 'Socket Pool Exhausted', onset: '11:30', role: 'Cascade #2 · Retry storm' },
+    { id: 'timeout', name: 'Reserve Timeout (10s)', onset: '12:30', role: 'Cascade #3 · Queue backup' },
+    { id: '503', name: 'HTTP 503 Circuit Open', onset: '13:30', role: 'Cascade #4 · Breaker tripped' }
+  ];
+  const cascadeGrid = [];
+  for (let s = 0; s < ERROR_SIGS.length; s++) {
+    const sig = ERROR_SIGS[s];
+    const row = [];
+    for (let t = 0; t < TIME_BUCKETS; t++) {
+      let count = 0;
+      if (s === 0) {
+        // 429 starts sharply at minute 11, peaks 12-13, minor ripple at 21
+        if (t >= 11 && t <= 16) count = Math.round(92 * Math.exp(-Math.pow(t - 12.2, 2) / 3.2) + 8);
+        else if (t >= 21 && t <= 23) count = Math.round(28 * Math.exp(-Math.pow(t - 21.8, 2) / 1.4));
+      } else if (s === 1) {
+        // Socket Pool Exhausted starts at 11:30-12
+        if (t >= 12 && t <= 17) count = Math.round(78 * Math.exp(-Math.pow(t - 13.3, 2) / 3.4) + 6);
+        else if (t >= 22 && t <= 24) count = Math.round(18 * Math.exp(-Math.pow(t - 22.4, 2) / 1.4));
+      } else if (s === 2) {
+        // Reserve Timeout (10s) starts at 12:30-13
+        if (t >= 13 && t <= 18) count = Math.round(68 * Math.exp(-Math.pow(t - 14.4, 2) / 3.8) + 4);
+      } else {
+        // HTTP 503 Circuit Open starts at 13:30-14
+        if (t >= 14 && t <= 19) count = Math.round(58 * Math.exp(-Math.pow(t - 15.5, 2) / 3.6) + 4);
+      }
+      if (count > 0) count = Math.max(1, count + Math.round((rand() - 0.5) * 6));
+      const color = count >= 42 ? COLORS.failed : count >= 14 ? lerpColor(COLORS.slow, COLORS.failed, (count - 14) / 28) : COLORS.slow;
+      row.push({
+        kind: 'cascade',
+        sigIndex: s,
+        sigId: sig.id,
+        sigName: sig.name,
+        onset: sig.onset,
+        role: sig.role,
+        minute: t,
+        timeLabel: `${String(t).padStart(2, '0')}:00–${String(t + 1).padStart(2, '0')}:00`,
+        count,
+        color
+      });
+    }
+    cascadeGrid.push(row);
+  }
+
+  // =========================================================================
+  // VIEW 5 DATA: Endpoint Matrix (Scenario x Endpoint x Impact)
+  // =========================================================================
+  const ENDPOINTS = [
+    { id: 'products', path: 'GET /api/products', short: 'GET /products' },
+    { id: 'auth',     path: 'POST /api/auth/token', short: 'POST /auth' },
+    { id: 'cart',     path: 'POST /api/cart', short: 'POST /cart' },
+    { id: 'reserve',  path: 'POST /api/inventory/reserve', short: 'POST /reserve' },
+    { id: 'orders',   path: 'POST /api/orders', short: 'POST /orders' }
+  ];
+  const MATRIX_RAW = {
+    // [slow+failed impact count, totalCalls, slowCalls, failedCalls, p95Ms, typicalMs]
+    'browse:products':  [14, 3600, 14, 0,  88,  45],
+    'browse:auth':      [0,  0,    0,  0,  0,   0],
+    'browse:cart':      [0,  0,    0,  0,  0,   0],
+    'browse:reserve':   [0,  0,    0,  0,  0,   0],
+    'browse:orders':    [0,  0,    0,  0,  0,   0],
+
+    'search:products':  [26, 1800, 26, 0,  112, 55],
+    'search:auth':      [4,  1800, 4,  0,  62,  32],
+    'search:cart':      [0,  0,    0,  0,  0,   0],
+    'search:reserve':   [185, 1800, 162, 23, 640, 110],
+    'search:orders':    [0,  0,    0,  0,  0,   0],
+
+    'cart:products':    [11, 1800, 11, 0,  94,  50],
+    'cart:auth':        [5,  1800, 5,  0,  64,  34],
+    'cart:cart':        [78, 1800, 74, 4,  310, 120],
+    'cart:reserve':     [312, 1800, 248, 64, 920, 115],
+    'cart:orders':      [0,  0,    0,  0,  0,   0],
+
+    'checkout:products':[0,  0,    0,  0,  0,   0],
+    'checkout:auth':    [8,  1350, 8,  0,  68,  34],
+    'checkout:cart':    [64, 1350, 60, 4,  285, 115],
+    'checkout:reserve': [468, 1350, 310, 158, 1480, 120],
+    'checkout:orders':  [172, 1350, 138, 34, 790, 180]
+  };
+  const matrixCells = [];
+  for (let l = 0; l < SCENARIOS.length; l++) {
+    const sc = SCENARIOS[l];
+    for (let e = 0; e < ENDPOINTS.length; e++) {
+      const ep = ENDPOINTS[e];
+      const [impact, totalCalls, slowCalls, failedCalls, p95Ms, typicalMs] = MATRIX_RAW[`${sc.id}:${ep.id}`];
+      const ratio = totalCalls > 0 ? Number((p95Ms / typicalMs).toFixed(2)) : 0;
+      let color = COLORS.good;
+      if (failedCalls >= 20 || ep.id === 'reserve' && impact > 200) color = COLORS.failed;
+      else if (failedCalls > 0 || impact >= 140) color = lerpColor(COLORS.slow, COLORS.failed, 0.55);
+      else if (impact >= 50 || ratio >= 2.2) color = COLORS.slow;
+      matrixCells.push({
+        kind: 'matrix',
+        laneIndex: l,
+        epIndex: e,
+        scId: sc.id,
+        scName: sc.name,
+        epId: ep.id,
+        epPath: ep.path,
+        epShort: ep.short,
+        impact,
+        totalCalls,
+        slowCalls,
+        failedCalls,
+        p95Ms,
+        typicalMs,
+        ratio,
+        color
+      });
+    }
+  }
+
+  // =========================================================================
+  // VIEW 6 DATA: Event Curtains (Runtime Data Overlay)
+  // =========================================================================
+  const EVENT_CURTAINS = [
+    {
+      id: 'warmup',
+      minute: 8,
+      label: '08:00 · Cache Warmup',
+      shortLabel: '08:00 · Cache Warmup',
+      key: 'CatalogCacheReady',
+      writer: 'WarmupPreflight',
+      value: 'true (hitRate=98.4%)',
+      effect: 'Browse & Search p50 drop 32% right after 08:00.',
+      color: lerpColor(COLORS.good, COLORS.running, 0.45),
+      status: 'good'
+    },
+    {
+      id: 'token',
+      minute: 14,
+      label: '14:00 · AuthToken Rotated (RunBag)',
+      shortLabel: '14:00 · AuthToken Rotated',
+      key: 'RunBag["AuthToken"]',
+      writer: 'TokenRotatorJob',
+      value: 'tok_v2_9f4a... (rotated)',
+      effect: 'Triggers an immediate 2-minute red spike across all 4 lanes (14:00–15:59) as in-flight bees re-auth.',
+      color: COLORS.slow,
+      status: 'slow'
+    },
+    {
+      id: 'cap',
+      minute: 22,
+      label: '22:00 · Max In-Flight Cap Hit',
+      shortLabel: '22:00 · In-Flight Cap Hit',
+      key: 'RunBag["MaxInFlightReached"]',
+      writer: 'LoadRunnerLimiter',
+      value: '120 / 120 slots saturated',
+      effect: 'Checkout & Add to Cart queue behind saturated worker slots from 22:00–25:00.',
+      color: COLORS.failed,
+      status: 'failed'
+    }
+  ];
+
+  const curtainsGrid = [];
+  for (let l = 0; l < SCENARIOS.length; l++) {
+    const sc = SCENARIOS[l];
+    const row = [];
+    for (let t = 0; t < TIME_BUCKETS; t++) {
+      // 08:00 Cache warmup drops baseline slightly for browse/search
+      const warmed = (t >= 8 && (sc.id === 'browse' || sc.id === 'search')) ? 0.72 : 1.0;
+      // 14:00 AuthToken rotated -> immediate brief 2-minute red spike (t=14, 15) across ALL 4 lanes!
+      const tokenSpike = (t === 14) ? 2.65 : (t === 15) ? 1.85 : 0;
+      // 22:00 Max in-flight cap hit -> Checkout & Cart spike 22..24
+      const capWave = Math.exp(-Math.pow(t - 22.5, 2) / 2.6) * (l === 0 ? 1.55 : l === 1 ? 1.15 : 0.35);
+
+      const ratio = Number(((0.88 + rand() * 0.18) * warmed + tokenSpike + capWave).toFixed(2));
+      const durationMs = Math.round(sc.typicalMs * ratio);
+      const bees = [45, 60, 60, 120][l];
+      const failed = (t === 14 || t === 15)
+        ? Math.round(bees * (t === 14 ? 0.19 : 0.09))
+        : (capWave > 0.9 && l <= 1)
+          ? Math.round(capWave * 9)
+          : 0;
+      const slow = ratio > 1.6 ? Math.round(bees * Math.min(0.7, (ratio - 1.4) * 0.28)) : 0;
+      const note = (t === 14 || t === 15)
+        ? 'AuthToken rotation forced synchronous re-auth across all 4 scenarios'
+        : (capWave > 0.9 && l <= 1)
+          ? 'Queued waiting on MaxInFlight=120 cap'
+          : null;
+
+      row.push({
+        kind: 'curtains',
+        laneIndex: l,
+        laneId: sc.id,
+        laneName: sc.name,
+        minute: t,
+        timeLabel: `${String(t).padStart(2, '0')}:00–${String(t + 1).padStart(2, '0')}:00`,
+        durationMs,
+        typicalMs: sc.typicalMs,
+        ratio,
+        bees,
+        slow,
+        failed,
+        note,
+        color: outcomeColor(ratio, failed)
+      });
+    }
+    curtainsGrid.push(row);
+  }
+
+  // ---------- Overview strip population ----------
+  const stripEl = document.getElementById('overviewStrip');
+  for (let t = 0; t < TIME_BUCKETS; t++) {
+    const anyFailed = curtainsGrid.some(r => r[t].failed > 0) || cascadeGrid.some(r => r[t].count >= 30);
+    const anySlow = curtainsGrid.some(r => r[t].slow > 6) || cascadeGrid.some(r => r[t].count > 0);
+    if (anyFailed || anySlow) {
+      const m = document.createElement('div');
+      m.className = 'strip-mark';
+      m.style.left = `${(t / TIME_BUCKETS) * 100}%`;
+      m.style.width = `${100 / TIME_BUCKETS}%`;
+      m.style.background = anyFailed ? 'var(--failed)' : 'var(--slow)';
+      stripEl.appendChild(m);
+    }
+  }
+
+  // ---------- State ----------
+  const state = {
+    view: 'diff',             // diff | staircase | saturation | cascade | matrix | curtains
+    diffFilter: 'all',        // all | regressions | improvements
+    stairMode: 'serialized',  // serialized | parallel
+    satPhase: 'all',          // all | ramp | recovery
+    cascadeRange: 'full',     // full | onset
+    cascadeLinks: true,
+    matrixMetric: 'impact',   // impact | p95
+    showCurtains: true,
+    isolatedLane: null,
+    selected: null,
+    hovered: null,
+    cam: { yaw: -0.62, pitch: 0.56, zoom: 1.0, targetYaw: -0.62, targetPitch: 0.56, targetZoom: 1.0 }
+  };
+
+  // ---------- Camera Presets ----------
+  const CAM_PRESETS = {
+    iso:   { yaw: -0.62, pitch: 0.56, zoom: 1.0 },
+    top:   { yaw: 0.0,   pitch: 1.54, zoom: 1.08 },
+    front: { yaw: 0.0,   pitch: 0.08, zoom: 1.05 },
+    side:  { yaw: -1.52, pitch: 0.14, zoom: 1.05 }
+  };
+
+  // ---------- 3D Math Engine (Zero-dependency Canvas 2D) ----------
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  let width = 0, height = 0, dpr = 1;
+  let hitTargets = [];
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    width = rect.width;
+    height = rect.height;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function project(x, y, z) {
+    const { yaw, pitch, zoom } = state.cam;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+
+    const x1 = x * cy - z * sy;
+    const z1 = x * sy + z * cy;
+    const y2 = y * cp + z1 * sp;
+    const z2 = z1 * cp - y * sp;
+
+    const fov = 44;
+    const dist = 34;
+    const scale = (fov / (dist + z2)) * Math.min(width, height) * 0.025 * zoom;
+    return {
+      sx: width * 0.5 + x1 * scale,
+      sy: height * 0.56 - y2 * scale,
+      depth: z2,
+      scale
+    };
+  }
+
+  function drawPoly(pts, fill, stroke, lineWidth = 1) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].sx, pts[0].sy);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+  }
+
+  function pointInPoly(px, py, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].sx, yi = pts[i].sy;
+      const xj = pts[j].sx, yj = pts[j].sy;
+      const intersect = ((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-6) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Supports boxes above OR below y = 0 (passing signed h or yStart..yEnd)
+  function queueBox(queue, cx, cy, cz, w, h, d, baseColor, opts = {}) {
+    const hx = w / 2, hz = d / 2;
+    const rawY0 = cy;
+    const rawY1 = h >= 0 ? cy + Math.max(0.05, h) : cy + Math.min(-0.05, h);
+    const y0 = Math.min(rawY0, rawY1);
+    const y1 = Math.max(rawY0, rawY1);
+
+    const v = [
+      project(cx - hx, y0, cz - hz), // 0
+      project(cx + hx, y0, cz - hz), // 1
+      project(cx + hx, y0, cz + hz), // 2
+      project(cx - hx, y0, cz + hz), // 3
+      project(cx - hx, y1, cz - hz), // 4
+      project(cx + hx, y1, cz - hz), // 5
+      project(cx + hx, y1, cz + hz), // 6
+      project(cx - hx, y1, cz + hz)  // 7
+    ];
+    const centerDepth = (v[0].depth + v[2].depth + v[4].depth + v[6].depth) / 4;
+    const alpha = opts.alpha !== undefined ? opts.alpha : (opts.dim ? 0.14 : 0.94);
+    const stroke = opts.selected
+      ? 'rgba(255,255,255,0.96)'
+      : opts.hovered
+        ? 'rgba(255,255,255,0.68)'
+        : opts.dim
+          ? 'rgba(255,255,255,0.06)'
+          : 'rgba(15,14,13,0.45)';
+
+    const faces = [
+      { idx: [0, 1, 2, 3], shade: 0.56 }, // bottom
+      { idx: [4, 5, 6, 7], shade: 1.12 }, // top
+      { idx: [0, 1, 5, 4], shade: 0.72 }, // back
+      { idx: [2, 3, 7, 6], shade: 0.88 }, // front
+      { idx: [1, 2, 6, 5], shade: 0.80 }, // right
+      { idx: [3, 0, 4, 7], shade: 0.65 }  // left
+    ];
+
+    queue.push({
+      depth: centerDepth,
+      draw() {
+        const fList = faces.map(f => {
+          const pts = f.idx.map(i => v[i]);
+          const fDepth = pts.reduce((s, p) => s + p.depth, 0) / 4;
+          return { pts, fDepth, shade: f.shade };
+        }).sort((a, b) => b.fDepth - a.fDepth);
+
+        for (const f of fList) {
+          drawPoly(
+            f.pts,
+            rgb(shade(baseColor, f.shade), alpha),
+            stroke,
+            opts.selected ? 1.8 : 0.8
+          );
+        }
+        if (opts.hit) {
+          const minX = Math.min(...v.map(p => p.sx));
+          const maxX = Math.max(...v.map(p => p.sx));
+          const minY = Math.min(...v.map(p => p.sy));
+          const maxY = Math.max(...v.map(p => p.sy));
+          hitTargets.push({
+            box: { minX, maxX, minY, maxY },
+            depth: centerDepth,
+            data: opts.hit
+          });
+        }
+      }
+    });
+  }
+
+  function drawFloorGrid(xMin, xMax, zMin, zMax, xStep, zStep) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = xMin; x <= xMax + 0.01; x += xStep) {
+      const a = project(x, 0, zMin), b = project(x, 0, zMax);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+    for (let z = zMin; z <= zMax + 0.01; z += zStep) {
+      const a = project(xMin, 0, z), b = project(xMax, 0, z);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+  }
+
+  // Queue translucent zero-plane tiles so boxes below y=0 sit cleanly underneath
+  function queueZeroPlaneTiles(queue, xMin, xMax, zMin, zMax, xDivs, zDivs) {
+    const dx = (xMax - xMin) / xDivs;
+    const dz = (zMax - zMin) / zDivs;
+    for (let ix = 0; ix < xDivs; ix++) {
+      const x0 = xMin + ix * dx;
+      const x1 = x0 + dx;
+      for (let iz = 0; iz < zDivs; iz++) {
+        const z0 = zMin + iz * dz;
+        const z1 = z0 + dz;
+        const pts = [
+          project(x0, 0, z0),
+          project(x1, 0, z0),
+          project(x1, 0, z1),
+          project(x0, 0, z1)
+        ];
+        const depth = (pts[0].depth + pts[1].depth + pts[2].depth + pts[3].depth) / 4;
+        queue.push({
+          depth,
+          draw() {
+            drawPoly(pts, 'rgba(255,255,255,0.028)', 'rgba(255,255,255,0.095)', 0.9);
+          }
+        });
+      }
+    }
+  }
+
+  function drawLabel3D(text, x, y, z, color = '#a19c94', align = 'center', size = 11.5) {
+    const p = project(x, y, z);
+    ctx.font = `500 ${size}px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, p.sx, p.sy);
+  }
+
+  // =========================================================================
+  // RENDER VIEW 1: Run Diff Terrain (Baseline vs Candidate)
+  // =========================================================================
+  function renderDiff() {
+    const xSpan = 22;
+    const zSpan = 10;
+
+    for (let m = 0; m <= 30; m += 5) {
+      const x = -xSpan / 2 + (m / 30) * xSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, x, 0, -zSpan / 2 - 1.15, '#6f6a63', 'center', 11);
+    }
+    SCENARIOS.forEach((sc, l) => {
+      const z = -zSpan / 2 + ((l + 0.5) / SCENARIOS.length) * zSpan;
+      const isIso = state.isolatedLane === l;
+      drawLabel3D(sc.name, -xSpan / 2 - 1.1, 0.15, z, isIso ? '#ffffff' : '#a19c94', 'right', 11.5);
+    });
+    drawLabel3D('0ms baseline', xSpan / 2 + 0.9, 0.05, 0, '#6f6a63', 'left', 10.5);
+
+    const queue = [];
+    queueZeroPlaneTiles(queue, -xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, 10, 4);
+
+    const barW = (xSpan / TIME_BUCKETS) * 0.76;
+    const barD = (zSpan / SCENARIOS.length) * 0.54;
+
+    for (let l = 0; l < SCENARIOS.length; l++) {
+      const z = -zSpan / 2 + ((l + 0.5) / SCENARIOS.length) * zSpan;
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        const cell = diffGrid[l][t];
+        const x = -xSpan / 2 + ((t + 0.5) / TIME_BUCKETS) * xSpan;
+        const mag = Math.pow(Math.abs(cell.deltaMs) / 18, 0.72) * 0.48;
+        const h = (cell.deltaMs >= 0 ? 1 : -1) * Math.min(6.6, Math.max(0.18, mag));
+
+        let dim = state.isolatedLane !== null && state.isolatedLane !== l;
+        if (state.diffFilter === 'regressions' && cell.deltaMs <= 0) dim = true;
+        if (state.diffFilter === 'improvements' && cell.deltaMs >= 0) dim = true;
+
+        const isSel = state.selected && state.selected.kind === 'diff' && state.selected.laneIndex === l && state.selected.minute === t;
+        const isHov = state.hovered && state.hovered.kind === 'diff' && state.hovered.laneIndex === l && state.hovered.minute === t;
+
+        queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+          hit: cell
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // =========================================================================
+  // RENDER VIEW 2: Burst Staircase (Lock Contention)
+  // =========================================================================
+  function renderStaircase() {
+    const bees = state.stairMode === 'serialized' ? burstSerialized : burstParallel;
+    const xSpan = 22;
+    const zSpan = 12.5;
+    const maxMs = 1800;
+
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / 6);
+
+    for (let ms = 0; ms <= maxMs; ms += 300) {
+      const x = -xSpan / 2 + (ms / maxMs) * xSpan;
+      drawLabel3D(`${ms}ms`, x, 0, -zSpan / 2 - 1.0, '#6f6a63', 'center', 11);
+    }
+    [0, 5, 11, 17, 23].forEach(idx => {
+      const z = -zSpan / 2 + ((idx + 0.5) / 24) * zSpan;
+      drawLabel3D(`Bee #${idx + 1}`, -xSpan / 2 - 0.9, 0.15, z, '#a19c94', 'right', 11);
+    });
+
+    const queue = [];
+    const barD = (zSpan / 24) * 0.72;
+    const msToX = ms => -xSpan / 2 + (Math.min(maxMs, ms) / maxMs) * xSpan;
+
+    for (let i = 0; i < bees.length; i++) {
+      const bee = bees[i];
+      const z = -zSpan / 2 + ((i + 0.5) / 24) * zSpan;
+      const isSel = state.selected && state.selected.kind === 'staircase' && state.selected.sortedIndex === i;
+      const isHov = state.hovered && state.hovered.kind === 'staircase' && state.hovered.sortedIndex === i;
+
+      // Step 1: Fast green Auth + Catalog (0 -> authEnd)
+      const xA0 = msToX(bee.authStart), xA1 = msToX(bee.authEnd);
+      const dimAuth = state.isolatedLane !== null && state.isolatedLane !== 'auth';
+      queueBox(queue, (xA0 + xA1) / 2, 0, z, Math.max(0.28, xA1 - xA0), 0.52, barD, COLORS.good, {
+        dim: dimAuth,
+        selected: isSel,
+        hovered: isHov,
+        hit: bee
+      });
+
+      // Wait queue trace on floor (authEnd -> reserveStart) when serialized
+      if (bee.waitMs > 18) {
+        const xW0 = msToX(bee.waitStart), xW1 = msToX(bee.waitEnd);
+        const dimWait = state.isolatedLane !== null && state.isolatedLane !== 'reserve';
+        const waitColor = bee.waitMs > 700 ? COLORS.failed : COLORS.slow;
+        queueBox(queue, (xW0 + xW1) / 2, 0, z, Math.max(0.2, xW1 - xW0), 0.14, barD * 0.45, waitColor, {
+          dim: dimWait,
+          alpha: dimWait ? 0.08 : 0.35,
+          selected: isSel,
+          hovered: isHov,
+          hit: bee
+        });
+      }
+
+      // Step 2: Reserve Stock (rising Y = duration/wait staircase!)
+      const xR0 = msToX(bee.reserveStart), xR1 = msToX(bee.reserveEnd);
+      const dimRes = state.isolatedLane !== null && state.isolatedLane !== 'reserve';
+      const stairH = state.stairMode === 'serialized'
+        ? 0.65 + (bee.totalMs / maxMs) * 6.4
+        : 0.75 + (bee.totalMs / maxMs) * 2.2;
+      const resColor = state.stairMode === 'serialized'
+        ? (bee.failed ? COLORS.failed : bee.waitMs > 300 ? lerpColor(COLORS.slow, COLORS.failed, Math.min(1, (bee.waitMs - 300) / 850)) : lerpColor(COLORS.good, COLORS.slow, bee.waitMs / 300))
+        : COLORS.good;
+
+      queueBox(queue, (xR0 + xR1) / 2, 0, z, Math.max(0.45, xR1 - xR0), stairH, barD, resColor, {
+        dim: dimRes,
+        selected: isSel,
+        hovered: isHov,
+        hit: bee
+      });
+
+      // Step 3: Pay & Confirm cap
+      const xP0 = msToX(bee.payStart), xP1 = msToX(bee.payEnd);
+      const dimPay = state.isolatedLane !== null && state.isolatedLane !== 'pay';
+      const payColor = bee.failed ? COLORS.failed : COLORS.good;
+      queueBox(queue, (xP0 + xP1) / 2, 0, z, Math.max(0.32, xP1 - xP0), Math.max(0.55, stairH * 0.45), barD * 0.85, payColor, {
+        dim: dimPay,
+        selected: isSel,
+        hovered: isHov,
+        hit: bee
+      });
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // =========================================================================
+  // RENDER VIEW 3: Saturation Loop (In-Flight x Time x Latency Hysteresis)
+  // =========================================================================
+  function renderSaturation() {
+    const xSpan = 20;
+    const zSpan = 14;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / 6);
+
+    for (let f = 0; f <= 120; f += 30) {
+      const x = -xSpan / 2 + (f / 120) * xSpan;
+      drawLabel3D(`${f} bees`, x, 0, -zSpan / 2 - 1.1, '#6f6a63', 'center', 11);
+    }
+    for (let m = 0; m <= 30; m += 5) {
+      const z = -zSpan / 2 + (m / 30) * zSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, -xSpan / 2 - 1.0, 0.1, z, '#a19c94', 'right', 11);
+    }
+
+    const ptPos = p => ({
+      x: -xSpan / 2 + (p.inFlight / 120) * xSpan,
+      y: Math.min(7.2, Math.max(0.35, p.latencyMs / 115)),
+      z: -zSpan / 2 + (p.minute / 30) * zSpan
+    });
+
+    const isDimmed = p => {
+      if (state.satPhase === 'ramp' && p.phaseId !== 'ramp') return true;
+      if (state.satPhase === 'recovery' && p.phaseId !== 'recovery') return true;
+      if (state.isolatedLane !== null && state.isolatedLane !== p.phase) return true;
+      return false;
+    };
+
+    const queue = [];
+
+    // Floor shadow trajectory line (X x Z concurrency footprint)
+    queue.push({
+      depth: 999,
+      draw() {
+        ctx.beginPath();
+        for (let i = 0; i < SAT_POINTS.length; i++) {
+          const wp = ptPos(SAT_POINTS[i]);
+          const sp = project(wp.x, 0.02, wp.z);
+          if (i === 0) ctx.moveTo(sp.sx, sp.sy);
+          else ctx.lineTo(sp.sx, sp.sy);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+
+    // 3D Ribbon segments connecting consecutive trajectory points
+    for (let i = 0; i < SAT_POINTS.length - 1; i++) {
+      const aData = SAT_POINTS[i];
+      const bData = SAT_POINTS[i + 1];
+      const a = ptPos(aData);
+      const b = ptPos(bData);
+      const dim = isDimmed(aData) && isDimmed(bData);
+      const col = lerpColor(aData.color, bData.color, 0.5);
+      const rw = 0.28;
+      const topPts = [
+        project(a.x, a.y, a.z - rw),
+        project(a.x, a.y, a.z + rw),
+        project(b.x, b.y, b.z + rw),
+        project(b.x, b.y, b.z - rw)
+      ];
+      const sidePts = [
+        project(a.x, a.y - 0.16, a.z + rw),
+        project(a.x, a.y, a.z + rw),
+        project(b.x, b.y, b.z + rw),
+        project(b.x, b.y - 0.16, b.z + rw)
+      ];
+      const depth = topPts.reduce((s, p) => s + p.depth, 0) / 4;
+      queue.push({
+        depth,
+        draw() {
+          drawPoly(sidePts, rgb(shade(col, 0.72), dim ? 0.12 : 0.75), null);
+          drawPoly(topPts, rgb(col, dim ? 0.16 : 0.88), rgb(shade(col, 1.2), dim ? 0.1 : 0.55), 0.9);
+        }
+      });
+    }
+
+    // Connected pillars + glowing marker nodes
+    for (let i = 0; i < SAT_POINTS.length; i++) {
+      const pt = SAT_POINTS[i];
+      const wp = ptPos(pt);
+      const dim = isDimmed(pt);
+      const isSel = state.selected && state.selected.kind === 'saturation' && state.selected.index === i;
+      const isHov = state.hovered && state.hovered.kind === 'saturation' && state.hovered.index === i;
+
+      // Slender vertical pillar
+      queueBox(queue, wp.x, 0, wp.z, 0.18, wp.y, 0.18, pt.color, {
+        dim,
+        alpha: dim ? 0.08 : 0.36
+      });
+
+      // Glowing marker sphere
+      const sp = project(wp.x, wp.y, wp.z);
+      const r = isSel ? 7.5 : isHov ? 6.5 : 4.6;
+      queue.push({
+        depth: sp.depth - 0.15,
+        draw() {
+          if (!dim) {
+            const grad = ctx.createRadialGradient(sp.sx, sp.sy, 0, sp.sx, sp.sy, r * 2.5);
+            grad.addColorStop(0, rgb(pt.color, isSel ? 0.55 : 0.32));
+            grad.addColorStop(1, rgb(pt.color, 0));
+            ctx.beginPath();
+            ctx.arc(sp.sx, sp.sy, r * 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+          }
+          ctx.beginPath();
+          ctx.arc(sp.sx, sp.sy, r, 0, Math.PI * 2);
+          ctx.fillStyle = rgb(pt.color, dim ? 0.2 : 0.98);
+          ctx.fill();
+          if (isSel || isHov) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = isSel ? 2 : 1.3;
+            ctx.stroke();
+          }
+          hitTargets.push({
+            circle: { x: sp.sx, y: sp.sy, r: 12 },
+            box: { minX: sp.sx - 12, maxX: sp.sx + 12, minY: sp.sy - 12, maxY: sp.sy + 12 },
+            depth: sp.depth - 0.15,
+            data: pt
+          });
+        }
+      });
+
+      // Key milestone annotations
+      if (i === 0 || i === 16 || i === 24 || i === SAT_POINTS.length - 1) {
+        const tag = i === 0 ? '00m · Start (12 bees)'
+          : i === 16 ? `14m · Peak (112 bees, ${pt.latencyMs}ms)`
+          : i === 24 ? `20m · Stuck High (46 bees, ${pt.latencyMs}ms)`
+          : `30m · Recovered (40 bees, ${pt.latencyMs}ms)`;
+        const lp = project(wp.x, wp.y + 0.55, wp.z);
+        queue.push({
+          depth: lp.depth - 0.4,
+          draw() {
+            ctx.font = '600 11px Inter, system-ui, sans-serif';
+            ctx.fillStyle = dim ? 'rgba(241,239,234,0.22)' : '#f1efea';
+            ctx.textAlign = 'center';
+            ctx.fillText(tag, lp.sx, lp.sy);
+          }
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // =========================================================================
+  // RENDER VIEW 4: Error Cascade (Time x Error Signature x Count)
+  // =========================================================================
+  function renderCascade() {
+    const startMin = state.cascadeRange === 'onset' ? 10 : 0;
+    const endMin = state.cascadeRange === 'onset' ? 20 : 30;
+    const spanCount = endMin - startMin;
+    const xSpan = 22;
+    const zSpan = 10.5;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 5, zSpan / ERROR_SIGS.length);
+
+    const step = state.cascadeRange === 'onset' ? 2 : 5;
+    for (let m = startMin; m <= endMin; m += step) {
+      const x = -xSpan / 2 + ((m - startMin) / spanCount) * xSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, x, 0, -zSpan / 2 - 1.1, '#6f6a63', 'center', 11);
+    }
+    ERROR_SIGS.forEach((sig, s) => {
+      const z = -zSpan / 2 + ((s + 0.5) / ERROR_SIGS.length) * zSpan;
+      const isIso = state.isolatedLane === s;
+      drawLabel3D(`${sig.name} (${sig.onset})`, -xSpan / 2 - 1.0, 0.15, z, isIso ? '#ffffff' : '#a19c94', 'right', 11);
+    });
+
+    const queue = [];
+    const barW = (xSpan / spanCount) * 0.72;
+    const barD = (zSpan / ERROR_SIGS.length) * 0.56;
+
+    // Optional cascade propagation ribbon on the floor connecting the 4 onset peaks
+    if (state.cascadeLinks) {
+      const onsets = [12.0, 13.0, 14.1, 15.2].map((min, s) => ({
+        x: -xSpan / 2 + ((min - startMin + 0.5) / spanCount) * xSpan,
+        z: -zSpan / 2 + ((s + 0.5) / ERROR_SIGS.length) * zSpan
+      }));
+      queue.push({
+        depth: 500,
+        draw() {
+          ctx.beginPath();
+          onsets.forEach((pt, idx) => {
+            const p = project(pt.x, 0.18, pt.z);
+            if (idx === 0) ctx.moveTo(p.sx, p.sy);
+            else ctx.lineTo(p.sx, p.sy);
+          });
+          ctx.strokeStyle = 'rgba(240, 82, 82, 0.55)';
+          ctx.setLineDash([5, 4]);
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      });
+    }
+
+    for (let s = 0; s < ERROR_SIGS.length; s++) {
+      const z = -zSpan / 2 + ((s + 0.5) / ERROR_SIGS.length) * zSpan;
+      for (let t = startMin; t < endMin; t++) {
+        const cell = cascadeGrid[s][t];
+        if (cell.count === 0) continue;
+        const x = -xSpan / 2 + ((t - startMin + 0.5) / spanCount) * xSpan;
+        const h = Math.min(7.2, Math.max(0.22, cell.count / 14));
+        const dim = state.isolatedLane !== null && state.isolatedLane !== s;
+        const isSel = state.selected && state.selected.kind === 'cascade' && state.selected.sigIndex === s && state.selected.minute === t;
+        const isHov = state.hovered && state.hovered.kind === 'cascade' && state.hovered.sigIndex === s && state.hovered.minute === t;
+
+        queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+          hit: cell
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // =========================================================================
+  // RENDER VIEW 5: Endpoint Matrix (Scenario x Endpoint x Impact)
+  // =========================================================================
+  function renderMatrix() {
+    const xSpan = 20;
+    const zSpan = 12;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / ENDPOINTS.length, zSpan / SCENARIOS.length);
+
+    ENDPOINTS.forEach((ep, e) => {
+      const x = -xSpan / 2 + ((e + 0.5) / ENDPOINTS.length) * xSpan;
+      const isBot = ep.id === 'reserve';
+      drawLabel3D(ep.short, x, 0, -zSpan / 2 - 1.15, isBot ? '#f05252' : '#a19c94', 'center', 11.5);
+    });
+    SCENARIOS.forEach((sc, l) => {
+      const z = -zSpan / 2 + ((l + 0.5) / SCENARIOS.length) * zSpan;
+      drawLabel3D(sc.name, -xSpan / 2 - 1.1, 0.15, z, '#a19c94', 'right', 11.5);
+    });
+
+    const queue = [];
+    const barW = (xSpan / ENDPOINTS.length) * 0.54;
+    const barD = (zSpan / SCENARIOS.length) * 0.54;
+
+    for (const cell of matrixCells) {
+      const x = -xSpan / 2 + ((cell.epIndex + 0.5) / ENDPOINTS.length) * xSpan;
+      const z = -zSpan / 2 + ((cell.laneIndex + 0.5) / SCENARIOS.length) * zSpan;
+      const dim = state.isolatedLane !== null && state.isolatedLane !== cell.epIndex;
+      const isSel = state.selected && state.selected.kind === 'matrix' && state.selected.epIndex === cell.epIndex && state.selected.laneIndex === cell.laneIndex;
+      const isHov = state.hovered && state.hovered.kind === 'matrix' && state.hovered.epIndex === cell.epIndex && state.hovered.laneIndex === cell.laneIndex;
+
+      if (cell.totalCalls === 0) {
+        // Subtle footprint pad for unused endpoint in this scenario
+        queueBox(queue, x, 0, z, barW * 0.85, 0.06, barD * 0.85, COLORS.neutral, {
+          dim: true,
+          alpha: 0.14
+        });
+        continue;
+      }
+
+      const h = state.matrixMetric === 'impact'
+        ? Math.min(7.2, Math.max(0.28, cell.impact / 68))
+        : Math.min(7.2, Math.max(0.28, cell.p95Ms / 210));
+
+      queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+        dim,
+        selected: isSel,
+        hovered: isHov,
+        hit: cell
+      });
+
+      // Float value on tall bottleneck bars
+      if (cell.epId === 'reserve' && !dim) {
+        const valText = state.matrixMetric === 'impact' ? `${cell.impact} err/slow` : `${cell.p95Ms}ms p95`;
+        const lp = project(x, h + 0.45, z);
+        queue.push({
+          depth: lp.depth - 0.3,
+          draw() {
+            ctx.font = '600 10.5px "JetBrains Mono", monospace';
+            ctx.fillStyle = '#f1efea';
+            ctx.textAlign = 'center';
+            ctx.fillText(valText, lp.sx, lp.sy);
+          }
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // =========================================================================
+  // RENDER VIEW 6: Event Curtains (Runtime Data Overlay)
+  // =========================================================================
+  function renderCurtains() {
+    const xSpan = 22;
+    const zSpan = 10;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / SCENARIOS.length);
+
+    for (let m = 0; m <= 30; m += 5) {
+      const x = -xSpan / 2 + (m / 30) * xSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, x, 0, -zSpan / 2 - 1.15, '#6f6a63', 'center', 11);
+    }
+    SCENARIOS.forEach((sc, l) => {
+      const z = -zSpan / 2 + ((l + 0.5) / SCENARIOS.length) * zSpan;
+      const isIso = state.isolatedLane === l;
+      drawLabel3D(sc.name, -xSpan / 2 - 1.1, 0.2, z, isIso ? '#ffffff' : '#a19c94', 'right', 11.5);
+    });
+
+    const queue = [];
+    const barW = (xSpan / TIME_BUCKETS) * 0.76;
+    const barD = (zSpan / SCENARIOS.length) * 0.54;
+
+    for (let l = 0; l < SCENARIOS.length; l++) {
+      const z = -zSpan / 2 + ((l + 0.5) / SCENARIOS.length) * zSpan;
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        const cell = curtainsGrid[l][t];
+        const x = -xSpan / 2 + ((t + 0.5) / TIME_BUCKETS) * xSpan;
+        const h = Math.min(7.2, Math.max(0.25, cell.durationMs / 155));
+        const dim = state.isolatedLane !== null && state.isolatedLane !== l;
+        const isSel = state.selected && state.selected.kind === 'curtains' && state.selected.laneIndex === l && state.selected.minute === t;
+        const isHov = state.hovered && state.hovered.kind === 'curtains' && state.hovered.laneIndex === l && state.hovered.minute === t;
+
+        queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+          hit: cell
+        });
+      }
+    }
+
+    // Translucent vertical curtains sliced across Z so depth-sorting stays clean
+    if (state.showCurtains) {
+      const zSlices = 8;
+      const curtainZ0 = -zSpan / 2 - 0.45;
+      const curtainZ1 = zSpan / 2 + 0.45;
+      const curtainH = 6.9;
+
+      for (const ev of EVENT_CURTAINS) {
+        const ex = -xSpan / 2 + (ev.minute / TIME_BUCKETS) * xSpan;
+        const isSel = state.selected && state.selected.kind === 'event' && state.selected.id === ev.id;
+        const isHov = state.hovered && state.hovered.kind === 'event' && state.hovered.id === ev.id;
+        const evHit = { kind: 'event', ...ev };
+
+        for (let s = 0; s < zSlices; s++) {
+          const za = curtainZ0 + (s / zSlices) * (curtainZ1 - curtainZ0);
+          const zb = curtainZ0 + ((s + 1) / zSlices) * (curtainZ1 - curtainZ0);
+          const pts = [
+            project(ex, 0, za),
+            project(ex, 0, zb),
+            project(ex, curtainH, zb),
+            project(ex, curtainH, za)
+          ];
+          const depth = (pts[0].depth + pts[1].depth + pts[2].depth + pts[3].depth) / 4;
+          queue.push({
+            depth,
+            draw() {
+              const fillA = isSel ? 0.28 : isHov ? 0.24 : 0.16;
+              drawPoly(pts, rgb(ev.color, fillA), null);
+              // Top rim & front/back vertical frame edges
+              ctx.strokeStyle = rgb(ev.color, isSel || isHov ? 0.95 : 0.72);
+              ctx.lineWidth = isSel ? 2.2 : 1.5;
+              ctx.beginPath();
+              ctx.moveTo(pts[2].sx, pts[2].sy);
+              ctx.lineTo(pts[3].sx, pts[3].sy);
+              if (s === 0) {
+                ctx.moveTo(pts[0].sx, pts[0].sy);
+                ctx.lineTo(pts[3].sx, pts[3].sy);
+              }
+              if (s === zSlices - 1) {
+                ctx.moveTo(pts[1].sx, pts[1].sy);
+                ctx.lineTo(pts[2].sx, pts[2].sy);
+              }
+              ctx.stroke();
+
+              const minX = Math.min(...pts.map(p => p.sx));
+              const maxX = Math.max(...pts.map(p => p.sx));
+              const minY = Math.min(...pts.map(p => p.sy));
+              const maxY = Math.max(...pts.map(p => p.sy));
+              hitTargets.push({
+                poly: pts,
+                box: { minX, maxX, minY, maxY },
+                depth,
+                data: evHit
+              });
+            }
+          });
+        }
+
+        // Top badge pill for the curtain
+        const tp = project(ex, curtainH + 0.52, zSpan / 2 + 0.35);
+        queue.push({
+          depth: tp.depth - 0.6,
+          draw() {
+            ctx.font = '600 11px Inter, system-ui, sans-serif';
+            const tw = ctx.measureText(ev.shortLabel).width + 16;
+            const bx = tp.sx - tw / 2, by = tp.sy - 11, bh = 22;
+            ctx.fillStyle = 'rgba(26, 25, 23, 0.92)';
+            ctx.strokeStyle = rgb(ev.color, isSel || isHov ? 0.95 : 0.65);
+            ctx.lineWidth = isSel ? 1.8 : 1.1;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, tw, bh, 999);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#f1efea';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(ev.shortLabel, tp.sx, tp.sy);
+
+            hitTargets.push({
+              box: { minX: bx, maxX: bx + tw, minY: by, maxY: by + bh },
+              depth: tp.depth - 0.6,
+              data: evHit
+            });
+          }
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // ---------- Main Animation Loop ----------
+  function frame() {
+    state.cam.yaw += (state.cam.targetYaw - state.cam.yaw) * 0.14;
+    state.cam.pitch += (state.cam.targetPitch - state.cam.pitch) * 0.14;
+    state.cam.zoom += (state.cam.targetZoom - state.cam.zoom) * 0.14;
+
+    ctx.clearRect(0, 0, width, height);
+    hitTargets = [];
+
+    if (state.view === 'diff') renderDiff();
+    else if (state.view === 'staircase') renderStaircase();
+    else if (state.view === 'saturation') renderSaturation();
+    else if (state.view === 'cascade') renderCascade();
+    else if (state.view === 'matrix') renderMatrix();
+    else renderCurtains();
+
+    hitTargets.sort((a, b) => a.depth - b.depth);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- Pointer Orbit / Zoom / Pick ----------
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  const tooltip = document.getElementById('tooltip');
+
+  function pick(mx, my) {
+    for (const ht of hitTargets) {
+      if (ht.circle) {
+        if (Math.hypot(mx - ht.circle.x, my - ht.circle.y) <= ht.circle.r) return ht.data;
+        continue;
+      }
+      if (ht.poly) {
+        if (pointInPoly(mx, my, ht.poly)) return ht.data;
+        continue;
+      }
+      const b = ht.box;
+      if (mx >= b.minX && mx <= b.maxX && my >= b.minY && my <= b.maxY) {
+        return ht.data;
+      }
+    }
+    return null;
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true;
+    moved = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (dragging) {
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      state.cam.targetYaw += dx * 0.008;
+      state.cam.targetPitch = Math.max(0.05, Math.min(1.54, state.cam.targetPitch + dy * 0.008));
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    const hit = pick(mx, my);
+    state.hovered = hit;
+    canvas.style.cursor = hit ? 'pointer' : 'grab';
+
+    if (hit) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = `${Math.max(8, Math.min(width - 285, mx + 14))}px`;
+      tooltip.style.top = `${Math.max(12, my - 12)}px`;
+      tooltip.innerHTML = renderTooltip(hit);
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('pointerup', e => {
+    dragging = false;
+    if (!moved) {
+      const rect = canvas.getBoundingClientRect();
+      const hit = pick(e.clientX - rect.left, e.clientY - rect.top);
+      state.selected = hit;
+      updateInspector();
+    }
+  });
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    state.cam.targetZoom = Math.max(0.55, Math.min(2.15, state.cam.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+  }, { passive: false });
+
+  function renderTooltip(hit) {
+    if (hit.kind === 'diff') {
+      const sign = hit.deltaMs >= 0 ? '+' : '';
+      const cls = hit.deltaMs < 0 ? 'var(--good)' : hit.deltaMs > 160 ? 'var(--failed)' : 'var(--slow)';
+      return `
+        <div class="tt-title">${hit.laneName} · ${hit.timeLabel}</div>
+        <div class="tt-row"><span>Baseline → Candidate</span><span class="tt-val">${hit.baseMs}ms → ${hit.candMs}ms</span></div>
+        <div class="tt-row"><span>Latency Delta</span><span class="tt-val" style="color:${cls}">${sign}${hit.deltaMs}ms (${sign}${hit.pct}%)</span></div>
+      `;
+    }
+    if (hit.kind === 'staircase') {
+      return `
+        <div class="tt-title">${hit.beeLabel} (${hit.mode === 'serialized' ? 'Lock Contention' : 'Parallel'})</div>
+        <div class="tt-row"><span>Auth + Catalog</span><span class="tt-val">${hit.authMs} ms</span></div>
+        <div class="tt-row"><span>Lock Wait</span><span class="tt-val" style="color:${hit.waitMs > 200 ? 'var(--failed)' : 'var(--good)'}">${hit.waitMs} ms</span></div>
+        <div class="tt-row"><span>Reserve + Pay</span><span class="tt-val">${hit.reserveMs + hit.payMs} ms</span></div>
+        <div class="tt-row"><span>Total Duration</span><span class="tt-val">${hit.totalMs} ms</span></div>
+      `;
+    }
+    if (hit.kind === 'saturation') {
+      return `
+        <div class="tt-title">${hit.phase} · ${hit.timeLabel}</div>
+        <div class="tt-row"><span>In-Flight Bees</span><span class="tt-val">${hit.inFlight}</span></div>
+        <div class="tt-row"><span>Avg Latency</span><span class="tt-val">${hit.latencyMs} ms (${hit.ratio}×)</span></div>
+        <div class="tt-row"><span>Error Rate</span><span class="tt-val">${hit.failedRate}%</span></div>
+      `;
+    }
+    if (hit.kind === 'cascade') {
+      return `
+        <div class="tt-title">${hit.sigName} · ${hit.timeLabel}</div>
+        <div class="tt-row"><span>Error Count</span><span class="tt-val" style="color:var(--failed)">${hit.count}</span></div>
+        <div class="tt-row"><span>Chain Role</span><span class="tt-val">${hit.role}</span></div>
+      `;
+    }
+    if (hit.kind === 'matrix') {
+      return `
+        <div class="tt-title">${hit.scName} → ${hit.epPath}</div>
+        <div class="tt-row"><span>Slow + Failed</span><span class="tt-val">${hit.impact} / ${hit.totalCalls} calls</span></div>
+        <div class="tt-row"><span>p95 Latency</span><span class="tt-val">${hit.p95Ms} ms (${hit.ratio}× typical)</span></div>
+      `;
+    }
+    if (hit.kind === 'event') {
+      return `
+        <div class="tt-title">${hit.label}</div>
+        <div class="tt-row"><span>Runtime Key</span><span class="tt-val">${hit.key}</span></div>
+        <div class="tt-row"><span>Writer</span><span class="tt-val">${hit.writer}</span></div>
+        <div style="color:var(--muted);margin-top:4px;font-size:11px;">${hit.effect}</div>
+      `;
+    }
+    return `
+      <div class="tt-title">${hit.laneName} · ${hit.timeLabel}</div>
+      <div class="tt-row"><span>Duration</span><span class="tt-val">${hit.durationMs} ms (${hit.ratio}×)</span></div>
+      <div class="tt-row"><span>Bees</span><span class="tt-val">${hit.bees} · ${hit.slow} slow · ${hit.failed} failed</span></div>
+      ${hit.note ? `<div style="color:var(--slow);margin-top:4px;font-size:11px;">${hit.note}</div>` : ''}
+    `;
+  }
+
+  // ---------- UI Sync ----------
+  const VIEW_META = {
+    diff: {
+      title: '1. Run Diff Terrain (Baseline vs. Candidate)',
+      desc: 'X = run time (30m), Z = scenario entries, Y = latency delta vs baseline. Browse improved (-25ms green below the translucent zero-plane), while Checkout develops a pool leak climbing into a +680ms red wall after 14:00.',
+      cli: 'beesharp runs diff baseline-run candidate-run --by scenario --bucket 60s --json'
+    },
+    staircase: {
+      title: '2. Burst Staircase (Lock Contention)',
+      desc: 'One burst of 24 bees starting at t = 0, sorted by finish time. Fast green Auth/Catalog leads into a diagonal amber/red staircase on Reserve Stock — proving single-threaded DB row lock serialization. Toggle Healthy Parallel to compare.',
+      cli: 'beesharp runs burst latest --entry 4 --at 11m --bees 24 --sort finish --json'
+    },
+    saturation: {
+      title: '3. Saturation Loop (In-Flight × Time × Latency)',
+      desc: '3D trajectory ribbon plotting concurrency vs time vs latency. As load ramps to 112 bees latency spikes, and even after concurrency drops back to 40 bees, latency stays stuck high in amber/red — exposing hysteresis hangover.',
+      cli: 'beesharp runs saturation latest --bucket 50s --metrics in-flight,avg-ms --json'
+    },
+    cascade: {
+      title: '4. Error Cascade (Time × Error Signature × Count)',
+      desc: 'X = run time, Z = deduplicated ErrorDictionary signatures, Y = count. Shows the exact chronological chain reaction: HTTP 429 starts at 11:00, triggers Socket Pool Exhausted at 11:30, then Reserve Timeout and 503 Circuit Open.',
+      cli: 'beesharp runs errors latest --bucket 60s --dedupe-signatures --json'
+    },
+    matrix: {
+      title: '5. Endpoint Matrix (Scenario × Endpoint × Impact)',
+      desc: 'X = normalized endpoints, Z = scenario entries, Y = slow/failed call impact. Immediately reveals POST /api/inventory/reserve as the tall red shared bottleneck hurting 3 of the 4 scenarios.',
+      cli: 'beesharp runs matrix latest --axes scenario,endpoint --metric impact --json'
+    },
+    curtains: {
+      title: '6. Event Curtains (Runtime Data Overlay)',
+      desc: 'Scenario Terrain overlaid with 3 translucent vertical curtains from RunBag / runner events: 08:00 Cache Warmup, 14:00 AuthToken Rotated (explaining the sudden 2m red spike across all 4 lanes), and 22:00 Max In-Flight Cap Hit.',
+      cli: 'beesharp runs runtime latest --include-events --bucket 60s --json'
+    }
+  };
+
+  function updateSidebar() {
+    const meta = VIEW_META[state.view];
+    document.getElementById('viewTitle').textContent = meta.title;
+    document.getElementById('viewDesc').textContent = meta.desc;
+    document.getElementById('cliCmd').innerHTML = `<span class="cmd-accent">$</span> ${meta.cli}`;
+
+    document.getElementById('diffSub').style.display = state.view === 'diff' ? 'flex' : 'none';
+    document.getElementById('staircaseSub').style.display = state.view === 'staircase' ? 'flex' : 'none';
+    document.getElementById('satSub').style.display = state.view === 'saturation' ? 'flex' : 'none';
+    document.getElementById('cascadeSub').style.display = state.view === 'cascade' ? 'flex' : 'none';
+    document.getElementById('matrixSub').style.display = state.view === 'matrix' ? 'flex' : 'none';
+    document.getElementById('curtainsSub').style.display = state.view === 'curtains' ? 'flex' : 'none';
+
+    const list = document.getElementById('laneList');
+    const title = document.getElementById('laneCardTitle');
+    list.innerHTML = '';
+
+    if (state.view === 'diff' || state.view === 'curtains') {
+      title.textContent = 'Isolate Scenario Lane';
+      SCENARIOS.forEach((sc, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === i ? ' isolated' : '');
+        const tag = state.view === 'diff'
+          ? (sc.id === 'browse' ? '<span class="good">-25ms avg</span>' : sc.id === 'checkout' ? '<span class="failed">+680ms peak</span>' : sc.pattern)
+          : sc.pattern;
+        btn.innerHTML = `<span>${sc.name}</span><span class="lane-meta">${tag}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === i ? null : i; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else if (state.view === 'staircase') {
+      title.textContent = 'Isolate Burst Step';
+      const steps = [
+        { id: 'auth', name: 'Step 1 · Auth & Catalog', meta: '44–62ms' },
+        { id: 'reserve', name: 'Step 2 · Reserve Stock', meta: state.stairMode === 'serialized' ? 'DB row lock' : 'parallel' },
+        { id: 'pay', name: 'Step 3 · Pay & Confirm', meta: '48–66ms' }
+      ];
+      steps.forEach(st => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === st.id ? ' isolated' : '');
+        btn.innerHTML = `<span>${st.name}</span><span class="lane-meta">${st.meta}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === st.id ? null : st.id; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else if (state.view === 'saturation') {
+      title.textContent = 'Focus Saturation Phase';
+      const phases = [
+        { id: 'Healthy Ramp', meta: '00–10m · good' },
+        { id: 'Saturation Knee', meta: '11–15m · spike' },
+        { id: 'Hysteresis Hangover', meta: '15–24m · stuck' },
+        { id: 'Recovered', meta: '24–30m · normal' }
+      ];
+      phases.forEach(ph => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === ph.id ? ' isolated' : '');
+        btn.innerHTML = `<span>${ph.id}</span><span class="lane-meta">${ph.meta}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === ph.id ? null : ph.id; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else if (state.view === 'cascade') {
+      title.textContent = 'Isolate Error Signature';
+      ERROR_SIGS.forEach((sig, s) => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === s ? ' isolated' : '');
+        btn.innerHTML = `<span>${sig.name}</span><span class="lane-meta failed">${sig.onset}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === s ? null : s; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else if (state.view === 'matrix') {
+      title.textContent = 'Focus Normalized Endpoint';
+      ENDPOINTS.forEach((ep, e) => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === e ? ' isolated' : '');
+        const tag = ep.id === 'reserve' ? '<span class="failed">3 scenarios hurt</span>' : ep.id === 'orders' ? '<span class="slow">checkout</span>' : 'healthy';
+        btn.innerHTML = `<span>${ep.path}</span><span class="lane-meta">${tag}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === e ? null : e; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    }
+    updateInspector();
+  }
+
+  function updateInspector() {
+    const body = document.getElementById('selectionBody');
+    const s = state.selected;
+    if (!s) {
+      body.innerHTML = `<p class="desc">Click any bar, marker, or curtain in the 3D scene to inspect metrics, drill down, and see the matching CLI command.</p>`;
+      return;
+    }
+
+    if (s.kind === 'diff') {
+      const cls = s.deltaMs < 0 ? 'good' : s.deltaMs > 160 ? 'failed' : 'slow';
+      const sign = s.deltaMs >= 0 ? '+' : '';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.laneName}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Window ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Baseline</div><div class="v">${s.baseMs} ms</div></div>
+          <div class="stat"><div class="k">Candidate</div><div class="v ${cls}">${s.candMs} ms</div></div>
+          <div class="stat"><div class="k">Delta (ms)</div><div class="v ${cls}">${sign}${s.deltaMs} ms</div></div>
+          <div class="stat"><div class="k">Delta (%)</div><div class="v ${cls}">${sign}${s.pct}%</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /scenario/${4 - s.laneIndex}?compare=baseline')">Compare /scenario/${4 - s.laneIndex} →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs diff baseline candidate --entry ${4 - s.laneIndex} --window ${s.minute}m --json`;
+    } else if (s.kind === 'staircase') {
+      const cls = s.failed ? 'failed' : s.waitMs > 200 ? 'slow' : 'good';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.beeLabel} · Checkout Burst</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Mode: ${s.mode === 'serialized' ? 'Serialized DB Lock' : 'Healthy Parallel'}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Auth + Catalog</div><div class="v good">${s.authMs} ms</div></div>
+          <div class="stat"><div class="k">Lock Wait</div><div class="v ${cls}">${s.waitMs} ms</div></div>
+          <div class="stat"><div class="k">Reserve + Pay</div><div class="v">${s.reserveMs + s.payMs} ms</div></div>
+          <div class="stat"><div class="k">Finish Time</div><div class="v ${cls}">${s.totalMs} ms</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /scenario/4?bee=${s.sortedIndex + 1}')">Inspect Bee Trace →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs bees latest --entry 4 --bee ${s.sortedIndex + 1} --steps --json`;
+    } else if (s.kind === 'saturation') {
+      const cls = s.failedRate > 0 ? 'failed' : s.ratio >= 2 ? 'slow' : 'good';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.phase}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Sample at ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">In-Flight Bees</div><div class="v running">${s.inFlight}</div></div>
+          <div class="stat"><div class="k">Avg Latency</div><div class="v ${cls}">${s.latencyMs} ms</div></div>
+          <div class="stat"><div class="k">vs Typical</div><div class="v ${cls}">${s.ratio}×</div></div>
+          <div class="stat"><div class="k">Error Rate</div><div class="v ${s.failedRate > 0 ? 'failed' : 'good'}">${s.failedRate}%</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /calls?at=${Math.floor(s.minute)}m')">Inspect Calls at ${s.timeLabel} →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs saturation latest --at ${Math.floor(s.minute)}m --json`;
+    } else if (s.kind === 'cascade') {
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.sigName}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">${s.role} · Window ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Error Count</div><div class="v failed">${s.count}</div></div>
+          <div class="stat"><div class="k">First Onset</div><div class="v slow">${s.onset}</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /logs?level=error&q=${encodeURIComponent(s.sigName)}')">Open Error Logs →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs logs latest --level error --q "${s.sigName}" --json`;
+    } else if (s.kind === 'matrix') {
+      const cls = s.failedCalls > 0 ? 'failed' : s.ratio >= 2 ? 'slow' : 'good';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.epPath}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Called by ${s.scName}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Total Calls</div><div class="v">${s.totalCalls}</div></div>
+          <div class="stat"><div class="k">p95 Latency</div><div class="v ${cls}">${s.p95Ms} ms</div></div>
+          <div class="stat"><div class="k">Slow Calls</div><div class="v slow">${s.slowCalls}</div></div>
+          <div class="stat"><div class="k">Failed Calls</div><div class="v ${s.failedCalls > 0 ? 'failed' : 'good'}">${s.failedCalls}</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /calls?endpoint=${encodeURIComponent(s.epPath)}')">Open /calls →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs calls latest --endpoint "${s.epPath}" --entry ${4 - s.laneIndex} --json`;
+    } else if (s.kind === 'event') {
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.label}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Runtime Data Event (${s.writer})</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Key</div><div class="v" style="font-size:12px;font-family:var(--mono)">${s.key}</div></div>
+          <div class="stat"><div class="k">Timestamp</div><div class="v ${s.status}">${String(s.minute).padStart(2, '0')}:00</div></div>
+        </div>
+        <div class="cli-box" style="margin-top:8px;">${s.value}</div>
+        <p class="desc" style="margin-top:8px;font-size:12px;">${s.effect}</p>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /environment#runtime')">Open /environment →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs runtime latest --at ${String(s.minute).padStart(2, '0')}:00 --json`;
+    } else {
+      const cls = s.failed > 0 ? 'failed' : s.ratio >= 2 ? 'slow' : 'good';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.laneName}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Window ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Duration</div><div class="v ${cls}">${s.durationMs} ms</div></div>
+          <div class="stat"><div class="k">vs Typical</div><div class="v ${cls}">${s.ratio}×</div></div>
+          <div class="stat"><div class="k">Slow Bees</div><div class="v slow">${s.slow}</div></div>
+          <div class="stat"><div class="k">Failed Bees</div><div class="v failed">${s.failed}</div></div>
+        </div>
+        ${s.note ? `<div class="cli-box" style="color:var(--slow);border-color:rgba(251,191,36,0.3)">${s.note}</div>` : ''}
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /scenario/${4 - s.laneIndex}?t=${s.minute}m')">Open /scenario/${4 - s.laneIndex} →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs calls latest --entry ${4 - s.laneIndex} --window ${s.minute}m --json`;
+    }
+  }
+
+  // ---------- Event Bindings ----------
+  document.querySelectorAll('#viewTabs button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#viewTabs button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.view = btn.dataset.view;
+      state.isolatedLane = null;
+      state.selected = null;
+      updateSidebar();
+    };
+  });
+
+  document.querySelectorAll('#camPresets button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      const p = CAM_PRESETS[btn.dataset.cam];
+      state.cam.targetYaw = p.yaw;
+      state.cam.targetPitch = p.pitch;
+      state.cam.targetZoom = p.zoom;
+    };
+  });
+
+  document.querySelectorAll('#diffSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#diffSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.diffFilter = btn.dataset.diff;
+    };
+  });
+
+  document.querySelectorAll('#staircaseSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#staircaseSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.stairMode = btn.dataset.stair;
+      state.selected = null;
+      updateSidebar();
+    };
+  });
+
+  document.querySelectorAll('#satSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#satSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.satPhase = btn.dataset.sat;
+    };
+  });
+
+  document.querySelectorAll('#cascadeSub button[data-cascade]').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#cascadeSub button[data-cascade]').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.cascadeRange = btn.dataset.cascade;
+      state.selected = null;
+      updateInspector();
+    };
+  });
+
+  document.getElementById('toggleLinks').onclick = e => {
+    state.cascadeLinks = !state.cascadeLinks;
+    e.target.textContent = `Cascade Links: ${state.cascadeLinks ? 'On' : 'Off'}`;
+    e.target.classList.toggle('on', state.cascadeLinks);
+  };
+
+  document.querySelectorAll('#matrixSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#matrixSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.matrixMetric = btn.dataset.matrix;
+    };
+  });
+
+  document.getElementById('toggleCurtains').onclick = e => {
+    state.showCurtains = !state.showCurtains;
+    e.target.textContent = `Event Curtains: ${state.showCurtains ? 'On' : 'Off'}`;
+    e.target.classList.toggle('on', state.showCurtains);
+    if (!state.showCurtains && state.selected && state.selected.kind === 'event') {
+      state.selected = null;
+      updateInspector();
+    }
+  };
+
+  updateSidebar();
+})();
+</script>
+</body>
+</html>

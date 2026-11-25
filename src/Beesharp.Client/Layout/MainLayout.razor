@@ -55,6 +55,7 @@
                     <button type="button" class="more-row" @onclick="OpenEnvsFromMore">Configure environments…</button>
                 </div>
                 <div class="drawer-sec">
+                    <button type="button" class="more-row" @onclick="Open3DFromMore">3D Views</button>
                     @if (Asst.Available)
                     {
                         <button type="button" class="more-row" @onclick="() => { moreOpen = false; Asst.Toggle(); }">Assistant</button>
@@ -96,6 +97,7 @@
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
             <NavLink class="nav-item" href="environment" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Environment</NavLink>
+            <NavLink class="nav-item" href="3d" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">3D Views</NavLink>
         </nav>
         @* The scenario page (brain 0059): "Overview › name"; the Overview tab above stays the active one and leads back. *@
         @if (scnIndex is { } crumbAt)
@@ -233,11 +235,12 @@
         var path = Nav.ToBaseRelativePath(Nav.Uri);
         var q = path.IndexOfAny(['?', '#']);
         if (q >= 0) path = path[..q];
-        return path.Trim('/').ToLowerInvariant() switch { "calls" => "Calls", "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
+        return path.Trim('/').ToLowerInvariant() switch { "calls" => "Calls", "3d" => "3D Views", "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
     }
 
     private void PickEnv(string? name) { Envs.SetActive(name); moreOpen = false; }
     private void OpenEnvsFromMore() { moreOpen = false; EnvPopup.Show(); }
+    private async Task Open3DFromMore() { moreOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("3d"); }
 
     private RenderFragment BrandHex => @<svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
         <defs><clipPath id="bsharp-hex-p"><path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z"/></clipPath></defs>

@@ -1,0 +1,63 @@
+{
+  "name": "Demo Shop (3D)",
+  "savedAt": "2026-11-25T22:55:00+00:00",
+  "plan": {
+    "scenarios": [
+      {
+        "scenarioId": "script-demo-shop",
+        "label": "Browse Catalog",
+        "ratePerMinute": 90,
+        "pattern": "Linear",
+        "maxInFlight": 40,
+        "parameters": {
+          "baseUrl": "http://127.0.0.1:5399",
+          "mode": "Browse",
+          "query": "honey"
+        }
+      },
+      {
+        "scenarioId": "script-demo-shop",
+        "label": "Search Burst",
+        "ratePerMinute": 54,
+        "pattern": "Bursts",
+        "beesPerBurst": 18,
+        "burstsPerMinute": 3,
+        "maxInFlight": 50,
+        "parameters": {
+          "baseUrl": "http://127.0.0.1:5399",
+          "mode": "SearchBurst",
+          "query": "flash-sale"
+        }
+      },
+      {
+        "scenarioId": "script-demo-shop",
+        "label": "Add to Cart",
+        "ratePerMinute": 55,
+        "pattern": "Linear",
+        "maxInFlight": 40,
+        "parameters": {
+          "baseUrl": "http://127.0.0.1:5399",
+          "mode": "Cart",
+          "query": "honey"
+        }
+      },
+      {
+        "scenarioId": "script-demo-shop",
+        "label": "Checkout",
+        "ratePerMinute": 45,
+        "pattern": "Linear",
+        "maxInFlight": 40,
+        "parameters": {
+          "baseUrl": "http://127.0.0.1:5399",
+          "mode": "Checkout",
+          "query": "honey"
+        }
+      }
+    ],
+    "durationSeconds": 180,
+    "maxConcurrency": 150,
+    "timeoutSeconds": 30,
+    "preflightScriptId": null,
+    "shutdownScriptId": null
+  }
+}

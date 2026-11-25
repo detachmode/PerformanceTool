@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beesharp — 3D Views Prototype</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0e0d;
+    --panel: #1a1917;
+    --panel2: #252321;
+    --input: #141311;
+    --border: rgba(255, 255, 255, 0.08);
+    --selected: #282623;
+    --text: #f1efea;
+    --title: #ffffff;
+    --muted: #a19c94;
+    --faint: #6f6a63;
+    --bar: #8c8578;
+    --running: #5b9bf0;
+    --good: #34d399;
+    --slow: #fbbf24;
+    --failed: #f05252;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", "Segoe UI Variable Text", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr 44px;
+    height: 100vh;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--title);
+    letter-spacing: -0.015em;
+    margin-right: 6px;
+  }
+  .brand-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--good);
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel2);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .seg {
+    display: inline-flex;
+    border-radius: 999px;
+    background: #1c1b19;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg button {
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color .14s, color .14s;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+  .spacer { flex: 1; }
+  .chip {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    padding: 5px 11px;
+    border: 1px solid transparent;
+    background: #272523;
+    color: var(--text);
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color .14s, border-color .14s;
+  }
+  .chip:hover { background: #34312e; }
+  .chip.on { background: #f1efea; color: #0f0e0d; font-weight: 600; }
+
+  /* Main layout */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 330px;
+    min-height: 0;
+  }
+  .stage-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border);
+    background: radial-gradient(circle at 50% 45%, #171614 0%, #0f0e0d 75%);
+  }
+  .stage-toolbar {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 5;
+    flex-wrap: wrap;
+  }
+  .stage-toolbar > * { pointer-events: auto; }
+  .sub-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(26, 25, 23, 0.88);
+    border: 1px solid var(--border);
+    padding: 4px 6px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+  }
+  .hint-pill {
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.8);
+    border: 1px solid var(--border);
+    padding: 5px 11px;
+    border-radius: 999px;
+  }
+  canvas#scene {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  canvas#scene:active { cursor: grabbing; }
+
+  @media (max-width: 820px) {
+    html, body { overflow: auto; height: auto; }
+    .app { grid-template-rows: auto auto auto; height: auto; min-height: 100vh; }
+    .topbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .topbar .seg { max-width: 100%; overflow-x: auto; }
+    .topbar .seg button { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+    .main { grid-template-columns: 1fr; }
+    .stage-wrap { height: 56vh; min-height: 340px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .hint-pill { display: none; }
+    .stage-legend { font-size: 11px; gap: 8px; padding: 5px 10px; bottom: 8px; left: 8px; flex-wrap: wrap; }
+    .sidebar { overflow: visible; padding: 12px; }
+    .playerbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
+    .strip { flex-basis: 100%; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(26, 25, 23, 0.96);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    max-width: 260px;
+    z-index: 20;
+    display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  }
+  .tooltip .tt-title { font-weight: 600; color: var(--title); margin-bottom: 3px; }
+  .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tooltip .tt-val { color: var(--text); font-family: var(--mono); font-size: 11.5px; }
+
+  /* Legend bar inside stage */
+  .stage-legend {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(26, 25, 23, 0.85);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+
+  /* Inspector sidebar */
+  .sidebar {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+    gap: 14px;
+  }
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 14px;
+  }
+  .card h3 {
+    margin: 0 0 6px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .view-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--title);
+    margin: 0 0 6px 0;
+  }
+  .desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .stat .k { font-size: 11px; color: var(--muted); }
+  .stat .v { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .good { color: var(--good); }
+  .slow { color: var(--slow); }
+  .failed { color: var(--failed); }
+  .running { color: var(--running); }
+
+  .lane-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .lane-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .12s, border-color .12s;
+  }
+  .lane-btn:hover { background: var(--panel2); }
+  .lane-btn.isolated { border-color: rgba(241,239,234,0.55); background: var(--selected); }
+  .lane-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+  .cli-box {
+    background: #0b0a09;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #d6d2ca;
+    line-height: 1.5;
+    word-break: break-all;
+    margin-top: 8px;
+  }
+  .cli-box .cmd-accent { color: var(--good); }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  /* Bottom player / overview strip */
+  .playerbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 12.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .strip {
+    flex: 1;
+    height: 16px;
+    background: #171614;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .strip-mark {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 2px;
+    opacity: 0.78;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Beesharp</span>
+      <span class="badge">3D Prototype</span>
+    </div>
+
+    <div class="seg" id="viewTabs" role="tablist">
+      <button class="on" data-view="terrain">1. Scenario Terrain</button>
+      <button data-view="topology">2. Live Flow Topology</button>
+      <button data-view="surface">3. Latency Surface</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="seg" id="camPresets" aria-label="Camera presets">
+      <button class="on" data-cam="iso">Isometric</button>
+      <button data-cam="top">Top-Down (2D)</button>
+      <button data-cam="front">Front</button>
+      <button data-cam="side">Side</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="main">
+    <div class="stage-wrap">
+      <div class="stage-toolbar">
+        <div class="sub-controls" id="terrainSub">
+          <button class="chip on" data-mode="scenarios">By Scenario (4)</button>
+          <button class="chip" data-mode="steps">By Step: Checkout (4)</button>
+        </div>
+        <div class="sub-controls" id="topoSub" style="display:none;">
+          <button class="chip on" id="toggleLive">Pause Live Bees</button>
+          <button class="chip" id="triggerBurst">Trigger Search Burst</button>
+        </div>
+        <div class="sub-controls" id="surfaceSub" style="display:none;">
+          <button class="chip on" data-metric="all">All Scenarios</button>
+          <button class="chip" data-metric="checkout">Checkout Only</button>
+        </div>
+        <div class="hint-pill">Drag to orbit · Scroll to zoom · Click any bar or node to inspect</div>
+      </div>
+
+      <canvas id="scene"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+
+      <div class="stage-legend">
+        <span><span class="dot" style="background:var(--good)"></span>Good</span>
+        <span><span class="dot" style="background:var(--slow)"></span>Slow (&gt;2× typical)</span>
+        <span><span class="dot" style="background:var(--failed)"></span>Failed / Canceled</span>
+        <span><span class="dot" style="background:var(--running)"></span>In flight</span>
+      </div>
+    </div>
+
+    <!-- Inspector Panel -->
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Current View</h3>
+        <div class="view-title" id="viewTitle">Scenario Terrain</div>
+        <p class="desc" id="viewDesc"></p>
+      </div>
+
+      <div class="card" id="laneCard">
+        <h3 id="laneCardTitle">Isolate Lane</h3>
+        <div class="lane-list" id="laneList"></div>
+      </div>
+
+      <div class="card" id="selectionCard">
+        <h3>Selection Inspector</h3>
+        <div id="selectionBody">
+          <p class="desc">Click any bar, node, or surface bucket in the 3D scene to inspect metrics, drill down, and see the matching CLI command.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Agent / CLI Equivalent</h3>
+        <p class="desc" style="font-size:12px;">The same underlying projection exposed as structured JSON for <code style="font-family:var(--mono)">beesharp</code>:</p>
+        <div class="cli-box" id="cliCmd"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Player / Overview Strip -->
+  <footer class="playerbar">
+    <span>Run: <strong style="color:var(--text)">Black Friday Checkout</strong> (30m · fake data)</span>
+    <span class="good">14,280 ok</span>
+    <span class="slow">412 slow</span>
+    <span class="failed">138 failed</span>
+    <div class="strip" id="overviewStrip" title="Overview strip: amber = slow wave, red = failure spike"></div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // ---------- Seeded deterministic RNG ----------
+  let seed = 4207;
+  function rand() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  }
+
+  // ---------- Color helpers (Beesharp palette, brain 0018 & 0041) ----------
+  const COLORS = {
+    good: [52, 211, 153],    // #34d399
+    slow: [251, 191, 36],    // #fbbf24
+    failed: [240, 82, 82],   // #f05252
+    running: [91, 155, 240], // #5b9bf0
+    neutral: [140, 133, 120]
+  };
+  function lerpColor(a, b, t) {
+    t = Math.max(0, Math.min(1, t));
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+  }
+  function rgb(c, alpha = 1) {
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+  function shade(c, factor) {
+    return [
+      Math.min(255, Math.max(0, Math.round(c[0] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[1] * factor))),
+      Math.min(255, Math.max(0, Math.round(c[2] * factor)))
+    ];
+  }
+  function outcomeColor(ratio, failedCount) {
+    if (failedCount > 0) return COLORS.failed;
+    if (ratio >= 2.0) return COLORS.slow;
+    if (ratio > 1.15) return lerpColor(COLORS.good, COLORS.slow, (ratio - 1.15) / 0.85);
+    return COLORS.good;
+  }
+
+  // ---------- Mock Data Generation ----------
+  const TIME_BUCKETS = 30; // 30 minutes, 1-minute buckets
+
+  // View 1A: Scenarios x Time
+  const SCENARIO_LANES = [
+    { id: 'checkout', name: '4. Checkout', pattern: '45/min linear', typicalMs: 280 },
+    { id: 'cart', name: '3. Add to Cart', pattern: '60/min linear', typicalMs: 160 },
+    { id: 'search', name: '2. Search Burst', pattern: '30 × 2/min burst', typicalMs: 110 },
+    { id: 'browse', name: '1. Browse Catalog', pattern: '120/min linear', typicalMs: 75 }
+  ];
+
+  function buildTerrainData(lanes, mode) {
+    const grid = [];
+    for (let l = 0; l < lanes.length; l++) {
+      const lane = lanes[l];
+      const row = [];
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        // Two cascade waves: burst at t=11..13 and bigger burst at t=21..24
+        const wave1 = Math.exp(-Math.pow((t - (11 + (lanes.length - 1 - l) * 0.7)), 2) / 2.2);
+        const wave2 = Math.exp(-Math.pow((t - (21 + (lanes.length - 1 - l) * 0.8)), 2) / 2.8);
+        const severity = mode === 'scenarios'
+          ? (l === 0 ? 1.35 : l === 1 ? 0.95 : l === 2 ? 0.85 : 0.3)
+          : (l === 0 ? 1.45 : l === 1 ? 1.15 : l === 2 ? 0.55 : 0.25);
+
+        const spike = (wave1 * 0.75 + wave2 * 1.15) * severity;
+        const ratio = 0.85 + rand() * 0.25 + spike * 2.4;
+        const durationMs = Math.round(lane.typicalMs * ratio);
+        const bees = Math.round((mode === 'scenarios' ? [45, 60, 60, 120][l] : 45) * (0.9 + rand() * 0.2));
+        const failed = (spike > 0.75 && l <= 1) ? Math.round((spike - 0.65) * 18 + rand() * 4) : 0;
+        const slow = (ratio > 1.55) ? Math.round(bees * Math.min(0.65, (ratio - 1.3) * 0.25)) : 0;
+        const error = failed > 0
+          ? (l === 0 ? 'HTTP 503 on POST /api/orders (inventory lock timeout)' : 'HTTP 429 on POST /api/inventory/reserve')
+          : null;
+
+        row.push({
+          laneIndex: l,
+          laneId: lane.id,
+          laneName: lane.name,
+          minute: t,
+          timeLabel: `${String(t).padStart(2, '0')}:00–${String(t + 1).padStart(2, '0')}:00`,
+          durationMs,
+          typicalMs: lane.typicalMs,
+          ratio: Number(ratio.toFixed(2)),
+          bees,
+          slow,
+          failed,
+          error,
+          color: outcomeColor(ratio, failed)
+        });
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  const STEP_LANES = [
+    { id: 'step4', name: 'Step 4 · Pay & Confirm', pattern: 'POST /api/orders', typicalMs: 140 },
+    { id: 'step3', name: 'Step 3 · Reserve Stock', pattern: 'POST /api/inventory/reserve', typicalMs: 95 },
+    { id: 'step2', name: 'Step 2 · Load Cart', pattern: 'GET /api/cart', typicalMs: 48 },
+    { id: 'step1', name: 'Step 1 · Authenticate', pattern: 'POST /api/auth/token', typicalMs: 32 }
+  ];
+
+  const terrainScenarios = buildTerrainData(SCENARIO_LANES, 'scenarios');
+  const terrainSteps = buildTerrainData(STEP_LANES, 'steps');
+
+  // View 2: Live Flow Topology (Scenarios -> Steps -> Shared Endpoints)
+  const TOPO_NODES = [
+    // Col 0: Scenarios (x = -10)
+    { id: 'sc-browse', col: 0, x: -10, z: -4.5, label: 'Browse Catalog', sub: '120/min', status: 'good', inFlight: 14, avgMs: 72, errRate: 0 },
+    { id: 'sc-search', col: 0, x: -10, z: -1.5, label: 'Search Burst', sub: '30 × 2/min', status: 'slow', inFlight: 26, avgMs: 245, errRate: 1.2 },
+    { id: 'sc-cart',   col: 0, x: -10, z: 1.5,  label: 'Add to Cart', sub: '60/min', status: 'slow', inFlight: 19, avgMs: 380, errRate: 3.1 },
+    { id: 'sc-check',  col: 0, x: -10, z: 4.5,  label: 'Checkout', sub: '45/min', status: 'failed', inFlight: 31, avgMs: 910, errRate: 14.8 },
+
+    // Col 1: Steps (x = 0)
+    { id: 'st-list',   col: 1, x: 0, z: -4.5, label: 'Step: List & Filter', sub: 'Catalog', status: 'good', inFlight: 18, avgMs: 65, errRate: 0 },
+    { id: 'st-search', col: 1, x: 0, z: -1.5, label: 'Step: Query Index', sub: 'Search', status: 'slow', inFlight: 24, avgMs: 230, errRate: 0.8 },
+    { id: 'st-res',    col: 1, x: 0, z: 1.5,  label: 'Step: Reserve Stock', sub: 'Cart + Checkout', status: 'failed', inFlight: 38, avgMs: 740, errRate: 11.4 },
+    { id: 'st-pay',    col: 1, x: 0, z: 4.5,  label: 'Step: Pay & Confirm', sub: 'Checkout', status: 'failed', inFlight: 22, avgMs: 620, errRate: 9.2 },
+
+    // Col 2: Normalized Endpoints (x = +10)
+    { id: 'ep-cat',    col: 2, x: 10, z: -4.0, label: 'GET /api/products/{id}', sub: '200 OK · p95 92ms', status: 'good', inFlight: 16, avgMs: 68, errRate: 0 },
+    { id: 'ep-inv',    col: 2, x: 10, z: 0.5,  label: 'POST /api/inventory/reserve', sub: 'BOTTLENECK · 503/429', status: 'failed', inFlight: 46, avgMs: 820, errRate: 15.6 },
+    { id: 'ep-ord',    col: 2, x: 10, z: 4.5,  label: 'POST /api/orders', sub: 'p95 1.1s · timeouts', status: 'slow', inFlight: 20, avgMs: 540, errRate: 6.4 }
+  ];
+
+  const TOPO_EDGES = [
+    ['sc-browse', 'st-list', 'good'],
+    ['sc-search', 'st-search', 'slow'],
+    ['sc-cart', 'st-res', 'slow'],
+    ['sc-check', 'st-res', 'failed'],
+    ['sc-check', 'st-pay', 'failed'],
+    ['st-list', 'ep-cat', 'good'],
+    ['st-search', 'ep-cat', 'good'],
+    ['st-search', 'ep-inv', 'slow'],
+    ['st-res', 'ep-inv', 'failed'],
+    ['st-pay', 'ep-inv', 'failed'],
+    ['st-pay', 'ep-ord', 'slow']
+  ];
+
+  const topoParticles = [];
+  for (let i = 0; i < 65; i++) {
+    const edgeIdx = Math.floor(rand() * TOPO_EDGES.length);
+    topoParticles.push({
+      edgeIdx,
+      t: rand(),
+      speed: 0.14 + rand() * 0.16
+    });
+  }
+
+  // View 3: Latency Distribution Surface (Time x Latency Bucket x Count)
+  const LAT_BUCKETS = [
+    { label: '25ms', ms: 25, slow: false },
+    { label: '60ms', ms: 60, slow: false },
+    { label: '120ms', ms: 120, slow: false },
+    { label: '250ms', ms: 250, slow: false },
+    { label: '500ms', ms: 500, slow: true },
+    { label: '1.0s', ms: 1000, slow: true },
+    { label: '2.0s+', ms: 2000, slow: true }
+  ];
+
+  function buildSurfaceData(onlyCheckout) {
+    const grid = [];
+    for (let b = 0; b < LAT_BUCKETS.length; b++) {
+      const row = [];
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        // Bimodal: fast mode around bucket 1 (60ms), slow/failed ridge forming at t=11..14 and t=20..25 around buckets 4..6
+        const fastPeak = Math.exp(-Math.pow(b - (onlyCheckout ? 2.2 : 1.1), 2) / 1.4) * (onlyCheckout ? 38 : 115);
+        const burst1 = Math.exp(-Math.pow(t - 12, 2) / 4.5);
+        const burst2 = Math.exp(-Math.pow(t - 22, 2) / 6.0);
+        const slowMode = Math.exp(-Math.pow(b - 5.1, 2) / 1.5) * (burst1 * 55 + burst2 * 85) * (onlyCheckout ? 0.9 : 1.1);
+        const count = Math.max(0, Math.round(fastPeak + slowMode + rand() * 5));
+        const failed = (b >= 5 && (burst1 > 0.35 || burst2 > 0.35)) ? Math.round(count * 0.32) : 0;
+        const ratio = LAT_BUCKETS[b].ms / (onlyCheckout ? 240 : 120);
+        row.push({
+          bucketIdx: b,
+          bucketLabel: LAT_BUCKETS[b].label,
+          minute: t,
+          timeLabel: `${String(t).padStart(2, '0')}:00–${String(t + 1).padStart(2, '0')}:00`,
+          count,
+          failed,
+          color: outcomeColor(ratio, failed)
+        });
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  const surfaceAll = buildSurfaceData(false);
+  const surfaceCheckout = buildSurfaceData(true);
+
+  // ---------- Overview strip population ----------
+  const stripEl = document.getElementById('overviewStrip');
+  for (let t = 0; t < TIME_BUCKETS; t++) {
+    const anyFailed = terrainScenarios.some(r => r[t].failed > 0);
+    const anySlow = terrainScenarios.some(r => r[t].slow > 6);
+    if (anyFailed || anySlow) {
+      const m = document.createElement('div');
+      m.className = 'strip-mark';
+      m.style.left = `${(t / TIME_BUCKETS) * 100}%`;
+      m.style.width = `${100 / TIME_BUCKETS}%`;
+      m.style.background = anyFailed ? 'var(--failed)' : 'var(--slow)';
+      stripEl.appendChild(m);
+    }
+  }
+
+  // ---------- State ----------
+  const state = {
+    view: 'terrain',         // terrain | topology | surface
+    terrainMode: 'scenarios',// scenarios | steps
+    surfaceMetric: 'all',    // all | checkout
+    isolatedLane: null,      // lane index or node id
+    selected: null,
+    hovered: null,
+    liveRunning: true,
+    burstBoost: 0,
+    cam: { yaw: -0.62, pitch: 0.56, zoom: 1.0, targetYaw: -0.62, targetPitch: 0.56, targetZoom: 1.0 }
+  };
+
+  // ---------- Camera Presets ----------
+  const CAM_PRESETS = {
+    iso:   { yaw: -0.62, pitch: 0.56, zoom: 1.0 },
+    top:   { yaw: 0.0,   pitch: 1.54, zoom: 1.08 },
+    front: { yaw: 0.0,   pitch: 0.08, zoom: 1.05 },
+    side:  { yaw: -1.52, pitch: 0.14, zoom: 1.05 }
+  };
+
+  // ---------- 3D Math Engine (Zero-dependency Canvas) ----------
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  let width = 0, height = 0, dpr = 1;
+  let hitTargets = []; // sorted front-to-back after draw
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    width = rect.width;
+    height = rect.height;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function project(x, y, z) {
+    const { yaw, pitch, zoom } = state.cam;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+
+    // Rotate around Y (yaw)
+    const x1 = x * cy - z * sy;
+    const z1 = x * sy + z * cy;
+    // Rotate around X (pitch > 0 looks down from above; +z2 is away from camera)
+    const y2 = y * cp + z1 * sp;
+    const z2 = z1 * cp - y * sp;
+
+    // Gentle perspective (flattens nicely at top-down)
+    const fov = 44;
+    const dist = 34;
+    const scale = (fov / (dist + z2)) * Math.min(width, height) * 0.025 * zoom;
+    return {
+      sx: width * 0.5 + x1 * scale,
+      sy: height * 0.54 - y2 * scale,
+      depth: z2,
+      scale
+    };
+  }
+
+  function drawPoly(pts, fill, stroke, lineWidth = 1) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].sx, pts[0].sy);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+  }
+
+  function pointInPoly(px, py, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].sx, yi = pts[i].sy;
+      const xj = pts[j].sx, yj = pts[j].sy;
+      const intersect = ((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-6) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Push a 3D box into the depth-sorted render queue
+  function queueBox(queue, cx, cy, cz, w, h, d, baseColor, opts = {}) {
+    const hx = w / 2, hz = d / 2;
+    const y0 = cy, y1 = cy + Math.max(0.05, h);
+    const v = [
+      project(cx - hx, y0, cz - hz), // 0
+      project(cx + hx, y0, cz - hz), // 1
+      project(cx + hx, y0, cz + hz), // 2
+      project(cx - hx, y0, cz + hz), // 3
+      project(cx - hx, y1, cz - hz), // 4
+      project(cx + hx, y1, cz - hz), // 5
+      project(cx + hx, y1, cz + hz), // 6
+      project(cx - hx, y1, cz + hz)  // 7
+    ];
+    const centerDepth = (v[0].depth + v[2].depth + v[4].depth + v[6].depth) / 4;
+    const alpha = opts.dim ? 0.14 : 0.94;
+    const stroke = opts.selected
+      ? 'rgba(255,255,255,0.95)'
+      : opts.hovered
+        ? 'rgba(255,255,255,0.65)'
+        : opts.dim
+          ? 'rgba(255,255,255,0.06)'
+          : 'rgba(15,14,13,0.45)';
+
+    const faces = [
+      { idx: [4, 5, 6, 7], shade: 1.12 }, // top
+      { idx: [0, 1, 5, 4], shade: 0.72 }, // back
+      { idx: [2, 3, 7, 6], shade: 0.88 }, // front
+      { idx: [1, 2, 6, 5], shade: 0.80 }, // right
+      { idx: [3, 0, 4, 7], shade: 0.65 }  // left
+    ];
+
+    queue.push({
+      depth: centerDepth,
+      draw() {
+        // Draw only visible faces sorted by their own depth (back-to-front)
+        const fList = faces.map(f => {
+          const pts = f.idx.map(i => v[i]);
+          const fDepth = pts.reduce((s, p) => s + p.depth, 0) / 4;
+          return { pts, fDepth, shade: f.shade };
+        }).sort((a, b) => b.fDepth - a.fDepth);
+
+        for (const f of fList) {
+          drawPoly(
+            f.pts,
+            rgb(shade(baseColor, f.shade), alpha),
+            stroke,
+            opts.selected ? 1.8 : 0.8
+          );
+        }
+        if (opts.hit) {
+          // Use bounding hull of top + front/back for forgiving picking
+          const minX = Math.min(...v.map(p => p.sx));
+          const maxX = Math.max(...v.map(p => p.sx));
+          const minY = Math.min(...v.map(p => p.sy));
+          const maxY = Math.max(...v.map(p => p.sy));
+          hitTargets.push({
+            box: { minX, maxX, minY, maxY },
+            depth: centerDepth,
+            data: opts.hit
+          });
+        }
+      }
+    });
+  }
+
+  function drawFloorGrid(xMin, xMax, zMin, zMax, xStep, zStep) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = xMin; x <= xMax + 0.01; x += xStep) {
+      const a = project(x, 0, zMin), b = project(x, 0, zMax);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+    for (let z = zMin; z <= zMax + 0.01; z += zStep) {
+      const a = project(xMin, 0, z), b = project(xMax, 0, z);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+  }
+
+  function drawLabel3D(text, x, y, z, color = '#a19c94', align = 'center', size = 11.5) {
+    const p = project(x, y, z);
+    ctx.font = `500 ${size}px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, p.sx, p.sy);
+  }
+
+  // ---------- Render View 1: Scenario / Step Terrain ----------
+  function renderTerrain() {
+    const grid = state.terrainMode === 'scenarios' ? terrainScenarios : terrainSteps;
+    const lanes = state.terrainMode === 'scenarios' ? SCENARIO_LANES : STEP_LANES;
+    const xSpan = 22;
+    const zSpan = 10;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / lanes.length);
+
+    // Axis labels
+    for (let m = 0; m <= 30; m += 5) {
+      const x = -xSpan / 2 + (m / 30) * xSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, x, 0, -zSpan / 2 - 1.1, '#6f6a63', 'center', 11);
+    }
+    lanes.forEach((lane, l) => {
+      const z = -zSpan / 2 + ((l + 0.5) / lanes.length) * zSpan;
+      const isIso = state.isolatedLane === l;
+      drawLabel3D(lane.name, -xSpan / 2 - 1.1, 0.2, z, isIso ? '#ffffff' : '#a19c94', 'right', 11.5);
+    });
+
+    const queue = [];
+    const barW = (xSpan / TIME_BUCKETS) * 0.78;
+    const barD = (zSpan / lanes.length) * 0.56;
+
+    for (let l = 0; l < lanes.length; l++) {
+      const z = -zSpan / 2 + ((l + 0.5) / lanes.length) * zSpan;
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        const cell = grid[l][t];
+        const x = -xSpan / 2 + ((t + 0.5) / TIME_BUCKETS) * xSpan;
+        const h = Math.min(7.5, Math.max(0.25, (cell.durationMs / 160)));
+        const dim = state.isolatedLane !== null && state.isolatedLane !== l;
+        const isSel = state.selected && state.selected.kind === 'terrain' && state.selected.laneIndex === l && state.selected.minute === t;
+        const isHov = state.hovered && state.hovered.kind === 'terrain' && state.hovered.laneIndex === l && state.hovered.minute === t;
+
+        queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+          hit: { kind: 'terrain', ...cell }
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // ---------- Render View 2: Live Flow Topology ----------
+  function renderTopology(dt) {
+    drawFloorGrid(-13, 13, -6.5, 6.5, 4.33, 3.25);
+
+    drawLabel3D('SCENARIOS', -10, 0, 7.4, '#6f6a63', 'center', 11);
+    drawLabel3D('DECLARED STEPS', 0, 0, 7.4, '#6f6a63', 'center', 11);
+    drawLabel3D('NORMALIZED ENDPOINTS', 10, 0, 7.4, '#6f6a63', 'center', 11);
+
+    const nodeById = Object.fromEntries(TOPO_NODES.map(n => [n.id, n]));
+
+    // Draw curved edges on the floor plane
+    for (const [fromId, toId, status] of TOPO_EDGES) {
+      const a = nodeById[fromId], b = nodeById[toId];
+      const dim = state.isolatedLane !== null && state.isolatedLane !== fromId && state.isolatedLane !== toId;
+      const c = COLORS[status] || COLORS.neutral;
+      ctx.beginPath();
+      const steps = 16;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const mx = a.x + (b.x - a.x) * t;
+        const mz = a.z + (b.z - a.z) * (t * t * (3 - 2 * t));
+        const my = 0.12 + Math.sin(t * Math.PI) * 0.55;
+        const p = project(mx, my, mz);
+        if (i === 0) ctx.moveTo(p.sx, p.sy);
+        else ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.strokeStyle = rgb(c, dim ? 0.08 : 0.42);
+      ctx.lineWidth = status === 'failed' ? 2.4 : 1.5;
+      ctx.stroke();
+    }
+
+    // Animate particles (live bees in flight)
+    if (state.liveRunning) {
+      state.burstBoost = Math.max(0, state.burstBoost - dt * 0.45);
+      for (const pt of topoParticles) {
+        pt.t += dt * pt.speed * (1 + state.burstBoost * 1.8);
+        if (pt.t > 1) pt.t -= 1;
+      }
+    }
+
+    const queue = [];
+
+    // Queue particles
+    for (const pt of topoParticles) {
+      const [fromId, toId, status] = TOPO_EDGES[pt.edgeIdx];
+      const a = nodeById[fromId], b = nodeById[toId];
+      const dim = state.isolatedLane !== null && state.isolatedLane !== fromId && state.isolatedLane !== toId;
+      const t = pt.t;
+      const mx = a.x + (b.x - a.x) * t;
+      const mz = a.z + (b.z - a.z) * (t * t * (3 - 2 * t));
+      const my = 0.2 + Math.sin(t * Math.PI) * 0.65;
+      const p = project(mx, my, mz);
+      const col = status === 'failed' ? COLORS.failed : status === 'slow' ? COLORS.slow : COLORS.running;
+      queue.push({
+        depth: p.depth,
+        draw() {
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, dim ? 1.8 : 3.2, 0, Math.PI * 2);
+          ctx.fillStyle = rgb(col, dim ? 0.15 : 0.95);
+          ctx.fill();
+        }
+      });
+    }
+
+    // Queue node columns
+    for (const node of TOPO_NODES) {
+      const pulse = state.burstBoost > 0 && (node.id === 'sc-search' || node.id === 'ep-inv' || node.id === 'st-res')
+        ? state.burstBoost * 1.8 : 0;
+      const h = 0.6 + (node.inFlight / 11) + pulse;
+      const col = COLORS[node.status];
+      const dim = state.isolatedLane !== null && state.isolatedLane !== node.id &&
+        !TOPO_EDGES.some(([u, v]) => (u === state.isolatedLane && v === node.id) || (v === state.isolatedLane && u === node.id));
+      const isSel = state.selected && state.selected.kind === 'topology' && state.selected.id === node.id;
+      const isHov = state.hovered && state.hovered.kind === 'topology' && state.hovered.id === node.id;
+
+      queueBox(queue, node.x, 0, node.z, 2.0, h, 1.8, col, {
+        dim,
+        selected: isSel,
+        hovered: isHov,
+        hit: { kind: 'topology', ...node }
+      });
+
+      // Label above column
+      const lp = project(node.x, h + 0.65, node.z);
+      queue.push({
+        depth: lp.depth - 0.5,
+        draw() {
+          ctx.font = `600 11.5px Inter, system-ui, sans-serif`;
+          ctx.fillStyle = dim ? 'rgba(241,239,234,0.22)' : '#f1efea';
+          ctx.textAlign = 'center';
+          ctx.fillText(node.label, lp.sx, lp.sy);
+        }
+      });
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // ---------- Render View 3: Latency Distribution Surface ----------
+  function renderSurface() {
+    const grid = state.surfaceMetric === 'all' ? surfaceAll : surfaceCheckout;
+    const xSpan = 22;
+    const zSpan = 12;
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / LAT_BUCKETS.length);
+
+    for (let m = 0; m <= 30; m += 5) {
+      const x = -xSpan / 2 + (m / 30) * xSpan;
+      drawLabel3D(`${String(m).padStart(2, '0')}:00`, x, 0, -zSpan / 2 - 1.1, '#6f6a63', 'center', 11);
+    }
+    LAT_BUCKETS.forEach((b, i) => {
+      const z = -zSpan / 2 + ((i + 0.5) / LAT_BUCKETS.length) * zSpan;
+      drawLabel3D(b.label, -xSpan / 2 - 1.0, 0.2, z, b.slow ? '#fbbf24' : '#a19c94', 'right', 11);
+    });
+
+    const queue = [];
+    const barW = (xSpan / TIME_BUCKETS) * 0.85;
+    const barD = (zSpan / LAT_BUCKETS.length) * 0.78;
+
+    for (let b = 0; b < LAT_BUCKETS.length; b++) {
+      const z = -zSpan / 2 + ((b + 0.5) / LAT_BUCKETS.length) * zSpan;
+      for (let t = 0; t < TIME_BUCKETS; t++) {
+        const cell = grid[b][t];
+        if (cell.count === 0) continue;
+        const x = -xSpan / 2 + ((t + 0.5) / TIME_BUCKETS) * xSpan;
+        const h = Math.min(7.0, Math.max(0.18, cell.count / 19));
+        const dim = state.isolatedLane !== null && state.isolatedLane !== b;
+        const isSel = state.selected && state.selected.kind === 'surface' && state.selected.bucketIdx === b && state.selected.minute === t;
+        const isHov = state.hovered && state.hovered.kind === 'surface' && state.hovered.bucketIdx === b && state.hovered.minute === t;
+
+        queueBox(queue, x, 0, z, barW, h, barD, cell.color, {
+          dim,
+          selected: isSel,
+          hovered: isHov,
+          hit: { kind: 'surface', ...cell }
+        });
+      }
+    }
+
+    queue.sort((a, b) => b.depth - a.depth);
+    for (const item of queue) item.draw();
+  }
+
+  // ---------- Main Animation Loop ----------
+  let lastTime = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    // Smooth camera easing
+    state.cam.yaw += (state.cam.targetYaw - state.cam.yaw) * 0.14;
+    state.cam.pitch += (state.cam.targetPitch - state.cam.pitch) * 0.14;
+    state.cam.zoom += (state.cam.targetZoom - state.cam.zoom) * 0.14;
+
+    ctx.clearRect(0, 0, width, height);
+    hitTargets = [];
+
+    if (state.view === 'terrain') renderTerrain();
+    else if (state.view === 'topology') renderTopology(dt);
+    else renderSurface();
+
+    // Sort hit targets front-to-back (smallest depth first)
+    hitTargets.sort((a, b) => a.depth - b.depth);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- Pointer Orbit / Zoom / Pick ----------
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  const tooltip = document.getElementById('tooltip');
+
+  function pick(mx, my) {
+    for (const ht of hitTargets) {
+      const b = ht.box;
+      if (mx >= b.minX && mx <= b.maxX && my >= b.minY && my <= b.maxY) {
+        return ht.data;
+      }
+    }
+    return null;
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true;
+    moved = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (dragging) {
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      state.cam.targetYaw += dx * 0.008;
+      state.cam.targetPitch = Math.max(0.05, Math.min(1.54, state.cam.targetPitch + dy * 0.008));
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      tooltip.style.display = 'none';
+      return;
+    }
+
+    const hit = pick(mx, my);
+    state.hovered = hit;
+    canvas.style.cursor = hit ? 'pointer' : 'grab';
+
+    if (hit) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = `${Math.min(width - 270, mx + 14)}px`;
+      tooltip.style.top = `${Math.max(12, my - 12)}px`;
+      if (hit.kind === 'terrain') {
+        tooltip.innerHTML = `
+          <div class="tt-title">${hit.laneName} · ${hit.timeLabel}</div>
+          <div class="tt-row"><span>Duration</span><span class="tt-val">${hit.durationMs} ms (${hit.ratio}× typical)</span></div>
+          <div class="tt-row"><span>Bees</span><span class="tt-val">${hit.bees} total · ${hit.slow} slow · ${hit.failed} failed</span></div>
+          ${hit.error ? `<div style="color:var(--failed);margin-top:4px;font-size:11px;">${hit.error}</div>` : ''}
+        `;
+      } else if (hit.kind === 'topology') {
+        tooltip.innerHTML = `
+          <div class="tt-title">${hit.label}</div>
+          <div class="tt-row"><span>In flight</span><span class="tt-val">${hit.inFlight} bees</span></div>
+          <div class="tt-row"><span>Avg duration</span><span class="tt-val">${hit.avgMs} ms</span></div>
+          <div class="tt-row"><span>Error rate</span><span class="tt-val">${hit.errRate}%</span></div>
+        `;
+      } else {
+        tooltip.innerHTML = `
+          <div class="tt-title">Bucket ${hit.bucketLabel} · ${hit.timeLabel}</div>
+          <div class="tt-row"><span>Bees in bucket</span><span class="tt-val">${hit.count}</span></div>
+          <div class="tt-row"><span>Failed</span><span class="tt-val">${hit.failed}</span></div>
+        `;
+      }
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('pointerup', e => {
+    dragging = false;
+    if (!moved) {
+      const rect = canvas.getBoundingClientRect();
+      const hit = pick(e.clientX - rect.left, e.clientY - rect.top);
+      state.selected = hit;
+      updateInspector();
+    }
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    state.cam.targetZoom = Math.max(0.55, Math.min(2.1, state.cam.targetZoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+  }, { passive: false });
+
+  // ---------- UI Sync ----------
+  const VIEW_META = {
+    terrain: {
+      title: '1. Scenario & Step Terrain',
+      desc: 'X = run time, Z = scenario entries (or steps), Y = duration. Notice the diagonal amber/red cascade at 11:00 and 21:00: Search Burst hits first, then Add to Cart slows down, then Checkout fails. Switch to Top-Down (2D) for exact time alignment.',
+      cli: 'beesharp runs matrix latest --by scenario --bucket 60s --json'
+    },
+    topology: {
+      title: '2. Live Flow Topology',
+      desc: 'Scenarios flow through their declared Steps into auto-normalized Endpoints. Column height shows live in-flight pressure. Notice how Search, Cart, and Checkout all funnel into POST /api/inventory/reserve.',
+      cli: 'beesharp runs topology latest --include-steps --json'
+    },
+    surface: {
+      title: '3. Latency Distribution Surface',
+      desc: 'X = run time, Z = latency bucket (25ms → 2s+), Y = bee count. Reveals a bimodal split during bursts: fast cache hits stay at 60ms while a second amber/red mountain grows at 1s–2s+.',
+      cli: 'beesharp runs histogram latest --bucket 60s --bands 7 --json'
+    }
+  };
+
+  function updateSidebar() {
+    const meta = VIEW_META[state.view];
+    document.getElementById('viewTitle').textContent = meta.title;
+    document.getElementById('viewDesc').textContent = meta.desc;
+    document.getElementById('cliCmd').innerHTML = `<span class="cmd-accent">$</span> ${meta.cli}`;
+
+    document.getElementById('terrainSub').style.display = state.view === 'terrain' ? 'flex' : 'none';
+    document.getElementById('topoSub').style.display = state.view === 'topology' ? 'flex' : 'none';
+    document.getElementById('surfaceSub').style.display = state.view === 'surface' ? 'flex' : 'none';
+
+    const list = document.getElementById('laneList');
+    const title = document.getElementById('laneCardTitle');
+    list.innerHTML = '';
+
+    if (state.view === 'terrain') {
+      title.textContent = state.terrainMode === 'scenarios' ? 'Isolate Scenario Lane' : 'Isolate Step Lane';
+      const lanes = state.terrainMode === 'scenarios' ? SCENARIO_LANES : STEP_LANES;
+      lanes.forEach((lane, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === i ? ' isolated' : '');
+        btn.innerHTML = `<span>${lane.name}</span><span class="lane-meta">${lane.pattern}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === i ? null : i; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else if (state.view === 'topology') {
+      title.textContent = 'Focus Endpoint / Node';
+      TOPO_NODES.filter(n => n.col === 2).forEach(node => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === node.id ? ' isolated' : '');
+        btn.innerHTML = `<span>${node.label}</span><span class="lane-meta ${node.status}">${node.errRate}% err</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === node.id ? null : node.id; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    } else {
+      title.textContent = 'Isolate Latency Band';
+      LAT_BUCKETS.forEach((b, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'lane-btn' + (state.isolatedLane === i ? ' isolated' : '');
+        btn.innerHTML = `<span>${b.label}</span><span class="lane-meta ${b.slow ? 'slow' : 'good'}">${b.slow ? 'slow band' : 'typical'}</span>`;
+        btn.onclick = () => { state.isolatedLane = state.isolatedLane === i ? null : i; updateSidebar(); };
+        list.appendChild(btn);
+      });
+    }
+    updateInspector();
+  }
+
+  function updateInspector() {
+    const body = document.getElementById('selectionBody');
+    const s = state.selected;
+    if (!s) {
+      body.innerHTML = `<p class="desc">Click any bar, node, or surface bucket in the 3D scene to inspect metrics, drill down, and see the matching CLI command.</p>`;
+      return;
+    }
+
+    if (s.kind === 'terrain') {
+      const cls = s.failed > 0 ? 'failed' : s.ratio >= 2 ? 'slow' : 'good';
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.laneName}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Window ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Duration</div><div class="v ${cls}">${s.durationMs} ms</div></div>
+          <div class="stat"><div class="k">vs Typical</div><div class="v ${cls}">${s.ratio}×</div></div>
+          <div class="stat"><div class="k">Slow bees</div><div class="v slow">${s.slow}</div></div>
+          <div class="stat"><div class="k">Failed bees</div><div class="v failed">${s.failed}</div></div>
+        </div>
+        ${s.error ? `<div class="cli-box" style="color:var(--failed);border-color:rgba(240,82,82,0.3)">${s.error}</div>` : ''}
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /scenario/${4 - s.laneIndex}?t=${s.minute}m')">Open /scenario/${4 - s.laneIndex} →</button>
+          <button class="chip" onclick="alert('Drill-down → /logs?scenario=${4 - s.laneIndex}&level=error')">View Logs →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs calls latest --entry ${4 - s.laneIndex} --slow --json`;
+    } else if (s.kind === 'topology') {
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">${s.label}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">${s.sub}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">In flight</div><div class="v running">${s.inFlight}</div></div>
+          <div class="stat"><div class="k">Avg time</div><div class="v ${s.status}">${s.avgMs} ms</div></div>
+          <div class="stat"><div class="k">Error rate</div><div class="v ${s.errRate > 0 ? 'failed' : 'good'}">${s.errRate}%</div></div>
+          <div class="stat"><div class="k">Status</div><div class="v ${s.status}">${s.status}</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /calls?endpoint=${encodeURIComponent(s.label)}')">Open /calls →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs calls latest --endpoint "${s.label}" --slowest 10 --json`;
+    } else {
+      body.innerHTML = `
+        <div style="font-weight:700;color:var(--title)">Latency Band: ${s.bucketLabel}</div>
+        <div class="desc" style="font-size:12px;margin-top:2px;">Window ${s.timeLabel}</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="k">Bees in band</div><div class="v">${s.count}</div></div>
+          <div class="stat"><div class="k">Failed</div><div class="v ${s.failed > 0 ? 'failed' : 'good'}">${s.failed}</div></div>
+        </div>
+        <div class="actions">
+          <button class="chip" onclick="alert('Drill-down → /calls?minMs=${parseInt(s.bucketLabel) || 500}')">Filter /calls ≥ ${s.bucketLabel} →</button>
+        </div>
+      `;
+      document.getElementById('cliCmd').innerHTML =
+        `<span class="cmd-accent">$</span> beesharp runs calls latest --min-ms ${s.bucketLabel.includes('s') && !s.bucketLabel.includes('ms') ? parseFloat(s.bucketLabel) * 1000 : parseInt(s.bucketLabel)} --json`;
+    }
+  }
+
+  // ---------- Event Bindings ----------
+  document.querySelectorAll('#viewTabs button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#viewTabs button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.view = btn.dataset.view;
+      state.isolatedLane = null;
+      state.selected = null;
+      updateSidebar();
+    };
+  });
+
+  document.querySelectorAll('#camPresets button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#camPresets button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      const p = CAM_PRESETS[btn.dataset.cam];
+      state.cam.targetYaw = p.yaw;
+      state.cam.targetPitch = p.pitch;
+      state.cam.targetZoom = p.zoom;
+    };
+  });
+
+  document.querySelectorAll('#terrainSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#terrainSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.terrainMode = btn.dataset.mode;
+      state.isolatedLane = null;
+      state.selected = null;
+      updateSidebar();
+    };
+  });
+
+  document.querySelectorAll('#surfaceSub button').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#surfaceSub button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      state.surfaceMetric = btn.dataset.metric;
+      state.selected = null;
+      updateSidebar();
+    };
+  });
+
+  document.getElementById('toggleLive').onclick = e => {
+    state.liveRunning = !state.liveRunning;
+    e.target.textContent = state.liveRunning ? 'Pause Live Bees' : 'Resume Live Bees';
+    e.target.classList.toggle('on', state.liveRunning);
+  };
+
+  document.getElementById('triggerBurst').onclick = () => {
+    state.burstBoost = 1.6;
+  };
+
+  updateSidebar();
+})();
+</script>
+</body>
+</html>
