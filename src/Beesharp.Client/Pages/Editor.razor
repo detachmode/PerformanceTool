@@ -184,6 +184,10 @@
             }
         </div>
 
+        @if (!Phone.IsPhone)
+        {
+            <SidebarResizer CssVar="--ed-try" Side="right" Min="240" Max="640" MinMain="320" SidebarSelector=".ed-try" Label="Resize try sidebar" VarClass="sb-ed-try" />
+        }
         <TryColumn Live="liveTest" Program="preflightResult" Testing="testing" Busy="busy" CanTry="canTry" ProgramName="@ProgramName" EnvName="@Envs.ActiveName"
                    Hint="@TryHint" Spec="@(isPreflight ? null : compiledSpec)" Params="testParams" OnRun="RunTest" OnStop="StopLiveTestRunAsync" />
     </div>

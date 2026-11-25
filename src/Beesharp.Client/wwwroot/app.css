@@ -1377,7 +1377,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 :root { --scn-player: 5.2rem; --scn-left: 260px; --scn-right: clamp(340px, 28vw, 420px); }
 .main:has(.scn) { max-width: none; padding: var(--top-h) 0 0; }
 .shell:has(.player) .main:has(.scn) { padding-bottom: 0; }
-.scn { display: grid; grid-template-columns: var(--scn-left) minmax(0, 1fr) var(--scn-right); height: calc(100dvh - var(--top-h)); min-height: 30rem; outline: none; }
+.scn { position: relative; display: grid; grid-template-columns: var(--scn-left) minmax(0, 1fr) var(--scn-right); height: calc(100dvh - var(--top-h)); min-height: 30rem; outline: none; }
 .shell:has(.player) .scn { height: calc(100dvh - var(--top-h) - var(--scn-player)); }
 .scn.scn-set { grid-template-columns: minmax(0, 1fr) var(--scn-right); height: min(78dvh, 46rem); }
 .scn > * { min-width: 0; min-height: 0; }
@@ -1468,6 +1468,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 
 @media (max-width: 1100px) { :root { --scn-left: 220px; --scn-right: 320px; } }
 @media (max-width: 960px) {
+    .sb-scn-left, .sb-scn-right { display: none; }
     /* stacked: left, middle, right below each other; the page scrolls, no column scrolls by itself */
     .main:has(.scn) { padding-bottom: 7.5rem; }
     .shell:has(.player) .main:has(.scn) { padding-bottom: 7.5rem; }
@@ -1483,7 +1484,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 /* ----- logs, editor, environment (brain 0059) ----- */
 /* logs page: a filter column with counts, a full-width search, the active filters as chips, the virtualised lines */
 .main:has(.logs-page) { max-width: none; padding: var(--top-h) 0 0; }
-.logs-page { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
+.logs-page { position: relative; display: grid; grid-template-columns: var(--logs-left, 250px) minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
 .shell:has(.player) .logs-page { height: calc(100dvh - var(--top-h) - 72px); }
 .lg-filters { overflow-y: auto; padding: .9rem .7rem 1.2rem; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; }
 .lg-group { display: flex; flex-direction: column; gap: 1px; }
@@ -1543,7 +1544,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .btn.copy-fail { color: var(--bad); }
 
 /* editor: the code at full height, the Try result in a column on the right */
-.ed-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.ed-body { position: relative; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--ed-try, 320px); }
 .ed-code { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .ed-try { min-height: 0; overflow-y: auto; border-left: 1px solid var(--border); background: var(--bg); padding: .8rem .9rem 1.2rem; display: flex; flex-direction: column; gap: .6rem; }
 .ed-try-head { display: flex; align-items: center; gap: .6rem; min-height: 1.9rem; }
@@ -1564,6 +1565,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .ed-try .stepper { margin: 0; }
 .ed-try .stp-data { display: none; }   /* the captured step data is in the logs; the narrow column keeps the step list short */
 @media (max-width: 900px) {
+    .sb-ed-try { display: none; }
     .ed-body { display: flex; flex-direction: column; }
     .ed-code { flex: 1 1 auto; }
     .ed-try { flex: 0 0 auto; border-left: 0; border-top: 1px solid var(--border); max-height: 44dvh; }
@@ -1597,7 +1599,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 
 /* ----- Calls analysis page (/calls, brain 0060) ----- */
 .main:has(.calls-page) { max-width: none; padding: var(--top-h) 0 0; }
-.calls-page { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
+.calls-page { position: relative; --calls-left-default: 340px; display: grid; grid-template-columns: var(--calls-left, var(--calls-left-default)) minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
 .shell:has(.player) .calls-page { height: calc(100dvh - var(--top-h) - 72px); }
 .calls-page > * { min-width: 0; min-height: 0; }
 
@@ -1751,14 +1753,16 @@ button.cl-kpi.on { background: var(--selected); border-color: rgba(255, 255, 255
 .cl-bee { font-size: .74rem; }
 .cl-more { padding: .55rem .95rem; border-top: 1px solid var(--border); display: flex; justify-content: center; }
 .cl-note { flex: none; margin: 0; font-size: .76rem; }
-.shell.asst-open .calls-page { grid-template-columns: 270px minmax(0, 1fr); }
+.shell.asst-open .calls-page { --calls-left-default: 270px; }
 .shell.asst-open .cl-row .cl-scn { display: none; }
 @media (max-width: 1320px) {
+    .shell.asst-open .sb-calls-left { display: none; }
     .shell.asst-open .calls-page { display: flex; flex-direction: column; height: auto; }
     .shell.asst-open .cl-left { border-right: 0; border-bottom: 1px solid var(--border); max-height: 22rem; }
     .shell.asst-open .cl-right { overflow: visible; }
 }
 @media (max-width: 960px) {
+    .sb-calls-left { display: none; }
     .calls-page:not(.cl-phone), .shell:has(.player) .calls-page:not(.cl-phone) { display: flex; flex-direction: column; height: auto; }
     .cl-left { border-right: 0; border-bottom: 1px solid var(--border); max-height: 24rem; }
     .cl-right { overflow: visible; padding: .85rem .9rem 2rem; }
@@ -1766,6 +1770,21 @@ button.cl-kpi.on { background: var(--selected); border-color: rgba(255, 255, 255
     .cl-row { grid-template-columns: 2.8rem 4.2rem minmax(0, 1fr) auto auto; }
     .cl-row .cl-ratio, .cl-row .cl-scn { display: none; }
 }
+
+/* ----- resizable sidebars ----- */
+.sb-resizer { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 25; cursor: col-resize; touch-action: none; outline: none; }
+.sb-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 1px; background: transparent; transition: background-color .12s; }
+.sb-resizer:hover::after, .sb-resizer:focus-visible::after { background: rgba(255, 255, 255, 0.28); }
+.sb-resizer.resizing::after { background: var(--accent); }
+.sb-scn-left { left: calc(var(--scn-left) - 4px); }
+.sb-scn-right { right: calc(var(--scn-right) - 4px); }
+.sb-logs-left { left: calc(var(--logs-left, 250px) - 4px); }
+.sb-ed-try { right: calc(var(--ed-try, 320px) - 4px); }
+.sb-calls-left { left: calc(var(--calls-left, var(--calls-left-default)) - 4px); }
+.sb-asst { left: -4px; }
+@media (max-width: 860px) { .sb-asst { display: none; } }
+body.sidebar-resizing { cursor: col-resize !important; user-select: none !important; }
+body.sidebar-resizing * { cursor: col-resize !important; }
 
 /* ----- phone layouts (brain 0059) ----- */
 /* html.phone is set by the script in index.html: up to 760 px wide, or a phone turned sideways. Desktop rules above are untouched; everything below only applies on a phone. */
@@ -1996,3 +2015,4 @@ html.phone .cl-kpi { min-height: 44px; padding: .45rem .65rem; }
 html.phone .cl-adhoc input { width: 5.2rem; min-height: 34px; }
 html.phone .cl-row { min-height: 44px; height: auto; padding: .45rem .75rem; }
 html.phone .cl-list-wrap { height: 20rem; min-height: 12rem; }
+html.phone .sb-resizer { display: none; }

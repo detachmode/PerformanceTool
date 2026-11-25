@@ -176,6 +176,10 @@
                 <p class="scn-settings">@settingsLine@(dlgActive ? $" · {Format.Rate(actual)} / {Format.Rate(target)}/m" : "")</p>
             }
         </aside>
+        @if (!phone)
+        {
+            <SidebarResizer CssVar="--scn-left" Side="left" Min="180" Max="480" MinMain="320" SidebarSelector=".scn-left" Label="Resize steps sidebar" VarClass="sb-scn-left" />
+        }
     }
 
     <section class="scn-mid" aria-label="Bees of @label">
@@ -331,6 +335,7 @@
     }
     else
     {
+        <SidebarResizer CssVar="--scn-right" Side="right" Min="260" Max="680" MinMain="320" SidebarSelector=".scn-right" Label="Resize bee details sidebar" VarClass="sb-scn-right" />
         <aside class="scn-right" aria-label="Selected bee" @ref="rightEl">@beePanel</aside>
     }
 </div>

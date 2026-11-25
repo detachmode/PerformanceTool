@@ -122,6 +122,10 @@
             }
         </div>
     </aside>
+    @if (!Phone.IsPhone)
+    {
+        <SidebarResizer CssVar="--calls-left" Side="left" Min="220" Max="600" MinMain="360" SidebarSelector=".cl-left" Label="Resize endpoints sidebar" VarClass="sb-calls-left" />
+    }
 
     <section class="cl-right" aria-label="Endpoint analysis">
         @if (!hasRun)

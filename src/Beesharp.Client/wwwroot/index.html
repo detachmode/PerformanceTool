@@ -27,6 +27,13 @@
             const isText = t => t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button', 'submit'].includes(t.type)) || t.isContentEditable);
             document.addEventListener('focusin', e => { if (isText(e.target)) document.documentElement.classList.add('kb'); });
             document.addEventListener('focusout', () => document.documentElement.classList.remove('kb'));
+            try {
+                const sb = JSON.parse(localStorage.getItem('beesharp.sidebars') || '{}');
+                for (const [k, v] of Object.entries(sb)) {
+                    if (k.startsWith('--') && typeof v === 'number' && Number.isFinite(v) && v > 0)
+                        document.documentElement.style.setProperty(k, Math.round(v) + 'px');
+                }
+            } catch { }
         })();
     </script>
     <script type="importmap"></script>

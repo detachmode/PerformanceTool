@@ -115,6 +115,7 @@
     else
     {
         <aside class="lg-filters @(filtersOpen ? "open" : "")" id="lg-filters" aria-label="Log filters">@filterGroups</aside>
+        <SidebarResizer CssVar="--logs-left" Side="left" Min="180" Max="480" MinMain="320" SidebarSelector=".lg-filters" Label="Resize log filters sidebar" VarClass="sb-logs-left" />
     }
 
     <section class="lg-main" aria-label="Log lines">

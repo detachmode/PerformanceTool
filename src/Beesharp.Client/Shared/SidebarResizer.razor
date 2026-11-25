@@ -1,0 +1,68 @@
+@* Drag handle for resizing a desktop sidebar; double-click resets to the default width. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="sb-resizer sb-@Side @VarClass"
+     @ref="el"
+     role="separator"
+     aria-orientation="vertical"
+     aria-label="@Label"
+     aria-valuemin="@Min"
+     aria-valuemax="@Max"
+     tabindex="0"
+     title="Drag to resize · Double-click to reset"></div>
+
+@code {
+    [Parameter, EditorRequired] public string CssVar { get; set; } = "";
+    [Parameter, EditorRequired] public string Side { get; set; } = "left";
+    [Parameter] public int Min { get; set; } = 180;
+    [Parameter] public int Max { get; set; } = 600;
+    [Parameter] public int MinMain { get; set; } = 280;
+    [Parameter] public string Label { get; set; } = "Resize sidebar";
+    [Parameter] public string? SidebarSelector { get; set; }
+    [Parameter] public string? VarClass { get; set; }
+
+    private ElementReference el;
+    private IJSObjectReference? module;
+    private IJSObjectReference? handle;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./sidebar-resize.js");
+        }
+        catch
+        {
+            return;
+        }
+
+        try
+        {
+            handle = await module.InvokeAsync<IJSObjectReference>("attach", el, new
+            {
+                cssVar = CssVar,
+                side = Side,
+                min = Min,
+                max = Max,
+                minMain = MinMain,
+                sidebarSelector = SidebarSelector
+            });
+        }
+        catch { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (handle is not null)
+        {
+            try { await handle.InvokeVoidAsync("dispose"); } catch { }
+            try { await handle.DisposeAsync(); } catch { }
+        }
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); } catch { }
+        }
+    }
+}

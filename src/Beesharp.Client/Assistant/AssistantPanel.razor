@@ -8,6 +8,7 @@
 @if (Assistant.Available && Assistant.IsOpen)
 {
     <aside class="asst" aria-label="Assistant">
+        <SidebarResizer CssVar="--asst-w" Side="right" Min="300" Max="760" MinMain="420" SidebarSelector=".asst" Label="Resize assistant sidebar" VarClass="sb-asst" />
         <header class="asst-head">
             <b>Assistant</b>
             @if (Assistant.Configured && !string.IsNullOrWhiteSpace(Assistant.Model))
