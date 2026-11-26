@@ -11,6 +11,7 @@
 A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scripts), runs are stored in DuckDB.
 
 - **[API & Scripting Guide](docs/api-guide.md)** — define scenarios & C# 15 union step machines, name/tag HTTP calls, configure load plans & presets, embed `Beesharp.Host`, and use the REST API.
+- **[OpenTelemetry Tracing & Jaeger Setup](docs/tracing.md)** — distributed tracing (one bee = one trace), `traceparent` propagation, and OTLP export to Jaeger or an OpenTelemetry Collector.
 - **[CLI Reference](docs/cli.md)** — headless CI runs (`beesharp run`) and offline/remote run inspection (`beesharp runs`).
 - **[Domain Language](docs/context.md)** — shared vocabulary (actors/bees, scenarios, steps, calls, bursts).
 
@@ -109,3 +110,4 @@ See [docs/cli.md](docs/cli.md) for all subcommands, options, exit codes, and loc
 - `http-health-check.cs`: fetches one URL per run and fails on an error status or a slow answer. A plain scenario without steps.
 - `checkout-steps.cs`: C# 15 `union` step-machine scenario (`Log in → Search → Open product → Add to cart → Pay`) with dynamic repeats, retries, and simulated calls.
 - `host-app/HostExample.csproj`: Aspire-style `Beesharp.Host` project with embedded Blazor UI, plain .NET DI (`DemoTokenCache`), a compiled `Scenario<TParams, TStep>`, and a strongly typed default preset (`dotnet run --project examples/host-app` for the UI, or `dotnet run --project examples/host-app -- run --preset Smoke --duration 5` headless).
+- `tracing/`: full Docker Compose distributed-tracing stack (Beesharp + OpenTelemetry Collector + Jaeger v2 / optional Elastic + two instrumented demo services `shop-api` and `payment-api`). See [`docs/tracing.md`](docs/tracing.md) and [`examples/tracing/README.md`](examples/tracing/README.md).

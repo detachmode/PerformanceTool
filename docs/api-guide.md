@@ -301,6 +301,12 @@ All entry, step, and bee sequence indexes in the REST API are **0-based**.
 
 ---
 
-## 7. CLI Reference
+## 7. OpenTelemetry Tracing & Jaeger
+
+Every bee is the root of its own distributed trace (`actor → step → call`) and automatically propagates W3C `traceparent` headers to services under test. To export Beesharp's spans over OTLP to Jaeger or an OpenTelemetry Collector, see [docs/tracing.md](tracing.md) and [examples/tracing/README.md](../examples/tracing/README.md).
+
+---
+
+## 8. CLI Reference
 
 For headless CI runs, Parquet `.zip` run bundles, offline inspection, and regression comparisons (`beesharp run`, `beesharp runs summary|calls|errors|logs|bee|compare|timeline`), see [docs/cli.md](cli.md).
