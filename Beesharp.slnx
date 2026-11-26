@@ -7,6 +7,7 @@
     <Project Path="src/Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" />
     <Project Path="src/Beesharp.Scripting/Beesharp.Scripting.csproj" />
     <Project Path="src/Beesharp.Tracing/Beesharp.Tracing.csproj" />
+    <Project Path="src/Beesharp.TraceStore/Beesharp.TraceStore.csproj" />
     <Project Path="src/Beesharp.Engine/Beesharp.Engine.csproj" />
     <Project Path="src/Beesharp.Client/Beesharp.Client.csproj" />
     <Project Path="src/Beesharp.Core/Beesharp.Core.csproj" />
@@ -23,6 +24,7 @@
     <Project Path="tests/Beesharp.Storage.Tests/Beesharp.Storage.Tests.csproj" />
     <Project Path="tests/Beesharp.Scripting.Tests/Beesharp.Scripting.Tests.csproj" />
     <Project Path="tests/Beesharp.Tracing.Tests/Beesharp.Tracing.Tests.csproj" />
+    <Project Path="tests/Beesharp.TraceStore.Tests/Beesharp.TraceStore.Tests.csproj" />
     <Project Path="tests/Beesharp.Engine.Tests/Beesharp.Engine.Tests.csproj" />
     <Project Path="tests/Beesharp.Client.Tests/Beesharp.Client.Tests.csproj" />
     <Project Path="tests/Beesharp.Ai.Tests/Beesharp.Ai.Tests.csproj" />

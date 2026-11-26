@@ -60,6 +60,7 @@ public sealed record ProgramOutcome(string State, string? Script, string? Error)
 /// <param name="ExitCode">Process exit code determined by <see cref="ExitCodeFor"/>.</param>
 /// <param name="ExportedTo">Destination path if the run was exported, or <see langword="null"/>.</param>
 /// <param name="ExportedBytes">Byte size of the exported artifact, or <see langword="null"/> if not exported.</param>
+/// <param name="Traces">How many of the selected distributed traces were fetched from the trace store into the run (brain 0065), or <see langword="null"/> when no trace store was configured.</param>
 public sealed record RunSummary(
     string Preset,
     string? Environment,
@@ -80,7 +81,8 @@ public sealed record RunSummary(
     string? SavedTo,
     int ExitCode,
     string? ExportedTo = null,
-    long? ExportedBytes = null)
+    long? ExportedBytes = null,
+    TraceFetchSummaryDto? Traces = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -113,10 +115,11 @@ public sealed record RunSummary(
     /// <param name="topErrors">Maximum number of top distinct errors to include.</param>
     /// <param name="exportedTo">Optional destination path of an exported run archive/file.</param>
     /// <param name="exportedBytes">Optional byte length of the exported artifact.</param>
+    /// <param name="traces">Optional outcome of the background trace fetch.</param>
     /// <returns>A populated <see cref="RunSummary"/> instance.</returns>
     public static RunSummary Build(
         string preset, string? environment, LiveRunStatusDto status, IReadOnlyList<LiveBeeDto> bees, bool stopped, string? savedTo, int topErrors = 5,
-        string? exportedTo = null, long? exportedBytes = null)
+        string? exportedTo = null, long? exportedBytes = null, TraceFetchSummaryDto? traces = null)
     {
         var entries = new List<EntrySummary>();
         for (var i = 0; i < status.Plan.Scenarios.Count; i++)
@@ -165,7 +168,7 @@ public sealed record RunSummary(
             shutdown,
             status.StorageProvider, savedTo,
             ExitCodeFor(status.Error, status.PreflightState, stopped, failed, status.ShutdownState),
-            exportedTo, exportedBytes);
+            exportedTo, exportedBytes, traces);
     }
 
     private static ProgramOutcome Outcome(string? state, string? script, string? error) =>
@@ -217,6 +220,8 @@ public sealed record RunSummary(
         sb.AppendLine(SavedTo is not null ? $"  Saved to    {SavedTo}" : $"  Not saved   ({(StorageProvider == "Memory" ? "--storage memory keeps nothing" : "the run never started")})");
         if (ExportedTo is not null)
             sb.AppendLine($"  Exported to {ExportedTo}{(ExportedBytes is { } bytes ? $" ({FormatBytes(bytes)})" : "")}");
+        if (Traces is not null)
+            sb.AppendLine($"  Traces      {(Traces.Line.StartsWith("traces: ", StringComparison.Ordinal) ? Traces.Line["traces: ".Length..] : Traces.Line)}   (beesharp runs hotspots / runs trace)");
         if (Bees == 0 && RunError is null) sb.AppendLine("  No bee finished. Check the plan's duration and rates.");
         sb.AppendLine();
         sb.AppendLine(ExitCode switch

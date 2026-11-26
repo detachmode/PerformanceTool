@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Fetching the services' distributed traces from the trace store into a run (brain 0065): the trace store interface with its Jaeger
+       implementation, which traces to fetch (failed bees, slowest and typical calls per endpoint), and the background fetch with batches,
+       retry, caps and rate limit. No ASP.NET and no OpenTelemetry SDK (that is Beesharp.Tracing, which exports); only HTTP and the run storage. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Beesharp</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Beesharp.TraceStore</PackageId>
+    <Description>Background fetching of distributed traces from Jaeger into Beesharp runs.</Description>
+    <PackageTags>beesharp;load-testing;performance;tracing;jaeger</PackageTags>
+  </PropertyGroup>
+
+  <!-- ILogger and IServiceCollection: from .NET 11 the SDK provides them itself (see Beesharp.Core.csproj); older SDKs still need the packages. -->
+  <ItemGroup Condition="$([MSBuild]::VersionLessThan($([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)')), '11.0'))">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
+    <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Beesharp.Contracts" />
+    <Using Include="Beesharp.Services.Storage" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

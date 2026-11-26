@@ -90,7 +90,7 @@ public sealed class DuckDbStorageTests
                 using (var zip = new ZipArchive(new MemoryStream(parquetExp.Content), ZipArchiveMode.Read))
                 {
                     var names = zip.Entries.Select(e => e.Name).OrderBy(n => n).ToArray();
-                    Assert.Equal(["bees.parquet", "calls.parquet", "logs.parquet", "manifest.json", "run_steps.parquet", "runs.parquet"], names);
+                    Assert.Equal(["bees.parquet", "calls.parquet", "logs.parquet", "manifest.json", "run_steps.parquet", "runs.parquet", "trace_fetches.parquet", "trace_spans.parquet"], names);
                     using (var manifestDoc = JsonDocument.Parse(zip.GetEntry("manifest.json")!.Open()))
                     {
                         Assert.Equal(DuckDbRunStorage.CurrentSchemaVersion, manifestDoc.RootElement.GetProperty("schemaVersion").GetInt32());

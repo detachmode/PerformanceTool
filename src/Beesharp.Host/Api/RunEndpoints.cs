@@ -36,6 +36,8 @@ public static class RunEndpoints
     /// <item><description><c>GET /api/runs/{runId}/export?format=parquet</c> — Exports a run (<c>parquet</c>, <c>duckdb</c>, <c>json</c>, or <c>csv</c>); returns <c>200 OK</c> file download or <c>404 Not Found</c>.</description></item>
     /// <item><description><c>GET /api/runs/{runId}/calls/endpoints?entry=&amp;scenario=&amp;step=&amp;byStep=false&amp;endpoint=&amp;slowOnly=false&amp;failedOnly=false&amp;minMs=&amp;search=</c> — Aggregated call endpoint metrics (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="CallEndpointsResult"/>.</description></item>
     /// <item><description><c>GET /api/runs/{runId}/calls/slowest?limit=20&amp;entry=&amp;scenario=&amp;step=&amp;endpoint=&amp;slowOnly=false&amp;failedOnly=false&amp;minMs=&amp;search=</c> — Top slowest calls (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="SlowestCallsResult"/>.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/traces/{key}?call=&amp;maxSpans=50</c> — One bee's distributed trace (brain 0065) as a flat, bounded span list; <c>key</c> is a 1-based bee (<c>5</c> or <c>B5</c>) or a trace ID, <c>call</c> optionally a 1-based call number of the bee; returns <c>200 OK</c> with <see cref="TraceViewDto"/> (<c>found: false</c> with the reason when the trace is not stored), <c>400 Bad Request</c> with <c>{ error }</c> for a bad key or call, or <c>404 Not Found</c> for an unknown run, bee or trace ID.</description></item>
+    /// <item><description><c>GET /api/runs/{runId}/hotspots?endpoint=&amp;slowOnly=false&amp;limit=10</c> — Where the time of the slow calls went, per endpoint (brain 0065); returns <c>200 OK</c> with <see cref="HotspotsResultDto"/> or <c>404 Not Found</c>.</description></item>
     /// <item><description><c>GET /api/runs/{runId}/calls/detail?endpoint=&amp;entry=&amp;show=&amp;minMs=&amp;maxMs=&amp;fromSec=&amp;toSec=&amp;sort=&amp;offset=0&amp;limit=200&amp;maxPoints=240</c> — Timeline, histogram, and paged samples for the required <c>endpoint</c> query param (flushes pending writes if <c>runId</c> is current); returns <c>200 OK</c> with <see cref="CallEndpointDetailDto"/>, <c>400 Bad Request</c> with <c>{ error }</c> when <c>endpoint</c> is missing, or <c>404 Not Found</c>.</description></item>
     /// </list>
     /// </remarks>
@@ -177,6 +179,39 @@ public static class RunEndpoints
                 runId,
                 new SlowestCallsQuery(limit ?? 20, entry, scenario, step, endpoint, slowOnly ?? false, failedOnly ?? false, minMs, search),
                 ct));
+        });
+        // Distributed traces fetched into the run (brain 0065). A trace that is not stored is a 200 with found=false and the reason, so the client can print why.
+        app.MapGet("/api/runs/{runId}/traces/{key}", async (
+            string runId,
+            string key,
+            int? call,
+            int? maxSpans,
+            RunManager runs,
+            IRunStorage storage,
+            CancellationToken ct) =>
+        {
+            if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
+            try
+            {
+                return await storage.GetTraceViewAsync(runId, new TraceViewQuery(key, call, Math.Clamp(maxSpans ?? 50, 1, 5000)), ct) is { } view
+                    ? Results.Ok(view)
+                    : Results.NotFound();
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+        app.MapGet("/api/runs/{runId}/hotspots", async (
+            string runId,
+            string? endpoint,
+            bool? slowOnly,
+            int? limit,
+            RunManager runs,
+            IRunStorage storage,
+            CancellationToken ct) =>
+        {
+            if (runs.IsCurrent(runId)) await storage.FlushAsync(ct);
+            return await storage.GetHotspotsAsync(runId, new HotspotsQuery(endpoint, slowOnly ?? false, Math.Clamp(limit ?? 10, 1, 1000)), ct) is { } result
+                ? Results.Ok(result)
+                : Results.NotFound();
         });
         app.MapGet("/api/runs/{runId}/calls/detail", async (
             string runId,

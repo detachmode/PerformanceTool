@@ -45,11 +45,36 @@ collector and reads it back by trace ID from every running backend.
 
 `docker compose down` stops everything; add `-v` to also delete the stored runs and traces.
 
+## See why a call was slow without opening Jaeger (brain 0065)
+
+Beesharp can fetch the traces of selected bees back from Jaeger **during the run** and keep them with it. Name the trace
+store in the **environment** the run uses (Environments dialog, or a file `environments/Local.json`):
+
+```json
+{ "name": "Local", "variables": [
+  { "key": "TraceStore.Url", "value": "http://jaeger:16686" } ] }
+```
+
+`http://localhost:16686` when Beesharp runs on the host, `http://jaeger:16686` inside the compose network. `TraceStore.Kind`
+(`jaeger`, the default), `TraceStore.Token` (a Bearer token, or `${env:NAME}`), `TraceStore.MaxTraces` and
+`TraceStore.SettleSeconds` are optional (see `docs/cli.md`). Select that environment, run the **Shop journey** preset, then
+ask the CLI (it works on the server with `--url`, or offline on an exported bundle):
+
+```sh
+beesharp runs hotspots latest --url http://localhost:5281                 # per endpoint: which span took the time of the slow calls
+beesharp runs trace latest <traceId or B5> --url http://localhost:5281    # one bee's trace as a flat list with self time and share
+beesharp runs logs latest --entry host --url http://localhost:5281        # what the background fetch did ("traces: 42 of 50 found")
+```
+
+Trace IDs come from `runs hotspots`, `runs calls --slowest` and `runs bee`. The first traces are fetched about 15 s after
+their bee ended (spans arrive late) and the last ones when the run is over. `beesharp run` does the same from the command
+line (`beesharp run --preset "Shop journey" --env Local --logs info`) and prints "Traces  42 of 50 found" with its summary.
+
 ## Automated test
 
 `tests/Beesharp.Tracing.E2E.Tests` (brain 0064) runs the same setup without Docker: Aspire starts Beesharp,
 `shop-api` and `payment-api` as processes, the test receives their spans itself and checks every bee's trace tree
-(root → steps → calls → shop-api → database / payment-api). It is part of `dotnet test`:
+(root → steps → calls → shop-api → database / payment-api); its receiver also answers Jaeger's trace query, so the run fetches its traces from it and `runs trace` / `runs hotspots` are checked end to end. It is part of `dotnet test`:
 
 ```sh
 dotnet test tests/Beesharp.Tracing.E2E.Tests

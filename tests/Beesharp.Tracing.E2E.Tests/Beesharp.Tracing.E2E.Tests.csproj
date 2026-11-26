@@ -27,6 +27,7 @@
     <ProjectReference Include="../Beesharp.Tracing.E2E.AppHost/Beesharp.Tracing.E2E.AppHost.csproj" />
     <ProjectReference Include="../../src/Beesharp.Core/Beesharp.Core.csproj" />
     <ProjectReference Include="../../src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Cli/Beesharp.Cli.csproj" />
   </ItemGroup>
 
   <!-- The OTLP trace messages (opentelemetry-proto v1.8.0, Apache-2.0), vendored so the test decodes what the services send. -->

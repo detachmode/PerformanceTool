@@ -48,6 +48,12 @@ public sealed record RunsBeeOptions(string File, int BeeNumber, bool Json, strin
 
 public sealed record RunsCompareOptions(string FileA, string FileB, bool Json, string? Url = null);
 
+/// <summary><c>runs trace</c>: the trace of a bee or a trace ID; <paramref name="Call"/> is 1-based.</summary>
+public sealed record RunsTraceOptions(string File, string Key, int? Call, int MaxSpans, bool Json, string? Url = null);
+
+/// <summary><c>runs hotspots</c>.</summary>
+public sealed record RunsHotspotsOptions(string File, string? Endpoint, bool SlowOnly, int Limit, bool Json, string? Url = null);
+
 public sealed record RunsOptions(
     RunsListOptions? List = null,
     RunsSummaryOptions? Summary = null,
@@ -56,7 +62,9 @@ public sealed record RunsOptions(
     RunsLogsOptions? Logs = null,
     RunsBeeOptions? Bee = null,
     RunsCompareOptions? Compare = null,
-    RunsTimelineOptions? Timeline = null);
+    RunsTimelineOptions? Timeline = null,
+    RunsTraceOptions? Trace = null,
+    RunsHotspotsOptions? Hotspots = null);
 
 /// <summary>Parses <c>beesharp runs ...</c> subcommands and prints explicit 1-based help text.</summary>
 internal static class RunsArguments
@@ -76,6 +84,8 @@ internal static class RunsArguments
           bee <target> <bee>          Full step visits, HTTP calls, status codes, errors, and logs for one bee
           compare <targetA> <targetB> Latency and error-rate regression diff between two runs
           timeline <target>           Time-bucketed concurrency, req/s, latency, slow and failure timeline
+          hotspots <target>           Where the time of slow calls went, per endpoint (from the fetched distributed traces)
+          trace <target> <bee|id>     One bee's distributed trace as a flat span list (depth, service, self time, share)
 
         Targets & Remote Mode:
           Offline mode: <target> is an exported .zip (Parquet bundle), .duckdb, or .json file.
@@ -88,7 +98,8 @@ internal static class RunsArguments
 
         Run "beesharp runs <subcommand> --help" for subcommand options.
 
-        Exit codes: 0 success, 2 invalid arguments, missing file/server error, corrupt bundle, or run/bee not found.
+        Exit codes: 0 success, 2 invalid arguments, missing file/server error, corrupt bundle, or run/bee not found,
+        3 (runs trace only) the trace is not stored with the run; the message says why.
         """;
 
     public const string ListUsage = """
@@ -216,6 +227,46 @@ internal static class RunsArguments
           -h, --help          Show this help text.
         """;
 
+    public const string TraceUsage = """
+        beesharp runs trace - one bee's distributed trace as a flat, bounded span list
+
+        Usage:
+          beesharp runs trace <file|runId|latest|prev> <bee|traceId> [--call <n>] [--max-spans <n>] [--url <url>] [--json]
+
+        Arguments:
+          <target>      Exported run bundle (.zip, .duckdb, or .json) or run ID / latest / prev with --url.
+          <bee|traceId> A bee (1-based: 5 or B5) or a trace ID (32 hex characters, as printed by the slowest calls and by "runs bee").
+
+        Options:
+          --url <url>      Query a running Beesharp server (also uses BEESHARP_URL if target is not a local file).
+          --call <n>       Only the spans below call <n> of the bee (1-based, as numbered by "runs bee").
+          --max-spans <n>  Show at most <n> spans (1 to 5000, default 50); over that the spans with the largest self time are kept.
+          --json           Print untruncated JSON to stdout.
+          -h, --help       Show this help text.
+
+        Each line: depth, service, span name, duration, self time (the span's own time, without its children) and its share of the bee's (or call's) duration,
+        error flag, HTTP status and key attributes such as db.query.text. Needs the trace to be fetched into the run (a TraceStore.* environment).
+        Exit codes: 0 shown, 2 invalid arguments or run/bee not found, 3 the trace is not stored with the run (the message gives the likely reason).
+        """;
+
+    public const string HotspotsUsage = """
+        beesharp runs hotspots - where the time of slow calls went, per endpoint
+
+        Usage:
+          beesharp runs hotspots <file|runId|latest|prev> [--endpoint <ep>] [--slow] [--limit <n>] [--url <url>] [--json]
+
+        Options:
+          --url <url>      Query a running Beesharp server (also uses BEESHARP_URL if target is not a local file).
+          --endpoint <ep>  Only endpoints containing <ep>.
+          --slow           Only endpoints that have slow calls with a fetched trace.
+          --limit <n>      Show at most <n> endpoints (1 to 100, default 10); each shows its top 5 hotspots.
+          --json           Print untruncated JSON to stdout.
+          -h, --help       Show this help text.
+
+        For each endpoint's slow calls: the span (service + name) with the largest self time per call, how many slow calls it explains, its typical self time and share of
+        the call, example trace IDs for "runs trace", and the same span's time in the endpoint's typical calls as the baseline. Needs traces fetched into the run.
+        """;
+
     public static ParsedArguments Parse(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
@@ -235,6 +286,8 @@ internal static class RunsArguments
             "bee" => ParseBee(args),
             "compare" => ParseCompare(args),
             "timeline" => ParseTimeline(args),
+            "trace" => ParseTrace(args),
+            "hotspots" => ParseHotspots(args),
             _ => Invalid($"Unknown runs subcommand '{sub}'."),
         };
     }
@@ -500,6 +553,59 @@ internal static class RunsArguments
             string.IsNullOrWhiteSpace(scenario) ? null : scenario.Trim(),
             scan.Json,
             url)));
+    }
+
+    private static ParsedArguments ParseTrace(IReadOnlyList<string> args)
+    {
+        var scan = Scan(args, startIndex: 2, TraceUsage, valueOptions: ["--url", "--call", "--max-spans"]);
+        if (scan.HelpText is not null) return new(CliCommand.RunsSubcommandHelp, HelpText: scan.HelpText);
+        if (scan.Error is not null) return Invalid(scan.Error);
+        if (scan.Positionals.Count == 0) return Invalid("Missing <file> argument for 'runs trace'.");
+        if (scan.Positionals.Count == 1) return Invalid("Missing <bee|traceId> argument for 'runs trace'.");
+        if (scan.Positionals.Count > 2) return Invalid($"Unexpected argument '{scan.Positionals[2]}'.");
+        if (!TryExtractUrl(scan, out var url, out var urlErr)) return Invalid(urlErr!);
+        if (TraceAnalytics.ParseKey(scan.Positionals[1]) is null)
+            return Invalid($"'{scan.Positionals[1]}' is neither a bee (1-based: 5 or B5) nor a trace ID (32 hex characters).");
+
+        int? call = null;
+        if (scan.TryGetLast("--call", out var callRaw))
+        {
+            if (!TryParseOneBasedInt(callRaw, out var callNum))
+                return Invalid($"--call must be a whole number of 1 or more (1-based), not '{callRaw}'.");
+            call = callNum;
+        }
+
+        var maxSpans = 50;
+        if (scan.TryGetLast("--max-spans", out var maxRaw))
+        {
+            if (!int.TryParse(maxRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) || n < 1 || n > 5000)
+                return Invalid($"--max-spans must be a whole number between 1 and 5000, not '{maxRaw}'.");
+            maxSpans = n;
+        }
+
+        return new(CliCommand.RunsTrace, Runs: new RunsOptions(Trace: new RunsTraceOptions(scan.Positionals[0], scan.Positionals[1].Trim(), call, maxSpans, scan.Json, url)));
+    }
+
+    private static ParsedArguments ParseHotspots(IReadOnlyList<string> args)
+    {
+        var scan = Scan(args, startIndex: 2, HotspotsUsage, valueOptions: ["--url", "--endpoint", "--limit"], boolFlags: ["--slow"]);
+        if (scan.HelpText is not null) return new(CliCommand.RunsSubcommandHelp, HelpText: scan.HelpText);
+        if (scan.Error is not null) return Invalid(scan.Error);
+        if (scan.Positionals.Count == 0) return Invalid("Missing <file> argument for 'runs hotspots'.");
+        if (scan.Positionals.Count > 1) return Invalid($"Unexpected argument '{scan.Positionals[1]}'.");
+        if (!TryExtractUrl(scan, out var url, out var urlErr)) return Invalid(urlErr!);
+
+        var limit = 10;
+        if (scan.TryGetLast("--limit", out var limitRaw))
+        {
+            if (!int.TryParse(limitRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) || n < 1 || n > 100)
+                return Invalid($"--limit must be a whole number between 1 and 100, not '{limitRaw}'.");
+            limit = n;
+        }
+
+        scan.TryGetLast("--endpoint", out var endpoint);
+        return new(CliCommand.RunsHotspots, Runs: new RunsOptions(Hotspots: new RunsHotspotsOptions(
+            scan.Positionals[0], string.IsNullOrWhiteSpace(endpoint) ? null : endpoint.Trim(), scan.HasFlag("--slow"), limit, scan.Json, url)));
     }
 
     private static bool TryExtractUrl(ScanResult scan, out string? url, out string? error)

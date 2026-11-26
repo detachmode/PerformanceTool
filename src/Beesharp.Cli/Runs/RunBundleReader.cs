@@ -12,6 +12,7 @@ internal enum BundleTables
     Bees = 1 << 2,
     Calls = 1 << 3,
     Logs = 1 << 4,
+    Traces = 1 << 5,
 }
 
 internal interface IRunBundle : IDisposable
@@ -23,6 +24,8 @@ internal interface IRunBundle : IDisposable
     RunTimelineReport GetTimeline(RunsTimelineOptions options);
     RunLogsReport QueryLogs(RunsLogsOptions options);
     RunBeeReport GetBee(int beeNumber);
+    RunTraceReport GetTrace(RunsTraceOptions options);
+    HotspotsResultDto GetHotspots(RunsHotspotsOptions options);
 }
 
 internal static class RunBundleReader
@@ -88,6 +91,11 @@ internal sealed class ParquetZipRunBundle : IRunBundle
             if (neededTables.HasFlag(BundleTables.Bees)) requested.Add(("bees", "bees.parquet"));
             if (neededTables.HasFlag(BundleTables.Calls)) requested.Add(("calls", "calls.parquet"));
             if (neededTables.HasFlag(BundleTables.Logs)) requested.Add(("logs", "logs.parquet"));
+            if (neededTables.HasFlag(BundleTables.Traces))
+            {
+                requested.Add(("trace_fetches", "trace_fetches.parquet"));
+                requested.Add(("trace_spans", "trace_spans.parquet"));
+            }
 
             var availableTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var extractedPaths = new List<(string Table, string FilePath)>();
@@ -161,6 +169,8 @@ internal sealed class ParquetZipRunBundle : IRunBundle
     public RunTimelineReport GetTimeline(RunsTimelineOptions options) => queries.GetTimeline(options);
     public RunLogsReport QueryLogs(RunsLogsOptions options) => queries.QueryLogs(options);
     public RunBeeReport GetBee(int beeNumber) => queries.GetBee(beeNumber);
+    public RunTraceReport GetTrace(RunsTraceOptions options) => queries.GetTrace(options);
+    public HotspotsResultDto GetHotspots(RunsHotspotsOptions options) => queries.GetHotspots(options);
 
     public void Dispose()
     {
@@ -240,6 +250,8 @@ internal sealed class DuckDbFileRunBundle : IRunBundle
     public RunTimelineReport GetTimeline(RunsTimelineOptions options) => queries.GetTimeline(options);
     public RunLogsReport QueryLogs(RunsLogsOptions options) => queries.QueryLogs(options);
     public RunBeeReport GetBee(int beeNumber) => queries.GetBee(beeNumber);
+    public RunTraceReport GetTrace(RunsTraceOptions options) => queries.GetTrace(options);
+    public HotspotsResultDto GetHotspots(RunsHotspotsOptions options) => queries.GetHotspots(options);
 
     public void Dispose()
     {

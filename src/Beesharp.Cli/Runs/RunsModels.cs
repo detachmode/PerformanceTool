@@ -295,7 +295,9 @@ public sealed record RunSlowestCallDto(
     double? TtfbMs = null,
     double? ResponseReadMs = null,
     IReadOnlyDictionary<string, string>? Headers = null,
-    string? Error = null);
+    string? Error = null,
+    string? TraceId = null,
+    string? SpanId = null);
 
 public sealed record RunSlowestCallsReport(
     string RunId,
@@ -351,6 +353,8 @@ public sealed record RunSlowestCallsReport(
                 var hdrText = string.Join(", ", c.Headers.Select(kv => $"{kv.Key}={kv.Value}"));
                 sb.AppendLine($"    headers: {hdrText}");
             }
+            if (c.TraceId is not null)
+                sb.AppendLine($"    trace: {c.TraceId}  (beesharp runs trace <run> {c.TraceId})");
         }
 
         return sb.ToString();
@@ -588,7 +592,9 @@ public sealed record BeeCallDto(
     string? Error,
     double? TtfbMs = null,
     double? ResponseReadMs = null,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null,
+    string? TraceId = null,
+    string? SpanId = null);
 
 public sealed record BeeLogDto(
     long Id,
@@ -622,7 +628,8 @@ public sealed record RunBeeReport(
     int? FailedRep,
     IReadOnlyList<BeeStepVisitDto> StepVisits,
     IReadOnlyList<BeeCallDto> Calls,
-    IReadOnlyList<BeeLogDto> Logs)
+    IReadOnlyList<BeeLogDto> Logs,
+    string? TraceId = null)
 {
     public string ToText()
     {
@@ -639,6 +646,8 @@ public sealed record RunBeeReport(
         }
         if (Error is not null)
             sb.AppendLine($"  Error       {Error}");
+        if (TraceId is not null)
+            sb.AppendLine($"  Trace       {TraceId}  (beesharp runs trace <run> {BeeName})");
 
         if (StepVisits.Count > 0)
         {
@@ -669,7 +678,8 @@ public sealed record RunBeeReport(
                     : "";
                 var urlPart = string.IsNullOrWhiteSpace(c.Url) || string.Equals(c.Url, c.Name, StringComparison.Ordinal) ? "" : $"  {c.Url}";
                 var errPart = string.IsNullOrEmpty(c.Error) ? "" : $"  ERROR: {c.Error}";
-                sb.AppendLine($"    #{c.Call}{stepPart} +{c.OffsetMs:0.0} ms  {c.Name}{statusPart}  {RunSummary.Ms(c.DurationMs)}{timingPart}{urlPart}{errPart}");
+                var spanPart = c.SpanId is null ? "" : $"  span {c.SpanId}";
+                sb.AppendLine($"    #{c.Call}{stepPart} +{c.OffsetMs:0.0} ms  {c.Name}{statusPart}  {RunSummary.Ms(c.DurationMs)}{timingPart}{urlPart}{errPart}{spanPart}");
                 if (c.Headers is { Count: > 0 })
                     sb.AppendLine($"      headers: {string.Join(", ", c.Headers.Select(kv => $"{kv.Key}={kv.Value}"))}");
             }

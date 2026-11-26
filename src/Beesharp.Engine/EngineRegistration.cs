@@ -1,3 +1,4 @@
+using Beesharp.Services.TraceStore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Beesharp.Services;
@@ -20,6 +21,7 @@ public static class EngineRegistration
         services.AddBeesharpFileStores(directories ?? new BeesharpDirectories());
         services.AddSingleton<Scenarios.ScenarioCatalog>();
         services.AddBeesharpScripting();
+        services.AddBeesharpTraceStore();
         services.AddSingleton<LoadRunner>();
         services.AddSingleton<PlanWorkspace>();
         services.AddSingleton<RunManager>();

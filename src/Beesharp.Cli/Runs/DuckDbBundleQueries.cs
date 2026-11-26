@@ -358,7 +358,9 @@ internal sealed class DuckDbBundleQueries
                 c.TtfbMs,
                 c.ResponseReadMs,
                 c.Headers,
-                c.Error);
+                c.Error,
+                c.TraceId,
+                c.SpanId);
         }).ToList();
 
         return new RunSlowestCallsReport(meta.RunId, res.MatchingCalls, limit, items);
@@ -419,6 +421,8 @@ internal sealed class DuckDbBundleQueries
         var ttfbExpr = callCols.Contains("ttfb_ms") ? "c.ttfb_ms" : "NULL::DOUBLE";
         var readExpr = callCols.Contains("response_read_ms") ? "c.response_read_ms" : "NULL::DOUBLE";
         var hdrExpr = callCols.Contains("headers_json") ? "c.headers_json" : "NULL::VARCHAR";
+        var traceExpr = callCols.Contains("trace_id") ? "c.trace_id" : "NULL::VARCHAR";
+        var spanExpr = callCols.Contains("span_id") ? "c.span_id" : "NULL::VARCHAR";
         var entryExpr = hasBees ? "COALESCE(b.entry, 0)" : "0";
         var startedExpr = hasBees ? "COALESCE(b.started_at, 0.0)" : "0.0";
         var joinClause = hasBees ? "LEFT JOIN bees b ON c.run_id = b.run_id AND c.sequence = b.sequence" : "";
@@ -430,7 +434,7 @@ internal sealed class DuckDbBundleQueries
             SELECT {idExpr}, c.sequence, {entryExpr}, {stepExpr}, {repExpr}, {startedExpr},
                    c.offset_ms, c.duration_ms, c.status_code, c.bytes, c.error, c.name,
                    {urlExpr}, {epExpr}, {methodExpr}, {hostExpr}, {thrExpr},
-                   {ttfbExpr}, {readExpr}, {hdrExpr}
+                   {ttfbExpr}, {readExpr}, {hdrExpr}, {traceExpr}, {spanExpr}
             FROM calls c
             {joinClause}
             WHERE c.run_id = $1
@@ -463,7 +467,9 @@ internal sealed class DuckDbBundleQueries
                 r.IsDBNull(16) ? null : r.GetDouble(16),
                 r.IsDBNull(17) ? null : r.GetDouble(17),
                 r.IsDBNull(18) ? null : r.GetDouble(18),
-                headers));
+                headers,
+                r.IsDBNull(20) ? null : r.GetString(20),
+                r.IsDBNull(21) ? null : r.GetString(21)));
         }
 
         return facts;
@@ -590,12 +596,14 @@ internal sealed class DuckDbBundleQueries
         var isFailedExpr = FailedPredicateExpr(beeCols);
         var isSlowExpr = SlowPredicateExpr(beeCols);
         var slowCallsExpr = beeCols.Contains("slow_calls") ? "COALESCE(slow_calls, 0)" : "0";
+        var beeTraceExpr = beeCols.Contains("trace_id") ? "trace_id" : "NULL::VARCHAR";
 
         int entry, slowCalls, failedStep, failedRep;
         double startedAt, durationMs;
         int? statusCode;
         long bytes;
         string? error;
+        string? beeTraceId;
         bool isFailed, isSlow;
         List<RecordedStepVisit>? stepVisits = null;
 
@@ -604,7 +612,7 @@ internal sealed class DuckDbBundleQueries
             cmd.CommandText = $"""
                 SELECT entry, started_at, duration_ms, status_code, bytes, error,
                        ({isFailedExpr}), ({isSlowExpr}), {slowCallsExpr},
-                       {failedStepExpr}, {failedRepExpr}, {visitsExpr}
+                       {failedStepExpr}, {failedRepExpr}, {visitsExpr}, {beeTraceExpr}
                 FROM bees
                 WHERE run_id = $1 AND sequence = $2
                 LIMIT 1;
@@ -628,6 +636,7 @@ internal sealed class DuckDbBundleQueries
             failedRep = r.GetInt32(10);
             if (!r.IsDBNull(11) && r.GetString(11) is { Length: > 0 } svJson)
                 stepVisits = JsonSerializer.Deserialize<List<RecordedStepVisit>>(svJson, JsonOpts);
+            beeTraceId = r.IsDBNull(12) ? null : r.GetString(12);
         }
 
         var hasSteps = HasSteps(meta.Steps, entry);
@@ -653,6 +662,8 @@ internal sealed class DuckDbBundleQueries
             var ttfbExpr = callCols.Contains("ttfb_ms") ? "ttfb_ms" : "NULL::DOUBLE";
             var readExpr = callCols.Contains("response_read_ms") ? "response_read_ms" : "NULL::DOUBLE";
             var hdrExpr = callCols.Contains("headers_json") ? "headers_json" : "NULL::VARCHAR";
+            var callTraceExpr = callCols.Contains("trace_id") ? "trace_id" : "NULL::VARCHAR";
+            var callSpanExpr = callCols.Contains("span_id") ? "span_id" : "NULL::VARCHAR";
             var idxExpr = callCols.Contains("call_index") ? "call_index" : "ROW_NUMBER() OVER () - 1";
             var orderCol = callCols.Contains("call_index") ? "call_index" : "offset_ms";
 
@@ -660,7 +671,7 @@ internal sealed class DuckDbBundleQueries
             cCmd.CommandText = $"""
                 SELECT {idxExpr}, name, offset_ms, duration_ms, status_code, bytes, error,
                        {stepExpr}, {repExpr}, {epExpr}, {methodExpr}, {hostExpr}, {urlExpr}, {thrExpr},
-                       {ttfbExpr}, {readExpr}, {hdrExpr}
+                       {ttfbExpr}, {readExpr}, {hdrExpr}, {callTraceExpr}, {callSpanExpr}
                 FROM calls
                 WHERE run_id = $1 AND sequence = $2
                 ORDER BY {orderCol};
@@ -695,7 +706,9 @@ internal sealed class DuckDbBundleQueries
                     cr.IsDBNull(6) ? null : cr.GetString(6),
                     cr.IsDBNull(14) ? null : cr.GetDouble(14),
                     cr.IsDBNull(15) ? null : cr.GetDouble(15),
-                    headers));
+                    headers,
+                    cr.IsDBNull(17) ? null : cr.GetString(17),
+                    cr.IsDBNull(18) ? null : cr.GetString(18)));
             }
         }
 
@@ -758,7 +771,102 @@ internal sealed class DuckDbBundleQueries
             failedStep >= 0 && failedRep >= 0 ? failedRep + 1 : null,
             visitsDto,
             callsDto,
-            logsDto);
+            logsDto,
+            beeTraceId ?? callsDto.Select(c => c.TraceId).FirstOrDefault(t => t is not null));
+    }
+
+    public RunTraceReport GetTrace(RunsTraceOptions options)
+    {
+        var meta = ReadRunMetadata();
+        var fetches = LoadTraceFetches(meta.RunId);
+        return TraceReportBuilder.Build(
+            meta.RunId, options, fetches,
+            traceId => SequenceOfTraceId(meta.RunId, traceId),
+            sequence => GetBee(sequence + 1),
+            traceId => LoadTraceSpans(meta.RunId, [traceId]));
+    }
+
+    public HotspotsResultDto GetHotspots(RunsHotspotsOptions options)
+    {
+        var meta = ReadRunMetadata();
+        var query = new HotspotsQuery(options.Endpoint, options.SlowOnly, options.Limit);
+        var fetches = LoadTraceFetches(meta.RunId);
+        if (fetches.Count == 0) return TraceAnalytics.BuildHotspots(meta.RunId, [], [], fetches, query);
+        var facts = availableTables.Contains("calls") ? LoadCallFacts(meta) : [];
+        return TraceAnalytics.BuildHotspots(meta.RunId, facts, LoadTraceSpans(meta.RunId, null), fetches, query);
+    }
+
+    private int? SequenceOfTraceId(string runId, string traceId)
+    {
+        foreach (var (table, column) in new[] { ("calls", "trace_id"), ("bees", "trace_id") })
+        {
+            if (!availableTables.Contains(table) || !DescribeColumns(table).Contains(column)) continue;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT sequence FROM {table} WHERE run_id = $1 AND {column} = $2 LIMIT 1;";
+            cmd.Parameters.Add(new DuckDBParameter(runId));
+            cmd.Parameters.Add(new DuckDBParameter(traceId));
+            if (cmd.ExecuteScalar() is { } value and not DBNull) return Convert.ToInt32(value);
+        }
+        return null;
+    }
+
+    private List<TraceFetchDto> LoadTraceFetches(string runId)
+    {
+        var list = new List<TraceFetchDto>();
+        if (!availableTables.Contains("trace_fetches")) return list;
+        var cols = DescribeColumns("trace_fetches");
+        var truncatedExpr = cols.Contains("truncated") ? "COALESCE(truncated, FALSE)" : "FALSE";
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT trace_id, sequence, status, reason, span_count, attempts, selected_for, fetched_utc, {truncatedExpr}
+            FROM trace_fetches
+            WHERE run_id = $1
+            ORDER BY sequence, trace_id;
+            """;
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            IReadOnlyList<string> selected = !r.IsDBNull(6) && r.GetString(6) is { Length: > 0 } sj
+                ? JsonSerializer.Deserialize<List<string>>(sj, JsonOpts) ?? []
+                : [];
+            list.Add(new TraceFetchDto(
+                r.GetString(0), r.GetInt32(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetInt32(4), r.GetInt32(5), selected,
+                r.IsDBNull(7) ? null : DateTimeOffset.Parse(r.GetString(7), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                r.GetBoolean(8)));
+        }
+        return list;
+    }
+
+    private List<TraceSpanDto> LoadTraceSpans(string runId, IReadOnlyCollection<string>? traceIds)
+    {
+        var spans = new List<TraceSpanDto>();
+        if (!availableTables.Contains("trace_spans")) return spans;
+        using var cmd = conn.CreateCommand();
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        var filter = "";
+        if (traceIds is not null)
+        {
+            filter = " AND trace_id IN (" + string.Join(", ", traceIds.Select((_, i) => "$" + (i + 2))) + ")";
+            foreach (var id in traceIds) cmd.Parameters.Add(new DuckDBParameter(id));
+        }
+        cmd.CommandText = $"""
+            SELECT trace_id, span_id, parent_span_id, service, name, kind, start_unix_nano, duration_ms, COALESCE(is_error, FALSE), status_message, attributes_json
+            FROM trace_spans
+            WHERE run_id = $1{filter}
+            ORDER BY trace_id, start_unix_nano, span_id;
+            """;
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            IReadOnlyDictionary<string, string>? attrs = !r.IsDBNull(10) && r.GetString(10) is { Length: > 0 } aj
+                ? JsonSerializer.Deserialize<Dictionary<string, string>>(aj, JsonOpts)
+                : null;
+            spans.Add(new TraceSpanDto(
+                r.GetString(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3), r.GetString(4),
+                r.IsDBNull(5) ? null : r.GetString(5), r.GetInt64(6), r.GetDouble(7), r.GetBoolean(8), r.IsDBNull(9) ? null : r.GetString(9), attrs));
+        }
+        return spans;
     }
 
     private RunMetadata ReadRunMetadata()

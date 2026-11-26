@@ -33,6 +33,7 @@
     <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Tracing/Beesharp.Tracing.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.TraceStore/Beesharp.TraceStore.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" PrivateAssets="all" />
@@ -92,6 +93,8 @@
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.xml" Condition="Exists('$(OutputPath)Beesharp.Scripting.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Tracing.dll" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Tracing.xml" Condition="Exists('$(OutputPath)Beesharp.Tracing.xml')" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.TraceStore.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.TraceStore.xml" Condition="Exists('$(OutputPath)Beesharp.TraceStore.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.dll" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.xml" Condition="Exists('$(OutputPath)Beesharp.Engine.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.dll" />

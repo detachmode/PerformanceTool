@@ -218,7 +218,9 @@ internal sealed class RemoteRunClient : IDisposable
             c.TtfbMs,
             c.ResponseReadMs,
             c.Headers,
-            c.Error)).ToList();
+            c.Error,
+            c.TraceId,
+            c.SpanId)).ToList();
 
         return new RunSlowestCallsReport(runId, res.MatchingCalls, limit, items);
     }
@@ -316,7 +318,9 @@ internal sealed class RemoteRunClient : IDisposable
             c.Error,
             c.TtfbMs,
             c.ResponseReadMs,
-            c.Headers)).ToList();
+            c.Headers,
+            c.TraceId,
+            c.SpanId)).ToList();
 
         var logsDto = detail.Logs.Select((l, idx) => new BeeLogDto(
             idx + 1,
@@ -350,7 +354,30 @@ internal sealed class RemoteRunClient : IDisposable
             detail.FailedStep >= 0 && detail.FailedRep >= 0 ? detail.FailedRep + 1 : null,
             visitsDto,
             callsDto,
-            logsDto);
+            logsDto,
+            detail.TraceId ?? detail.Calls.Select(c => c.TraceId).FirstOrDefault(t => t is not null));
+    }
+
+    /// <summary>One bee's trace from the server's <c>GET /api/runs/{runId}/traces/{key}</c> (brain 0065).</summary>
+    public async Task<RunTraceReport> GetTraceAsync(string runId, RunsTraceOptions options, CancellationToken ct)
+    {
+        var query = new List<string> { $"maxSpans={options.MaxSpans.ToString(CultureInfo.InvariantCulture)}" };
+        if (options.Call is { } call) query.Add($"call={call.ToString(CultureInfo.InvariantCulture)}");
+        var path = $"api/runs/{Uri.EscapeDataString(runId)}/traces/{Uri.EscapeDataString(options.Key)}?{string.Join("&", query)}";
+        var view = await GetJsonAsync<TraceViewDto>(path, $"Bee or trace '{options.Key}' or run '{runId}' was not found on {BaseUrl}.", ct)
+            ?? throw new CouldNotRunException($"Bee or trace '{options.Key}' or run '{runId}' was not found on {BaseUrl}.");
+        return RunTraceReport.From(view);
+    }
+
+    /// <summary>The hotspots of a run from the server's <c>GET /api/runs/{runId}/hotspots</c> (brain 0065).</summary>
+    public async Task<HotspotsResultDto> GetHotspotsAsync(string runId, RunsHotspotsOptions options, CancellationToken ct)
+    {
+        var query = new List<string> { $"limit={options.Limit.ToString(CultureInfo.InvariantCulture)}" };
+        if (!string.IsNullOrWhiteSpace(options.Endpoint)) query.Add($"endpoint={Uri.EscapeDataString(options.Endpoint)}");
+        if (options.SlowOnly) query.Add("slowOnly=true");
+        var path = $"api/runs/{Uri.EscapeDataString(runId)}/hotspots?{string.Join("&", query)}";
+        return await GetJsonAsync<HotspotsResultDto>(path, $"Run '{runId}' was not found on {BaseUrl}.", ct)
+            ?? throw new CouldNotRunException($"Run '{runId}' was not found on {BaseUrl}.");
     }
 
     private async Task<T?> GetJsonAsync<T>(string relativePath, string? notFoundMessage, CancellationToken ct)
@@ -358,6 +385,14 @@ internal sealed class RemoteRunClient : IDisposable
         using var resp = await SendAsync(relativePath, ct);
         if (resp.StatusCode == HttpStatusCode.NotFound)
             throw new CouldNotRunException(notFoundMessage ?? $"Resource '{relativePath}' was not found on {BaseUrl}.");
+        if (resp.StatusCode == HttpStatusCode.BadRequest)
+        {
+            // The server explains a bad request as { "error": "..." }.
+            string? message = null;
+            try { message = (await resp.Content.ReadFromJsonAsync<JsonElement>(JsonOpts, ct)).GetProperty("error").GetString(); }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
+            if (message is not null) throw new CouldNotRunException(message);
+        }
         EnsureSuccess(resp);
 
         try
@@ -407,6 +442,8 @@ internal sealed class RemoteRunClient : IDisposable
         public RunTimelineReport GetTimeline(RunsTimelineOptions options) => inner.GetTimeline(options);
         public RunLogsReport QueryLogs(RunsLogsOptions options) => inner.QueryLogs(options);
         public RunBeeReport GetBee(int beeNumber) => inner.GetBee(beeNumber);
+        public RunTraceReport GetTrace(RunsTraceOptions options) => inner.GetTrace(options);
+        public HotspotsResultDto GetHotspots(RunsHotspotsOptions options) => inner.GetHotspots(options);
 
         public void Dispose()
         {

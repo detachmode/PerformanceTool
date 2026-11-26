@@ -27,6 +27,8 @@ internal sealed class JsonRunBundle : IRunBundle
     private readonly List<JsonBee> bees;
     private readonly List<JsonCall> calls;
     private readonly List<JsonLog> logs;
+    private readonly List<TraceFetchDto> traceFetches;
+    private readonly List<TraceSpanDto> traceSpans;
 
     private sealed record JsonBee(
         int Sequence,
@@ -42,7 +44,8 @@ internal sealed class JsonRunBundle : IRunBundle
         int SlowCalls,
         int FailedStep,
         int FailedRep,
-        IReadOnlyList<RecordedStepVisit>? StepVisits);
+        IReadOnlyList<RecordedStepVisit>? StepVisits,
+        string? TraceId = null);
 
     private sealed record JsonCall(
         int Sequence,
@@ -62,7 +65,9 @@ internal sealed class JsonRunBundle : IRunBundle
         double? SlowThresholdMs,
         double? TtfbMs,
         double? ResponseReadMs,
-        IReadOnlyDictionary<string, string>? Headers);
+        IReadOnlyDictionary<string, string>? Headers,
+        string? TraceId = null,
+        string? SpanId = null);
 
     private sealed record JsonLog(
         long Id,
@@ -93,7 +98,9 @@ internal sealed class JsonRunBundle : IRunBundle
         int summaryOnlyFailedBees,
         List<JsonBee> bees,
         List<JsonCall> calls,
-        List<JsonLog> logs)
+        List<JsonLog> logs,
+        List<TraceFetchDto> traceFetches,
+        List<TraceSpanDto> traceSpans)
     {
         this.runId = runId;
         this.startedUtc = startedUtc;
@@ -109,6 +116,8 @@ internal sealed class JsonRunBundle : IRunBundle
         this.bees = bees;
         this.calls = calls;
         this.logs = logs;
+        this.traceFetches = traceFetches;
+        this.traceSpans = traceSpans;
     }
 
     public static JsonRunBundle Open(string path)
@@ -146,7 +155,7 @@ internal sealed class JsonRunBundle : IRunBundle
 
                 return new JsonRunBundle(
                     memRunId, memStarted, memFinished, memState, memElapsed, memError,
-                    new LoadPlan(), null, true, memTotal, memFailed, [], [], memLogs);
+                    new LoadPlan(), null, true, memTotal, memFailed, [], [], memLogs, [], []);
             }
 
             // Format B: DuckDbRunStorage JSON export
@@ -174,7 +183,8 @@ internal sealed class JsonRunBundle : IRunBundle
 
             return new JsonRunBundle(
                 runId, startedUtc, finishedUtc, state, elapsedSeconds, error,
-                plan, steps, false, bees.Count, bees.Count(b => b.IsFailed), bees, calls, logs);
+                plan, steps, false, bees.Count, bees.Count(b => b.IsFailed), bees, calls, logs,
+                ParseArray<TraceFetchDto>(root, "traceFetches"), ParseArray<TraceSpanDto>(root, "traceSpans"));
         }
     }
 
@@ -401,7 +411,9 @@ internal sealed class JsonRunBundle : IRunBundle
                 c.TtfbMs,
                 c.ResponseReadMs,
                 c.Headers,
-                c.Error);
+                c.Error,
+                c.TraceId,
+                c.SpanId);
         }).ToList();
 
         return new RunSlowestCallsReport(runId, res.MatchingCalls, limit, items);
@@ -450,7 +462,9 @@ internal sealed class JsonRunBundle : IRunBundle
                 c.SlowThresholdMs,
                 c.TtfbMs,
                 c.ResponseReadMs,
-                c.Headers));
+                c.Headers,
+                c.TraceId,
+                c.SpanId));
         }
 
         return facts;
@@ -543,7 +557,9 @@ internal sealed class JsonRunBundle : IRunBundle
                 c.Error,
                 c.TtfbMs,
                 c.ResponseReadMs,
-                c.Headers))
+                c.Headers,
+                c.TraceId,
+                c.SpanId))
             .ToList();
 
         var logsDto = logs
@@ -585,7 +601,33 @@ internal sealed class JsonRunBundle : IRunBundle
             bee.FailedStep >= 0 && bee.FailedRep >= 0 ? bee.FailedRep + 1 : null,
             visitsDto,
             callsDto,
-            logsDto);
+            logsDto,
+            bee.TraceId ?? callsDto.Select(c => c.TraceId).FirstOrDefault(t => t is not null));
+    }
+
+    public RunTraceReport GetTrace(RunsTraceOptions options) =>
+        TraceReportBuilder.Build(
+            runId, options, traceFetches,
+            traceId => calls.Where(c => c.TraceId == traceId).Select(c => (int?)c.Sequence).FirstOrDefault()
+                ?? bees.Where(b => b.TraceId == traceId).Select(b => (int?)b.Sequence).FirstOrDefault(),
+            sequence => GetBee(sequence + 1),
+            traceId => traceSpans.Where(s => s.TraceId == traceId).OrderBy(s => s.StartUnixNanos).ToList());
+
+    public HotspotsResultDto GetHotspots(RunsHotspotsOptions options)
+    {
+        var query = new HotspotsQuery(options.Endpoint, options.SlowOnly, options.Limit);
+        return traceFetches.Count == 0
+            ? TraceAnalytics.BuildHotspots(runId, [], [], traceFetches, query)
+            : TraceAnalytics.BuildHotspots(runId, BuildCallFacts(), traceSpans, traceFetches, query);
+    }
+
+    private static List<T> ParseArray<T>(JsonElement root, string property)
+    {
+        var list = new List<T>();
+        if (!TryGetProp(root, property, out var el) || el.ValueKind != JsonValueKind.Array) return list;
+        foreach (var item in el.EnumerateArray())
+            if (item.Deserialize<T>(JsonOpts) is { } value) list.Add(value);
+        return list;
     }
 
     public void Dispose() { }
@@ -621,7 +663,8 @@ internal sealed class JsonRunBundle : IRunBundle
                 slowCalls,
                 GetInt(b, "failedStep") ?? -1,
                 GetInt(b, "failedRep") ?? -1,
-                stepVisits));
+                stepVisits,
+                GetString(b, "traceId")));
         }
 
         return list;
@@ -654,7 +697,9 @@ internal sealed class JsonRunBundle : IRunBundle
                 GetDouble(c, "slowThresholdMs"),
                 GetDouble(c, "ttfbMs"),
                 GetDouble(c, "responseReadMs"),
-                ParseHeaders(c)));
+                ParseHeaders(c),
+                GetString(c, "traceId"),
+                GetString(c, "spanId")));
             fallbackIdx++;
         }
 

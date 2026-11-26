@@ -323,6 +323,53 @@ public static class CallAnalytics
         return new SlowestCallsResult(items, matching.Count);
     }
 
+    /// <summary>One call with its canonical endpoint and the slow verdict (same rule as <see cref="BuildSlowestCalls"/>: per endpoint, entry and step).</summary>
+    /// <param name="Call">The call.</param>
+    /// <param name="Endpoint">The canonical endpoint label.</param>
+    /// <param name="IsSlow">Whether the call succeeded and exceeded its effective slow threshold.</param>
+    /// <param name="TypicalMs">The typical duration of the call's endpoint/entry/step group when enough samples exist.</param>
+    public readonly record struct ClassifiedCall(CallFact Call, string Endpoint, bool IsSlow, double? TypicalMs);
+
+    /// <summary>
+    /// Gives every call its canonical endpoint and slow verdict, with slowness judged per (endpoint, entry, step) exactly as in
+    /// <see cref="BuildSlowestCalls"/> (so hotspots, <c>runs calls --slowest</c> and the Calls page agree on which calls are slow).
+    /// </summary>
+    /// <param name="allCalls">All recorded call facts for the run.</param>
+    /// <returns>One entry per call, in input order.</returns>
+    public static IReadOnlyList<ClassifiedCall> Classify(IReadOnlyList<CallFact> allCalls)
+    {
+        if (allCalls.Count == 0) return [];
+        var map = EndpointGrouper.BuildMap(allCalls.Select(c => (c.NormalizedEndpoint, c.Host)));
+        var groups = new Dictionary<(string Endpoint, int Entry, int Step), List<CallFact>>(StepGroupKeyComparer.Instance);
+        var endpoints = new string[allCalls.Count];
+        for (var i = 0; i < allCalls.Count; i++)
+        {
+            var c = allCalls[i];
+            var key = (CanonicalOf(map, c), c.Entry, c.Step);
+            endpoints[i] = key.Item1;
+            if (!groups.TryGetValue(key, out var list))
+                groups[key] = list = [];
+            list.Add(c);
+        }
+
+        var baselines = new Dictionary<(string Endpoint, int Entry, int Step), (double? AutoTypical, double? GroupCustom)>(StepGroupKeyComparer.Instance);
+        foreach (var (key, list) in groups)
+        {
+            Summarize(key.Endpoint, list, out var autoTypical, out var custom, key.Step, null);
+            baselines[key] = (autoTypical, custom);
+        }
+
+        var result = new ClassifiedCall[allCalls.Count];
+        for (var i = 0; i < allCalls.Count; i++)
+        {
+            var c = allCalls[i];
+            var (autoTypical, groupCustom) = baselines[(endpoints[i], c.Entry, c.Step)];
+            var isSlow = c.Error is null && SlowCallRule.IsSlow(c.DurationMs, autoTypical, c.SlowThresholdMs ?? groupCustom);
+            result[i] = new ClassifiedCall(c, endpoints[i], isSlow, autoTypical);
+        }
+        return result;
+    }
+
     /// <summary>
     /// Aggregates per-(entry, step) call latency percentiles (min/p50/p95/max/avg) and slow/failed counts.
     /// Slowness is evaluated per (endpoint, entry, step) so steps sharing the same URL keep independent baselines.
