@@ -59,7 +59,7 @@
             @Tabs(detail is not null)
         </header>
         @if (fb.Error is not null && !(tab == Tab.Steps && fb.FailedStep >= 0)) { <p class="bee-error bad">@fb.Error</p> }
-        <div class="bp-body @(tab == Tab.Logs && detail is { Logs.Count: > 0 } ? "bp-body-logs" : "")" @ref="bodyEl" @key="@($"fin-{fb.Sequence}-{tab}")">
+        <div class="bp-body" @ref="bodyEl" @key="@($"fin-{fb.Sequence}-{tab}")">
             @if (detail is null)
             {
                 <p class="muted">The calls and logs of this bee are no longer kept (details of older successful bees are dropped first).</p>
@@ -78,16 +78,12 @@
                 }
                 else
                 {
-                    <MonacoLogViewer Text="@FormatBeeLogs(detail.Logs)" WordWrap="@beeLogWrap" FollowBottom="false" AriaLabel="@($"Logs of {fb.Name}")" Class="bp-monaco-logs">
-                        <FallbackContent>
-                            <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-label="Logs of @fb.Name">
-                                @foreach (var log in detail.Logs)
-                                {
-                                    <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
-                                }
-                            </div>
-                        </FallbackContent>
-                    </MonacoLogViewer>
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-label="Logs of @fb.Name">
+                        @foreach (var log in detail.Logs)
+                        {
+                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                        }
+                    </div>
                 }
             }
             else
@@ -138,7 +134,7 @@
             </p>
             @Tabs(true)
         </header>
-        <div class="bp-body @(tab == Tab.Logs && !DataMode.IsFakeMode && runningLogs.Count > 0 ? "bp-body-logs" : "")" @ref="bodyEl" @key="@($"run-{ra.Sequence}-{tab}")">
+        <div class="bp-body" @ref="bodyEl" @key="@($"run-{ra.Sequence}-{tab}")">
             @if (tab == Tab.Steps)
             {
                 var nowCall = ra.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs)?.Name;
@@ -160,16 +156,12 @@
                 }
                 else
                 {
-                    <MonacoLogViewer Text="@FormatLiveLogs(runningLogs)" WordWrap="@beeLogWrap" FollowBottom="true" AriaLabel="@($"Live logs of {ra.Name}")" Class="bp-monaco-logs">
-                        <FallbackContent>
-                            <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-live="polite" aria-label="Live logs of @ra.Name">
-                                @foreach (var log in runningLogs)
-                                {
-                                    <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
-                                }
-                            </div>
-                        </FallbackContent>
-                    </MonacoLogViewer>
+                    <div class="sl-console compact @(beeLogWrap ? "wrap" : "nowrap")" role="log" aria-live="polite" aria-label="Live logs of @ra.Name">
+                        @foreach (var log in runningLogs)
+                        {
+                            <SerilogLine Timestamp="log.Timestamp" Level="@log.Level" Message="@log.Message" Exception="@log.Exception" />
+                        }
+                    </div>
                 }
             }
             else

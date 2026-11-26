@@ -30,6 +30,80 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+const LABEL_PRI = {
+  SELECTED_HOVERED: 1,
+  ALERT: 2,
+  AXIS_TITLE: 3,
+  LANE: 4,
+  TICK: 5,
+  CELL_BADGE: 6,
+};
+
+function truncateText(str, maxChars) {
+  if (str == null) return '';
+  const s = String(str);
+  if (s.length <= maxChars) return s;
+  return maxChars <= 1 ? s.slice(0, 1) : s.slice(0, maxChars - 1).trimEnd() + '…';
+}
+
+function parseFormattedMs(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const msMatch = s.match(/([\d,.]+)\s*ms\b/i);
+  if (msMatch) return parseFloat(msMatch[1].replace(/,/g, ''));
+  const sMatch = s.match(/([\d,.]+)\s*s\b/i);
+  if (sMatch) return parseFloat(sMatch[1].replace(/,/g, '')) * 1000;
+  const hmsMatch = s.match(/\b(\d+):(\d{2}):(\d{2})\b/);
+  if (hmsMatch) return ((+hmsMatch[1]) * 3600 + (+hmsMatch[2]) * 60 + (+hmsMatch[3])) * 1000;
+  const msTimeMatch = s.match(/\b(\d+):(\d{2})\b/);
+  if (msTimeMatch) return ((+msTimeMatch[1]) * 60 + (+msTimeMatch[2])) * 1000;
+  return null;
+}
+
+function parseFormattedNum(str) {
+  if (!str) return null;
+  const m = String(str).match(/([\d,]+(?:\.\d+)?)/);
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(/,/g, ''));
+  return Number.isFinite(v) ? v : null;
+}
+
+function formatTickMs(ms) {
+  if (ms <= 0.5) return '0';
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) {
+    const sec = ms / 1000;
+    return `${sec >= 10 ? Math.round(sec) : sec.toFixed(1)} s`;
+  }
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatTickCount(val) {
+  if (val <= 0.5) return '0';
+  if (val >= 1000) {
+    const k = val / 1000;
+    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
+  }
+  return Math.round(val).toLocaleString('en-US');
+}
+
+function niceStep(range, targetSteps, integerOnly) {
+  if (!(range > 0)) return 1;
+  const rough = range / Math.max(1, targetSteps);
+  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+  const frac = rough / pow;
+  let nice = 1;
+  if (frac <= 1.2) nice = 1;
+  else if (frac <= 2.3) nice = 2;
+  else if (frac <= 5.5) nice = 5;
+  else nice = 10;
+  const step = nice * pow;
+  return integerOnly ? Math.max(1, Math.round(step)) : step;
+}
+
 export function mount(canvas, tooltip, dotnet) {
   if (!canvas) return null;
   const ctx = canvas.getContext('2d');
@@ -38,6 +112,8 @@ export function mount(canvas, tooltip, dotnet) {
   let width = 0;
   let height = 0;
   let dpr = 1;
+  let dprX = 1;
+  let dprY = 1;
   let scene = null;
   let isolatedLane = null;
   let selected = null; // { laneIndex, bucketIndex }
@@ -46,6 +122,8 @@ export function mount(canvas, tooltip, dotnet) {
   let swarmTime = 0;
   let lastFrameTs = performance.now();
   let hitTargets = [];
+  let placedBoxes = [];
+  let labelItems = [];
   let dirty = true;
   let rafId = 0;
   let disposed = false;
@@ -74,7 +152,9 @@ export function mount(canvas, tooltip, dotnet) {
       canvas.width = pw;
       canvas.height = ph;
     }
-    ctx.setTransform(pw / width, 0, 0, ph / height, 0, 0);
+    dprX = pw / width;
+    dprY = ph / height;
+    ctx.setTransform(dprX, 0, 0, dprY, 0, 0);
     dirty = true;
     scheduleFrame();
   }
@@ -109,6 +189,608 @@ export function mount(canvas, tooltip, dotnet) {
     };
   }
 
+  // ---------- 2D Screen-Space Collision Avoidance ----------
+  function quadOfBox(b) {
+    return b.quad || [
+      { x: b.minX, y: b.minY },
+      { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY },
+      { x: b.minX, y: b.maxY },
+    ];
+  }
+
+  function quadsOverlapSat(qA, qB, pad) {
+    const quads = [qA, qB];
+    for (let qi = 0; qi < 2; qi++) {
+      const q = quads[qi];
+      for (let i = 0; i < 2; i++) {
+        const p0 = q[i];
+        const p1 = q[i + 1];
+        const ex = p1.x - p0.x;
+        const ey = p1.y - p0.y;
+        const len = Math.hypot(ex, ey);
+        if (len < 1e-6) continue;
+        const nx = -ey / len;
+        const ny = ex / len;
+
+        let minA = Infinity, maxA = -Infinity;
+        for (let k = 0; k < 4; k++) {
+          const d = qA[k].x * nx + qA[k].y * ny;
+          if (d < minA) minA = d;
+          if (d > maxA) maxA = d;
+        }
+        let minB = Infinity, maxB = -Infinity;
+        for (let k = 0; k < 4; k++) {
+          const d = qB[k].x * nx + qB[k].y * ny;
+          if (d < minB) minB = d;
+          if (d > maxB) maxB = d;
+        }
+        if (maxA + pad <= minB || maxB + pad <= minA) return false;
+      }
+    }
+    return true;
+  }
+
+  function boxesOverlap(a, b, pad) {
+    if (a.maxX + pad <= b.minX || b.maxX + pad <= a.minX || a.maxY + pad <= b.minY || b.maxY + pad <= a.minY) {
+      return false;
+    }
+    if (!a.quad && !b.quad) return true;
+    return quadsOverlapSat(quadOfBox(a), quadOfBox(b), pad);
+  }
+
+  function tryPlaceBox(x, y, w, h, pad = 6, quad = null) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || w <= 0 || h <= 0) return false;
+    if (x < -4 || x + w > width + 4 || y < 2 || y + h > height - 2) return false;
+
+    const candidate = { minX: x, minY: y, maxX: x + w, maxY: y + h, pad, quad };
+    for (let i = 0; i < placedBoxes.length; i++) {
+      const existing = placedBoxes[i];
+      const gap = Math.max(pad, existing.pad ?? 6);
+      if (boxesOverlap(candidate, existing, gap)) return false;
+    }
+    placedBoxes.push(candidate);
+    return true;
+  }
+
+  // ---------- Label Helpers (Floor-projected, Halo, Pill) ----------
+  function drawHaloText(text, x, y, fillStyle, align = 'center', baseline = 'middle', strokeStyle = 'rgba(15, 14, 13, 0.9)', lineWidth = 3.2) {
+    ctx.textAlign = align;
+    ctx.textBaseline = baseline;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = fillStyle;
+    ctx.fillText(text, x, y);
+  }
+
+  function roundRectPath(x, y, w, h, r) {
+    const rad = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, w, h, rad);
+    } else {
+      ctx.moveTo(x + rad, y);
+      ctx.lineTo(x + w - rad, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+      ctx.lineTo(x + w, y + h - rad);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+      ctx.lineTo(x + rad, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+      ctx.lineTo(x, y + rad);
+      ctx.quadraticCurveTo(x, y, x + rad, y);
+      ctx.closePath();
+    }
+  }
+
+  function computeFloorTransform(x, z, ux, uz, vx, vz, outX, outZ, alignMode) {
+    const p0 = project(x, 0, z);
+    if (p0.depth < -26) return null;
+    const step = 0.5;
+    const pu = project(x + ux * step, 0, z + uz * step);
+    const pv = project(x + vx * step, 0, z + vz * step);
+    const inv = 1 / (step * Math.max(4, p0.scale));
+
+    let e1 = { x: (pu.sx - p0.sx) * inv, y: (pu.sy - p0.sy) * inv };
+    let e2 = { x: (pv.sx - p0.sx) * inv, y: (pv.sy - p0.sy) * inv };
+
+    // Flip reading direction automatically when projected U points left (or purely downward)
+    if (e1.x < -0.02 || (Math.abs(e1.x) <= 0.02 && e1.y > 0)) {
+      e1 = { x: -e1.x, y: -e1.y };
+    }
+
+    // Ensure positive determinant so glyphs are never mirrored/upside-down
+    let det = e1.x * e2.y - e1.y * e2.x;
+    if (det < 0) {
+      e2 = { x: -e2.x, y: -e2.y };
+      det = -det;
+    }
+
+    const len1 = Math.hypot(e1.x, e1.y);
+    const len2 = Math.hypot(e2.x, e2.y);
+    if (len1 < 0.24 || len2 < 0.20 || det < 0.18) return null;
+
+    let align = alignMode || 'center';
+    if (alignMode === 'outward') {
+      const pn = project(x + outX * step, 0, z + outZ * step);
+      const outSx = pn.sx - p0.sx;
+      const outSy = pn.sy - p0.sy;
+      const dot = outSx * e1.x + outSy * e1.y;
+      align = dot >= 0 ? 'left' : 'right';
+    }
+
+    return { p0, e1, e2, align, len1, len2 };
+  }
+
+  function queueFloorLabel(text, x, z, ux, uz, vx, vz, opts) {
+    if (!text) return;
+    labelItems.push({
+      priority: opts.priority,
+      order: opts.order ?? 0,
+      draw() {
+        const ft = computeFloorTransform(x, z, ux, uz, vx, vz, opts.outX ?? 0, opts.outZ ?? 0, opts.align ?? 'center');
+        if (!ft) return;
+
+        const fontSize = opts.size ?? 11;
+        const weight = opts.weight ?? 500;
+        const font = `${weight} ${fontSize}px Inter, system-ui, sans-serif`;
+        ctx.font = font;
+        const textW = ctx.measureText(text).width;
+        const textH = fontSize * 1.15;
+
+        let lx0, lx1;
+        if (ft.align === 'left') { lx0 = 0; lx1 = textW; }
+        else if (ft.align === 'right') { lx0 = -textW; lx1 = 0; }
+        else { lx0 = -textW / 2; lx1 = textW / 2; }
+        const ly0 = -textH / 2;
+        const ly1 = textH / 2;
+
+        const corners = [
+          { x: lx0, y: ly0 },
+          { x: lx1, y: ly0 },
+          { x: lx1, y: ly1 },
+          { x: lx0, y: ly1 },
+        ].map(c => ({
+          x: ft.p0.sx + c.x * ft.e1.x + c.y * ft.e2.x,
+          y: ft.p0.sy + c.x * ft.e1.y + c.y * ft.e2.y,
+        }));
+
+        const minX = Math.min(corners[0].x, corners[1].x, corners[2].x, corners[3].x);
+        const maxX = Math.max(corners[0].x, corners[1].x, corners[2].x, corners[3].x);
+        const minY = Math.min(corners[0].y, corners[1].y, corners[2].y, corners[3].y);
+        const maxY = Math.max(corners[0].y, corners[1].y, corners[2].y, corners[3].y);
+
+        if (!tryPlaceBox(minX, minY, maxX - minX, maxY - minY, opts.pad ?? 3.5, corners)) return;
+
+        ctx.save();
+        ctx.setTransform(dprX, 0, 0, dprY, 0, 0);
+        ctx.transform(ft.e1.x, ft.e1.y, ft.e2.x, ft.e2.y, ft.p0.sx, ft.p0.sy);
+        ctx.font = font;
+        drawHaloText(
+          text,
+          0,
+          0,
+          opts.color ?? '#a19c94',
+          ft.align,
+          'middle',
+          opts.strokeColor ?? 'rgba(15, 14, 13, 0.85)',
+          2.6
+        );
+        ctx.restore();
+      },
+    });
+  }
+
+  function queuePillBadge(text, sx, sy, opts) {
+    if (!text) return;
+    labelItems.push({
+      priority: opts.priority,
+      order: opts.order ?? 0,
+      draw() {
+        const fontSize = opts.size ?? 10.5;
+        const weight = opts.weight ?? 600;
+        const font = `${weight} ${fontSize}px Inter, system-ui, sans-serif`;
+        ctx.font = font;
+        const textW = ctx.measureText(text).width;
+        const padX = opts.padX ?? 6.5;
+        const padY = opts.padY ?? 3;
+        const w = textW + padX * 2;
+        const h = fontSize + padY * 2;
+        const bx = sx - w / 2;
+        const by = sy - h / 2;
+
+        if (!tryPlaceBox(bx, by, w, h, opts.pad ?? 6)) return;
+
+        ctx.save();
+        roundRectPath(bx, by, w, h, 5.5);
+        ctx.fillStyle = opts.bg ?? 'rgba(15, 14, 13, 0.86)';
+        ctx.fill();
+        ctx.strokeStyle = opts.border ?? 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.font = font;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = opts.color ?? '#ffffff';
+        ctx.fillText(text, sx, sy + 0.5);
+        ctx.restore();
+      },
+    });
+  }
+
+  function queueHaloBadge(text, sx, sy, opts) {
+    if (!text) return;
+    labelItems.push({
+      priority: opts.priority,
+      order: opts.order ?? 0,
+      draw() {
+        const fontSize = opts.size ?? 10;
+        const weight = opts.weight ?? 500;
+        const font = `${weight} ${fontSize}px Inter, system-ui, sans-serif`;
+        ctx.font = font;
+        const textW = ctx.measureText(text).width;
+        const textH = fontSize * 1.15;
+        const align = opts.align ?? 'center';
+        const bx = align === 'left' ? sx : align === 'right' ? sx - textW : sx - textW / 2;
+        const by = sy - textH / 2;
+
+        if (!tryPlaceBox(bx, by, textW, textH, opts.pad ?? 6)) return;
+
+        ctx.save();
+        ctx.font = font;
+        drawHaloText(text, sx, sy, opts.color ?? '#e5e2dc', align, 'middle', 'rgba(15, 14, 13, 0.9)', 3.2);
+        ctx.restore();
+      },
+    });
+  }
+
+  function flushLabels() {
+    labelItems.sort((a, b) => (a.priority - b.priority) || ((a.order ?? 0) - (b.order ?? 0)));
+    for (let i = 0; i < labelItems.length; i++) {
+      labelItems[i].draw();
+    }
+  }
+
+  // ---------- Focus & Axis Helpers ----------
+  function isLaneSoftDim(laneIdx) {
+    if (isolatedLane !== null) return false;
+    if (!selected && !hovered) return false;
+    if (selected && selected.laneIndex === laneIdx) return false;
+    if (hovered && hovered.laneIndex === laneIdx) return false;
+    return true;
+  }
+
+  function getFloorEdges(xSpan, zSpan) {
+    const pZNeg = project(0, 0, -zSpan / 2);
+    const pZPos = project(0, 0, zSpan / 2);
+    const zEdgeSign = pZNeg.depth <= pZPos.depth ? -1 : 1;
+
+    const pXNeg = project(-xSpan / 2, 0, 0);
+    const pXPos = project(xSpan / 2, 0, 0);
+    let xEdgeSign;
+    if (Math.abs(pXNeg.depth - pXPos.depth) < 0.25) {
+      xEdgeSign = pXNeg.sx <= pXPos.sx ? -1 : 1;
+    } else {
+      xEdgeSign = pXPos.depth < pXNeg.depth ? 1 : -1;
+    }
+    return { xEdgeSign, zEdgeSign };
+  }
+
+  function inferYScale(scn) {
+    if (!scn || !scn.cells || scn.cells.length === 0) return null;
+    const kind = scn.kind;
+
+    if (kind === 'swarm') {
+      let best = null;
+      for (const c of scn.cells) {
+        if (c.isEmptyPad || !(c.height > 0.25) || !c.tooltipRows) continue;
+        if (!best || c.height > best.height) best = c;
+      }
+      if (!best) return null;
+      const actCount = parseFormattedNum(best.tooltipRows[0]?.value);
+      const failCount = parseFormattedNum(best.tooltipRows[1]?.value);
+      let slope = 5.6;
+      let val = actCount;
+      if (!(actCount > 0) && failCount > 0 && !(best.secondaryHeight > 0)) {
+        slope = 4.4;
+        val = failCount;
+      }
+      if (!(val > 0)) return null;
+      const scaleVal = val * slope / Math.max(0.01, best.height - 0.24);
+      return {
+        unit: 'count',
+        valAt: (y) => Math.max(0, (Math.max(0, y - 0.24) / slope) * scaleVal),
+        yAt: (v) => v <= 0 ? 0 : 0.24 + (v / scaleVal) * slope,
+      };
+    }
+
+    const base = kind === 'surface' ? 0.22 : kind === 'errors' ? 0.24 : 0.28;
+    const slope = 6.8;
+    let best = null;
+    for (const c of scn.cells) {
+      if (c.isEmptyPad || !(c.height > base + 0.015)) continue;
+      if (!best || (c.height < 7.16 && (best.height >= 7.16 || c.height > best.height))) {
+        best = c;
+      }
+    }
+    if (!best) return null;
+
+    let val = null;
+    let unit = 'ms';
+    if (kind === 'terrain') {
+      const r0 = best.tooltipRows?.[0];
+      if (r0?.label === 'Avg duration') val = parseFormattedMs(r0.value);
+      else val = parseFormattedMs(best.tooltipRows?.[1]?.value);
+    } else if (kind === 'history') {
+      const txt = best.tooltipRows?.[0]?.value || '';
+      const part = txt.includes('longest ') ? txt.split('longest ').pop() : txt.split('·').pop();
+      val = parseFormattedMs(part);
+    } else if (kind === 'calls') {
+      val = parseFormattedMs(best.badgeText);
+    } else if (kind === 'surface') {
+      unit = 'count';
+      val = parseFormattedNum(best.tooltipRows?.[0]?.value);
+    } else if (kind === 'errors') {
+      unit = 'count';
+      const txt = best.tooltipRows?.[0]?.value || '';
+      val = parseFormattedNum(txt.split(/[\s(/]/)[0]);
+    }
+
+    if (!(val > 0)) return null;
+    const scaleVal = val * slope / Math.max(0.01, best.height - base);
+    return {
+      unit,
+      valAt: (y) => Math.max(0, (Math.max(0, y - base) / slope) * scaleVal),
+      yAt: (v) => v <= 0 ? 0 : base + (v / scaleVal) * slope,
+    };
+  }
+
+  function renderYAxis(xSpan, zSpan, maxCellTop, yScale, yTitle) {
+    const corners = [
+      { x: -xSpan / 2, z: -zSpan / 2 },
+      { x: xSpan / 2, z: -zSpan / 2 },
+      { x: xSpan / 2, z: zSpan / 2 },
+      { x: -xSpan / 2, z: zSpan / 2 },
+    ].map(c => ({ ...c, p: project(c.x, 0, c.z) }));
+
+    corners.sort((a, b) => (a.p.sx - b.p.sx) || (a.p.depth - b.p.depth));
+    const anchor = corners[0];
+
+    const yTopWorld = Math.max(1.8, maxCellTop);
+    const pBot = project(anchor.x, 0, anchor.z);
+    const pTop = project(anchor.x, yTopWorld, anchor.z);
+    const axisPxLen = Math.hypot(pTop.sx - pBot.sx, pTop.sy - pBot.sy);
+    if (axisPxLen < 32) return;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pBot.sx, pBot.sy);
+    ctx.lineTo(pTop.sx, pTop.sy);
+    ctx.stroke();
+    ctx.restore();
+
+    if (yTitle) {
+      labelItems.push({
+        priority: LABEL_PRI.AXIS_TITLE,
+        order: 2,
+        draw() {
+          const font = '600 9.5px Inter, system-ui, sans-serif';
+          ctx.font = font;
+          const textW = ctx.measureText(yTitle).width;
+          const tx = pTop.sx - 6;
+          const ty = pTop.sy - 14;
+          if (!tryPlaceBox(tx - textW, ty - 6, textW, 12, 6)) return;
+          ctx.save();
+          ctx.font = font;
+          drawHaloText(yTitle, tx, ty, '#8e887f', 'right', 'middle', 'rgba(15, 14, 13, 0.9)', 3.2);
+          ctx.restore();
+        },
+      });
+    }
+
+    if (!yScale) return;
+
+    const maxTicks = Math.max(2, Math.min(5, Math.floor(axisPxLen / 52) + 1));
+    const maxVal = yScale.valAt(yTopWorld);
+    if (!(maxVal > 0)) return;
+
+    const isInt = yScale.unit === 'count';
+    const step = niceStep(maxVal, maxTicks - 1, isInt);
+    const tickValues = [0];
+    for (let v = step; v <= maxVal * 1.15; v += step) {
+      if (yScale.yAt(v) <= yTopWorld + 0.35) tickValues.push(v);
+    }
+
+    let lastTickPt = null;
+    for (let i = 0; i < tickValues.length; i++) {
+      const v = tickValues[i];
+      const y = v === 0 ? 0 : yScale.yAt(v);
+      const pt = project(anchor.x, y, anchor.z);
+      if (lastTickPt && Math.hypot(pt.sx - lastTickPt.sx, pt.sy - lastTickPt.sy) < 52) continue;
+      lastTickPt = pt;
+
+      const label = yScale.unit === 'ms' ? formatTickMs(v) : formatTickCount(v);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pt.sx - 4, pt.sy);
+      ctx.lineTo(pt.sx, pt.sy);
+      ctx.stroke();
+      ctx.restore();
+
+      labelItems.push({
+        priority: LABEL_PRI.TICK,
+        order: 100 + i,
+        draw() {
+          const font = '500 10.5px Inter, system-ui, sans-serif';
+          ctx.font = font;
+          const textW = ctx.measureText(label).width;
+          const lx = pt.sx - 7;
+          const ly = pt.sy;
+          if (!tryPlaceBox(lx - textW, ly - 6.5, textW, 13, 6)) return;
+          ctx.save();
+          ctx.font = font;
+          drawHaloText(label, lx, ly, '#9c968d', 'right', 'middle', 'rgba(15, 14, 13, 0.9)', 3.2);
+          ctx.restore();
+        },
+      });
+    }
+  }
+
+  function queueLaneLabels(lanes, xSpan, zSpan, xEdgeSign, colorFn) {
+    const isNarrow = width < 600;
+    const maxChars = isNarrow ? 14 : 22;
+    const xPos = xEdgeSign * (xSpan / 2 + 0.65);
+
+    for (let l = 0; l < lanes.length; l++) {
+      const lane = lanes[l];
+      const z = -zSpan / 2 + ((l + 0.5) / lanes.length) * zSpan;
+      const isIso = isolatedLane === l;
+      const dim = isolatedLane !== null && !isIso;
+      const softDim = isLaneSoftDim(l);
+      let col = colorFn(lane, l, isIso, dim);
+      if (dim) col = 'rgba(161,156,148,0.24)';
+      else if (softDim) col = 'rgba(161,156,148,0.46)';
+
+      const shortName = truncateText(lane.name, maxChars);
+      queueFloorLabel(shortName, xPos, z, 1, 0, 0, -1, {
+        priority: LABEL_PRI.LANE,
+        order: (isIso ? -100 : 0) + l,
+        color: col,
+        size: isNarrow ? 10.5 : 11,
+        weight: isIso ? 600 : 500,
+        align: 'outward',
+        outX: xEdgeSign,
+        outZ: 0,
+        pad: 3,
+      });
+    }
+  }
+
+  function queueTimeTicksFloor(ticks, xSpan, zSpan, zEdgeSign) {
+    if (!ticks || ticks.length === 0) return;
+    const zPos = zEdgeSign * (zSpan / 2 + 0.8);
+    const pStart = project(-xSpan / 2, 0, zPos);
+    const pEnd = project(xSpan / 2, 0, zPos);
+    const totalPx = Math.hypot(pEnd.sx - pStart.sx, pEnd.sy - pStart.sy);
+    const avgStepPx = ticks.length > 1 ? totalPx / (ticks.length - 1) : totalPx;
+    const stride = avgStepPx > 0.1 ? Math.max(1, Math.ceil(52 / avgStepPx)) : ticks.length;
+
+    let lastPt = null;
+    for (let i = 0; i < ticks.length; i++) {
+      const isLast = i === ticks.length - 1;
+      if (i % stride !== 0 && !isLast) continue;
+      const tick = ticks[i];
+      const x = -xSpan / 2 + tick.fraction * xSpan;
+      const pt = project(x, 0, zPos);
+      if (lastPt && Math.hypot(pt.sx - lastPt.sx, pt.sy - lastPt.sy) < (isLast ? 48 : 52)) continue;
+      lastPt = pt;
+
+      queueFloorLabel(tick.label, x, zPos, 1, 0, 0, -1, {
+        priority: LABEL_PRI.TICK,
+        order: i,
+        color: '#8e887f',
+        size: 10.5,
+        weight: 500,
+        align: 'center',
+        pad: 4,
+      });
+    }
+  }
+
+  function queueColumnHeadersFloor(headers, numCols, xSpan, zSpan, zEdgeSign, preferAngled) {
+    if (numCols <= 0) return;
+    const isNarrow = width < 600;
+    const maxChars = isNarrow ? 12 : 18;
+    const zPos = zEdgeSign * (zSpan / 2 + 0.72);
+
+    const cellX = (k) => -xSpan / 2 + ((k + 0.5) / numCols) * xSpan;
+    const pFirst = project(cellX(0), 0, zPos);
+    const pLast = project(cellX(Math.max(0, numCols - 1)), 0, zPos);
+    const colSpacingPx = numCols > 1
+      ? Math.hypot(pLast.sx - pFirst.sx, pLast.sy - pFirst.sy) / (numCols - 1)
+      : 160;
+
+    // Check if Z axis is unforeshortened enough for angled endpoint headers when columns are dense
+    let useAngled = false;
+    if (preferAngled && numCols >= 4 && colSpacingPx < 105) {
+      const testFt = computeFloorTransform(0, zPos, 0, 1, 1, 0, 0, zEdgeSign, 'outward');
+      if (testFt && testFt.len1 >= 0.42) useAngled = true;
+    }
+
+    const minSpacing = useAngled ? 28 : 52;
+    let lastPt = null;
+    for (let k = 0; k < numCols; k++) {
+      const raw = (headers && headers[k]) ? headers[k] : `Col ${k + 1}`;
+      const label = truncateText(raw, maxChars);
+      const x = cellX(k);
+      const pt = project(x, 0, zPos);
+      if (lastPt && Math.hypot(pt.sx - lastPt.sx, pt.sy - lastPt.sy) < minSpacing) continue;
+      lastPt = pt;
+
+      if (useAngled) {
+        queueFloorLabel(label, x, zPos, 0, 1, 1, 0, {
+          priority: LABEL_PRI.TICK,
+          order: k,
+          color: '#a19c94',
+          size: isNarrow ? 10 : 10.5,
+          weight: 500,
+          align: 'outward',
+          outX: 0,
+          outZ: zEdgeSign,
+          pad: 3,
+        });
+      } else {
+        queueFloorLabel(label, x, zPos, 1, 0, 0, -1, {
+          priority: LABEL_PRI.TICK,
+          order: k,
+          color: '#a19c94',
+          size: isNarrow ? 10 : 10.5,
+          weight: 500,
+          align: 'center',
+          pad: 4,
+        });
+      }
+    }
+    return useAngled;
+  }
+
+  function queueFloorAxisTitles(xTitle, zTitle, xSpan, zSpan, xEdgeSign, zEdgeSign, angledX) {
+    if (xTitle) {
+      const zTitlePos = zEdgeSign * (zSpan / 2 + (angledX ? 4.8 : 2.05));
+      queueFloorLabel(xTitle, 0, zTitlePos, 1, 0, 0, -1, {
+        priority: LABEL_PRI.AXIS_TITLE,
+        order: 0,
+        color: '#8e887f',
+        size: 9.5,
+        weight: 600,
+        align: 'center',
+        pad: 4,
+      });
+    }
+    if (zTitle) {
+      const xTitlePos = xEdgeSign * (xSpan / 2 + 0.65);
+      const zHeaderPos = -zEdgeSign * (zSpan / 2 + 0.72);
+      queueFloorLabel(zTitle, xTitlePos, zHeaderPos, 1, 0, 0, -1, {
+        priority: LABEL_PRI.AXIS_TITLE,
+        order: 1,
+        color: '#8e887f',
+        size: 9.5,
+        weight: 600,
+        align: 'outward',
+        outX: xEdgeSign,
+        outZ: 0,
+        pad: 4,
+      });
+    }
+  }
+
   function drawPoly(pts, fill, stroke, lineWidth = 1, dashed = false) {
     ctx.beginPath();
     ctx.moveTo(pts[0].sx, pts[0].sy);
@@ -133,15 +815,6 @@ export function mount(canvas, tooltip, dotnet) {
     }
   }
 
-  function drawLabel3D(text, x, y, z, color = '#a19c94', align = 'center', size = 11.5) {
-    const p = project(x, y, z);
-    ctx.font = `500 ${size}px Inter, system-ui, sans-serif`;
-    ctx.fillStyle = color;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, p.sx, p.sy);
-  }
-
   function queueBox(queue, cx, cy, cz, w, h, d, baseColor, opts) {
     const hx = w / 2, hz = d / 2;
     const y0 = cy, y1 = cy + Math.max(0.03, h);
@@ -156,14 +829,16 @@ export function mount(canvas, tooltip, dotnet) {
       project(cx - hx, y1, cz + hz), // 7
     ];
     const centerDepth = (v[0].depth + v[2].depth + v[4].depth + v[6].depth) / 4;
-    const alpha = opts.dim ? 0.14 : (opts.alpha ?? 0.94);
+    const alpha = opts.dim ? 0.14 : opts.softDim ? 0.45 : (opts.alpha ?? 0.94);
     const stroke = opts.selected
       ? 'rgba(255,255,255,0.95)'
       : opts.hovered
         ? 'rgba(255,255,255,0.65)'
         : opts.dim
           ? 'rgba(255,255,255,0.06)'
-          : (opts.stroke ?? 'rgba(15,14,13,0.45)');
+          : opts.softDim
+            ? 'rgba(15,14,13,0.28)'
+            : (opts.stroke ?? 'rgba(15,14,13,0.45)');
 
     const faces = [
       { idx: [4, 5, 6, 7], shade: 1.12 }, // top
@@ -211,7 +886,7 @@ export function mount(canvas, tooltip, dotnet) {
     return bounds;
   }
 
-  function drawEmptyPad(queue, x, z, padW, padD, dim) {
+  function drawEmptyPad(queue, x, z, padW, padD, dim, softDim) {
     const hx = padW * 0.46, hz = padD * 0.46;
     const pts = [
       project(x - hx, 0.01, z - hz),
@@ -226,8 +901,8 @@ export function mount(canvas, tooltip, dotnet) {
       draw() {
         drawPoly(
           pts,
-          dim ? 'rgba(255,255,255,0.008)' : 'rgba(255,255,255,0.018)',
-          dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+          dim ? 'rgba(255,255,255,0.008)' : softDim ? 'rgba(255,255,255,0.01)' : 'rgba(255,255,255,0.018)',
+          dim ? 'rgba(255,255,255,0.03)' : softDim ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.09)',
           1,
           true
         );
@@ -240,43 +915,32 @@ export function mount(canvas, tooltip, dotnet) {
     const numCols = scene.timeBuckets;
     const xSpan = scene.xSpan || 20;
     const zSpan = scene.zSpan || 12;
+    const { xEdgeSign, zEdgeSign } = getFloorEdges(xSpan, zSpan);
 
     const cellX = (colIdx) => -xSpan / 2 + ((colIdx + 0.5) / numCols) * xSpan;
     const cellZ = (laneIdx) => -zSpan / 2 + ((laneIdx + 0.5) / lanes.length) * zSpan;
 
     drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / numCols, zSpan / lanes.length);
 
-    // X-axis endpoint/call column headers (staggered slightly when dense)
-    for (let k = 0; k < numCols; k++) {
-      const header = (scene.stepHeaders && scene.stepHeaders[k]) ? scene.stepHeaders[k] : `Call ${k + 1}`;
-      const zOff = numCols > 5 && k % 2 === 1 ? -zSpan / 2 - 1.65 : -zSpan / 2 - 0.95;
-      drawLabel3D(header, cellX(k), 0, zOff, '#a19c94', 'center', 10.5);
-    }
-
-    // Z-axis scenario lane labels
-    for (let l = 0; l < lanes.length; l++) {
-      const lane = lanes[l];
-      const z = cellZ(l);
-      const isIso = isolatedLane === l;
-      const dim = isolatedLane !== null && !isIso;
-      const col = isIso ? '#ffffff' : (dim ? 'rgba(161,156,148,0.28)' : '#f1efea');
-      const shortName = lane.name.length > 28 ? lane.name.slice(0, 27) + '…' : lane.name;
-      drawLabel3D(shortName, -xSpan / 2 - 1.0, 0.15, z, col, 'right', 11.5);
-    }
+    const angledX = queueColumnHeadersFloor(scene.stepHeaders, numCols, xSpan, zSpan, zEdgeSign, true);
+    queueLaneLabels(lanes, xSpan, zSpan, xEdgeSign, (_lane, _l, isIso) => (isIso ? '#ffffff' : '#f1efea'));
+    queueFloorAxisTitles('ENDPOINTS', 'SCENARIOS', xSpan, zSpan, xEdgeSign, zEdgeSign, angledX);
 
     const padW = (xSpan / numCols) * 0.74;
     const padD = (zSpan / lanes.length) * 0.68;
     const barW = padW * 0.68;
     const barD = padD * 0.68;
     const queue = [];
+    let maxTop = 0;
 
     for (const cell of scene.cells) {
       const x = cellX(cell.bucketIndex);
       const z = cellZ(cell.laneIndex);
       const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
+      const softDim = isLaneSoftDim(cell.laneIndex);
 
       if (cell.isEmptyPad) {
-        drawEmptyPad(queue, x, z, padW, padD, dim);
+        drawEmptyPad(queue, x, z, padW, padD, dim, softDim);
         continue;
       }
 
@@ -285,12 +949,14 @@ export function mount(canvas, tooltip, dotnet) {
 
       const padBounds = queueBox(queue, x, 0, z, padW, 0.08, padD, [40, 37, 34], {
         dim,
+        softDim,
         alpha: 0.92,
         stroke: isSel ? 'rgba(255,255,255,0.9)' : isHov ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)',
       });
 
       const pb = queueBox(queue, x, 0.08, z, barW, cell.height, barD, cell.color, {
         dim,
+        softDim,
         selected: isSel,
         hovered: isHov,
       });
@@ -306,27 +972,46 @@ export function mount(canvas, tooltip, dotnet) {
         data: cell,
       });
 
-      if (cell.badgeText && (cell.alertBadge || isSel || isHov)) {
-        const topY = 0.08 + cell.height;
+      const topY = 0.08 + cell.height;
+      if (topY > maxTop) maxTop = topY;
+
+      if (cell.badgeText && !dim && !softDim) {
         const labelPt = project(x, topY + 0.36, z);
-        queue.push({
-          depth: labelPt.depth - 0.6,
-          yOrder: topY + 1,
-          draw() {
-            if (dim) return;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.font = '600 10.5px Inter, system-ui, sans-serif';
-            ctx.fillStyle = cell.alertBadge ? '#ff9b9b' : '#ffffff';
-            ctx.fillText(cell.badgeText, labelPt.sx, labelPt.sy);
-          },
-        });
+        if (isSel || isHov) {
+          queuePillBadge(cell.badgeText, labelPt.sx, labelPt.sy, {
+            priority: LABEL_PRI.SELECTED_HOVERED,
+            order: isSel ? 0 : 1,
+            color: cell.alertBadge ? '#ffb3b3' : '#ffffff',
+            border: isSel ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.35)',
+          });
+        } else if (cell.alertBadge) {
+          queuePillBadge(cell.badgeText, labelPt.sx, labelPt.sy, {
+            priority: LABEL_PRI.ALERT,
+            order: -Math.round(cell.height * 100),
+            color: '#ff9b9b',
+            border: 'rgba(240,82,82,0.48)',
+          });
+        } else {
+          ctx.font = '500 10px Inter, system-ui, sans-serif';
+          const tw = ctx.measureText(cell.badgeText).width;
+          const footprintW = padBounds.maxX - padBounds.minX;
+          if (footprintW >= tw + 10) {
+            queueHaloBadge(cell.badgeText, labelPt.sx, labelPt.sy, {
+              priority: LABEL_PRI.CELL_BADGE,
+              order: -Math.round(cell.height * 100),
+              color: '#e5e2dc',
+            });
+          }
+        }
       }
     }
 
     queue.sort((a, b) => (b.depth - a.depth) || ((a.yOrder ?? 0) - (b.yOrder ?? 0)));
     for (const item of queue) item.draw();
     hitTargets.sort((a, b) => a.depth - b.depth);
+
+    renderYAxis(xSpan, zSpan, maxTop, inferYScale(scene), 'LATENCY');
+    flushLabels();
   }
 
   function renderSwarm() {
@@ -334,33 +1019,22 @@ export function mount(canvas, tooltip, dotnet) {
     const maxSteps = scene.timeBuckets;
     const xSpan = scene.xSpan || 18;
     const zSpan = scene.zSpan || 12;
+    const { xEdgeSign, zEdgeSign } = getFloorEdges(xSpan, zSpan);
 
     const cellX = (stepIdx) => -xSpan / 2 + ((stepIdx + 0.5) / maxSteps) * xSpan;
     const cellZ = (laneIdx) => -zSpan / 2 + ((laneIdx + 0.5) / lanes.length) * zSpan;
 
     drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / maxSteps, zSpan / lanes.length);
 
-    // X-axis step headers
-    for (let k = 0; k < maxSteps; k++) {
-      const header = (scene.stepHeaders && scene.stepHeaders[k]) ? scene.stepHeaders[k] : `Step ${k + 1}`;
-      drawLabel3D(header, cellX(k), 0, -zSpan / 2 - 1.05, '#a19c94', 'center', 11.5);
-    }
-
-    // Z-axis scenario lane labels
-    for (let l = 0; l < lanes.length; l++) {
-      const lane = lanes[l];
-      const z = cellZ(l);
-      const isIso = isolatedLane === l;
-      const dim = isolatedLane !== null && !isIso;
-      const col = isIso ? '#ffffff' : (dim ? 'rgba(161,156,148,0.28)' : '#f1efea');
-      const shortName = lane.name.length > 28 ? lane.name.slice(0, 27) + '…' : lane.name;
-      drawLabel3D(shortName, -xSpan / 2 - 1.0, 0.15, z, col, 'right', 11.5);
-    }
+    queueColumnHeadersFloor(scene.stepHeaders, maxSteps, xSpan, zSpan, zEdgeSign, false);
+    queueLaneLabels(lanes, xSpan, zSpan, xEdgeSign, (_lane, _l, isIso) => (isIso ? '#ffffff' : '#f1efea'));
+    queueFloorAxisTitles('STEPS', 'SCENARIOS', xSpan, zSpan, xEdgeSign, zEdgeSign, false);
 
     const padW = (xSpan / maxSteps) * 0.74;
     const padD = (zSpan / lanes.length) * 0.68;
     const barW = padW * 0.68;
     const barD = padD * 0.68;
+    const isNarrow = width < 600;
 
     // Draw connecting flow rails along declared steps
     for (let l = 0; l < lanes.length; l++) {
@@ -368,13 +1042,14 @@ export function mount(canvas, tooltip, dotnet) {
       const declared = Math.max(1, lane.declaredSteps || maxSteps);
       const z = cellZ(l);
       const dim = isolatedLane !== null && isolatedLane !== l;
+      const softDim = isLaneSoftDim(l);
       if (declared > 1) {
         const a = project(cellX(0), 0.04, z);
         const b = project(cellX(declared - 1), 0.04, z);
         ctx.beginPath();
         ctx.moveTo(a.sx, a.sy);
         ctx.lineTo(b.sx, b.sy);
-        ctx.strokeStyle = dim ? 'rgba(91,155,240,0.06)' : 'rgba(91,155,240,0.28)';
+        ctx.strokeStyle = dim ? 'rgba(91,155,240,0.06)' : softDim ? 'rgba(91,155,240,0.12)' : 'rgba(91,155,240,0.28)';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -382,14 +1057,16 @@ export function mount(canvas, tooltip, dotnet) {
 
     const queue = [];
     const topYGrid = Array.from({ length: lanes.length }, () => new Array(maxSteps).fill(0.08));
+    let maxTop = 0;
 
     for (const cell of scene.cells) {
       const x = cellX(cell.bucketIndex);
       const z = cellZ(cell.laneIndex);
       const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
+      const softDim = isLaneSoftDim(cell.laneIndex);
 
       if (cell.isEmptyPad) {
-        drawEmptyPad(queue, x, z, padW, padD, dim);
+        drawEmptyPad(queue, x, z, padW, padD, dim, softDim);
         continue;
       }
 
@@ -401,6 +1078,7 @@ export function mount(canvas, tooltip, dotnet) {
 
       const padBounds = queueBox(queue, x, 0, z, padW, 0.08, padD, [40, 37, 34], {
         dim,
+        softDim,
         alpha: 0.92,
         selected: isSel && !hasBars,
         hovered: isHov && !hasBars,
@@ -414,6 +1092,7 @@ export function mount(canvas, tooltip, dotnet) {
       if (primaryH > 0) {
         const pb = queueBox(queue, x, 0.08, z, barW, primaryH, barD, cell.color, {
           dim,
+          softDim,
           selected: isSel,
           hovered: isHov,
         });
@@ -427,6 +1106,7 @@ export function mount(canvas, tooltip, dotnet) {
       if (secondaryH > 0 && cell.secondaryColor) {
         const sb = queueBox(queue, x, 0.08 + primaryH, z, barW, secondaryH, barD, cell.secondaryColor, {
           dim,
+          softDim,
           selected: isSel,
           hovered: isHov,
         });
@@ -445,29 +1125,41 @@ export function mount(canvas, tooltip, dotnet) {
 
       const topY = 0.08 + primaryH + secondaryH;
       topYGrid[cell.laneIndex][cell.bucketIndex] = topY;
+      if (topY > maxTop) maxTop = topY;
 
-      if (cell.stepName || cell.badgeText) {
-        const showTopBadge = (cell.alertBadge || isSel || isHov) && cell.badgeText;
+      if (!dim && !softDim && (cell.stepName || cell.badgeText)) {
         const labelPt = project(x, topY + 0.42, z);
-        const footPt = project(x, 0.14, z - padD * 0.56);
-        queue.push({
-          depth: (showTopBadge ? labelPt.depth : footPt.depth) - 0.6,
-          yOrder: topY + 1,
-          draw() {
-            if (dim) return;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            if (showTopBadge) {
-              ctx.font = '600 10.5px Inter, system-ui, sans-serif';
-              ctx.fillStyle = cell.alertBadge ? '#ff9b9b' : '#ffffff';
-              ctx.fillText(cell.badgeText, labelPt.sx, labelPt.sy);
-            } else if (cell.stepName) {
-              ctx.font = '500 10px Inter, system-ui, sans-serif';
-              ctx.fillStyle = 'rgba(241,239,234,0.58)';
-              ctx.fillText(cell.stepName, footPt.sx, footPt.sy);
-            }
-          },
-        });
+        if ((isSel || isHov) && (cell.badgeText || cell.stepName)) {
+          const txt = truncateText(cell.badgeText || cell.stepName, isNarrow ? 22 : 34);
+          queuePillBadge(txt, labelPt.sx, labelPt.sy, {
+            priority: LABEL_PRI.SELECTED_HOVERED,
+            order: isSel ? 0 : 1,
+            color: cell.alertBadge ? '#ffb3b3' : '#ffffff',
+            border: isSel ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.35)',
+          });
+        } else if (cell.alertBadge && cell.badgeText) {
+          const txt = truncateText(cell.badgeText, isNarrow ? 18 : 28);
+          queuePillBadge(txt, labelPt.sx, labelPt.sy, {
+            priority: LABEL_PRI.ALERT,
+            order: -Math.round(topY * 100),
+            color: '#ff9b9b',
+            border: 'rgba(240,82,82,0.48)',
+          });
+        } else {
+          const candidate = cell.badgeText || cell.stepName;
+          const shortCandidate = truncateText(candidate, isNarrow ? 10 : 16);
+          ctx.font = '500 10px Inter, system-ui, sans-serif';
+          const tw = ctx.measureText(shortCandidate).width;
+          const footprintW = padBounds.maxX - padBounds.minX;
+          if (shortCandidate && footprintW >= tw + 10) {
+            const pt = hasBars ? labelPt : project(x, 0.22, z);
+            queueHaloBadge(shortCandidate, pt.sx, pt.sy, {
+              priority: LABEL_PRI.CELL_BADGE,
+              order: Math.round(pt.depth * 100),
+              color: hasBars ? '#f1efea' : 'rgba(241,239,234,0.68)',
+            });
+          }
+        }
       }
     }
 
@@ -523,11 +1215,12 @@ export function mount(canvas, tooltip, dotnet) {
       for (const arc of arcs) {
         if (arc.kind === 'next') continue;
         const dim = isolatedLane !== null && isolatedLane !== arc.scenarioIndex;
+        const softDim = isLaneSoftDim(arc.scenarioIndex);
         const isLoop = arc.kind === 'loop';
         const isRepeat = arc.kind === 'repeat';
         const col = isLoop ? COL_LOOP : isRepeat ? COL_CYAN : COL_NEXT;
         const heat = Math.min(1, 0.25 + Math.log10(1 + arc.count) * 0.45);
-        const alpha = dim ? 0.04 : (0.18 + heat * 0.62);
+        const alpha = dim ? 0.04 : softDim ? (0.08 + heat * 0.25) : (0.18 + heat * 0.62);
         const lw = 1.1 + heat * 1.4;
 
         const segs = 16;
@@ -579,6 +1272,7 @@ export function mount(canvas, tooltip, dotnet) {
         if (arc.kind === 'next' && !scene.isRunning) continue;
         if (arc.kind !== 'next' && !showJumpArcs) continue;
         const dim = isolatedLane !== null && isolatedLane !== arc.scenarioIndex;
+        const softDim = isLaneSoftDim(arc.scenarioIndex);
         const isLoop = arc.kind === 'loop';
         const isNext = arc.kind === 'next';
         const col = isLoop ? COL_LOOP : isNext ? COL_NEXT : COL_CYAN;
@@ -596,7 +1290,7 @@ export function mount(canvas, tooltip, dotnet) {
             draw() {
               ctx.beginPath();
               ctx.arc(p.sx, p.sy, dim ? 1.5 : (isNext ? 2.8 : 3.3), 0, Math.PI * 2);
-              ctx.fillStyle = rgb(col, dim ? 0.14 : 0.95);
+              ctx.fillStyle = rgb(col, dim ? 0.14 : softDim ? 0.42 : 0.95);
               ctx.fill();
             },
           });
@@ -607,11 +1301,17 @@ export function mount(canvas, tooltip, dotnet) {
     queue.sort((a, b) => (b.depth - a.depth) || ((a.yOrder ?? 0) - (b.yOrder ?? 0)));
     for (const item of queue) item.draw();
     hitTargets.sort((a, b) => a.depth - b.depth);
+
+    renderYAxis(xSpan, zSpan, maxTop, inferYScale(scene), 'BEES');
+    flushLabels();
   }
 
   function renderScene() {
+    ctx.setTransform(dprX, 0, 0, dprY, 0, 0);
     ctx.clearRect(0, 0, width, height);
     hitTargets = [];
+    placedBoxes = [];
+    labelItems = [];
     if (!scene || !scene.lanes || scene.lanes.length === 0 || !scene.timeBuckets) return;
 
     if (scene.kind === 'swarm') {
@@ -628,30 +1328,34 @@ export function mount(canvas, tooltip, dotnet) {
     const timeBuckets = scene.timeBuckets;
     const xSpan = scene.xSpan || 22;
     const zSpan = scene.zSpan || 10;
+    const { xEdgeSign, zEdgeSign } = getFloorEdges(xSpan, zSpan);
 
     drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / 6, zSpan / lanes.length);
 
-    if (scene.timeTicks) {
-      for (const tick of scene.timeTicks) {
-        const x = -xSpan / 2 + tick.fraction * xSpan;
-        drawLabel3D(tick.label, x, 0, -zSpan / 2 - 1.1, '#6f6a63', 'center', 11);
-      }
-    }
+    queueTimeTicksFloor(scene.timeTicks, xSpan, zSpan, zEdgeSign);
+    queueLaneLabels(lanes, xSpan, zSpan, xEdgeSign, (lane, l, isIso) => {
+      if (isIso) return '#ffffff';
+      if (scene.kind === 'history' && l === 0) return '#f1efea';
+      if (scene.kind === 'history' && lane.isStopped) return '#f08a8a';
+      if (scene.kind === 'surface' && lane.highlight) return '#fbbf24';
+      return '#b5b0a8';
+    });
 
-    for (let l = 0; l < lanes.length; l++) {
-      const lane = lanes[l];
-      const z = -zSpan / 2 + ((l + 0.5) / lanes.length) * zSpan;
-      const isIso = isolatedLane === l;
-      const col = isIso
-        ? '#ffffff'
-        : (scene.kind === 'history' && l === 0)
-          ? '#f1efea'
-          : (scene.kind === 'history' && lane.isStopped)
-            ? '#f08a8a'
-            : (scene.kind === 'surface' && lane.highlight ? '#fbbf24' : '#a19c94');
-      const shortName = lane.name.length > 28 ? lane.name.slice(0, 27) + '…' : lane.name;
-      drawLabel3D(shortName, -xSpan / 2 - 1.0, 0.2, z, col, 'right', 11);
-    }
+    const zTitle = scene.kind === 'surface'
+      ? 'LATENCY BAND'
+      : scene.kind === 'history'
+        ? 'RUNS'
+        : scene.kind === 'errors'
+          ? 'ERROR SIGNATURE'
+          : 'LANES';
+    const yTitle = scene.kind === 'surface'
+      ? 'BEES'
+      : scene.kind === 'history'
+        ? 'MAX DURATION'
+        : scene.kind === 'errors'
+          ? 'FAILURES'
+          : 'AVG DURATION';
+    queueFloorAxisTitles('RUN TIME', zTitle, xSpan, zSpan, xEdgeSign, zEdgeSign, false);
 
     const queue = [];
     const barW = (xSpan / timeBuckets) * (scene.kind === 'surface' ? 0.85 : 0.78);
@@ -664,11 +1368,13 @@ export function mount(canvas, tooltip, dotnet) {
         const xEnd = -xSpan / 2 + lane.endFraction * xSpan;
         const z = -zSpan / 2 + ((l + 0.5) / lanes.length) * zSpan;
         const dim = isolatedLane !== null && isolatedLane !== l;
+        const softDim = isLaneSoftDim(l);
         const p0 = project(xEnd, 0, z - barD * 0.68);
         const p1 = project(xEnd, 0, z + barD * 0.68);
         const pTop = project(xEnd, 1.05, z);
         const pBot = project(xEnd, 0, z);
-        const capColor = lane.isStopped ? `rgba(240,82,82,${dim ? 0.2 : 0.78})` : `rgba(161,156,148,${dim ? 0.16 : 0.55})`;
+        const capAlpha = dim ? 0.18 : softDim ? 0.35 : (lane.isStopped ? 0.78 : 0.55);
+        const capColor = lane.isStopped ? `rgba(240,82,82,${capAlpha})` : `rgba(161,156,148,${capAlpha})`;
         queue.push({
           depth: pBot.depth - 0.05,
           draw() {
@@ -679,28 +1385,43 @@ export function mount(canvas, tooltip, dotnet) {
             ctx.beginPath(); ctx.moveTo(p0.sx, p0.sy); ctx.lineTo(p1.sx, p1.sy); ctx.stroke();
             ctx.setLineDash([]);
             ctx.beginPath(); ctx.moveTo(pBot.sx, pBot.sy); ctx.lineTo(pTop.sx, pTop.sy); ctx.stroke();
-            if (lane.endLabel && !dim) {
-              ctx.font = '600 10.5px Inter, system-ui, sans-serif';
-              ctx.fillStyle = lane.isStopped ? '#f08a8a' : '#a19c94';
-              ctx.textAlign = 'left';
-              ctx.textBaseline = 'bottom';
-              ctx.fillText(lane.endLabel, pTop.sx + 4, pTop.sy - 2);
-            }
             ctx.restore();
           },
         });
+        if (lane.endLabel && !dim && !softDim) {
+          if (lane.isStopped) {
+            queuePillBadge(lane.endLabel, pTop.sx, pTop.sy - 10, {
+              priority: LABEL_PRI.ALERT,
+              order: l,
+              color: '#ff9b9b',
+              border: 'rgba(240,82,82,0.45)',
+            });
+          } else {
+            queueHaloBadge(lane.endLabel, pTop.sx + 4, pTop.sy - 8, {
+              priority: LABEL_PRI.CELL_BADGE,
+              order: l,
+              align: 'left',
+              color: '#b5b0a8',
+            });
+          }
+        }
       }
     }
 
+    let maxTop = 0;
     for (const cell of scene.cells) {
       const x = -xSpan / 2 + ((cell.bucketIndex + 0.5) / timeBuckets) * xSpan;
       const z = -zSpan / 2 + ((cell.laneIndex + 0.5) / lanes.length) * zSpan;
       const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
+      const softDim = isLaneSoftDim(cell.laneIndex);
       const isSel = selected && selected.laneIndex === cell.laneIndex && selected.bucketIndex === cell.bucketIndex;
       const isHov = hovered && hovered.laneIndex === cell.laneIndex && hovered.bucketIndex === cell.bucketIndex;
 
+      if (cell.height > maxTop) maxTop = cell.height;
+
       queueBox(queue, x, 0, z, barW, cell.height, barD, cell.color, {
         dim,
+        softDim,
         selected: isSel,
         hovered: isHov,
         hit: cell,
@@ -710,6 +1431,9 @@ export function mount(canvas, tooltip, dotnet) {
     queue.sort((a, b) => b.depth - a.depth);
     for (const item of queue) item.draw();
     hitTargets.sort((a, b) => a.depth - b.depth);
+
+    renderYAxis(xSpan, zSpan, maxTop, inferYScale(scene), yTitle);
+    flushLabels();
   }
 
   function isSwarmAnimating() {

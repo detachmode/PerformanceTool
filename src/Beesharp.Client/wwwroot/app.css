@@ -991,8 +991,17 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .btn.copy-ok { border-color: var(--good); color: var(--good); background: rgba(52, 211, 153, 0.12); }
 .btn.icon-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; flex: none; }
 
-.cs-ed { display: flex; position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--input); overflow: hidden; }
+.cs-ed { display: flex; position: relative; height: 420px; min-height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: #141311; overflow: hidden; }
 .cs-ed:focus-within { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
+.monaco-host { flex: 1 1 auto; width: 100%; height: 100%; min-width: 0; min-height: 0; position: relative; background: #141311; }
+.cs-fallback-ta {
+    flex: 1 1 auto; width: 100%; height: 100%; margin: 0; padding: .85rem 1rem;
+    font-family: var(--mono); font-size: .84rem; line-height: 1.55; tab-size: 4;
+    border: 0; border-radius: 0; box-sizing: border-box;
+    background: #141311; color: var(--text); caret-color: var(--title); resize: none; outline: none;
+}
+.cs-ed.wrap .cs-fallback-ta { white-space: pre-wrap; overflow-wrap: break-word; overflow-x: hidden; overflow-y: auto; }
+.cs-ed.nowrap .cs-fallback-ta { white-space: pre; overflow-wrap: normal; overflow: auto; }
 .cs-gutter {
     flex: none; width: 2.9rem; overflow: hidden; user-select: none;
     padding: .85rem .45rem .85rem .25rem; box-sizing: border-box;
@@ -1553,10 +1562,12 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .lg-line:hover { background: color-mix(in srgb, var(--panel2) 55%, transparent); }
 .lg-t { color: var(--faint); }
 .lg-lv { font-weight: 700; display: inline-block; min-width: 2.2em; }
-.lg-line.lv-Error .lg-lv, .lg-line.lv-Error .lg-msg { color: var(--bad); }
-.lg-line.lv-Warning .lg-lv { color: var(--warn); }
-.lg-line.lv-Information .lg-lv { color: var(--good); }
-.lg-line.lv-Debug .lg-lv, .lg-line.lv-Trace .lg-lv, .lg-line.lv-Debug .lg-msg, .lg-line.lv-Trace .lg-msg { color: var(--faint); }
+.lg-line.lv-Error .lg-lv, .lg-line.lv-Error .lg-msg, .lg-line.lv-Critical .lg-lv, .lg-line.lv-Critical .lg-msg { color: #f87171; }
+.lg-line.lv-Error .lg-lv, .lg-line.lv-Critical .lg-lv { color: #f05252; }
+.lg-line.lv-Warning .lg-lv, .lg-line.lv-Warning .lg-msg { color: #fbbf24; }
+.lg-line.lv-Information .lg-lv { color: #34d399; }
+.lg-line.lv-Information .lg-msg { color: #86efac; }
+.lg-line.lv-Debug .lg-lv, .lg-line.lv-Trace .lg-lv, .lg-line.lv-Debug .lg-msg, .lg-line.lv-Trace .lg-msg { color: #94a3b8; }
 .lg-sc { color: var(--muted); }
 .lg-bee { font: inherit; background: none; border: 0; padding: 0; color: var(--text); font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
 .lg-bee:hover { color: var(--title); text-decoration-color: var(--muted); }

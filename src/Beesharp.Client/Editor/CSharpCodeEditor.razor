@@ -1,20 +1,20 @@
-@* Lightweight C# syntax-highlighted code editor with aligned line numbers, toggleable line wrap, and synced scrolling. *@
-@using System.Net
-@using System.Text
-@using System.Text.RegularExpressions
+@* C# script editor powered by Monaco Editor, with a clean textarea fallback if Monaco fails to load. *@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="cs-ed @(WordWrap ? "wrap" : "nowrap")">
-    <div class="cs-gutter" @ref="gutterEl" aria-hidden="true"></div>
-    <div class="cs-stage">
-        <pre class="cs-hl" @ref="preEl" aria-hidden="true"><code>@Highlight(Value)</code></pre>
-        <textarea class="cs-ta" @ref="taEl" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+<div class="cs-ed @(useFallback ? (WordWrap ? "wrap" : "nowrap") : "monaco-ed")">
+    @if (useFallback)
+    {
+        <textarea class="cs-fallback-ta" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
                   wrap="@(WordWrap ? "soft" : "off")"
                   aria-label="@AriaLabel"
                   value="@Value"
-                  @oninput="OnInput"></textarea>
-    </div>
+                  @oninput="OnFallbackInput"></textarea>
+    }
+    else
+    {
+        <div class="monaco-host" @ref="hostEl" aria-label="@AriaLabel"></div>
+    }
 </div>
 
 @code {
@@ -23,122 +23,127 @@
     [Parameter] public bool WordWrap { get; set; } = true;
     [Parameter] public string AriaLabel { get; set; } = "C# scenario script";
 
-    private ElementReference taEl;
-    private ElementReference preEl;
-    private ElementReference gutterEl;
+    private ElementReference hostEl;
+    private DotNetObjectReference<CSharpCodeEditor>? selfRef;
     private IJSObjectReference? module;
     private IJSObjectReference? handle;
+    private string lastAppliedValue = "";
+    private bool lastWordWrap = true;
+    private bool useFallback;
+    private bool disposed;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (disposed) return;
+
         if (firstRender)
         {
+            var initial = Value ?? "";
+            lastAppliedValue = initial;
+            lastWordWrap = WordWrap;
+            selfRef = DotNetObjectReference.Create(this);
+
             try
             {
-                module = await JS.InvokeAsync<IJSObjectReference>("import", "./code-editor.js");
-                handle = await module.InvokeAsync<IJSObjectReference>("attach", taEl, preEl, gutterEl);
+                module = await JS.InvokeAsync<IJSObjectReference>("import", "./monaco-host.js");
             }
             catch { }
+
+            if (module is not null && !disposed)
+            {
+                try
+                {
+                    handle = await module.InvokeAsync<IJSObjectReference?>(
+                        "createCodeEditor",
+                        hostEl,
+                        selfRef,
+                        initial,
+                        new { wordWrap = WordWrap, ariaLabel = AriaLabel });
+                }
+                catch { }
+            }
+
+            if (disposed)
+            {
+                await DisposeHandleAsync();
+                return;
+            }
+
+            if (handle is null)
+            {
+                useFallback = true;
+                StateHasChanged();
+                return;
+            }
+
+            // Re-sync if Value or WordWrap changed while Monaco was loading from CDN.
+            var current = Value ?? "";
+            if (!string.Equals(current, lastAppliedValue, StringComparison.Ordinal))
+            {
+                lastAppliedValue = current;
+                try { await handle.InvokeVoidAsync("setValue", current); } catch { }
+            }
+            if (WordWrap != lastWordWrap)
+            {
+                lastWordWrap = WordWrap;
+                try { await handle.InvokeVoidAsync("setWordWrap", lastWordWrap); } catch { }
+            }
+            return;
         }
-        else if (handle is not null)
+
+        if (handle is not null)
         {
-            try { await handle.InvokeVoidAsync("sync"); } catch { }
+            var current = Value ?? "";
+            if (!string.Equals(current, lastAppliedValue, StringComparison.Ordinal))
+            {
+                lastAppliedValue = current;
+                try { await handle.InvokeVoidAsync("setValue", current); } catch { }
+            }
+            if (WordWrap != lastWordWrap)
+            {
+                lastWordWrap = WordWrap;
+                try { await handle.InvokeVoidAsync("setWordWrap", lastWordWrap); } catch { }
+            }
         }
     }
 
-    private async Task OnInput(ChangeEventArgs e)
+    [JSInvokable]
+    public async Task OnContentChanged(string next)
     {
-        var next = e.Value?.ToString() ?? "";
+        if (disposed) return;
+        lastAppliedValue = next;
         Value = next;
         await ValueChanged.InvokeAsync(next);
     }
 
-    private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
+    private async Task OnFallbackInput(ChangeEventArgs e)
     {
-        "abstract", "as", "async", "await", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
-        "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event",
-        "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit",
-        "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null", "object", "operator",
-        "out", "override", "params", "private", "protected", "public", "readonly", "record", "ref", "required",
-        "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct", "switch",
-        "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using",
-        "var", "virtual", "void", "volatile", "where", "while", "with", "yield", "init", "not", "and", "or",
-        "property"
-    };
+        var next = e.Value?.ToString() ?? "";
+        lastAppliedValue = next;
+        Value = next;
+        await ValueChanged.InvokeAsync(next);
+    }
 
-    private static readonly Regex TokenRx = new(
-        @"(?<cmt>//[^\n]*|/\*[\s\S]*?\*/)" +
-        @"|(?<str>\$@""(?:""""|[^""])*""|@\$""(?:""""|[^""])*""|@""(?:""""|[^""])*""|\$""(?:\\.|[^""\\])*""|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
-        @"|(?<num>\b\d+(?:\.\d+)?[mMfFdDlLuU]*\b)" +
-        @"|(?<id>\b[A-Za-z_][A-Za-z0-9_]*\b)",
-        RegexOptions.Compiled);
-
-    private static MarkupString Highlight(string? raw)
+    private async Task DisposeHandleAsync()
     {
-        var code = (raw ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
-        var sb = new StringBuilder(code.Length + 512);
-        var pos = 0;
-
-        sb.Append("<div class=\"hl-row\">");
-        var lineHasContent = false;
-
-        void AppendSegment(string text, string? cssClass)
-        {
-            var parts = text.Split('\n');
-            for (var i = 0; i < parts.Length; i++)
-            {
-                if (i > 0)
-                {
-                    if (!lineHasContent) sb.Append("&#8203;");
-                    sb.Append("</div><div class=\"hl-row\">");
-                    lineHasContent = false;
-                }
-                var part = parts[i];
-                if (part.Length == 0) continue;
-                lineHasContent = true;
-                var enc = WebUtility.HtmlEncode(part);
-                if (cssClass is null) sb.Append(enc);
-                else sb.Append("<span class=\"").Append(cssClass).Append("\">").Append(enc).Append("</span>");
-            }
-        }
-
-        foreach (Match m in TokenRx.Matches(code))
-        {
-            if (m.Index > pos)
-                AppendSegment(code[pos..m.Index], null);
-
-            var tok = m.Value;
-            string? cls = null;
-            if (m.Groups["cmt"].Success) cls = "hl-cmt";
-            else if (m.Groups["str"].Success) cls = "hl-str";
-            else if (m.Groups["num"].Success) cls = "hl-num";
-            else if (m.Groups["id"].Success)
-            {
-                if (Keywords.Contains(tok)) cls = "hl-kw";
-                else if (char.IsUpper(tok[0])) cls = "hl-type";
-            }
-
-            AppendSegment(tok, cls);
-            pos = m.Index + m.Length;
-        }
-
-        if (pos < code.Length)
-            AppendSegment(code[pos..], null);
-
-        if (!lineHasContent) sb.Append("&#8203;");
-        sb.Append("</div>");
-        return new MarkupString(sb.ToString());
+        if (handle is null) return;
+        var h = handle;
+        handle = null;
+        try { await h.InvokeVoidAsync("dispose"); } catch { }
+        try { await h.DisposeAsync(); } catch { }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (handle is not null)
-        {
-            try { await handle.InvokeVoidAsync("dispose"); await handle.DisposeAsync(); } catch { }
-        }
+        disposed = true;
+        await DisposeHandleAsync();
         if (module is not null)
         {
-            try { await module.DisposeAsync(); } catch { }
+            var m = module;
+            module = null;
+            try { await m.DisposeAsync(); } catch { }
         }
+        selfRef?.Dispose();
+        selfRef = null;
     }
 }
