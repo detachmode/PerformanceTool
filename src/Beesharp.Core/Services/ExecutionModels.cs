@@ -17,6 +17,8 @@ namespace Beesharp.Services;
 /// <param name="TtfbMs">Optional time-to-first-byte in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="ResponseReadMs">Optional response body read duration in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="Headers">Optional captured request/response headers for slow or failed calls.</param>
+/// <param name="TraceId">W3C trace ID (32 hex characters) of the actor's trace this call belongs to (brain 0063); <see langword="null"/> when no trace was started.</param>
+/// <param name="SpanId">W3C span ID (16 hex characters) of this call's span, the parent of the service's server span; <see langword="null"/> when no trace was started.</param>
 public sealed record RecordedCall(
     string Name,
     double OffsetMs,
@@ -33,7 +35,9 @@ public sealed record RecordedCall(
     string? Url = null,
     double? TtfbMs = null,
     double? ResponseReadMs = null,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null,
+    string? TraceId = null,
+    string? SpanId = null);
 
 /// <summary>One log statement emitted by a bee via <c>ctx.Logger</c> or <c>ctx.Log</c>.</summary>
 /// <param name="AtSeconds">Run-relative timestamp in seconds when the log entry was emitted.</param>
@@ -72,6 +76,7 @@ public sealed record RecordedStepVisit(int Step, int Rep, string? Data = null);
 /// <param name="FailedStep">Zero-based index of the step that failed, or <c>-1</c> if not applicable.</param>
 /// <param name="FailedRep">Zero-based repetition index of the failed step, or <c>-1</c> if not applicable.</param>
 /// <param name="StepVisits">Optional list of declared step visits recorded during the execution.</param>
+/// <param name="TraceId">W3C trace ID (32 hex characters) of this actor's trace (brain 0063), the same ID on every call of the actor; <see langword="null"/> when no trace was started.</param>
 public sealed record ExecutionResult(
     int Sequence,
     int Entry,
@@ -85,7 +90,8 @@ public sealed record ExecutionResult(
     bool Canceled = false,
     int FailedStep = -1,
     int FailedRep = -1,
-    IReadOnlyList<RecordedStepVisit>? StepVisits = null)
+    IReadOnlyList<RecordedStepVisit>? StepVisits = null,
+    string? TraceId = null)
 {
     /// <summary>Whether the execution completed without an error.</summary>
     public bool Success => Error is null;

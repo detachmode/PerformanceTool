@@ -5,7 +5,10 @@ using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
 using Beesharp.Services.Storage;
+using Beesharp.Services.Tracing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 
 namespace Beesharp.Cli;
 
@@ -111,7 +114,20 @@ public static class CliApp
             ScriptProblems = problems,
         };
 
-        return await HeadlessRunner.RunAsync(request, provider, output, error, stop);
+        // Optional OTLP export of the actors' spans (brain 0063), from OTEL_EXPORTER_OTLP_ENDPOINT & co; off without an endpoint.
+        TracingSettings tracing;
+        try { tracing = TracingSettings.FromConfiguration(new ConfigurationBuilder().AddEnvironmentVariables().Build()); }
+        catch (InvalidOperationException ex) { throw new CouldNotRunException(ex.Message); }
+        using var tracer = TracingRegistration.BuildBeesharpTracerProvider(tracing);
+        try
+        {
+            return await HeadlessRunner.RunAsync(request, provider, output, error, stop);
+        }
+        finally
+        {
+            // The process ends right after the run: hand the last spans to the exporter (it gives up after 3 s when the collector is down).
+            tracer?.ForceFlush(5000);
+        }
     }
 
     /// <summary>A preset by file path (when it looks like one and exists) or by name (case-insensitive) from the presets folder.</summary>

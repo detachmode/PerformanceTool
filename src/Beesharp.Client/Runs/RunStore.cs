@@ -175,7 +175,9 @@ public sealed class RunStore
                     ep,
                     method,
                     null,
-                    c.SlowThresholdMs));
+                    c.SlowThresholdMs,
+                    TraceId: c.TraceId,
+                    SpanId: c.SpanId));
             }
         }
         return result;

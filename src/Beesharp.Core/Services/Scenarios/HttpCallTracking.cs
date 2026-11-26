@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using Beesharp.Services.Tracing;
 
 namespace Beesharp.Services.Scenarios;
 
@@ -103,6 +104,9 @@ public sealed class RecordingHttpHandler : DelegatingHandler
             || (request.Options.TryGetValue(HttpRequestCallExtensions.TimingSplitKey, out var reqSplit) && reqSplit);
 
         request.Options.Set(HttpRequestCallExtensions.RecordedKey, true);
+        // The call's span (brain 0063): a child of the current step or actor span. Its traceparent goes on the request here, so it reaches
+        // the service whatever handler sits below (also a mock primary handler) and HttpClient does not invent a span of its own.
+        var span = ctx.BeginHttpCallSpan(request, makeCurrent: true);
         try
         {
             var response = await base.SendAsync(request, cancellationToken);
@@ -123,18 +127,19 @@ public sealed class RecordingHttpHandler : DelegatingHandler
             var bytes = response.Content.Headers.ContentLength ?? 0;
             var status = (int)response.StatusCode;
             var error = status >= 400 ? $"HTTP {status}" : null;
-            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, status, bytes, error, step, rep, scope, response, ttfbMs, responseReadMs);
+            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, status, bytes, error, step, rep, scope, response, ttfbMs, responseReadMs, span);
             return response;
         }
         catch (Exception ex)
         {
             sw.Stop();
             var error = ex is OperationCanceledException && ctx.IsRunStopped ? ExecutionResult.CanceledError : ex.Message;
-            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, scope);
+            ctx.RecordHttpRequest(request, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, scope, span: span);
             throw;
         }
         finally
         {
+            span?.Stop();
             request.Options.Set(HttpRequestCallExtensions.RecordedKey, false);
         }
     }
@@ -168,6 +173,7 @@ internal static class HttpCallDiagnosticTracker
         public int Step { get; } = step;
         public int Rep { get; } = rep;
         public CallScopeOverride? Scope { get; } = scope;
+        public CallSpan? Span { get; set; }
         public Exception? Exception { get; set; }
         public bool Completed { get; set; }
     }
@@ -253,6 +259,10 @@ internal static class HttpCallDiagnosticTracker
             if (req.Options.TryGetValue(PendingKey, out _)) return;
 
             var pending = new PendingCall(ctx, ctx.ElapsedMs, Stopwatch.GetTimestamp(), Math.Max(0, ctx.CurrentStep), ctx.CurrentRep, ctx.CurrentCallScope);
+            // The call's span (brain 0063). HttpClient has just started its own HttpRequestOut activity and injects its span ID after this event;
+            // the traceparent set here wins (HttpClient never overwrites one), so the service becomes a child of the call span, not of an unexported intermediate.
+            // The span is not made current: the handler below still owns Activity.Current.
+            pending.Span = ctx.BeginHttpCallSpan(req, makeCurrent: false);
             req.Options.Set(PendingKey, pending);
             Interlocked.Increment(ref activePending);
         }
@@ -278,14 +288,26 @@ internal static class HttpCallDiagnosticTracker
             var durationMs = Stopwatch.GetElapsedTime(pending.StartTimestamp).TotalMilliseconds;
             var response = acc.Response?.GetValue(payload) as HttpResponseMessage;
 
-            if (response is not null)
+            try
             {
-                var status = (int)response.StatusCode;
-                var bytes = response.Content.Headers.ContentLength ?? 0;
-                var error = status >= 400 ? $"HTTP {status}" : null;
-                pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, status, bytes, error, pending.Step, pending.Rep, pending.Scope, response);
-                return;
+                if (response is not null)
+                {
+                    var status = (int)response.StatusCode;
+                    var bytes = response.Content.Headers.ContentLength ?? 0;
+                    var error = status >= 400 ? $"HTTP {status}" : null;
+                    pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, status, bytes, error, pending.Step, pending.Rep, pending.Scope, response, span: pending.Span);
+                    return;
+                }
+                RecordFailure(pending, req, durationMs, acc, payload);
             }
+            finally
+            {
+                pending.Span?.Stop();
+            }
+        }
+
+        private static void RecordFailure(PendingCall pending, HttpRequestMessage req, double durationMs, PayloadAccessors acc, object payload)
+        {
 
             string err;
             if (pending.Exception is { } ex)
@@ -303,7 +325,7 @@ internal static class HttpCallDiagnosticTracker
                 err = "Request failed";
             }
 
-            pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, null, 0, err, pending.Step, pending.Rep, pending.Scope);
+            pending.Context.RecordHttpRequest(req, pending.OffsetMs, durationMs, null, 0, err, pending.Step, pending.Rep, pending.Scope, span: pending.Span);
         }
 
         public void OnError(Exception error) { }

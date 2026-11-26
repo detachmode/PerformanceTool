@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Beesharp.Services.Environments;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios.Spec;
+using Beesharp.Services.Tracing;
 
 namespace Beesharp.Services.Scenarios;
 
@@ -217,6 +218,7 @@ public sealed class ScenarioContext
     private readonly Stopwatch beeClock;
     private readonly Func<bool>? runStopped;
     private readonly CallThresholds thresholds;
+    private readonly ActorTrace? trace;
     private int currentCallIndex = -1;
     private int currentStep = -1;
     private int currentRep;
@@ -277,10 +279,17 @@ public sealed class ScenarioContext
     internal double ElapsedMs => beeClock.Elapsed.TotalMilliseconds;
     internal bool IsRunStopped => runStopped?.Invoke() == true;
 
+    /// <summary>The distributed trace of this actor (brain 0063), or <see langword="null"/> when the context was created without one (startup and teardown hooks, test runs).</summary>
+    public ActorTrace? Trace => trace;
+
+    /// <summary>W3C trace ID of this actor's trace: the ID every call of the actor sends in its <c>traceparent</c> (brain 0063). <see langword="null"/> without a trace.</summary>
+    public string? TraceId => trace?.TraceId;
+
     internal void EnterStep(int step, int rep, string? dataJson = null)
     {
         Volatile.Write(ref currentStep, step);
         Volatile.Write(ref currentRep, rep);
+        trace?.EnterStep(step, rep);
         var visit = new RecordedStepVisit(step, rep, dataJson);
         lock (liveVisits) liveVisits.Add(visit);
         stepVisitSink?.Invoke(visit);
@@ -305,6 +314,10 @@ public sealed class ScenarioContext
     internal bool MeasureHttpTimingSplit { get; }
     private readonly IReadOnlyList<string> captureHeaders;
 
+    /// <summary>Starts the span of an HTTP call of this actor and puts its <c>traceparent</c> on the request (brain 0063). <see langword="null"/> without a trace.</summary>
+    internal CallSpan? BeginHttpCallSpan(HttpRequestMessage request, bool makeCurrent) =>
+        trace?.StartCall(request.Method.Method, request, makeCurrent);
+
     internal void RecordHttpRequest(
         HttpRequestMessage request,
         double offsetMs,
@@ -317,7 +330,8 @@ public sealed class ScenarioContext
         CallScopeOverride? scope = null,
         HttpResponseMessage? response = null,
         double? ttfbMs = null,
-        double? responseReadMs = null)
+        double? responseReadMs = null,
+        CallSpan? span = null)
     {
         Interlocked.Increment(ref currentCallIndex);
         var norm = EndpointNormalizer.NormalizeHttp(request.Method, request.RequestUri);
@@ -342,6 +356,7 @@ public sealed class ScenarioContext
             : scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, norm.Method);
 
         var headers = ExtractAllowedHeaders(request, response, captureHeaders);
+        span?.Finish(endpoint, statusCode, error);
 
         callSink?.Invoke(new RecordedCall(
             rawName,
@@ -359,7 +374,9 @@ public sealed class ScenarioContext
             norm.Url,
             ttfbMs,
             responseReadMs,
-            headers));
+            headers,
+            span?.TraceId,
+            span?.SpanId));
     }
 
     private static Dictionary<string, string>? ExtractAllowedHeaders(
@@ -420,6 +437,7 @@ public sealed class ScenarioContext
     /// <param name="thresholds">Optional slow-call thresholds for this scenario entry.</param>
     /// <param name="captureHeaders">Allowlisted HTTP header names to capture on recorded calls; defaults to <see cref="LoadPlan.DefaultCaptureHeaders"/>.</param>
     /// <param name="measureHttpTimingSplit">When <c>true</c>, measures TTFB and response-body read times separately on HTTP calls.</param>
+    /// <param name="trace">The actor's distributed trace (brain 0063); calls become spans of it and carry its <c>traceparent</c>. <c>null</c>: no tracing.</param>
     public ScenarioContext(
         HttpClient http,
         EnvironmentValues? environment = null,
@@ -435,8 +453,10 @@ public sealed class ScenarioContext
         Action<RecordedStepVisit>? stepVisitSink = null,
         CallThresholds? thresholds = null,
         IReadOnlyList<string>? captureHeaders = null,
-        bool measureHttpTimingSplit = false)
+        bool measureHttpTimingSplit = false,
+        ActorTrace? trace = null)
     {
+        this.trace = trace;
         this.runStopped = runStopped;
         this.stepVisitSink = stepVisitSink;
         this.thresholds = thresholds ?? CallThresholds.None;
@@ -537,7 +557,12 @@ public sealed class ScenarioContext
         var (endpoint, rawName) = ApplyCallTag(baseEndpoint, name, scope?.Tag);
         var method = EndpointNormalizer.TryExtractMethod(name);
         var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, method);
-        callSink?.Invoke(new RecordedCall(rawName, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs));
+
+        // An already finished call still gets its span (brain 0063): back-dated to when it started.
+        var span = trace?.StartCall(endpoint, null, makeCurrent: false, DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(durationMs));
+        span?.Finish(endpoint, statusCode, error);
+        span?.Stop();
+        callSink?.Invoke(new RecordedCall(rawName, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
     }
 
     /// <summary>Measures an async step as a named call, recording its offset, duration and any failure.</summary>
@@ -561,22 +586,27 @@ public sealed class ScenarioContext
         var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, method);
         var offsetMs = beeClock.Elapsed.TotalMilliseconds;
         var sw = Stopwatch.StartNew();
+        // The measured work runs inside the call's span (brain 0063), so HTTP calls it makes (and plain code) nest under it.
+        var span = trace?.StartCall(endpoint, null, makeCurrent: true);
         try
         {
             await work();
             sw.Stop();
-            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep, endpoint, method, SlowThresholdMs: thresholdMs));
+            span?.Finish(endpoint, statusCode, null);
+            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
         }
         catch (Exception ex)
         {
             sw.Stop();
             // A call cut off because the user stopped the run is kept as failed with the time it ran until the stop (brain 0053).
             var error = ex is OperationCanceledException && runStopped?.Invoke() == true ? ExecutionResult.CanceledError : ex.Message;
-            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, endpoint, method, SlowThresholdMs: thresholdMs));
+            span?.Finish(endpoint, null, error);
+            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
             throw;
         }
         finally
         {
+            span?.Stop();
             _ = idx;
         }
     }

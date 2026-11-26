@@ -24,6 +24,8 @@ namespace Beesharp.Contracts;
 /// <param name="TtfbMs">Optional time-to-first-byte in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="ResponseReadMs">Optional response body read duration in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="Headers">Optional captured request/response headers for slow or failed calls.</param>
+/// <param name="TraceId">Optional W3C trace ID of the actor's trace this call belongs to (brain 0063).</param>
+/// <param name="SpanId">Optional W3C span ID of this call's span (brain 0063).</param>
 public readonly record struct CallFact(
     long Id,
     int Sequence,
@@ -44,7 +46,9 @@ public readonly record struct CallFact(
     double? SlowThresholdMs,
     double? TtfbMs = null,
     double? ResponseReadMs = null,
-    IReadOnlyDictionary<string, string>? Headers = null)
+    IReadOnlyDictionary<string, string>? Headers = null,
+    string? TraceId = null,
+    string? SpanId = null)
 {
     /// <summary>Gets the run-relative timestamp in seconds at which the call started.</summary>
     public double AtSeconds => StartedAtSeconds + OffsetMs / 1000.0;
@@ -311,7 +315,9 @@ public static class CallAnalytics
                 effLimit,
                 c.TtfbMs,
                 c.ResponseReadMs,
-                c.Headers));
+                c.Headers,
+                c.TraceId,
+                c.SpanId));
         }
 
         return new SlowestCallsResult(items, matching.Count);
@@ -537,7 +543,9 @@ public static class CallAnalytics
                 summary.Endpoint,
                 isSlow,
                 summary.TypicalMs > 0 ? summary.TypicalMs : null,
-                effLimit));
+                effLimit,
+                c.TraceId,
+                c.SpanId));
         }
 
         return new CallEndpointDetailDto(

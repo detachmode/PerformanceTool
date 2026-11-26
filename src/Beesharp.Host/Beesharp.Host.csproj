@@ -32,6 +32,7 @@
     <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Storage.DuckDb/Beesharp.Storage.DuckDb.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../Beesharp.Tracing/Beesharp.Tracing.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Engine/Beesharp.Engine.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Ai/Beesharp.Ai.csproj" PrivateAssets="all" />
     <ProjectReference Include="../Beesharp.Client/Beesharp.Client.csproj" PrivateAssets="all" />
@@ -43,6 +44,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.12.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.1" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -87,6 +90,8 @@
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Storage.DuckDb.xml" Condition="Exists('$(OutputPath)Beesharp.Storage.DuckDb.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.dll" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Scripting.xml" Condition="Exists('$(OutputPath)Beesharp.Scripting.xml')" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Tracing.dll" />
+      <BuildOutputInPackage Include="$(OutputPath)Beesharp.Tracing.xml" Condition="Exists('$(OutputPath)Beesharp.Tracing.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.dll" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Engine.xml" Condition="Exists('$(OutputPath)Beesharp.Engine.xml')" />
       <BuildOutputInPackage Include="$(OutputPath)Beesharp.Ai.dll" />

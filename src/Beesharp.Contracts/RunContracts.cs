@@ -196,6 +196,7 @@ public sealed record StoredRunSummary(
 /// <param name="StepVisits">Optional list of declared step visits recorded during the bee's execution.</param>
 /// <param name="EntryLabel">Optional display label of the scenario entry.</param>
 /// <param name="Steps">Optional declared step metadata for the bee's scenario entry.</param>
+/// <param name="TraceId">W3C trace ID of the bee's distributed trace (brain 0063), shared by all its calls; <see langword="null"/> when the run was made without tracing.</param>
 public sealed record StoredBeeDetail(
     string RunId,
     int Sequence,
@@ -211,7 +212,8 @@ public sealed record StoredBeeDetail(
     int FailedRep = -1,
     IReadOnlyList<RecordedStepVisit>? StepVisits = null,
     string? EntryLabel = null,
-    IReadOnlyList<StepInfo>? Steps = null);
+    IReadOnlyList<StepInfo>? Steps = null,
+    string? TraceId = null);
 
 /// <summary>One persisted log row returned in a paged log query.</summary>
 /// <param name="Id">Unique log row identifier within the run.</param>

@@ -629,7 +629,8 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     {
                         lock (sync) activeBeeContexts[seq] = bctx;
                     },
-                    clock: runClock);
+                    clock: runClock,
+                    runId: currentRunId);
             }
             catch (OperationCanceledException)
             {

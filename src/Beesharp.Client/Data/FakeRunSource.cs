@@ -57,6 +57,7 @@ public sealed class FakeRunSource : IRunSource
 {
     private readonly ScenarioCatalog catalog;
     private readonly Random rng = new(7);
+    private readonly Random traceRng = new(0x7ace);
     private CancellationTokenSource? cts;
     private string savedFingerprint = "";
     private HashSet<string> savedEntries = [];
@@ -368,11 +369,12 @@ public sealed class FakeRunSource : IRunSource
         var seq = sequence++;
         var calls = new List<FakeCall>(count);
         var offset = 0.0;
+        var traceId = Hex(16); // one trace per bee, like the real runner (brain 0063)
         for (var i = 0; i < count; i++)
         {
             var (rawName, endpoint, rawUrl) = MaterializeCall(spec[i].Name);
             var threshold = spec[i].SlowThresholdMs;
-            if (i >= ran) { calls.Add(new(i, rawName, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl)); continue; }
+            if (i >= ran) { calls.Add(new(i, rawName, offset, 0, null, ErrorDictionary.None, true, 0, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl, TraceId: traceId)); continue; }
             var gap = i > 0 && spec[i].Pause ? Math.Round(profile.ThinkMs * (0.6 + 0.8 * rng.NextDouble()), 1) : 0;
             offset += gap;
             var d = spec[i].MedianMs * Math.Exp(spec[i].Sigma * Gaussian());
@@ -380,7 +382,7 @@ public sealed class FakeRunSource : IRunSource
             var isFailed = i == failAt;
             if (isFailed && status is null) d = profile.CallTimeoutMs;
             d = Math.Round(Math.Clamp(d, 3, profile.CallTimeoutMs), 1);
-            calls.Add(new(i, rawName, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl));
+            calls.Add(new(i, rawName, Math.Round(offset, 1), d, isFailed ? status : 200, isFailed ? errorId : ErrorDictionary.None, false, gap, Errors: store.Errors, Step: spec[i].Step, Rep: spec[i].Rep, Endpoint: endpoint, SlowThresholdMs: threshold, RawUrl: rawUrl, TraceId: traceId, SpanId: Hex(8)));
             offset += d;
         }
         var ms = Math.Round(offset, 1);
@@ -431,7 +433,8 @@ public sealed class FakeRunSource : IRunSource
         var cfg = runPlan.Scenarios[p.Entry];
         var label = string.IsNullOrWhiteSpace(cfg.Label) ? cfg.ScenarioId : cfg.Label;
         var run = (id: runId, started: runStartedUtc);
-        store.Complete(record, new BeeDetail(p.Sequence, p.Entry, calls, () => MakeLogs(record, label, calls, p.Profile, run.id, run.started, store.Errors)));
+        store.Complete(record, new BeeDetail(p.Sequence, p.Entry, calls, () => MakeLogs(record, label, calls, p.Profile, run.id, run.started, store.Errors),
+            traceId: calls.Count > 0 ? calls[0].TraceId : null));
     }
 
     // ---------- fake log statements (brain 0012), generated on first use ----------
@@ -509,6 +512,14 @@ public sealed class FakeRunSource : IRunSource
     }
 
     private double Gaussian() => Math.Sqrt(-2 * Math.Log(1 - rng.NextDouble())) * Math.Cos(2 * Math.PI * rng.NextDouble());
+
+    /// <summary>A plausible W3C trace ID (32 hex) or span ID (16 hex) for the fake data (brain 0063). Its own random source, so the seeded simulation above does not change.</summary>
+    private string Hex(int bytes)
+    {
+        var buf = new byte[bytes];
+        traceRng.NextBytes(buf);
+        return Convert.ToHexStringLower(buf);
+    }
 
     private void Finish(double at)
     {

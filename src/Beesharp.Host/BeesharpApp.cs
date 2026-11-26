@@ -7,10 +7,12 @@ using Beesharp.Services.Environments;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Scenarios.BuiltIn;
 using Beesharp.Services.Storage;
+using Beesharp.Services.Tracing;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Http;
+using OpenTelemetry.Trace;
 
 namespace Beesharp;
 
@@ -197,6 +199,9 @@ public sealed class BeesharpAppBuilder
         // Automatically attach RecordingHttpHandler to every DI-managed HttpClient (typed, named, Refit, custom primary handlers).
         Services.AddSingleton<IHttpMessageHandlerBuilderFilter, RecordingHttpMessageHandlerBuilderFilter>();
 
+        // Optional OTLP export of the actors' own spans (brain 0063): off unless Tracing:OtlpEndpoint or OTEL_EXPORTER_OTLP_ENDPOINT is set.
+        Services.AddBeesharpTracing(config);
+
         // "Storage:Provider" is DuckDb (default) or Memory; anything else fails with a message naming the supported ones.
         var storageOptions = new StorageOptions
         {
@@ -320,6 +325,7 @@ public sealed class BeesharpApp : IAsyncDisposable
     private readonly string[]? headlessArgs;
     private readonly string? savedToPath;
     private bool initialized;
+    private TracerProvider? tracerProvider;
 
     internal BeesharpApp(
         WebApplication webApplication,
@@ -363,6 +369,9 @@ public sealed class BeesharpApp : IAsyncDisposable
     {
         if (initialized) return;
         initialized = true;
+
+        // Build the tracer provider now (brain 0063): the web host would start it with its hosted services, a headless run never starts those.
+        tracerProvider = Services.GetService<TracerProvider>();
 
         // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).
         var catalog = Services.GetRequiredService<ScenarioCatalog>();
@@ -472,7 +481,15 @@ public sealed class BeesharpApp : IAsyncDisposable
             SavedToPath = savedToPath,
         };
 
-        return await HeadlessRunner.RunAsync(request, Services, output, error, ct);
+        try
+        {
+            return await HeadlessRunner.RunAsync(request, Services, output, error, ct);
+        }
+        finally
+        {
+            // A headless process ends right after the run: hand the last spans to the exporter (it gives up after 3 s when the collector is down).
+            tracerProvider?.ForceFlush(5000);
+        }
     }
 
     /// <summary>Disposes the underlying <see cref="Microsoft.AspNetCore.Builder.WebApplication"/> and its services asynchronously.</summary>
