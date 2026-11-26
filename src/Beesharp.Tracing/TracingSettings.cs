@@ -11,7 +11,8 @@ namespace Beesharp.Services.Tracing;
 /// <param name="OtlpEndpoint">The collector's OTLP endpoint as the exporter needs it, or <see langword="null"/> when export is off.</param>
 /// <param name="Protocol">The OTLP transport.</param>
 /// <param name="ServiceName">The <c>service.name</c> of Beesharp's spans.</param>
-public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Protocol, string ServiceName)
+/// <param name="TraceUrlTemplate">Optional URL template (with <c>{traceId}</c> and optional <c>{spanId}</c>) for opening traces in an external tracing UI, or <see langword="null"/> when unset.</param>
+public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Protocol, string ServiceName, string? TraceUrlTemplate = null)
 {
     /// <summary>The service name when nothing configures one.</summary>
     public const string DefaultServiceName = "beesharp";
@@ -31,6 +32,7 @@ public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Proto
 
         var serviceName = First(configuration["Tracing:ServiceName"], configuration["OTEL_SERVICE_NAME"]) ?? DefaultServiceName;
         var sdkDisabled = string.Equals(configuration["OTEL_SDK_DISABLED"], "true", StringComparison.OrdinalIgnoreCase);
+        var traceUrlTemplate = First(configuration["Tracing:TraceUrlTemplate"]);
 
         // A tracing-specific OTEL endpoint is used as written; a general one is a base URL, which gets /v1/traces for HTTP (the OpenTelemetry spec).
         var configured = First(configuration["Tracing:OtlpEndpoint"], configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
@@ -39,11 +41,11 @@ public sealed record TracingSettings(Uri? OtlpEndpoint, OtlpExportProtocol Proto
         var protocol = ParseProtocol(protocolText);
 
         var text = First(tracesSpecific, configured);
-        if (text is null || sdkDisabled) return new TracingSettings(null, protocol, serviceName);
+        if (text is null || sdkDisabled) return new TracingSettings(null, protocol, serviceName, traceUrlTemplate);
         if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             throw new InvalidOperationException($"Tracing endpoint '{text}' is not an absolute http(s) URL, e.g. http://localhost:4318 (http/protobuf, the default) or http://localhost:4317 (grpc).");
 
-        return new TracingSettings(tracesSpecific is not null ? uri : ForProtocol(uri, protocol), protocol, serviceName);
+        return new TracingSettings(tracesSpecific is not null ? uri : ForProtocol(uri, protocol), protocol, serviceName, traceUrlTemplate);
     }
 
     private static OtlpExportProtocol ParseProtocol(string? text) => text?.Trim().ToLowerInvariant() switch

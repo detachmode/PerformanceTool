@@ -14,7 +14,22 @@ Elastic. Every actor (bee) is one trace: actor → steps → calls → the servi
 
 Dev only: Elastic security is off and nothing is tuned for production.
 
-## Run
+## One-click run with .NET Aspire
+
+If you have .NET and Docker installed, the Aspire AppHost launches **Jaeger v2** (container) alongside **`payment-api`**, **`shop-api`**, and **`Beesharp`** (local processes) with the **Shop journey** preset ready to run:
+
+```sh
+dotnet run --project examples/tracing/AppHost
+```
+
+| Service | URL |
+|---|---|
+| Aspire Dashboard | http://localhost:18888 |
+| Beesharp UI | http://localhost:5281 |
+| Jaeger UI | http://localhost:16686 |
+| `shop-api` | http://localhost:5290 |
+
+## Run (Docker Compose)
 
 ```sh
 docker compose up -d --build      # backend chosen in .env (Jaeger by default)

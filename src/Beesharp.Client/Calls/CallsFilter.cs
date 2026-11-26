@@ -22,6 +22,7 @@ public sealed record CallsFilter
     public double? ToSec { get; init; }
     public string Sort { get; init; } = "slowest";
     public string Search { get; init; } = "";
+    public double? TargetMs { get; init; }
 
     public bool IsDefaultDetailFilter =>
         Outcome == BeeShow.All && MinMs is null && MaxMs is null && FromSec is null && ToSec is null;
@@ -36,6 +37,7 @@ public sealed record CallsFilter
     public CallsFilter WithTimeWindow(double? fromSec, double? toSec) => this with { FromSec = fromSec, ToSec = toSec };
     public CallsFilter WithSort(string? sort) => this with { Sort = NormalizeSort(sort) };
     public CallsFilter WithSearch(string? search) => this with { Search = search ?? "" };
+    public CallsFilter WithTargetMs(double? targetMs) => this with { TargetMs = targetMs is > 0 && !double.IsNaN(targetMs.Value) && !double.IsInfinity(targetMs.Value) ? targetMs : null };
     public CallsFilter ClearDetailFilters() => this with { Outcome = BeeShow.All, MinMs = null, MaxMs = null, FromSec = null, ToSec = null };
 
     public IReadOnlyList<KeyValuePair<string, string>> ToQuery()
@@ -50,6 +52,7 @@ public sealed record CallsFilter
         if (ToSec is { } to) q.Add(new("to", to.ToString("0.##", CultureInfo.InvariantCulture)));
         if (!string.Equals(Sort, "slowest", StringComparison.Ordinal)) q.Add(new("sort", Sort));
         if (Search.Trim().Length > 0) q.Add(new("q", Search.Trim()));
+        if (TargetMs is { } target && target > 0) q.Add(new("target", target.ToString("0.##", CultureInfo.InvariantCulture)));
         return q;
     }
 
@@ -70,7 +73,8 @@ public sealed record CallsFilter
         string? from,
         string? to,
         string? sort,
-        string? q)
+        string? q,
+        string? target = null)
     {
         static int? OneBasedIndex(string? s) => int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= 1 ? n - 1 : null;
         static double? Num(string? s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && !double.IsNaN(v) && !double.IsInfinity(v) ? v : null;
@@ -91,6 +95,7 @@ public sealed record CallsFilter
             ToSec = Num(to) is { } ts and >= 0 ? ts : null,
             Sort = NormalizeSort(sort),
             Search = q ?? "",
+            TargetMs = Num(target) is { } tg and > 0 ? tg : null,
         };
     }
 

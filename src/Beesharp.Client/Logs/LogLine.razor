@@ -6,8 +6,7 @@
 }
 else
 {
-    var isStep = Line.Message.StartsWith("─── ▶ ", StringComparison.Ordinal);
-    <div class="lg-line lv-@Line.Level @(isStep ? "lg-step" : "")"><span class="lg-t">[@LogText.Stamp(Line, TimeMode)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }@if (Line.Sequence >= 0) { <button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button> }<span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
+    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Stamp(Line, TimeMode)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }@if (Line.Sequence >= 0) { <button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button> }<span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
 }
 
 @code {

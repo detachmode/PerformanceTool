@@ -254,6 +254,7 @@ public sealed class BeesharpAppBuilder
         app.MapPlanEndpoints();
         app.MapEnvironmentEndpoints();
         app.MapRunQueryEndpoints();
+        app.MapTracingEndpoints();
         if (options.IncludeAiAssistant)
             app.MapBeesharpAi();
 

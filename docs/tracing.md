@@ -125,6 +125,7 @@ Export is **off** until an endpoint is set (or when `OTEL_SDK_DISABLED=true`). `
 | **Traces-only endpoint** | — | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | *(used as written, without appending `/v1/traces`)* |
 | **Protocol** | `Tracing:Protocol` (`Tracing__Protocol`) | `OTEL_EXPORTER_OTLP_PROTOCOL` (or `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`) | `http/protobuf` (port `4318`); also supports `grpc` (port `4317`) |
 | **Service name** | `Tracing:ServiceName` (`Tracing__ServiceName`) | `OTEL_SERVICE_NAME` | `beesharp` |
+| **Trace URL template** | `Tracing:TraceUrlTemplate` (`Tracing__TraceUrlTemplate`) | — | *(none — configurable in UI Settings)* |
 | **Disable SDK** | — | `OTEL_SDK_DISABLED` | `false` (`true` disables export even if an endpoint is set) |
 
 ### Behaviour & safety
@@ -168,7 +169,24 @@ Failed or canceled actors, failed steps, and failed calls set `StatusCode = Erro
 
 ## 6. Full Multi-Service Example
 
-For a complete runnable stack with an OpenTelemetry Collector, Jaeger v2 (with persistent Badger storage), optional Elastic APM, and two instrumented .NET demo services (`shop-api` → `payment-api` with simulated slow DB queries and errors), see:
+For a complete runnable stack with Jaeger v2, an OpenTelemetry Collector, optional Elastic APM, and two instrumented .NET demo services (`shop-api` → `payment-api` with simulated slow DB queries and errors), see:
+
+### One-click run with .NET Aspire
+
+Requires Docker (for the Jaeger container) and runs `shop-api`, `payment-api`, and `Beesharp` locally as processes with the **Shop journey** preset pre-loaded:
+
+```sh
+dotnet run --project examples/tracing/AppHost
+```
+
+| Service | URL |
+|---|---|
+| Aspire Dashboard | http://localhost:18888 |
+| Beesharp UI | http://localhost:5281 |
+| Jaeger UI | http://localhost:16686 |
+| `shop-api` | http://localhost:5290 |
+
+### Docker Compose & Automated Tests
 
 - **[`examples/tracing/README.md`](../examples/tracing/README.md)** — walkthrough, backend comparison (Jaeger vs. Elastic), and `./send-test-trace.sh` verification script.
 - **[`examples/tracing/compose.yaml`](../examples/tracing/compose.yaml)** — ready-to-run Docker Compose stack (`docker compose up -d --build`).

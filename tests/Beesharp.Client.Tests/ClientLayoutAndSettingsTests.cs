@@ -1,3 +1,4 @@
+using System.Net;
 using Beesharp.Client.Data;
 using Beesharp.Client.Environments;
 using Beesharp.Client.Layout;
@@ -54,6 +55,74 @@ public sealed class ClientLayoutAndSettingsTests
         await malformed.SetAsync(zoom: 1.5);
         Assert.Equal(1.5, malformed.Zoom);
         Assert.True(changes > 0);
+    }
+
+    [Theory]
+    [InlineData("http://localhost:16686/trace/{traceId}", "4d7ce6ac47fbe9b3822d67a473ce9774", null, "http://localhost:16686/trace/4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("https://kibana.example.com/app/apm/traces/{traceId}?span={spanId}", "abc123", "span456", "https://kibana.example.com/app/apm/traces/abc123?span=span456")]
+    [InlineData("https://kibana.example.com/app/discover#/?_a=(query:(language:kuery,query:'trace.id:{traceId}'))", "abc123", null, "https://kibana.example.com/app/discover#/?_a=(query:(language:kuery,query:'trace.id:abc123'))")]
+    [InlineData("http://localhost:16686/trace/{traceId}?s={spanId}", "id 1/2", "sp&1", "http://localhost:16686/trace/id%201%2F2?s=sp%261")]
+    public void Build_trace_url_expands_placeholders_for_http_and_https(string template, string traceId, string? spanId, string expected)
+    {
+        Assert.Equal(expected, ViewSettings.BuildTraceUrl(template, traceId, spanId));
+    }
+
+    [Theory]
+    [InlineData(null, "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("", "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("   ", "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("http://localhost:16686/trace/{traceId}", null)]
+    [InlineData("http://localhost:16686/trace/{traceId}", "")]
+    [InlineData("http://localhost:16686/trace/{traceId}", "   ")]
+    [InlineData("javascript:alert('{traceId}')", "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("file:///tmp/{traceId}", "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    [InlineData("/trace/{traceId}", "4d7ce6ac47fbe9b3822d67a473ce9774")]
+    public void Build_trace_url_rejects_blank_inputs_and_non_http_schemes(string? template, string? traceId)
+    {
+        Assert.Null(ViewSettings.BuildTraceUrl(template, traceId));
+    }
+
+    [Fact]
+    public async Task Trace_url_template_loads_server_default_persists_user_override_and_falls_back_on_reset()
+    {
+        var js = new FakeJsRuntime();
+        var handler = new StubHttpHandler(_ => StubHttpHandler.JsonResponse(new TracingUiConfig("http://jaeger.local:16686/trace/{traceId}")));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://beesharp.test/") };
+
+        var settings = new ViewSettings(js, http);
+        await settings.LoadAsync();
+
+        Assert.Equal("http://jaeger.local:16686/trace/{traceId}", settings.ServerTraceUrlTemplate);
+        Assert.Null(settings.TraceUrlTemplate);
+        Assert.Equal("http://jaeger.local:16686/trace/{traceId}", settings.EffectiveTraceUrlTemplate);
+        Assert.Equal("http://jaeger.local:16686/trace/abc123", settings.ResolveTraceUrl("abc123"));
+        Assert.True(settings.IsDefault);
+
+        // User browser override wins over server default and persists in localStorage.
+        await settings.SetTraceUrlAsync("  https://custom.trace/{traceId}/{spanId}  ");
+        Assert.False(settings.IsDefault);
+        Assert.Equal("https://custom.trace/{traceId}/{spanId}", settings.TraceUrlTemplate);
+        Assert.Equal("https://custom.trace/{traceId}/{spanId}", js.Storage["pt.trace-url"]);
+        Assert.Equal("https://custom.trace/abc123/def456", settings.ResolveTraceUrl("abc123", "def456"));
+
+        // Second LoadAsync does not re-fetch server config, and restores localStorage override.
+        await settings.LoadAsync();
+        Assert.Equal(1, handler.CountRequests(r => r.PathAndQuery == "/api/tracing/config"));
+
+        // Reset clears only the user override and falls back to the server default.
+        await settings.ResetAsync();
+        Assert.True(settings.IsDefault);
+        Assert.Null(settings.TraceUrlTemplate);
+        Assert.False(js.Storage.ContainsKey("pt.trace-url"));
+        Assert.Equal("http://jaeger.local:16686/trace/abc123", settings.ResolveTraceUrl("abc123"));
+
+        // Failures fetching server config (e.g. Fake mode / GitHub Pages) are ignored silently.
+        var failingHandler = new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        using var failingHttp = new HttpClient(failingHandler) { BaseAddress = new Uri("https://beesharp.test/") };
+        var offline = new ViewSettings(new FakeJsRuntime(), failingHttp);
+        await offline.LoadAsync();
+        Assert.Null(offline.ServerTraceUrlTemplate);
+        Assert.Null(offline.ResolveTraceUrl("abc123"));
     }
 
     [Fact]

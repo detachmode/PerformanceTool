@@ -1,0 +1,40 @@
+{
+  "name": "Shop full mix",
+  "savedAt": "2026-11-26T00:00:00+00:00",
+  "plan": {
+    "scenarios": [
+      {
+        "scenarioId": "script-catalog-browse",
+        "label": "Catalog browse",
+        "ratePerMinute": 90,
+        "pattern": "Linear",
+        "parameters": { "query": "honey", "products": 3 }
+      },
+      {
+        "scenarioId": "script-full-checkout",
+        "label": "Full checkout",
+        "ratePerMinute": 45,
+        "pattern": "Linear",
+        "parameters": { "items": 2, "couponCode": "HONEY10" }
+      },
+      {
+        "scenarioId": "script-shop-journey",
+        "label": "Shop journey",
+        "pattern": "Bursts",
+        "beesPerBurst": 8,
+        "burstsPerMinute": 4,
+        "parameters": { "products": 3 }
+      },
+      {
+        "scenarioId": "script-returns-refund",
+        "label": "Returns & refund",
+        "ratePerMinute": 20,
+        "pattern": "Linear",
+        "parameters": { "productId": 2 }
+      }
+    ],
+    "durationSeconds": 120,
+    "maxConcurrency": 60,
+    "timeoutSeconds": 30
+  }
+}

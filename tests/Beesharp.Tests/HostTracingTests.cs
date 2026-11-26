@@ -1,7 +1,11 @@
 using System.Net;
+using System.Net.Http.Json;
 using Beesharp.Services;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Trace;
@@ -129,5 +133,28 @@ public class HostTracingTests : IDisposable
         // Also the standard OpenTelemetry environment variable name works as configuration key.
         await using (var standard = NewBuilder([], ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")).Build())
             Assert.NotNull(standard.Services.GetService<TracerProvider>());
+    }
+
+    [Fact]
+    public async Task Tracing_config_endpoint_exposes_the_configured_trace_url_template()
+    {
+        var builder = NewBuilder([], ("Tracing:TraceUrlTemplate", "http://localhost:16686/trace/{traceId}"));
+        builder.WebApplicationBuilder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        await app.InitializeAsync();
+        await app.WebApplication.StartAsync();
+
+        try
+        {
+            var baseUrl = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+            using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+            var cfg = await http.GetFromJsonAsync<TracingUiConfig>("/api/tracing/config");
+            Assert.NotNull(cfg);
+            Assert.Equal("http://localhost:16686/trace/{traceId}", cfg.TraceUrlTemplate);
+        }
+        finally
+        {
+            await app.WebApplication.StopAsync();
+        }
     }
 }

@@ -81,6 +81,10 @@ public class ContractsRoundTripTests
 
         // Runs recorded before tracing have none.
         Assert.Null(RoundTrip(new StoredBeeDetail("r1", 2, 0, 1, 50, 200, 10, null, [], [])).TraceId);
+
+        var uiCfg = RoundTrip(new TracingUiConfig("http://localhost:16686/trace/{traceId}"));
+        Assert.Equal("http://localhost:16686/trace/{traceId}", uiCfg.TraceUrlTemplate);
+        Assert.Null(RoundTrip(new TracingUiConfig(null)).TraceUrlTemplate);
     }
 
     [Fact]

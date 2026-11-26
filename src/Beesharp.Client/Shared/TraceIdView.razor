@@ -1,0 +1,43 @@
+@* Renders a trace ID as a clickable external link when a trace URL template is configured, plus a clipboard copy button. *@
+@implements IDisposable
+@inject ViewSettings Settings
+
+@if (!string.IsNullOrEmpty(TraceId))
+{
+    @if (Settings.ResolveTraceUrl(TraceId, SpanId) is { } url)
+    {
+        <a class="trace-link tnum"
+           href="@url"
+           target="_blank"
+           rel="noopener noreferrer"
+           title="@(string.IsNullOrWhiteSpace(Title) ? "Open in tracing UI" : $"{Title} — open in tracing UI")">
+            <code>@TraceId</code>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+        </a>
+    }
+    else
+    {
+        <code class="tnum" title="@Title">@TraceId</code>
+    }
+    <CopyButton GetText="() => TraceId!" Title="Copy trace ID" />
+}
+
+@code {
+    [Parameter] public string? TraceId { get; set; }
+    [Parameter] public string? SpanId { get; set; }
+    [Parameter] public string? Title { get; set; }
+
+    protected override void OnInitialized() => Settings.Changed += OnSettingsChanged;
+
+    private void OnSettingsChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose() => Settings.Changed -= OnSettingsChanged;
+}

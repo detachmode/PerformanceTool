@@ -104,6 +104,12 @@ internal static class FakeJsDispatch
             return ValueTask.FromResult(default(TValue)!);
         }
 
+        if (identifier == "localStorage.removeItem" && args is [string removeKey])
+        {
+            self.Storage.Remove(removeKey);
+            return ValueTask.FromResult(default(TValue)!);
+        }
+
         if (identifier == "import" && typeof(TValue) == typeof(IJSObjectReference))
             return ValueTask.FromResult((TValue)(object)new FakeJsRuntime.FakeJsModule(self.IsMobileAssistantResult));
 

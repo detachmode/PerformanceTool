@@ -56,12 +56,11 @@
             }
             @if (!string.IsNullOrEmpty(sel.TraceId))
             {
-                @* The distributed trace of the bee (brain 0063): small and quiet; revealing it is a copy, the trace itself opens in the tracing tool. *@
+                @* The distributed trace of the bee (brain 0063): small and quiet; reveals a copy button and (when configured) a direct link to the tracing UI. *@
                 var traceTip = string.IsNullOrEmpty(sel.SpanId) ? $"Trace ID {sel.TraceId}" : $"Trace ID {sel.TraceId} · call span {sel.SpanId}";
                 <div class="trace-id" aria-label="Distributed trace of this call">
                     <span class="trace-id-label">Trace</span>
-                    <code class="tnum" title="@traceTip">@sel.TraceId</code>
-                    <CopyButton GetText="() => sel.TraceId" Title="Copy trace ID" />
+                    <TraceIdView TraceId="@sel.TraceId" SpanId="@sel.SpanId" Title="@traceTip" />
                 </div>
             }
         </div>
