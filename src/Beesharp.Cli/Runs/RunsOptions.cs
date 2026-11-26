@@ -235,7 +235,7 @@ internal static class RunsArguments
 
         Arguments:
           <target>      Exported run bundle (.zip, .duckdb, or .json) or run ID / latest / prev with --url.
-          <bee|traceId> A bee (1-based: 5 or B5) or a trace ID (32 hex characters, as printed by "runs calls --slowest" and "runs bee").
+          <bee|traceId> A bee (1-based: 5 or B5) or a trace ID (32 hex characters, as printed by the slowest calls and by "runs bee").
 
         Options:
           --url <url>      Query a running Beesharp server (also uses BEESHARP_URL if target is not a local file).
