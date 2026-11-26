@@ -46,6 +46,21 @@ public class TraceAnalyticsTests
     }
 
     [Fact]
+    public void A_child_that_looks_shifted_by_clock_skew_is_moved_into_its_parent_so_the_parent_keeps_no_self_time()
+    {
+        var t = Id32(20);
+        var spans = new[]
+        {
+            Span(t, "a", null, "beesharp", "GET /x", 0, 43),
+            Span(t, "b", "a", "shop-api", "GET /x", 22, 41),     // the other machine's clock runs 21 ms ahead: the child ends 20 ms after its parent
+        };
+
+        var view = TraceAnalytics.BuildView("run", t, spans, Found(t, 0), 0, 43);
+
+        Assert.Equal(2, view.Spans[0].SelfMs, 3);   // 43 - 41, not 43 - 21
+    }
+
+    [Fact]
     public void A_span_whose_parent_is_not_in_the_trace_is_a_root_and_a_child_longer_than_its_parent_never_gives_negative_self_time()
     {
         var t = Id32(2);

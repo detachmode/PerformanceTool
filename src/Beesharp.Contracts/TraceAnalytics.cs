@@ -100,7 +100,17 @@ public static class TraceAnalytics
     private static double SelfOf(Node node)
     {
         if (node.Children.Count == 0) return node.Span.DurationMs;
-        var covered = UnionMs(node.Children.Select(c => (c.Span.StartUnixNanos, c.Span.EndUnixNanos)), node.Span.StartUnixNanos, node.Span.EndUnixNanos);
+        // Services run on other machines whose clocks differ by milliseconds (or more): a child that starts before or ends after its parent is moved
+        // into the parent instead of being cut, so skew does not turn a fully covered parent into one with a lot of "self time".
+        var pStart = node.Span.StartUnixNanos;
+        var pEnd = node.Span.EndUnixNanos;
+        var intervals = node.Children.Select(c =>
+        {
+            var length = Math.Min(c.Span.EndUnixNanos - c.Span.StartUnixNanos, pEnd - pStart);
+            var start = Math.Clamp(c.Span.StartUnixNanos, pStart, Math.Max(pStart, pEnd - length));
+            return (Start: start, End: start + length);
+        });
+        var covered = UnionMs(intervals, pStart, pEnd);
         return Math.Max(0, node.Span.DurationMs - covered);
     }
 
