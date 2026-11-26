@@ -14,7 +14,7 @@ namespace Beesharp.Tracing.E2E.Tests;
 /// The tracing example as processes (brain 0063): Aspire starts Beesharp, shop-api and payment-api, all three export to
 /// <see cref="Receiver"/>, and the "Shop journey" preset runs for a few seconds. Started once for all tests of the class.
 /// </summary>
-public sealed class TracingStack : IAsyncLifetime
+public sealed partial class TracingStack : IAsyncLifetime
 {
     /// <summary>The scenario's steps in the order a bee visits them (spans are named after them, see <c>shop-journey.cs</c>).</summary>
     public static readonly string[] StepSpanNames = ["Log in", "Search", "Open product", "Open product #2", "Open product #3", "Pay"];
@@ -68,6 +68,7 @@ public sealed class TracingStack : IAsyncLifetime
 
             RunId = await RunShopJourneyAsync(shopUrl);
             Bees = await ReadBeesAsync();
+            await WaitUntilAsync("the final trace fetch has reported", RunTimeout, async () => (await HostLogAsync()).Any(l => FetchSummary().IsMatch(l)));
             TraceProblems = await WaitForExportedTracesAsync();
         }
         catch (Exception ex)
@@ -87,7 +88,13 @@ public sealed class TracingStack : IAsyncLifetime
         entry.RatePerMinute = 120;
         plan.DurationSeconds = 8;
 
-        using var start = await beesharp.PostAsJsonAsync("/api/runs/start", new StartRunRequest(plan), Web);
+        // The test's receiver is also the trace store (it answers Jaeger's GET /api/v3/traces/{id}): the environment points Beesharp at it (brain 0065).
+        // The services export their spans in batches every ~5 s, so a bee's trace is asked for 8 s after it ended.
+        var environment = new { name = "Traces", variables = new[] { new { key = "TraceStore.Url", value = Receiver.Endpoint }, new { key = "TraceStore.SettleSeconds", value = "8" } } };
+        using var saved = await beesharp.PutAsJsonAsync("/api/environments/Traces", environment, Web);
+        Assert.True(saved.IsSuccessStatusCode, $"Saving the environment failed: {(int)saved.StatusCode}");
+
+        using var start = await beesharp.PostAsJsonAsync("/api/runs/start", new StartRunRequest(plan, "Traces"), Web);
         Assert.True(start.IsSuccessStatusCode, $"Starting the run failed: {(int)start.StatusCode} {await start.Content.ReadAsStringAsync()}");
         var runId = (await start.Content.ReadFromJsonAsync<LiveRunStatusDto>(Web))!.RunId;
 
@@ -100,6 +107,19 @@ public sealed class TracingStack : IAsyncLifetime
         });
         Assert.Equal("Finished", state);
         return runId;
+    }
+
+    /// <summary>The URL of the Beesharp server Aspire started (what <c>beesharp runs ... --url</c> is given).</summary>
+    public string BeesharpUrl => beesharp!.BaseAddress!.ToString().TrimEnd('/');
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\[Traces\] traces: \d+ of \d+ found")]
+    public static partial System.Text.RegularExpressions.Regex FetchSummary();
+
+    /// <summary>The run's host log lines (the background trace fetch writes there, category Beesharp.Traces).</summary>
+    public async Task<IReadOnlyList<string>> HostLogAsync()
+    {
+        var page = await beesharp!.GetFromJsonAsync<LogPageResult>($"/api/runs/{RunId}/logs?entry={ProgramLogEntry.Host}&limit=1000", Web);
+        return page!.Items.Select(l => l.Message).ToList();
     }
 
     private async Task<IReadOnlyList<StoredBeeDetail>> ReadBeesAsync()
