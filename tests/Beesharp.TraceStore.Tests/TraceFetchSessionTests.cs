@@ -88,6 +88,24 @@ public class TraceFetchSessionTests
     }
 
     [Fact]
+    public async Task The_slowest_call_of_the_run_is_fetched_even_when_the_rolling_budget_was_spent_on_earlier_slow_calls()
+    {
+        await using var h = new Harness(AlwaysFound, o => o.SlowestPerEndpoint = 2);   // the rolling budget is 4 per endpoint
+        h.Session.Start();
+        for (var i = 0; i < 12; i++)
+        {
+            h.Session.Observe(Bee(i, calls: [Call("GET /a", 100 + i * 10, slow: true)]));   // every later bee is slower than all before it
+            await Task.Delay(40);   // the loop polls in between and spends the budget
+        }
+
+        await h.Session.CompleteAsync();
+
+        var fetched = (await h.FetchesAsync()).Select(f => f.Sequence).ToHashSet();
+        Assert.Contains(11, fetched);   // the slowest
+        Assert.Contains(10, fetched);   // and the second slowest: the final top 2
+    }
+
+    [Fact]
     public async Task A_trace_is_not_asked_for_before_its_spans_had_time_to_arrive()
     {
         await using var h = new Harness(AlwaysFound, o => o.SettleDelay = TimeSpan.FromMinutes(5));

@@ -134,7 +134,8 @@ public sealed class TraceFetchSession : IAsyncDisposable
                     continue;
                 }
                 var isFailed = candidate.Reasons.Contains("failed");
-                if (!isFailed && !candidate.Reasons.Any(r => reasonCounts.GetValueOrDefault(r) < ReasonBudget(r))) continue;
+                // In the final pass the true top of every endpoint is always fetched, whatever the rolling budget already spent.
+                if (!isFailed && !(final && candidate.Reasons.Any(r => r.StartsWith("slowest ", StringComparison.Ordinal))) && !candidate.Reasons.Any(r => reasonCounts.GetValueOrDefault(r) < ReasonBudget(r))) continue;
                 if (failedCount + otherCount >= options.MaxTraces || (isFailed ? failedCount >= options.MaxFailed : otherCount >= otherBudget)) continue;
                 tracked[candidate.TraceId] = new Tracked(candidate);
                 foreach (var r in candidate.Reasons.Where(r => r != "failed")) reasonCounts[r] = reasonCounts.GetValueOrDefault(r) + 1;
