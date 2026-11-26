@@ -118,7 +118,10 @@ public sealed partial class TracingStack : IAsyncLifetime
     /// <summary>The run's host log lines (the background trace fetch writes there, category Beesharp.Traces).</summary>
     public async Task<IReadOnlyList<string>> HostLogAsync()
     {
-        var page = await beesharp!.GetFromJsonAsync<LogPageResult>($"/api/runs/{RunId}/logs?entry={ProgramLogEntry.Host}&limit=1000", Web);
+        var url = $"/api/runs/{RunId}/logs?entry={ProgramLogEntry.Host}&limit=1000";
+        using var response = await beesharp!.GetAsync(url);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"GET {url} answered {(int)response.StatusCode}");
+        var page = await response.Content.ReadFromJsonAsync<LogPageResult>(Web);
         return page!.Items.Select(l => l.Message).ToList();
     }
 
