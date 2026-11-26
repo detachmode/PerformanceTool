@@ -32,7 +32,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
     /// <param name="data">Optional runtime data container holding the shared run bag and per-entry bags; a new instance is created when null.</param>
     /// <param name="onBeeContext">Optional callback invoked immediately before a bee executes, providing its sequence number, entry index, and <see cref="ScenarioContext"/>.</param>
     /// <param name="clock">Optional run clock supporting pause and resume; a new clock is created when null.</param>
-    /// <param name="runId">Optional run identifier, put on every actor's root span as <c>beesharp.run.id</c> (brain 0062).</param>
+    /// <param name="runId">Optional run identifier, put on every actor's root span as <c>beesharp.run.id</c> (brain 0063).</param>
     /// <returns>A task that completes when all scheduled entries and in-flight bees have finished and teardown hooks have run.</returns>
     public async Task RunAsync(
         LoadPlan plan,
@@ -187,7 +187,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                 var calls = new List<RecordedCall>();
                 var logs = new List<RecordedLog>();
                 var stepVisits = new List<RecordedStepVisit>();
-                // One actor = one trace (brain 0062): the actor's root span, started here so every call and step of the actor hangs below it.
+                // One actor = one trace (brain 0063): the actor's root span, started here so every call and step of the actor hangs below it.
                 var entryConfig = plan.Scenarios[entry];
                 using var trace = ActorTrace.Start(new ActorTraceInfo(
                     string.IsNullOrWhiteSpace(entryConfig.Label) ? scenario.Name : entryConfig.Label,

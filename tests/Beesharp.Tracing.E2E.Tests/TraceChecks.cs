@@ -4,7 +4,7 @@ using OpenTelemetry.Proto.Trace.V1;
 namespace Beesharp.Tracing.E2E.Tests;
 
 /// <summary>
-/// What a bee's exported trace has to look like (brain 0062), checked against the spans the receiver got:
+/// What a bee's exported trace has to look like (brain 0063), checked against the spans the receiver got:
 /// beesharp actor root → step spans → call spans → shop-api server span → DB spans, and below Pay shop-api's HTTP client span → payment-api.
 /// Each problem is one sentence naming what is missing.
 /// </summary>

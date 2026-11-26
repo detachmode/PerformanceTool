@@ -369,7 +369,7 @@ public sealed class FakeRunSource : IRunSource
         var seq = sequence++;
         var calls = new List<FakeCall>(count);
         var offset = 0.0;
-        var traceId = Hex(16); // one trace per bee, like the real runner (brain 0062)
+        var traceId = Hex(16); // one trace per bee, like the real runner (brain 0063)
         for (var i = 0; i < count; i++)
         {
             var (rawName, endpoint, rawUrl) = MaterializeCall(spec[i].Name);
@@ -513,7 +513,7 @@ public sealed class FakeRunSource : IRunSource
 
     private double Gaussian() => Math.Sqrt(-2 * Math.Log(1 - rng.NextDouble())) * Math.Cos(2 * Math.PI * rng.NextDouble());
 
-    /// <summary>A plausible W3C trace ID (32 hex) or span ID (16 hex) for the fake data (brain 0062). Its own random source, so the seeded simulation above does not change.</summary>
+    /// <summary>A plausible W3C trace ID (32 hex) or span ID (16 hex) for the fake data (brain 0063). Its own random source, so the seeded simulation above does not change.</summary>
     private string Hex(int bytes)
     {
         var buf = new byte[bytes];

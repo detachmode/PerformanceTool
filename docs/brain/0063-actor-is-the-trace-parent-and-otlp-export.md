@@ -1,4 +1,4 @@
-# 0062. Every actor is the parent of its own distributed trace; Beesharp can export its spans over OTLP
+# 0063. Every actor is the parent of its own distributed trace; Beesharp can export its spans over OTLP
 
 - Status: Accepted (user request: Beesharp is the root of the traces it causes, and can send its own spans to an external OpenTelemetry collector; the services under test get `traceparent` on every call). The design choices below are marked **Proposed**.
 - Date: 2026-11-25

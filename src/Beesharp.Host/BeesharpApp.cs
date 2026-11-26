@@ -199,7 +199,7 @@ public sealed class BeesharpAppBuilder
         // Automatically attach RecordingHttpHandler to every DI-managed HttpClient (typed, named, Refit, custom primary handlers).
         Services.AddSingleton<IHttpMessageHandlerBuilderFilter, RecordingHttpMessageHandlerBuilderFilter>();
 
-        // Optional OTLP export of the actors' own spans (brain 0062): off unless Tracing:OtlpEndpoint or OTEL_EXPORTER_OTLP_ENDPOINT is set.
+        // Optional OTLP export of the actors' own spans (brain 0063): off unless Tracing:OtlpEndpoint or OTEL_EXPORTER_OTLP_ENDPOINT is set.
         Services.AddBeesharpTracing(config);
 
         // "Storage:Provider" is DuckDb (default) or Memory; anything else fails with a message naming the supported ones.
@@ -370,7 +370,7 @@ public sealed class BeesharpApp : IAsyncDisposable
         if (initialized) return;
         initialized = true;
 
-        // Build the tracer provider now (brain 0062): the web host would start it with its hosted services, a headless run never starts those.
+        // Build the tracer provider now (brain 0063): the web host would start it with its hosted services, a headless run never starts those.
         tracerProvider = Services.GetService<TracerProvider>();
 
         // Fail fast: building the catalog builds every scenario's parameter spec, which throws for unsupported types (brain 0007).

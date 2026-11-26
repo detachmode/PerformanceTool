@@ -4,7 +4,7 @@ using OpenTelemetry.Exporter;
 namespace Beesharp.Services.Tracing;
 
 /// <summary>
-/// Where Beesharp's own spans are exported (brain 0062). Export is <b>off unless an endpoint is configured</b>. Read from configuration with
+/// Where Beesharp's own spans are exported (brain 0063). Export is <b>off unless an endpoint is configured</b>. Read from configuration with
 /// <see cref="FromConfiguration"/>: the section <c>Tracing</c> (<c>Tracing:OtlpEndpoint</c>, <c>Tracing:Protocol</c>, <c>Tracing:ServiceName</c>; <c>Tracing__OtlpEndpoint</c> as an environment variable)
 /// wins over the standard OpenTelemetry environment variables (<c>OTEL_EXPORTER_OTLP_ENDPOINT</c>, <c>OTEL_EXPORTER_OTLP_PROTOCOL</c>, <c>OTEL_SERVICE_NAME</c>).
 /// </summary>

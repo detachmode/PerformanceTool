@@ -22,12 +22,13 @@
             @if (scnIndex is not null)
             {
                 <a class="top-back" href="" aria-label="Back to the overview"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+                <h1 class="top-title" title="@phoneTitle">@phoneTitle</h1>
             }
             else
             {
-                <a class="brand" href="" aria-label="Beesharp, overview">@BrandHex</a>
+                <a class="brand brand-phone-logo" href="" aria-label="Beesharp, overview"><img src="beesharp-logo.png" alt="Beesharp" class="brand-logo-img" /></a>
+                <span class="spacer"></span>
             }
-            <h1 class="top-title" title="@phoneTitle">@phoneTitle</h1>
             <button type="button" class="mode-btn compact @ModeBtnCss()" @onclick="ToggleModeMenuAsync"
                     aria-haspopup="menu" aria-expanded="@Aria.Bool(modeMenuOpen)" title="Switch Live/Fake mode or load a stored run">
                 <i aria-hidden="true"></i>
@@ -55,6 +56,7 @@
                     <button type="button" class="more-row" @onclick="OpenEnvsFromMore">Configure environments…</button>
                 </div>
                 <div class="drawer-sec">
+                    <button type="button" class="more-row" @onclick="Open3DFromMore">3D Views</button>
                     @if (Asst.Available)
                     {
                         <button type="button" class="more-row" @onclick="() => { moreOpen = false; Asst.Toggle(); }">Assistant</button>
@@ -70,24 +72,7 @@
     {
     <header class="top">
         <a class="brand" href="" aria-label="Beesharp, overview" @onclick="CloseNavAsync">
-            <svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
-                <defs>
-                    <clipPath id="bsharp-hex">
-                        <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z"/>
-                    </clipPath>
-                </defs>
-                <g clip-path="url(#bsharp-hex)">
-                    <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z" fill="#F5B700"/>
-                    <path d="M32 32L57 17.5V46.5L32 61L7 46.5Z" fill="#D99B00"/>
-                    <path d="M32 32L57 46.5L32 61L7 46.5Z" fill="#B87D00"/>
-                </g>
-                <path d="M32 3.8L56.2 17.9V46.1L32 60.2L7.8 46.1V17.9L32 3.8Z" stroke="#FDE68A" stroke-opacity="0.45" stroke-width="1.5"/>
-                <path fill-rule="evenodd" clip-rule="evenodd"
-                      d="M15 19H27.5C32.2 19 35.2 21.4 35.2 25.4C35.2 28.2 33.6 30.2 31.1 31.1C34.2 32 36.2 34.4 36.2 37.8C36.2 42.3 32.8 45 27.6 45H15V19ZM20.8 29.4H26.4C28.4 29.4 29.6 28.3 29.6 26.5C29.6 24.7 28.4 23.7 26.4 23.7H20.8V29.4ZM20.8 40.3H26.9C29.2 40.3 30.5 39.2 30.5 37.2C30.5 35.2 29.2 34.1 26.9 34.1H20.8V40.3Z"
-                      fill="#110F0C"/>
-                <path d="M43.4 22L41.8 41M49.6 22L48 41M39.2 28.2H52.2M38.5 34.8H51.5"
-                      stroke="#110F0C" stroke-width="3.2" stroke-linecap="round"/>
-            </svg>
+            @BrandHex
             <span class="brand-name">Bee<b>sharp</b></span>
         </a>
         <nav class="nav" aria-label="Main">
@@ -96,6 +81,7 @@
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>
             <NavLink class="nav-item" href="environment" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Environment</NavLink>
+            <NavLink class="nav-item" href="3d" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">3D Views</NavLink>
         </nav>
         @* The scenario page (brain 0059): "Overview › name"; the Overview tab above stays the active one and leads back. *@
         @if (scnIndex is { } crumbAt)
@@ -233,23 +219,14 @@
         var path = Nav.ToBaseRelativePath(Nav.Uri);
         var q = path.IndexOfAny(['?', '#']);
         if (q >= 0) path = path[..q];
-        return path.Trim('/').ToLowerInvariant() switch { "calls" => "Calls", "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
+        return path.Trim('/').ToLowerInvariant() switch { "calls" => "Calls", "3d" => "3D Views", "editor" or "scripts" => "Editor", "logs" => "Logs", "environment" => "Environment", _ => "Overview" };
     }
 
     private void PickEnv(string? name) { Envs.SetActive(name); moreOpen = false; }
     private void OpenEnvsFromMore() { moreOpen = false; EnvPopup.Show(); }
+    private async Task Open3DFromMore() { moreOpen = false; await Asst.CloseIfMobileAsync(); Nav.NavigateTo("3d"); }
 
-    private RenderFragment BrandHex => @<svg viewBox="0 0 64 64" fill="none" width="32" height="32" class="brand-hex" aria-hidden="true">
-        <defs><clipPath id="bsharp-hex-p"><path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z"/></clipPath></defs>
-        <g clip-path="url(#bsharp-hex-p)">
-            <path d="M32 3L57 17.5V46.5L32 61L7 46.5V17.5L32 3Z" fill="#F5B700"/>
-            <path d="M32 32L57 17.5V46.5L32 61L7 46.5Z" fill="#D99B00"/>
-            <path d="M32 32L57 46.5L32 61L7 46.5Z" fill="#B87D00"/>
-        </g>
-        <path d="M32 3.8L56.2 17.9V46.1L32 60.2L7.8 46.1V17.9L32 3.8Z" stroke="#FDE68A" stroke-opacity="0.45" stroke-width="1.5"/>
-        <path fill-rule="evenodd" clip-rule="evenodd" d="M15 19H27.5C32.2 19 35.2 21.4 35.2 25.4C35.2 28.2 33.6 30.2 31.1 31.1C34.2 32 36.2 34.4 36.2 37.8C36.2 42.3 32.8 45 27.6 45H15V19ZM20.8 29.4H26.4C28.4 29.4 29.6 28.3 29.6 26.5C29.6 24.7 28.4 23.7 26.4 23.7H20.8V29.4ZM20.8 40.3H26.9C29.2 40.3 30.5 39.2 30.5 37.2C30.5 35.2 29.2 34.1 26.9 34.1H20.8V40.3Z" fill="#110F0C"/>
-        <path d="M43.4 22L41.8 41M49.6 22L48 41M39.2 28.2H52.2M38.5 34.8H51.5" stroke="#110F0C" stroke-width="3.2" stroke-linecap="round"/>
-    </svg>;
+    private RenderFragment BrandHex => @<img src="beesharp-mark.png" alt="" width="30" height="30" class="brand-hex" aria-hidden="true" />;
     private bool modeMenuOpen;
     // One menu body, shown under the desktop mode button or as the small-screen sheet.
     private RenderFragment ModeMenuItems => @<text>

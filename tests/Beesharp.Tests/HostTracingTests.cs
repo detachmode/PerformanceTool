@@ -8,7 +8,7 @@ using OpenTelemetry.Trace;
 
 namespace Beesharp.Tests;
 
-/// <summary>The embedded host and the actors' traces (brain 0062): DI-made HttpClients join the trace, export is off unless configured.</summary>
+/// <summary>The embedded host and the actors' traces (brain 0063): DI-made HttpClients join the trace, export is off unless configured.</summary>
 public class HostTracingTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "beesharp-host-trace-" + Guid.NewGuid().ToString("N"));

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Optional OTLP export of Beesharp's own spans (brain 0062): one small registration shared by the hosts (Beesharp.Host, Beesharp.Cli).
+  <!-- Optional OTLP export of Beesharp's own spans (brain 0063): one small registration shared by the hosts (Beesharp.Host, Beesharp.Cli).
        The only module with the OpenTelemetry SDK; Core and Engine create spans with System.Diagnostics alone. -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>

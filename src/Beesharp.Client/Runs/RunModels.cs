@@ -117,7 +117,7 @@ public readonly record struct BeeRecord(int Sequence, int Entry, double StartedA
 /// <summary>Calls and log lines of one bee. Only kept for a limited number of bees per scenario (<see cref="RunStoreOptions"/>); log lines are generated on first use.</summary>
 public sealed class BeeDetail(int sequence, int entry, IReadOnlyList<FakeCall> calls, Func<IReadOnlyList<FakeLogEntry>> makeLogs, IReadOnlyList<RecordedStepVisit>? stepVisits = null, string? traceId = null)
 {
-    /// <summary>The bee's distributed trace ID (brain 0062): one trace per bee, the ID of every call's <c>traceparent</c>. Null when the run was made without tracing.</summary>
+    /// <summary>The bee's distributed trace ID (brain 0063): one trace per bee, the ID of every call's <c>traceparent</c>. Null when the run was made without tracing.</summary>
     public string? TraceId { get; } = traceId;
     private IReadOnlyList<FakeLogEntry>? logs;
     public int Sequence { get; } = sequence;

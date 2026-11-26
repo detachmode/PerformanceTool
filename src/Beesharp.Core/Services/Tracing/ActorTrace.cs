@@ -3,7 +3,7 @@ using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Services.Tracing;
 
-/// <summary>What an actor's root span is told about the actor (brain 0062).</summary>
+/// <summary>What an actor's root span is told about the actor (brain 0063).</summary>
 /// <param name="Name">Span name: the scenario entry's label.</param>
 /// <param name="RunId">Identifier of the load run, if known.</param>
 /// <param name="ScenarioId">Identifier of the scenario the entry plays.</param>
@@ -19,7 +19,7 @@ public sealed record ActorTraceInfo(
     IReadOnlyList<StepInfo>? Steps = null);
 
 /// <summary>
-/// The distributed trace of one actor (brain 0062): one actor = one bar = one logging scope = one trace. The root span is the actor, each step a child span, and every call a
+/// The distributed trace of one actor (brain 0063): one actor = one bar = one logging scope = one trace. The root span is the actor, each step a child span, and every call a
 /// child of the step it was made in (or of the actor when the scenario has no steps). Create it with <see cref="Start"/>, hand it to the actor's <see cref="ScenarioContext"/>,
 /// call <see cref="Complete"/> when the actor ends and dispose it.
 /// </summary>
@@ -149,7 +149,7 @@ public sealed class ActorTrace : IDisposable
     }
 }
 
-/// <summary>The span of one call (brain 0062); created by <see cref="ActorTrace"/>, finished when the call is recorded.</summary>
+/// <summary>The span of one call (brain 0063); created by <see cref="ActorTrace"/>, finished when the call is recorded.</summary>
 internal sealed class CallSpan
 {
     private readonly Activity activity;

@@ -87,7 +87,7 @@
             {
                 @if (!string.IsNullOrEmpty(detail.TraceId))
                 {
-                    @* One trace per bee (brain 0062): every call below carries this trace ID in its traceparent. *@
+                    @* One trace per bee (brain 0063): every call below carries this trace ID in its traceparent. *@
                     <div class="trace-id" aria-label="Distributed trace of @fb.Name">
                         <span class="trace-id-label">Trace</span>
                         <code class="tnum" title="Trace ID of @fb.Name: all its calls send it as traceparent">@detail.TraceId</code>

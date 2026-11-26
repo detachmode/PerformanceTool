@@ -240,13 +240,14 @@ public sealed class ScenarioContext
     }
 
     /// <summary>
-    /// Temporarily names or sets a slow threshold for HTTP calls and measured steps executed inside the returned scope
+    /// Temporarily names, tags, or sets a slow threshold for HTTP calls and measured steps executed inside the returned scope
     /// (works for typed clients, Refit, SDKs, or raw <see cref="HttpClient"/> calls, brain 0060).
     /// </summary>
     /// <param name="name">Optional explicit endpoint/call name overriding automatic URI normalization.</param>
     /// <param name="slowAbove">Optional positive slow threshold overriding the scenario/endpoint default.</param>
+    /// <param name="tag">Optional call tag appended as <c>[tag]</c> to distinguish calls hitting the same endpoint.</param>
     /// <returns>An <see cref="IDisposable"/> scope that restores the previous call scope override on disposal.</returns>
-    public IDisposable CallScope(string? name = null, TimeSpan? slowAbove = null)
+    public IDisposable CallScope(string? name = null, TimeSpan? slowAbove = null, string? tag = null)
     {
         if (slowAbove is { } s && s <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(slowAbove), "Slow threshold must be greater than zero.");
@@ -254,7 +255,8 @@ public sealed class ScenarioContext
         var previous = currentCallScope.Value;
         var cleanName = string.IsNullOrWhiteSpace(name) ? previous?.Name : name.Trim();
         var thresholdMs = slowAbove?.TotalMilliseconds ?? previous?.SlowThresholdMs;
-        currentCallScope.Value = new CallScopeOverride(cleanName, thresholdMs);
+        var cleanTag = string.IsNullOrWhiteSpace(tag) ? previous?.Tag : tag.Trim();
+        currentCallScope.Value = new CallScopeOverride(cleanName, thresholdMs, cleanTag);
         return new CallScopeGuard(previous);
     }
 
@@ -277,10 +279,10 @@ public sealed class ScenarioContext
     internal double ElapsedMs => beeClock.Elapsed.TotalMilliseconds;
     internal bool IsRunStopped => runStopped?.Invoke() == true;
 
-    /// <summary>The distributed trace of this actor (brain 0062), or <see langword="null"/> when the context was created without one (startup and teardown hooks, test runs).</summary>
+    /// <summary>The distributed trace of this actor (brain 0063), or <see langword="null"/> when the context was created without one (startup and teardown hooks, test runs).</summary>
     public ActorTrace? Trace => trace;
 
-    /// <summary>W3C trace ID of this actor's trace: the ID every call of the actor sends in its <c>traceparent</c> (brain 0062). <see langword="null"/> without a trace.</summary>
+    /// <summary>W3C trace ID of this actor's trace: the ID every call of the actor sends in its <c>traceparent</c> (brain 0063). <see langword="null"/> without a trace.</summary>
     public string? TraceId => trace?.TraceId;
 
     internal void EnterStep(int step, int rep, string? dataJson = null)
@@ -312,7 +314,7 @@ public sealed class ScenarioContext
     internal bool MeasureHttpTimingSplit { get; }
     private readonly IReadOnlyList<string> captureHeaders;
 
-    /// <summary>Starts the span of an HTTP call of this actor and puts its <c>traceparent</c> on the request (brain 0062). <see langword="null"/> without a trace.</summary>
+    /// <summary>Starts the span of an HTTP call of this actor and puts its <c>traceparent</c> on the request (brain 0063). <see langword="null"/> without a trace.</summary>
     internal CallSpan? BeginHttpCallSpan(HttpRequestMessage request, bool makeCurrent) =>
         trace?.StartCall(request.Method.Method, request, makeCurrent);
 
@@ -335,12 +337,19 @@ public sealed class ScenarioContext
         var norm = EndpointNormalizer.NormalizeHttp(request.Method, request.RequestUri);
         string? explicitName = null;
         if (request.Options.TryGetValue(HttpRequestCallExtensions.CallNameKey, out var optName) && !string.IsNullOrWhiteSpace(optName))
-            explicitName = optName;
+            explicitName = optName.Trim();
         else if (!string.IsNullOrWhiteSpace(scope?.Name))
-            explicitName = scope.Name;
+            explicitName = scope.Name.Trim();
 
-        var endpoint = explicitName ?? norm.Endpoint;
-        var rawName = explicitName ?? norm.RawName;
+        string? tag = null;
+        if (request.Options.TryGetValue(HttpRequestCallExtensions.CallTagKey, out var optTag) && !string.IsNullOrWhiteSpace(optTag))
+            tag = optTag.Trim();
+        else if (!string.IsNullOrWhiteSpace(scope?.Tag))
+            tag = scope.Tag.Trim();
+
+        var baseEndpoint = explicitName ?? norm.Endpoint;
+        var baseRaw = explicitName ?? norm.RawName;
+        var (endpoint, rawName) = ApplyCallTag(baseEndpoint, baseRaw, tag);
 
         double? thresholdMs = request.Options.TryGetValue(HttpRequestCallExtensions.SlowThresholdMsKey, out var optMs) && optMs > 0
             ? optMs
@@ -428,7 +437,7 @@ public sealed class ScenarioContext
     /// <param name="thresholds">Optional slow-call thresholds for this scenario entry.</param>
     /// <param name="captureHeaders">Allowlisted HTTP header names to capture on recorded calls; defaults to <see cref="LoadPlan.DefaultCaptureHeaders"/>.</param>
     /// <param name="measureHttpTimingSplit">When <c>true</c>, measures TTFB and response-body read times separately on HTTP calls.</param>
-    /// <param name="trace">The actor's distributed trace (brain 0062); calls become spans of it and carry its <c>traceparent</c>. <c>null</c>: no tracing.</param>
+    /// <param name="trace">The actor's distributed trace (brain 0063); calls become spans of it and carry its <c>traceparent</c>. <c>null</c>: no tracing.</param>
     public ScenarioContext(
         HttpClient http,
         EnvironmentValues? environment = null,
@@ -544,15 +553,16 @@ public sealed class ScenarioContext
             throw new ArgumentOutOfRangeException(nameof(slowAbove), "Slow threshold must be greater than zero.");
         var scope = CurrentCallScope;
         var off = offsetMs ?? Math.Max(0, beeClock.Elapsed.TotalMilliseconds - durationMs);
-        var endpoint = scope?.Name ?? EndpointNormalizer.NormalizeCallName(name);
+        var baseEndpoint = string.IsNullOrWhiteSpace(scope?.Name) ? EndpointNormalizer.NormalizeCallName(name) : scope.Name.Trim();
+        var (endpoint, rawName) = ApplyCallTag(baseEndpoint, name, scope?.Tag);
         var method = EndpointNormalizer.TryExtractMethod(name);
-        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, name, method);
+        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, method);
 
-        // An already finished call still gets its span (brain 0062): back-dated to when it started.
+        // An already finished call still gets its span (brain 0063): back-dated to when it started.
         var span = trace?.StartCall(endpoint, null, makeCurrent: false, DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(durationMs));
         span?.Finish(endpoint, statusCode, error);
         span?.Stop();
-        callSink?.Invoke(new RecordedCall(name, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
+        callSink?.Invoke(new RecordedCall(rawName, off, durationMs, statusCode, bytes, error, Math.Max(0, CurrentStep), CurrentRep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
     }
 
     /// <summary>Measures an async step as a named call, recording its offset, duration and any failure.</summary>
@@ -570,19 +580,20 @@ public sealed class ScenarioContext
         var step = Math.Max(0, CurrentStep);
         var rep = CurrentRep;
         var scope = CurrentCallScope;
-        var endpoint = scope?.Name ?? EndpointNormalizer.NormalizeCallName(name);
+        var baseEndpoint = string.IsNullOrWhiteSpace(scope?.Name) ? EndpointNormalizer.NormalizeCallName(name) : scope.Name.Trim();
+        var (endpoint, rawName) = ApplyCallTag(baseEndpoint, name, scope?.Tag);
         var method = EndpointNormalizer.TryExtractMethod(name);
-        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, name, method);
+        var thresholdMs = slowAbove?.TotalMilliseconds ?? scope?.SlowThresholdMs ?? thresholds.ResolveMs(endpoint, rawName, method);
         var offsetMs = beeClock.Elapsed.TotalMilliseconds;
         var sw = Stopwatch.StartNew();
-        // The measured work runs inside the call's span (brain 0062), so HTTP calls it makes (and plain code) nest under it.
+        // The measured work runs inside the call's span (brain 0063), so HTTP calls it makes (and plain code) nest under it.
         var span = trace?.StartCall(endpoint, null, makeCurrent: true);
         try
         {
             await work();
             sw.Stop();
             span?.Finish(endpoint, statusCode, null);
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
+            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, statusCode, bytes, null, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
         }
         catch (Exception ex)
         {
@@ -590,7 +601,7 @@ public sealed class ScenarioContext
             // A call cut off because the user stopped the run is kept as failed with the time it ran until the stop (brain 0053).
             var error = ex is OperationCanceledException && runStopped?.Invoke() == true ? ExecutionResult.CanceledError : ex.Message;
             span?.Finish(endpoint, null, error);
-            callSink?.Invoke(new RecordedCall(name, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
+            callSink?.Invoke(new RecordedCall(rawName, offsetMs, sw.Elapsed.TotalMilliseconds, null, 0, error, step, rep, endpoint, method, SlowThresholdMs: thresholdMs, TraceId: span?.TraceId, SpanId: span?.SpanId));
             throw;
         }
         finally
@@ -598,6 +609,19 @@ public sealed class ScenarioContext
             span?.Stop();
             _ = idx;
         }
+    }
+
+    private static (string Endpoint, string RawName) ApplyCallTag(string baseEndpoint, string baseRaw, string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+            return (baseEndpoint, baseRaw);
+
+        var suffix = $"[{tag.Trim()}]";
+        if (baseEndpoint.EndsWith(suffix, StringComparison.Ordinal))
+            return (baseEndpoint, baseRaw);
+
+        var taggedRaw = baseRaw.EndsWith(suffix, StringComparison.Ordinal) ? baseRaw : $"{baseRaw} {suffix}";
+        return ($"{baseEndpoint} {suffix}", taggedRaw);
     }
 
     internal void EmitLog(LogLevel level, string message, Exception? exception)

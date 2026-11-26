@@ -88,8 +88,8 @@ public sealed record CallEndpointsResult(
 /// <param name="IsSlow"><see langword="true"/> when the call succeeded and exceeded its effective slow threshold.</param>
 /// <param name="TypicalMs">Typical (median) duration in milliseconds for the endpoint, if positive.</param>
 /// <param name="SlowThresholdMs">Effective slow threshold in milliseconds applied to this call.</param>
-/// <param name="TraceId">W3C trace ID of the actor's distributed trace this call belongs to (brain 0062), or <see langword="null"/> when the run was made without tracing.</param>
-/// <param name="SpanId">W3C span ID of this call's span, the parent of the service's server span (brain 0062), or <see langword="null"/>.</param>
+/// <param name="TraceId">W3C trace ID of the actor's distributed trace this call belongs to (brain 0063), or <see langword="null"/> when the run was made without tracing.</param>
+/// <param name="SpanId">W3C span ID of this call's span, the parent of the service's server span (brain 0063), or <see langword="null"/>.</param>
 public sealed record CallSampleDto(
     long Id,
     int Sequence,
@@ -197,8 +197,8 @@ public sealed record CallEndpointDetailDto(
 /// <param name="TtfbMs">Optional time-to-first-byte in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="ResponseReadMs">Optional response body read duration in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="Headers">Optional captured request/response headers for slow or failed calls.</param>
-/// <param name="TraceId">W3C trace ID of the actor's distributed trace this call belongs to (brain 0062), or <see langword="null"/>.</param>
-/// <param name="SpanId">W3C span ID of this call's span (brain 0062), or <see langword="null"/>.</param>
+/// <param name="TraceId">W3C trace ID of the actor's distributed trace this call belongs to (brain 0063), or <see langword="null"/>.</param>
+/// <param name="SpanId">W3C span ID of this call's span (brain 0063), or <see langword="null"/>.</param>
 public sealed record SlowestCallDto(
     long Id,
     int Sequence,

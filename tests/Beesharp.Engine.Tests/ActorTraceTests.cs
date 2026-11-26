@@ -10,7 +10,7 @@ using Beesharp.Services.Tracing;
 
 namespace Beesharp.Engine.Tests;
 
-/// <summary>One actor = one trace (brain 0062): the services under test receive the actor's trace in <c>traceparent</c>, with or without an exporter.</summary>
+/// <summary>One actor = one trace (brain 0063): the services under test receive the actor's trace in <c>traceparent</c>, with or without an exporter.</summary>
 public class ActorTraceTests
 {
     public sealed record TraceParams(bool FailAtPay = false);

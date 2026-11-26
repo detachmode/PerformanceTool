@@ -4,7 +4,7 @@ using Beesharp.Services.Storage;
 
 namespace Beesharp.Storage.Tests;
 
-/// <summary>The trace ID and span IDs a run recorded (brain 0062) survive storage, the call queries and the export bundles.</summary>
+/// <summary>The trace ID and span IDs a run recorded (brain 0063) survive storage, the call queries and the export bundles.</summary>
 public class TraceIdStorageTests
 {
     private const string TraceA = "4d7ce6ac47fbe9b3822d67a473ce9774";

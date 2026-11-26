@@ -24,8 +24,8 @@ namespace Beesharp.Contracts;
 /// <param name="TtfbMs">Optional time-to-first-byte in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="ResponseReadMs">Optional response body read duration in milliseconds when HTTP timing split is enabled.</param>
 /// <param name="Headers">Optional captured request/response headers for slow or failed calls.</param>
-/// <param name="TraceId">Optional W3C trace ID of the actor's trace this call belongs to (brain 0062).</param>
-/// <param name="SpanId">Optional W3C span ID of this call's span (brain 0062).</param>
+/// <param name="TraceId">Optional W3C trace ID of the actor's trace this call belongs to (brain 0063).</param>
+/// <param name="SpanId">Optional W3C span ID of this call's span (brain 0063).</param>
 public readonly record struct CallFact(
     long Id,
     int Sequence,

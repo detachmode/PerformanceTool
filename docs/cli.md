@@ -60,7 +60,7 @@ Output is plain text without colour codes, readable in CI logs.
 
 Ctrl+C stops the run like Stop in the UI: bees in flight become canceled, the shutdown program still runs, the run is saved.
 
-### Sending traces to a collector (brain 0062)
+### Sending traces to a collector (brain 0063)
 
 Every bee is the root of its own trace and every call carries a sampled `traceparent`, whatever you configure; the trace IDs are stored with the run. To also **export** the bees' spans (bee → step → call) over OTLP, set the standard OpenTelemetry environment variables; without an endpoint nothing is exported:
 

@@ -114,7 +114,7 @@ public static class CliApp
             ScriptProblems = problems,
         };
 
-        // Optional OTLP export of the actors' spans (brain 0062), from OTEL_EXPORTER_OTLP_ENDPOINT & co; off without an endpoint.
+        // Optional OTLP export of the actors' spans (brain 0063), from OTEL_EXPORTER_OTLP_ENDPOINT & co; off without an endpoint.
         TracingSettings tracing;
         try { tracing = TracingSettings.FromConfiguration(new ConfigurationBuilder().AddEnvironmentVariables().Build()); }
         catch (InvalidOperationException ex) { throw new CouldNotRunException(ex.Message); }

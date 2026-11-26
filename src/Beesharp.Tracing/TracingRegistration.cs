@@ -8,7 +8,7 @@ using OpenTelemetry.Trace;
 namespace Beesharp.Services.Tracing;
 
 /// <summary>
-/// Registers the OpenTelemetry SDK for Beesharp's own spans (brain 0062). Beesharp's spans are the actor, step and call spans of <see cref="BeesharpTracing.Source"/> and nothing else:
+/// Registers the OpenTelemetry SDK for Beesharp's own spans (brain 0063). Beesharp's spans are the actor, step and call spans of <see cref="BeesharpTracing.Source"/> and nothing else:
 /// no ASP.NET Core or HttpClient instrumentation, so Beesharp's own traffic (UI, REST API, assistant) is never exported. The sampler is always on.
 /// </summary>
 public static class TracingRegistration

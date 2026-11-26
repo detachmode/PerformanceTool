@@ -1,4 +1,4 @@
-# Tracing example: Beesharp as the root of every trace (brain 0062)
+# Tracing example: Beesharp as the root of every trace (brain 0063)
 
 A dev cluster in miniature. Beesharp loads two traced services; Beesharp and the services all send their spans to
 **one OpenTelemetry collector** (OTLP http/protobuf on port 4318), and the collector forwards them to Jaeger and/or

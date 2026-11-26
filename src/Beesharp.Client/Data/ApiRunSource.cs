@@ -41,6 +41,8 @@ public sealed class ApiRunSource : IRunSource
     private string StatusUrl() => $"api/runs/current?afterSeq={lastSequence}&afterIndex={receivedBees}" + (activeRunId is null ? "" : "&runId=" + Uri.EscapeDataString(activeRunId));
     private readonly HashSet<int> loadedDetails = [];
     private readonly HashSet<int> loadingDetails = [];
+    private readonly Dictionary<string, RemoteRunSummary> runSummaryCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string RunId, int Entry, int Limit), RemoteBeePage> runBeesCache = [];
 
     public LoadPlan Plan { get; private set; } = new() { DurationSeconds = 30, MaxConcurrency = 50, TimeoutSeconds = 15 };
     public string PresetName { get; private set; } = "Live plan";
@@ -363,6 +365,40 @@ public sealed class ApiRunSource : IRunSource
     {
         try { return await http.GetFromJsonAsync<List<StoredRunSummary>>($"api/runs?limit={limit}", JsonOpts, ct) ?? []; }
         catch { return []; }
+    }
+
+    /// <summary>Fetches per-entry summary metadata for a live or stored run (<c>GET /api/runs/{runId}/summary</c>), caching non-active runs in memory.</summary>
+    public async Task<RemoteRunSummary?> GetRunSummaryAsync(string runId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId)) return null;
+        if (runSummaryCache.TryGetValue(runId, out var cached)) return cached;
+        try
+        {
+            var summary = await http.GetFromJsonAsync<RemoteRunSummary>($"api/runs/{Uri.EscapeDataString(runId)}/summary", JsonOpts, ct);
+            if (summary is not null && !IsActiveState(summary.State))
+                runSummaryCache[runId] = summary;
+            return summary;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
+    /// <summary>Fetches compact bee records for one scenario entry of a run (<c>GET /api/runs/{runId}/bees</c>), caching completed runs in memory.</summary>
+    public async Task<RemoteBeePage?> GetRunBeesAsync(string runId, int entry, int limit = 5000, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId)) return null;
+        var clampedLimit = Math.Clamp(limit, 1, 5000);
+        var key = (runId, entry, clampedLimit);
+        if (runBeesCache.TryGetValue(key, out var cached)) return cached;
+        try
+        {
+            var page = await http.GetFromJsonAsync<RemoteBeePage>($"api/runs/{Uri.EscapeDataString(runId)}/bees?entry={entry}&limit={clampedLimit}", JsonOpts, ct);
+            if (page is not null && (!string.Equals(runId, activeRunId, StringComparison.Ordinal) || !IsRunning))
+                runBeesCache[key] = page;
+            return page;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
     }
 
     public async Task<(StoredRunSummary? Summary, string? Error)> ImportRunAsync(string fileName, Stream content, CancellationToken ct = default)
@@ -815,3 +851,50 @@ public sealed class ApiRunSource : IRunSource
 
     public void Dispose() { StopPolling(); StopSync(); }
 }
+
+/// <summary>Per-entry summary returned by <c>GET /api/runs/{runId}/summary</c>.</summary>
+public sealed record RemoteEntrySummary(
+    int Entry,
+    string Label,
+    int Starts,
+    int Finished,
+    int InFlight,
+    int Failed,
+    int SlowBees,
+    int SlowCalls,
+    int Dropped,
+    double BeesPerMinute,
+    string? ScenarioId = null,
+    SpawningPattern? Pattern = null,
+    double? RatePerMinute = null,
+    int? BeesPerBurst = null,
+    double? BurstsPerMinute = null);
+
+/// <summary>Run summary returned by <c>GET /api/runs/{runId}/summary</c>.</summary>
+public sealed record RemoteRunSummary(
+    string RunId,
+    string State,
+    double ElapsedSeconds,
+    DateTimeOffset StartedUtc,
+    int TotalBees,
+    int FailedBees,
+    int SlowBees,
+    long TotalLogs,
+    string? Error,
+    IReadOnlyList<RemoteEntrySummary> Entries);
+
+/// <summary>Compact bee record returned by <c>GET /api/runs/{runId}/bees</c>.</summary>
+public sealed record RemoteBeeSummary(
+    int Sequence,
+    int Entry,
+    double StartedAt,
+    double DurationMs,
+    int? StatusCode,
+    long Bytes,
+    string? Error,
+    int SlowCalls,
+    int FailedStep = -1,
+    int FailedRep = -1);
+
+/// <summary>Paged bee listing returned by <c>GET /api/runs/{runId}/bees</c>.</summary>
+public sealed record RemoteBeePage(long Total, IReadOnlyList<RemoteBeeSummary> Items);

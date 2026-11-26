@@ -6,7 +6,7 @@ using Xunit.Abstractions;
 namespace Beesharp.Tracing.E2E.Tests;
 
 /// <summary>
-/// The tracing example end to end (brain 0062, 0063): a real Beesharp loads the "Shop journey" preset against real shop-api and
+/// The tracing example end to end (brain 0063, 0064): a real Beesharp loads the "Shop journey" preset against real shop-api and
 /// payment-api processes. Nothing here depends on random behaviour (slow queries, payment failures): those only add checks when they happen.
 /// </summary>
 public sealed partial class TracingTests(TracingStack stack, ITestOutputHelper output) : IClassFixture<TracingStack>

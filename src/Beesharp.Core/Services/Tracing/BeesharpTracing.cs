@@ -3,12 +3,12 @@ using System.Diagnostics;
 namespace Beesharp.Services.Tracing;
 
 /// <summary>
-/// Beesharp's own <see cref="ActivitySource"/> (brain 0062). Every actor (bee) is the root of one distributed trace; steps and calls are its children.
+/// Beesharp's own <see cref="ActivitySource"/> (brain 0063). Every actor (bee) is the root of one distributed trace; steps and calls are its children.
 /// Core depends only on <c>System.Diagnostics</c>: an OpenTelemetry SDK in the host (<c>AddSource(<see cref="SourceName"/>)</c>) turns these spans into exports.
 /// </summary>
 /// <remarks>
 /// A <see cref="ActivitySource"/> returns <see langword="null"/> from <c>StartActivity</c> while nobody listens, which would leave calls without a trace ID
-/// whenever no exporter is configured. So the first use installs one always-on <see cref="ActivityListener"/> for this source (brain 0062): trace and span IDs
+/// whenever no exporter is configured. So the first use installs one always-on <see cref="ActivityListener"/> for this source (brain 0063): trace and span IDs
 /// (and the sampled flag of the <c>traceparent</c> sent to the services under test) exist whether or not anything is exported.
 /// </remarks>
 public static class BeesharpTracing
