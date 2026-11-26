@@ -92,19 +92,20 @@ public class StepMachineTests
         Assert.Equal([(0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (3, 0)], calls.Select(c => (c.Step, c.Rep)).ToArray());
         // Automatic step-execution log statement for every step visit, plus the user's "logged in" log in step 0.
         Assert.Equal(7, logs.Count);
-        Assert.StartsWith("─── ▶ Sign in ───", logs[0].Message);
+        Assert.Equal("── Sign in ──", logs[0].Message);
+        Assert.Equal("Debug", logs[0].Level);
         Assert.Equal(0, logs[0].Step);
         Assert.Equal("logged in", logs[1].Message);
         Assert.Equal(0, logs[1].Step);
-        Assert.StartsWith("─── ▶ Search (token: tok-1) ───", logs[2].Message);
+        Assert.Equal("── Search (token: tok-1) ──", logs[2].Message);
         Assert.Equal(1, logs[2].Step);
-        Assert.StartsWith("─── ▶ Open product (token: tok-1 · index: 0 · looped: false) ───", logs[3].Message);
+        Assert.Equal("── Open product (token: tok-1 · index: 0 · looped: false) ──", logs[3].Message);
         Assert.Equal((2, 0), (logs[3].Step, logs[3].Rep));
-        Assert.StartsWith("─── ▶ Open product #2 (token: tok-1 · index: 1 · looped: true) ───", logs[4].Message);
+        Assert.Equal("── Open product #2 (token: tok-1 · index: 1 · looped: true) ──", logs[4].Message);
         Assert.Equal((2, 1), (logs[4].Step, logs[4].Rep));
-        Assert.StartsWith("─── ▶ Open product #3 (token: tok-1 · index: 2 · looped: true) ───", logs[5].Message);
+        Assert.Equal("── Open product #3 (token: tok-1 · index: 2 · looped: true) ──", logs[5].Message);
         Assert.Equal((2, 2), (logs[5].Step, logs[5].Rep));
-        Assert.StartsWith("─── ▶ Pay (token: tok-1) ───", logs[6].Message);
+        Assert.Equal("── Pay (token: tok-1) ──", logs[6].Message);
         Assert.Equal(3, logs[6].Step);
     }
 

@@ -106,7 +106,6 @@
                 <div class="lg-group" role="group" aria-label="Lines">
                     <h2>Lines</h2>
                     <button type="button" class="lg-opt" @onclick="ToggleTimeModeAsync"><span>Time</span><span class="n">@(timeMode == LogTimeMode.Run ? "Run time" : "Clock time")</span></button>
-                    <button type="button" class="lg-opt" aria-pressed="@Aria.Bool(wrap)" @onclick="() => wrap = !wrap"><span>Wrap long lines</span><span class="n">@(wrap ? "On" : "Off")</span></button>
                 </div>
                 <button type="button" class="btn primary lg-show" @onclick="() => filtersOpen = false">Show @Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")</button>
             </div>
@@ -138,8 +137,8 @@
                     title="@(timeMode == LogTimeMode.Run ? "Showing time into the run (0:05.9). Click for the clock time." : "Showing the clock time (14:02:07.3). Click for the time into the run.")">
                 @(timeMode == LogTimeMode.Run ? "Run time" : "Clock time")
             </button>
-            <WrapToggleButton @bind-Wrapped="wrap" />
             }
+            <WrapToggleButton @bind-Wrapped="wrap" />
             <CopyButton GetTextAsync="CopyAllAsync" Disabled="@(total == 0)" Title="@($"Copy all {Format.Plural((int)Math.Min(int.MaxValue, total), "line", "lines")} to the clipboard")" />
         </div>
 

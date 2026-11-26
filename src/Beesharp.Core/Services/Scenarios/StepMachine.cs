@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Beesharp.Services.Scenarios.Spec;
+using Microsoft.Extensions.Logging;
 
 namespace Beesharp.Services.Scenarios;
 
@@ -214,8 +215,6 @@ internal static class StepMachineRunner
         return new ScenarioOutcome(200, 0);
     }
 
-    private const int StepLineWidth = 56;
-
     private static void LogStepExecution(ScenarioContext context, string stepName, int rep, string? dataJson)
     {
         var suffix = rep > 0 ? $" #{rep + 1}" : "";
@@ -223,9 +222,7 @@ internal static class StepMachineRunner
         var label = string.IsNullOrEmpty(formattedData)
             ? $"{stepName}{suffix}"
             : $"{stepName}{suffix} ({formattedData})";
-        var prefix = $"─── ▶ {label} ";
-        var pad = Math.Max(3, StepLineWidth - prefix.Length);
-        context.Log(prefix + new string('─', pad));
+        context.Logger.LogDebug("{Message}", $"── {label} ──");
     }
 }
 

@@ -19,19 +19,22 @@ public class CallsFilterTests
             .WithDurationRange(200, 500)
             .WithTimeWindow(12.5, 45.25)
             .WithSort("time")
-            .WithSearch("pay");
+            .WithSearch("pay")
+            .WithTargetMs(125);
 
         var qs = f.ToQueryString();
         Assert.Contains("scenario=2", qs);
         Assert.Contains("show=slow", qs);
         Assert.Contains("minMs=200", qs);
+        Assert.Contains("target=125", qs);
 
         var uri = f.Href();
         var q = uri[(uri.IndexOf('?') + 1)..];
-        var parsed = CallsFilter.FromQuery("POST /payments", "2", "slow", "200", "500", "12.5", "45.25", "time", "pay");
+        var parsed = CallsFilter.FromQuery("POST /payments", "2", "slow", "200", "500", "12.5", "45.25", "time", "pay", "125");
         Assert.True(f.SameAs(parsed));
         Assert.Equal(1, parsed.Entry);
         Assert.Equal("POST /payments", parsed.Endpoint);
+        Assert.Equal(125, parsed.TargetMs);
     }
 
     [Fact]

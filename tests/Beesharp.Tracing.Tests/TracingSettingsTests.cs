@@ -95,4 +95,21 @@ public class TracingSettingsTests
         var endpoint = Assert.Throws<InvalidOperationException>(() => TracingSettings.FromConfiguration(Config(("Tracing:OtlpEndpoint", "localhost:4318"))));
         Assert.Contains("http://localhost:4318", endpoint.Message);
     }
+
+    [Fact]
+    public void Trace_url_template_is_read_and_trimmed_even_without_otlp_export()
+    {
+        Assert.Null(TracingSettings.Off.TraceUrlTemplate);
+        Assert.Null(TracingSettings.FromConfiguration(Config(("Tracing:TraceUrlTemplate", "   "))).TraceUrlTemplate);
+
+        var offExport = TracingSettings.FromConfiguration(Config(("Tracing:TraceUrlTemplate", "  http://localhost:16686/trace/{traceId}  ")));
+        Assert.False(offExport.Enabled);
+        Assert.Equal("http://localhost:16686/trace/{traceId}", offExport.TraceUrlTemplate);
+
+        var onExport = TracingSettings.FromConfiguration(Config(
+            ("Tracing:OtlpEndpoint", "http://collector:4318"),
+            ("Tracing:TraceUrlTemplate", "http://jaeger:16686/trace/{traceId}")));
+        Assert.True(onExport.Enabled);
+        Assert.Equal("http://jaeger:16686/trace/{traceId}", onExport.TraceUrlTemplate);
+    }
 }

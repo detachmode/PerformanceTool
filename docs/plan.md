@@ -8,6 +8,7 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Done (user feedback):** scenario settings in a side panel / phone sheet, float parameters as slider + number input (0066).
 - Done: …, player bar (0027), stable clicking (0026).
 - **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
   ordering and outcome-coloured actor numbers in the Logs popup.
@@ -64,6 +65,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (AA, user request 0063):** every actor is the root of its own distributed trace (actor → step → call spans, sampled `traceparent` to the services under test on all three HTTP paths), trace and span IDs stored per call (DuckDB schema 5, REST, exports) and shown in the call inspector and the bee's Calls tab, optional OTLP export (`Tracing:OtlpEndpoint` / `OTEL_EXPORTER_OTLP_ENDPOINT`) in the new `Beesharp.Tracing` module. Screenshots `docs/screenshots/2026-11-25-trace-parent/`. Next (not started): fetch a trace by ID from Jaeger/Elastic (`examples/tracing`) into the call inspector.
 - **Done (AB, user request 0064):** tracing end-to-end test on Aspire (`tests/Beesharp.Tracing.E2E.Tests`, own OTLP receiver, no Docker) and CI validation of `examples/tracing/compose.yaml`; the compose stack checked by hand in Jaeger and Kibana (`docs/screenshots/2026-11-25-tracing-stack/`).
 - **Done (AC, user decision 0065):** Beesharp fetches the services' traces of selected bees (failed, slowest and typical calls per endpoint) from Jaeger in the background into the run (new module `Beesharp.TraceStore`, configured in the Environment: `TraceStore.Url/Kind/Token`; DuckDB schema 6, export bundles, `IRunStorage`), one trace engine `TraceAnalytics` in Contracts, REST `/api/runs/{id}/traces/{key}` and `/hotspots`, CLI `beesharp runs trace` and `runs hotspots` (exit code 3 when a trace is not stored), trace IDs in `runs calls --slowest` and `runs bee`, the fetcher's logs in the run's host logs, and an Aspire end-to-end test with a Jaeger-like receiver. Next (not started): Elastic adapter behind the same `ITraceStore`, the UI (trace view in the call inspector, hotspots on `/calls`), assistant tools.
+- **Done (AD, user decision 0067):** `/calls` overview chart (`CallsOverviewChart.razor`, `CallsOverviewScale.cs`) — horizontal p50 vs. p95 bar comparison across all endpoints, autoscaled to max, 50 ms default target line (with scenario default & inline `?target=` override), green→greenish-yellow→amber bar colour for slowness, red failure pill for failed calls, pinned sidebar Overview + mobile `Overview` tab, click row/pill to drill down. Screenshots `docs/screenshots/2026-11-26-calls-overview-chart/`.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

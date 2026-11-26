@@ -27,6 +27,7 @@ services:
     build: ../..                     # this repo; switch to image: ghcr.io/detachmode/beesharp once released
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318   # http/protobuf is Beesharp's default
+      Tracing__TraceUrlTemplate: http://localhost:16686/trace/{traceId}
     volumes:
       - beesharp-data:/app/data
       - ./beesharp/shop-journey.cs:/app/scripts/shop-journey.cs:ro

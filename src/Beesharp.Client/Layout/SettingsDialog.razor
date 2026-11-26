@@ -20,6 +20,15 @@
             <input id="set-bars" type="range" min="@ViewSettings.MaxBarsMin" max="@ViewSettings.MaxBarsMax" step="10" value="@Settings.MaxBars" @oninput="SetBars" />
             <span class="help">The popup chart shows one bar per bee up to this many, then groups bees into time buckets.</span>
         </div>
+        <div class="set-field">
+            <label for="set-trace-url">Trace URL template</label>
+            <input id="set-trace-url"
+                   type="text"
+                   value="@Settings.TraceUrlTemplate"
+                   placeholder="@(Settings.ServerTraceUrlTemplate ?? "http://localhost:16686/trace/{traceId}")"
+                   @oninput="SetTraceUrl" />
+            <span class="help">Use <code>{traceId}</code> (and optional <code>{spanId}</code>) to make trace IDs clickable links to Jaeger, Kibana, etc.</span>
+        </div>
         <div class="set-foot">
             <button class="btn ghost small" @onclick="Settings.ResetAsync" disabled="@Settings.IsDefault">Reset to defaults</button>
         </div>
@@ -37,4 +46,5 @@
     private void OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") Settings.Close(); }
     private Task SetZoom(ChangeEventArgs e) => double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? Settings.SetAsync(zoom: v) : Task.CompletedTask;
     private Task SetBars(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? Settings.SetAsync(maxBars: v) : Task.CompletedTask;
+    private Task SetTraceUrl(ChangeEventArgs e) => Settings.SetTraceUrlAsync(e.Value?.ToString());
 }

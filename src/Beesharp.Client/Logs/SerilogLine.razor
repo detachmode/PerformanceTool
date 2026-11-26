@@ -2,9 +2,8 @@
 @using System.Text.RegularExpressions
 @{
     var (ts, tag, css, bee, msg) = Parse();
-    var isStep = msg.StartsWith("─── ▶ ", StringComparison.Ordinal);
 }
-<div class="sl-line sl-@css @(isStep ? "sl-step" : "")">
+<div class="sl-line sl-@css">
     @if (ts.Length > 0)
     {
         <span class="sl-head"><span class="sl-br">[</span><span class="sl-ts">@ts</span> <span class="sl-lvl @css">@tag</span><span class="sl-br">]</span></span>

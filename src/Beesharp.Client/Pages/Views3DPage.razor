@@ -674,7 +674,7 @@
                         <a class="chip" href="@ScenarioLink.Href(tc.Entry, scnFilter)">Open /scenario/@(tc.Entry + 1) →</a>
                         @if (tc.SampleBeeSequence is { } seq)
                         {
-                            <a class="chip" href="@ScenarioLink.Href(tc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                            <button type="button" class="chip" @onclick="() => OpenBeeDrawer(tc.Entry, seq)">Bee B@(seq + 1)</button>
                         }
                         <button type="button" class="chip" @onclick="() => OpenTerrainLogs(tc)">View Logs →</button>
                     </div>
@@ -721,7 +721,7 @@
                         }
                         @if (sc.SampleBeeSequence is { } seq && targetEntry is { } bEntry)
                         {
-                            <a class="chip" href="@ScenarioLink.Href(bEntry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                            <button type="button" class="chip" @onclick="() => OpenBeeDrawer(bEntry, seq)">Bee B@(seq + 1)</button>
                         }
                         <button type="button" class="chip" @onclick="() => OpenSurfaceLogs(sc)">View Logs →</button>
                         <button type="button" class="chip" @onclick="() => OpenSurfaceCalls(sc)">Filter /calls →</button>
@@ -778,7 +778,7 @@
                             <a class="chip" href="@ScenarioLink.Href(hc.Entry, BuildHistoryScenarioFilter(hc))">Open /scenario/@(hc.Entry + 1) →</a>
                             @if (hc.BeeSequence is { } bseq)
                             {
-                                <a class="chip" href="@ScenarioLink.Href(hc.Entry, new ScenarioFilter(Bee: bseq))">Bee B@(bseq + 1) →</a>
+                                <button type="button" class="chip" @onclick="() => OpenBeeDrawer(hc.Entry, bseq)">Bee B@(bseq + 1)</button>
                             }
                             <button type="button" class="chip" @onclick="() => OpenHistoryLogs(hc)">View Logs →</button>
                         }
@@ -831,7 +831,7 @@
                         }
                         @if (ec.SampleBeeSequence is { } seq && ec.SampleEntry is { } bEntry)
                         {
-                            <a class="chip" href="@ScenarioLink.Href(bEntry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                            <button type="button" class="chip" @onclick="() => OpenBeeDrawer(bEntry, seq)">Bee B@(seq + 1)</button>
                         }
                     </div>
                 }
@@ -878,7 +878,7 @@
                         <a class="chip" href="@swLogsFilter.Href()" @onclick="() => Logs.Last = swLogsFilter">View Step Logs →</a>
                         @if (swc.SampleBeeSequence is { } seq)
                         {
-                            <a class="chip" href="@ScenarioLink.Href(swc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                            <button type="button" class="chip" @onclick="() => OpenBeeDrawer(swc.Entry, seq)">Bee B@(seq + 1)</button>
                         }
                     </div>
                 }
@@ -918,7 +918,7 @@
                         <a class="chip" href="@ScenarioLink.Href(cmc.Entry, BuildCallsMatrixScenarioFilter(cmc))">Open /scenario/@(cmc.Entry + 1) →</a>
                         @if (cmc.SampleBeeSequence is { } seq)
                         {
-                            <a class="chip" href="@ScenarioLink.Href(cmc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                            <button type="button" class="chip" @onclick="() => OpenBeeDrawer(cmc.Entry, seq)">Bee B@(seq + 1)</button>
                         }
                     </div>
                 }
@@ -929,9 +929,45 @@
             </section>
         </aside>
     </div>
+
+    @{
+        var drawerOpen = drawerBeeEntry is { } dEntry && drawerBeeSequence is { } dSeq && dEntry >= 0 && dEntry < snap.Count;
+        BeeRecord? drawerBee = null;
+        RunningBee? drawerRunning = null;
+        var drawerSteps = ScenarioSteps.None;
+        if (drawerOpen)
+        {
+            var entryIdx = drawerBeeEntry!.Value;
+            var seqIdx = drawerBeeSequence!.Value;
+            drawerSteps = snap.StepsOf(entryIdx);
+            var list = snap.Store.Bees(entryIdx);
+            for (var i = 0; i < list.Count; i++)
+                if (list[i].Sequence == seqIdx) { drawerBee = list[i]; break; }
+            if (drawerBee is null && snap.BeesInFlight is { } inFlight && entryIdx < inFlight.Length)
+            {
+                foreach (var r in inFlight[entryIdx])
+                    if (r.Sequence == seqIdx) { drawerRunning = r; break; }
+            }
+        }
+    }
+    <Sheet Open="drawerOpen" Resizable="true" Full="beeSheetFull" FullChanged="v => beeSheetFull = v" OnClose="CloseBeeDrawer" Label="Selected bee" Class="bee-sheet">
+        @if (drawerOpen)
+        {
+            var entryIdx = drawerBeeEntry!.Value;
+            <aside class="scn-right" aria-label="Selected bee">
+                <BeePanel Snapshot="snap" Index="entryIdx" Steps="drawerSteps" Bee="drawerBee" Running="drawerRunning"
+                          OpenLogs="@(seq => { var f = new LogFilter { Entry = entryIdx, Bee = seq }; Logs.Last = f; Nav.NavigateTo(f.Href()); return Task.CompletedTask; })" />
+            </aside>
+        }
+    </Sheet>
 </div>
 
 @code {
+    private int? drawerBeeEntry;
+    private int? drawerBeeSequence;
+    private bool beeSheetFull;
+    private void OpenBeeDrawer(int entry, int seq) { drawerBeeEntry = entry; drawerBeeSequence = seq; beeSheetFull = false; }
+    private void CloseBeeDrawer() { drawerBeeEntry = null; drawerBeeSequence = null; }
     private ElementReference canvasEl;
     private ElementReference tooltipEl;
     private IJSObjectReference? module;

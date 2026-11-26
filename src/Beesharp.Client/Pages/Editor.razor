@@ -104,7 +104,7 @@
 
         <span class="spacer"></span>
 
-        @if (!Phone.IsPhone) { <WrapToggleButton @bind-Wrapped="wordWrap" /> }
+        <WrapToggleButton @bind-Wrapped="wordWrap" />
 
         <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || DataMode.IsFakeMode || string.IsNullOrWhiteSpace(scriptCode))"
                 title="@(DataMode.IsFakeMode ? "Scripts are compiled and saved on the server: switch to Live" : "Compile and save the script")">
@@ -125,10 +125,6 @@
             {
                 <div class="dd-backdrop" @onclick="() => moreOpen = false"></div>
                 <div class="dd-menu right" role="menu" aria-label="More script actions">
-                    @if (Phone.IsPhone)
-                    {
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; wordWrap = !wordWrap; }">@(wordWrap ? "Don't wrap lines" : "Wrap long lines")</button>
-                    }
                     <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; renameOpen = true; }">Rename file…</button>
                     @if (!isPreflight)
                     {
