@@ -102,6 +102,10 @@ jobs:
       - name: Build
         run: dotnet build Beesharp.slnx --no-restore -c Release
 
+      # The documented tracing example must stay valid (brain 0064); its behaviour is tested by Beesharp.Tracing.E2E.Tests.
+      - name: Validate the tracing example's compose file
+        run: docker compose -f examples/tracing/compose.yaml --profile jaeger --profile elastic config -q
+
       # One TRX file per test project (tests/Beesharp.*.Tests), all in TestResults/.
       - name: Test
         run: >

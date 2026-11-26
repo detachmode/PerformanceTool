@@ -30,6 +30,16 @@ collector and reads it back by trace ID from every running backend.
 
 `docker compose down` stops everything; add `-v` to also delete the stored runs and traces.
 
+## Automated test
+
+`tests/Beesharp.Tracing.E2E.Tests` (brain 0064) runs the same setup without Docker: Aspire starts Beesharp,
+`shop-api` and `payment-api` as processes, the test receives their spans itself and checks every bee's trace tree
+(root → steps → calls → shop-api → database / payment-api). It is part of `dotnet test`:
+
+```sh
+dotnet test tests/Beesharp.Tracing.E2E.Tests
+```
+
 ## Pick the backend (`.env`)
 
 | Backend | `COMPOSE_PROFILES` | `TRACE_EXPORTERS` |
