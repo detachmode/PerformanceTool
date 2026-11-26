@@ -189,12 +189,17 @@ public static class HeadlessRunner
                 foreach (var log in logs)
                 {
                     lastLogId = log.Id;
-                    // Preflight and shutdown logs are already printed via preflight> / shutdown> prefixes.
-                    if (log.Sequence < 0 && log.Entry < 0) continue;
+                    // Preflight and shutdown logs are already printed via preflight> / shutdown> prefixes; host lines (the background trace fetch, brain 0065) are shown.
+                    if (log.Sequence < 0 && log.Entry < 0 && log.Entry != ProgramLogEntry.Host) continue;
                     if (LevelRank(log.Level) < rank) continue;
+                    var exSuffix = string.IsNullOrWhiteSpace(log.Exception) ? "" : $" ({RunSummary.Shorten(log.Exception)})";
+                    if (log.Entry == ProgramLogEntry.Host)
+                    {
+                        WriteLineLocked(output, $"  [{RunSummary.FormatClock(log.AtSeconds)}] {ShortLevel(log.Level)} [host] {log.Message}{exSuffix}");
+                        continue;
+                    }
                     var entryLabel = EntryLabel(s.Plan, log.Entry);
                     var stepSuffix = log.Step > 0 ? StepSuffix(s.Steps, log.Entry, log.Step) : "";
-                    var exSuffix = string.IsNullOrWhiteSpace(log.Exception) ? "" : $" ({RunSummary.Shorten(log.Exception)})";
                     WriteLineLocked(output, $"  [{RunSummary.FormatClock(log.AtSeconds)}] {ShortLevel(log.Level)} [{entryLabel}] {log.BeeName}{stepSuffix}: {log.Message}{exSuffix}");
                 }
             }
@@ -270,7 +275,9 @@ public static class HeadlessRunner
             ? null
             : $"{request.SavedToPath}  (run {status.RunId})";
 
-        var summary = RunSummary.Build(request.PresetName, env?.Name, status, bees, stopped, savedTo, exportedTo: exportedTo, exportedBytes: exportedBytes);
+        var traceFetches = await storage.GetTraceFetchesAsync(status.RunId);
+        var summary = RunSummary.Build(request.PresetName, env?.Name, status, bees, stopped, savedTo, exportedTo: exportedTo, exportedBytes: exportedBytes,
+            traces: traceFetches.Count == 0 ? null : TraceFetchSummaryDto.From(traceFetches));
 
         if (options.JsonToStdout)
         {

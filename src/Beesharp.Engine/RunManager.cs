@@ -4,6 +4,8 @@ using Beesharp.Services.Environments;
 using Beesharp.Services.Runtime;
 using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
+using Beesharp.Services.TraceStore;
+using Microsoft.Extensions.Logging;
 
 namespace Beesharp.Services;
 
@@ -17,7 +19,11 @@ namespace Beesharp.Services;
 /// <param name="storage">The run persistence store where runs, bees, calls, logs, and runtime data are saved.</param>
 /// <param name="preflights">Optional store of preflight scripts executed before scenario bees start.</param>
 /// <param name="shutdowns">Optional store of shutdown scripts executed at the end of a run.</param>
-public sealed class RunManager(LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null, ShutdownStore? shutdowns = null)
+/// <param name="traces">Optional background trace fetching (brain 0065): when the run's environment names a trace store, the traces of selected bees are fetched into the run. Without it nothing is fetched.</param>
+/// <param name="loggerFactory">Optional: the fetch's lines (category <c>Beesharp.Traces</c>) are also written to this factory's loggers (console), besides the run's host logs.</param>
+public sealed class RunManager(
+    LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null, ShutdownStore? shutdowns = null,
+    TraceFetching? traces = null, ILoggerFactory? loggerFactory = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private const int ShutdownTimeoutSeconds = 120;
@@ -155,6 +161,53 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         var formatted = string.IsNullOrEmpty(shortCat) ? message : $"[{shortCat}] {message}";
         AppendLiveLog(ProgramLogEntry.Host, ProgramLogEntry.Host, atSeconds, level, formatted, exception, "Host");
         storage.EnqueueHostLog(activeRunId, atSeconds, level, formatted, exception);
+    }
+
+    /// <summary>
+    /// Writes a line to a run's host logs by run id, also after the run finished (the background trace fetch of brain 0065 says things then): to storage always, to the live
+    /// log stream (UI, <c>beesharp run --logs</c>) while it is the current run.
+    /// </summary>
+    private void RecordHostLogFor(string forRunId, DateTimeOffset runStartedUtc, string level, string category, string message, string? exception)
+    {
+        bool current;
+        double at;
+        lock (sync)
+        {
+            current = runId == forRunId;
+            var wall = (DateTimeOffset.UtcNow - runStartedUtc).TotalSeconds;
+            at = current && IsActive ? clock.Elapsed.TotalSeconds : Math.Max(wall, current ? finalElapsed : 0);
+        }
+        var shortCat = ShortCategory(category);
+        var formatted = string.IsNullOrEmpty(shortCat) ? message : $"[{shortCat}] {message}";
+        if (current) AppendLiveLog(ProgramLogEntry.Host, ProgramLogEntry.Host, at, level, formatted, exception, "Host");
+        storage.EnqueueHostLog(forRunId, at, level, formatted, exception);
+    }
+
+    /// <summary>The logger of the trace fetch of one run: writes to that run's host logs and, when a logger factory is known, to the console.</summary>
+    private sealed class RunLogger(RunManager owner, string runId, DateTimeOffset runStartedUtc, ILogger? inner) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (!IsEnabled(logLevel)) return;
+            var message = formatter(state, exception);
+            if (string.IsNullOrWhiteSpace(message) && exception is null) return;
+            var level = logLevel switch
+            {
+                LogLevel.Trace => "Trace",
+                LogLevel.Debug => "Debug",
+                LogLevel.Warning => "Warning",
+                LogLevel.Error or LogLevel.Critical => "Error",
+                _ => "Information",
+            };
+            try { owner.RecordHostLogFor(runId, runStartedUtc, level, TraceFetchSession.LogCategory, message, exception?.ToString()); }
+            catch (Exception) { /* a log line must never hurt the fetch, let alone the run */ }
+            try { inner?.Log(logLevel, eventId, state, exception, formatter); }
+            catch (Exception) { }
+        }
     }
 
     private static string ShortCategory(string category)
@@ -499,10 +552,22 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         {
             string? err = null;
             var runPersisted = false;
+            TraceFetchSession? traceSession = null;
             try
             {
                 storage.EnqueueRunStarted(currentRunId, currentStartedUtc, cloned, runSteps);
                 runPersisted = true;
+
+                // Background trace fetch (brain 0065): only when the environment names a trace store; it never fails or slows the run (own task, bounded work per bee).
+                if (traces is not null)
+                {
+                    try
+                    {
+                        traceSession = traces.Begin(currentRunId, currentStartedUtc, env?.ToValues(), storage,
+                            new RunLogger(this, currentRunId, currentStartedUtc, loggerFactory?.CreateLogger(TraceFetchSession.LogCategory)));
+                    }
+                    catch (Exception) { traceSession = null; }
+                }
 
                 if (preflightMeta is not null && preflights is not null)
                 {
@@ -553,10 +618,11 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         int beeSlowCalls;
                         int outcome;
                         ExecutionResult persistedRes;
+                        bool[]? callSlow;
                         lock (sync)
                         {
                             byte ratioCode;
-                            (beeSlowCalls, ratioCode, persistedRes) = EvaluateCallsLocked(res);
+                            (beeSlowCalls, ratioCode, persistedRes, callSlow) = EvaluateCallsLocked(res);
                             outcome = res.Error is not null ? 2 : beeSlowCalls > 0 ? 1 : 0;
                             var compact = new LiveBeeDto(
                                 res.Sequence,
@@ -592,6 +658,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                         }
 
                         storage.EnqueueBeeCompleted(currentRunId, persistedRes, outcome, beeSlowCalls);
+                        traceSession?.Observe(ToTraceObservation(res, callSlow));
                         return ValueTask.CompletedTask;
                     },
                     onDropped: entry =>
@@ -712,6 +779,14 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                     catch (Exception) { /* losing the final values must not lose the run itself */ }
                     storage.EnqueueRunFinished(currentRunId, DateTimeOffset.UtcNow, "Finished", elapsed, err);
                 }
+
+                // The final trace pass (brain 0065): the run is already finished and shows as such; this task (and so beesharp run) stays until the last traces came or are known missing.
+                if (traceSession is not null)
+                {
+                    try { await traceSession.CompleteAsync(stopped: runCts.IsCancellationRequested); }
+                    catch (Exception) { /* the session reports its own problems in the run's host logs */ }
+                    finally { await traceSession.DisposeAsync(); }
+                }
                 runCts.Dispose();
             }
         }, CancellationToken.None);
@@ -795,11 +870,21 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
         return result;
     }
 
-    private (int SlowCalls, byte RatioCode, ExecutionResult Persisted) EvaluateCallsLocked(ExecutionResult res)
+    private static TraceBeeObservation ToTraceObservation(ExecutionResult res, bool[]? callSlow) => new(
+        res.TraceId,
+        res.Sequence,
+        Failed: res.Error is not null && !res.Canceled && !ExecutionResult.IsCanceledError(res.Error),
+        DateTimeOffset.UtcNow,
+        (res.Calls ?? []).Select((c, i) => new TraceCallObservation(
+            string.IsNullOrWhiteSpace(c.Endpoint) ? EndpointNormalizer.NormalizeCallName(c.Name) : c.Endpoint,
+            c.DurationMs, callSlow is not null && i < callSlow.Length && callSlow[i], c.Error is not null)).ToList());
+
+    private (int SlowCalls, byte RatioCode, ExecutionResult Persisted, bool[]? CallSlow) EvaluateCallsLocked(ExecutionResult res)
     {
-        if (res.Calls is not { Count: > 0 } calls) return (0, 0, res);
+        if (res.Calls is not { Count: > 0 } calls) return (0, 0, res, null);
         var slow = 0;
         var worst = 1.0;
+        var callSlow = new bool[calls.Count];
         List<RecordedCall>? trimmed = null;
         for (var i = 0; i < calls.Count; i++)
         {
@@ -812,7 +897,7 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 isSlow = SlowCallRule.IsSlow(c.DurationMs, typical, c.SlowThresholdMs);
                 var ratio = SlowCallRule.Ratio(c.DurationMs, typical, c.SlowThresholdMs);
                 typicals.Add(ep, c.DurationMs);
-                if (isSlow) slow++;
+                if (isSlow) { slow++; callSlow[i] = true; }
                 if (ratio > worst) worst = ratio;
             }
 
@@ -823,6 +908,6 @@ public sealed class RunManager(LoadRunner runner, EnvironmentStore environments,
                 trimmed[i] = c with { Headers = null };
             }
         }
-        return (slow, SlowCallRule.Encode(worst), trimmed is null ? res : res with { Calls = trimmed });
+        return (slow, SlowCallRule.Encode(worst), trimmed is null ? res : res with { Calls = trimmed }, callSlow);
     }
 }

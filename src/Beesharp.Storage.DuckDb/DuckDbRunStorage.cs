@@ -19,11 +19,12 @@ public sealed class DuckDbRunStorage : IRunStorage
     /// <summary>
     /// Current schema version recorded in the <c>schema_meta</c> table of the DuckDB database.
     /// </summary>
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions CompactJson = new(JsonSerializerDefaults.Web);
 
     private readonly DuckDBConnection conn;
     private readonly Lock dbLock = new();
@@ -211,6 +212,36 @@ public sealed class DuckDbRunStorage : IRunStorage
                 CREATE INDEX IF NOT EXISTS idx_logs_run_bee_name ON logs(run_id, bee_name);
                 CREATE INDEX IF NOT EXISTS idx_logs_run_failed ON logs(run_id, is_failed);
                 CREATE INDEX IF NOT EXISTS idx_logs_run_slow ON logs(run_id, is_slow);
+
+                CREATE TABLE IF NOT EXISTS trace_fetches (
+                    run_id VARCHAR NOT NULL,
+                    trace_id VARCHAR NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    status VARCHAR NOT NULL,
+                    reason VARCHAR,
+                    span_count INTEGER NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    selected_for VARCHAR,
+                    fetched_utc VARCHAR,
+                    truncated BOOLEAN DEFAULT FALSE
+                );
+                CREATE INDEX IF NOT EXISTS idx_trace_fetches_run ON trace_fetches(run_id, trace_id);
+
+                CREATE TABLE IF NOT EXISTS trace_spans (
+                    run_id VARCHAR NOT NULL,
+                    trace_id VARCHAR NOT NULL,
+                    span_id VARCHAR NOT NULL,
+                    parent_span_id VARCHAR,
+                    service VARCHAR NOT NULL,
+                    name VARCHAR NOT NULL,
+                    kind VARCHAR,
+                    start_unix_nano BIGINT NOT NULL,
+                    duration_ms DOUBLE NOT NULL,
+                    is_error BOOLEAN DEFAULT FALSE,
+                    status_message VARCHAR,
+                    attributes_json VARCHAR
+                );
+                CREATE INDEX IF NOT EXISTS idx_trace_spans_run_trace ON trace_spans(run_id, trace_id);
                 """;
             cmd.ExecuteNonQuery();
 
@@ -1259,6 +1290,161 @@ public sealed class DuckDbRunStorage : IRunStorage
     }
 
     /// <summary>
+    /// Stores fetched distributed traces with the run (brain 0065): the fetch record and the spans of each trace; saving a trace again replaces both (a retry).
+    /// </summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="traces">The traces to store (a trace that was not found has a record and no spans).</param>
+    /// <param name="ct">Cancellation token (unused; operation completes synchronously under the database lock).</param>
+    /// <returns>A completed task once the traces are stored.</returns>
+    public Task SaveTracesAsync(string runId, IReadOnlyList<StoredTrace> traces, CancellationToken ct = default)
+    {
+        if (traces.Count == 0) return Task.CompletedTask;
+        lock (dbLock) SaveTracesLocked(runId, traces);
+        return Task.CompletedTask;
+    }
+
+    private void SaveTracesLocked(string runId, IReadOnlyList<StoredTrace> traces)
+    {
+        {
+            foreach (var trace in traces)
+            {
+                var f = trace.Fetch;
+                using (var del = conn.CreateCommand())
+                {
+                    del.CommandText = "DELETE FROM trace_fetches WHERE run_id = $1 AND trace_id = $2; DELETE FROM trace_spans WHERE run_id = $1 AND trace_id = $2;";
+                    del.Parameters.Add(new DuckDBParameter(runId));
+                    del.Parameters.Add(new DuckDBParameter(f.TraceId));
+                    del.ExecuteNonQuery();
+                }
+
+                using (var ins = conn.CreateCommand())
+                {
+                    ins.CommandText = """
+                        INSERT INTO trace_fetches(run_id, trace_id, sequence, status, reason, span_count, attempts, selected_for, fetched_utc, truncated)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+                        """;
+                    ins.Parameters.Add(new DuckDBParameter(runId));
+                    ins.Parameters.Add(new DuckDBParameter(f.TraceId));
+                    ins.Parameters.Add(new DuckDBParameter(f.Sequence));
+                    ins.Parameters.Add(new DuckDBParameter(f.Status));
+                    ins.Parameters.Add(new DuckDBParameter((object?)f.Reason ?? DBNull.Value));
+                    ins.Parameters.Add(new DuckDBParameter(f.SpanCount));
+                    ins.Parameters.Add(new DuckDBParameter(f.Attempts));
+                    ins.Parameters.Add(new DuckDBParameter(JsonSerializer.Serialize(f.SelectedFor, CompactJson)));
+                    ins.Parameters.Add(new DuckDBParameter((object?)f.FetchedUtc?.ToString("O") ?? DBNull.Value));
+                    ins.Parameters.Add(new DuckDBParameter(f.Truncated));
+                    ins.ExecuteNonQuery();
+                }
+
+                if (trace.Spans.Count == 0) continue;
+                using var app = conn.CreateAppender("trace_spans");
+                foreach (var span in trace.Spans)
+                {
+                    app.CreateRow()
+                        .AppendValue(runId)
+                        .AppendValue(span.TraceId)
+                        .AppendValue(span.SpanId)
+                        .AppendValue(span.ParentSpanId)
+                        .AppendValue(span.Service)
+                        .AppendValue(span.Name)
+                        .AppendValue(span.Kind)
+                        .AppendValue(span.StartUnixNanos)
+                        .AppendValue(span.DurationMs)
+                        .AppendValue(span.IsError)
+                        .AppendValue(span.StatusMessage)
+                        .AppendValue(span.Attributes is { Count: > 0 } ? JsonSerializer.Serialize(span.Attributes, CompactJson) : null)
+                        .EndRow();
+                }
+            }
+        }
+    }
+
+    /// <summary>The fetch records of a run's traces, ordered by bee sequence then trace ID.</summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="ct">Cancellation token (unused).</param>
+    /// <returns>One record per selected trace; empty when none were fetched.</returns>
+    public Task<IReadOnlyList<TraceFetchDto>> GetTraceFetchesAsync(string runId, CancellationToken ct = default)
+    {
+        lock (dbLock)
+            return Task.FromResult<IReadOnlyList<TraceFetchDto>>(ReadTraceFetches(runId));
+    }
+
+    private List<TraceFetchDto> ReadTraceFetches(string runId)
+    {
+        var list = new List<TraceFetchDto>();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT trace_id, sequence, status, reason, span_count, attempts, selected_for, fetched_utc, COALESCE(truncated, FALSE)
+            FROM trace_fetches
+            WHERE run_id = $1
+            ORDER BY sequence, trace_id;
+            """;
+        cmd.Parameters.Add(new DuckDBParameter(runId));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            IReadOnlyList<string> selected = !r.IsDBNull(6) && r.GetString(6) is { Length: > 0 } sj
+                ? JsonSerializer.Deserialize<List<string>>(sj, CompactJson) ?? []
+                : [];
+            list.Add(new TraceFetchDto(
+                r.GetString(0), r.GetInt32(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetInt32(4), r.GetInt32(5),
+                selected,
+                r.IsDBNull(7) ? null : DateTimeOffset.Parse(r.GetString(7), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind),
+                r.GetBoolean(8)));
+        }
+        return list;
+    }
+
+    /// <summary>The stored spans of a run's fetched traces.</summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="traceIds">Only these traces; all traces of the run when <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token (unused).</param>
+    /// <returns>The spans ordered by trace ID and start time.</returns>
+    public Task<IReadOnlyList<TraceSpanDto>> GetTraceSpansAsync(string runId, IReadOnlyCollection<string>? traceIds = null, CancellationToken ct = default)
+    {
+        if (traceIds is { Count: 0 }) return Task.FromResult<IReadOnlyList<TraceSpanDto>>([]);
+        var spans = new List<TraceSpanDto>();
+        lock (dbLock)
+        {
+            using var cmd = conn.CreateCommand();
+            var filter = "";
+            cmd.Parameters.Add(new DuckDBParameter(runId));
+            if (traceIds is not null)
+            {
+                filter = " AND trace_id IN (" + string.Join(", ", traceIds.Select((_, i) => "$" + (i + 2))) + ")";
+                foreach (var id in traceIds) cmd.Parameters.Add(new DuckDBParameter(id));
+            }
+            cmd.CommandText = $"""
+                SELECT trace_id, span_id, parent_span_id, service, name, kind, start_unix_nano, duration_ms, COALESCE(is_error, FALSE), status_message, attributes_json
+                FROM trace_spans
+                WHERE run_id = $1{filter}
+                ORDER BY trace_id, start_unix_nano, span_id;
+                """;
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                IReadOnlyDictionary<string, string>? attrs = !r.IsDBNull(10) && r.GetString(10) is { Length: > 0 } aj
+                    ? JsonSerializer.Deserialize<Dictionary<string, string>>(aj, CompactJson)
+                    : null;
+                spans.Add(new TraceSpanDto(
+                    r.GetString(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3), r.GetString(4),
+                    r.IsDBNull(5) ? null : r.GetString(5), r.GetInt64(6), r.GetDouble(7), r.GetBoolean(8), r.IsDBNull(9) ? null : r.GetString(9), attrs));
+            }
+        }
+        return Task.FromResult<IReadOnlyList<TraceSpanDto>>(spans);
+    }
+
+    /// <summary>Every call of a run as an analytics fact.</summary>
+    /// <param name="runId">Unique identifier of the run.</param>
+    /// <param name="ct">Cancellation token used while flushing pending writes.</param>
+    /// <returns>All calls; empty when the run is unknown.</returns>
+    public async Task<IReadOnlyList<CallFact>> GetCallFactsAsync(string runId, CancellationToken ct = default)
+    {
+        await FlushAsync(ct);
+        lock (dbLock) return LoadCallFacts(runId);
+    }
+
+    /// <summary>
     /// Flushes pending writes and exports a stored run in the requested format (<c>"parquet"</c>, <c>"csv"</c>, <c>"duckdb"</c>, or <c>"json"</c>).
     /// </summary>
     /// <param name="runId">Unique identifier of the run to export.</param>
@@ -1305,6 +1491,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                         ("bees.parquet", $"SELECT * FROM bees WHERE run_id = '{escapedId}' ORDER BY sequence"),
                         ("calls.parquet", $"SELECT * FROM calls WHERE run_id = '{escapedId}' ORDER BY sequence, call_index"),
                         ("logs.parquet", $"SELECT * FROM logs WHERE run_id = '{escapedId}' ORDER BY id"),
+                        ("trace_fetches.parquet", $"SELECT * FROM trace_fetches WHERE run_id = '{escapedId}' ORDER BY sequence, trace_id"),
+                        ("trace_spans.parquet", $"SELECT * FROM trace_spans WHERE run_id = '{escapedId}' ORDER BY trace_id, start_unix_nano, span_id"),
                     };
 
                     using var ms = new MemoryStream();
@@ -1327,6 +1515,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                                 new { file = "bees.parquet", key = "(run_id, sequence)", description = "One row per bee execution (bar in the chart), with outcome, is_failed, is_slow and duration_ms." },
                                 new { file = "calls.parquet", key = "(run_id, sequence, call_index)", description = "Individual HTTP requests or measured steps inside each bee; join to bees on (run_id, sequence)." },
                                 new { file = "logs.parquet", key = "(run_id, id)", description = "Per-bee ILogger statements; join to bees on (run_id, sequence) and optionally calls on call_index." },
+                                new { file = "trace_fetches.parquet", key = "(run_id, trace_id)", description = "One row per distributed trace Beesharp fetched from the trace store (status, reason when missing, span count); join to bees on (run_id, sequence)." },
+                                new { file = "trace_spans.parquet", key = "(run_id, trace_id, span_id)", description = "The spans of the fetched traces (service, name, start, duration, attributes); join to calls on (run_id, trace_id, span_id) where the call's span is the parent." },
                             },
                         };
                         var manifestEntry = zip.CreateEntry("manifest.json", CompressionLevel.Optimal);
@@ -1389,6 +1579,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                             CREATE TABLE {alias}.bees AS SELECT * FROM bees WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.calls AS SELECT * FROM calls WHERE run_id = '{escapedId}';
                             CREATE TABLE {alias}.logs AS SELECT * FROM logs WHERE run_id = '{escapedId}';
+                            CREATE TABLE {alias}.trace_fetches AS SELECT * FROM trace_fetches WHERE run_id = '{escapedId}';
+                            CREATE TABLE {alias}.trace_spans AS SELECT * FROM trace_spans WHERE run_id = '{escapedId}';
                             DETACH {alias};
                             """;
                         cmd.ExecuteNonQuery();
@@ -1501,6 +1693,24 @@ public sealed class DuckDbRunStorage : IRunStorage
                 }
             }
 
+            var traceFetches = ReadTraceFetches(runId);
+            var traceSpans = new List<TraceSpanDto>();
+            using (var tCmd = conn.CreateCommand())
+            {
+                tCmd.CommandText = "SELECT trace_id, span_id, parent_span_id, service, name, kind, start_unix_nano, duration_ms, COALESCE(is_error, FALSE), status_message, attributes_json FROM trace_spans WHERE run_id = $1 ORDER BY trace_id, start_unix_nano, span_id;";
+                tCmd.Parameters.Add(new DuckDBParameter(runId));
+                using var tr = tCmd.ExecuteReader();
+                while (tr.Read())
+                {
+                    IReadOnlyDictionary<string, string>? attrs = !tr.IsDBNull(10) && tr.GetString(10) is { Length: > 0 } aj
+                        ? JsonSerializer.Deserialize<Dictionary<string, string>>(aj, CompactJson)
+                        : null;
+                    traceSpans.Add(new TraceSpanDto(
+                        tr.GetString(0), tr.GetString(1), tr.IsDBNull(2) ? null : tr.GetString(2), tr.GetString(3), tr.GetString(4),
+                        tr.IsDBNull(5) ? null : tr.GetString(5), tr.GetInt64(6), tr.GetDouble(7), tr.GetBoolean(8), tr.IsDBNull(9) ? null : tr.GetString(9), attrs));
+                }
+            }
+
             var payload = new
             {
                 schemaVersion = CurrentSchemaVersion,
@@ -1515,6 +1725,8 @@ public sealed class DuckDbRunStorage : IRunStorage
                 bees,
                 calls,
                 logs,
+                traceFetches,
+                traceSpans,
             };
             return new RunExportResult($"{safeRunId}.json", "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(payload, JsonOpts));
         }
@@ -1608,6 +1820,14 @@ public sealed class DuckDbRunStorage : IRunStorage
                 RefreshMaxLogId();
             }
 
+            var fetchesPath = Path.Combine(dir, "trace_fetches.parquet");
+            if (File.Exists(fetchesPath))
+                ExecuteSql($"INSERT INTO trace_fetches BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM read_parquet('{EscapeSql(fetchesPath)}');");
+
+            var spansPath = Path.Combine(dir, "trace_spans.parquet");
+            if (File.Exists(spansPath))
+                ExecuteSql($"INSERT INTO trace_spans BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM read_parquet('{EscapeSql(spansPath)}');");
+
             return ReadRunSummary(targetRunId);
         }
     }
@@ -1645,6 +1865,10 @@ public sealed class DuckDbRunStorage : IRunStorage
                     ExecuteSql($"INSERT INTO logs BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id, {nextLogId} + ROW_NUMBER() OVER () AS id) FROM {alias}.logs;");
                     RefreshMaxLogId();
                 }
+                if (TableExists(alias, "trace_fetches"))
+                    ExecuteSql($"INSERT INTO trace_fetches BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM {alias}.trace_fetches;");
+                if (TableExists(alias, "trace_spans"))
+                    ExecuteSql($"INSERT INTO trace_spans BY NAME SELECT * REPLACE ('{escapedTarget}' AS run_id) FROM {alias}.trace_spans;");
 
                 return ReadRunSummary(targetRunId);
             }
@@ -1777,6 +2001,21 @@ public sealed class DuckDbRunStorage : IRunStorage
                         .EndRow();
                 }
             }
+
+            var importedTraces = new List<StoredTrace>();
+            if (root.TryGetProperty("traceFetches", out var fetchesEl) && fetchesEl.ValueKind == JsonValueKind.Array)
+            {
+                var spansByTrace = new Dictionary<string, List<TraceSpanDto>>(StringComparer.Ordinal);
+                if (root.TryGetProperty("traceSpans", out var spansEl) && spansEl.ValueKind == JsonValueKind.Array)
+                    foreach (var span in spansEl.EnumerateArray().Select(e => e.Deserialize<TraceSpanDto>(CompactJson)).OfType<TraceSpanDto>())
+                    {
+                        if (!spansByTrace.TryGetValue(span.TraceId, out var list)) spansByTrace[span.TraceId] = list = [];
+                        list.Add(span);
+                    }
+                foreach (var fetch in fetchesEl.EnumerateArray().Select(e => e.Deserialize<TraceFetchDto>(CompactJson)).OfType<TraceFetchDto>())
+                    importedTraces.Add(new StoredTrace(fetch, spansByTrace.GetValueOrDefault(fetch.TraceId) ?? []));
+            }
+            if (importedTraces.Count > 0) SaveTracesLocked(targetRunId, importedTraces);
 
             return ReadRunSummary(targetRunId);
         }

@@ -278,6 +278,34 @@ public interface IRunStorage : IAsyncDisposable
     /// <returns>The slowest matching calls and total match count.</returns>
     Task<SlowestCallsResult> GetSlowestCallsAsync(string runId, SlowestCallsQuery query, CancellationToken ct = default);
 
+    /// <summary>
+    /// Stores fetched distributed traces with the run (brain 0065): for each trace its fetch record and its spans. Saving a trace again replaces its record and spans
+    /// (a retry). A trace that was not found is saved with a record and no spans. Works while the run is active and after it finished.
+    /// </summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="traces">The traces to store.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task SaveTracesAsync(string runId, IReadOnlyList<StoredTrace> traces, CancellationToken ct = default);
+
+    /// <summary>The fetch records of a run's traces ("x of y found", brain 0065), ordered by bee sequence then trace ID; empty when none were fetched.</summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>One record per selected trace.</returns>
+    Task<IReadOnlyList<TraceFetchDto>> GetTraceFetchesAsync(string runId, CancellationToken ct = default);
+
+    /// <summary>The stored spans of a run's fetched traces.</summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="traceIds">Only these traces; all traces of the run when <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The spans, ordered by trace ID and start time.</returns>
+    Task<IReadOnlyList<TraceSpanDto>> GetTraceSpansAsync(string runId, IReadOnlyCollection<string>? traceIds = null, CancellationToken ct = default);
+
+    /// <summary>Every call of a run as an analytics fact (the input of <see cref="CallAnalytics"/> and <see cref="TraceAnalytics"/>).</summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>All calls; empty when the run is unknown.</returns>
+    Task<IReadOnlyList<CallFact>> GetCallFactsAsync(string runId, CancellationToken ct = default);
+
     /// <summary>Exports one run in the requested format (<c>json</c>, <c>csv</c>, <c>parquet</c>, or <c>duckdb</c>).</summary>
     /// <param name="runId">Unique run identifier.</param>
     /// <param name="format">Target export format.</param>

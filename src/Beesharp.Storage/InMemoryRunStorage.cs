@@ -32,6 +32,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         public StoredProgramRunDto? Shutdown { get; set; }
         public Dictionary<int, StoredBeeDetail> Bees { get; } = [];
         public List<StoredLogRow> Logs { get; } = [];
+        public Dictionary<string, StoredTrace> Traces { get; } = new(StringComparer.Ordinal);
     }
 
     /// <inheritdoc />
@@ -363,6 +364,55 @@ public sealed class InMemoryRunStorage : IRunStorage
             }
         }
         return facts;
+    }
+
+    /// <inheritdoc />
+    public Task SaveTracesAsync(string runId, IReadOnlyList<StoredTrace> traces, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            if (runs.FirstOrDefault(x => x.RunId == runId) is not { } bucket) return Task.CompletedTask;
+            foreach (var trace in traces) bucket.Traces[trace.Fetch.TraceId] = trace;
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TraceFetchDto>> GetTraceFetchesAsync(string runId, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            IReadOnlyList<TraceFetchDto> result = runs.FirstOrDefault(x => x.RunId == runId) is { } bucket
+                ? bucket.Traces.Values.Select(t => t.Fetch).OrderBy(f => f.Sequence).ThenBy(f => f.TraceId, StringComparer.Ordinal).ToList()
+                : [];
+            return Task.FromResult(result);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TraceSpanDto>> GetTraceSpansAsync(string runId, IReadOnlyCollection<string>? traceIds = null, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            IReadOnlyList<TraceSpanDto> result = runs.FirstOrDefault(x => x.RunId == runId) is { } bucket
+                ? bucket.Traces.Values
+                    .Where(t => traceIds is null || traceIds.Contains(t.Fetch.TraceId))
+                    .OrderBy(t => t.Fetch.TraceId, StringComparer.Ordinal)
+                    .SelectMany(t => t.Spans.OrderBy(s => s.StartUnixNanos))
+                    .ToList()
+                : [];
+            return Task.FromResult(result);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<CallFact>> GetCallFactsAsync(string runId, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            IReadOnlyList<CallFact> result = runs.FirstOrDefault(x => x.RunId == runId) is { } bucket ? ExtractCallFacts(bucket) : [];
+            return Task.FromResult(result);
+        }
     }
 
     /// <inheritdoc />

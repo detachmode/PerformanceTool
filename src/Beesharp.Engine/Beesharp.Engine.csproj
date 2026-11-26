@@ -24,6 +24,7 @@
     <ProjectReference Include="../Beesharp.Contracts/Beesharp.Contracts.csproj" />
     <ProjectReference Include="../Beesharp.Storage/Beesharp.Storage.csproj" />
     <ProjectReference Include="../Beesharp.Scripting/Beesharp.Scripting.csproj" />
+    <ProjectReference Include="../Beesharp.TraceStore/Beesharp.TraceStore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

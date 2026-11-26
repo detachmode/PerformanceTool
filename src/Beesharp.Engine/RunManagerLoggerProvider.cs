@@ -39,7 +39,8 @@ public sealed class RunManagerLoggerProvider : ILoggerProvider
         public bool IsEnabled(LogLevel logLevel) =>
             owner.runs is not null
             && logLevel != LogLevel.None
-            && !category.StartsWith("Beesharp.Services.Storage", StringComparison.Ordinal);
+            && !category.StartsWith("Beesharp.Services.Storage", StringComparison.Ordinal)
+            && !category.StartsWith("Beesharp.Traces", StringComparison.Ordinal);   // the trace fetch writes its own run-bound lines (RunManager), not through here
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
