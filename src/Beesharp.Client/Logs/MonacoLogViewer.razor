@@ -1,0 +1,25 @@
+@* STUB, added so main builds again (CI was red since 989906e: BeePanel already uses <MonacoLogViewer>, the real Monaco-based
+   viewer is still in progress, see wwwroot/monaco-host.js and Editor/CSharpCodeEditor.razor). Like the editor when Monaco fails to
+   load, it renders the fallback content, which is the same console the bee panel showed before. Replace this file with the real
+   component (or delete it if the real one lives in another folder). *@
+@FallbackContent
+
+@code {
+    /// <summary>The log text the real viewer shows in Monaco.</summary>
+    [Parameter] public string Text { get; set; } = "";
+
+    /// <summary>Whether long lines wrap.</summary>
+    [Parameter] public bool WordWrap { get; set; }
+
+    /// <summary>Whether the viewer follows new lines at the bottom (live logs).</summary>
+    [Parameter] public bool FollowBottom { get; set; }
+
+    /// <summary>Accessible name of the viewer.</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+
+    /// <summary>Extra CSS class of the viewer.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>What is shown while Monaco is not available.</summary>
+    [Parameter] public RenderFragment? FallbackContent { get; set; }
+}
