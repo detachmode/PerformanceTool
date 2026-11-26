@@ -191,3 +191,50 @@ dotnet run --project examples/tracing/AppHost
 - **[`examples/tracing/README.md`](../examples/tracing/README.md)** — walkthrough, backend comparison (Jaeger vs. Elastic), and `./send-test-trace.sh` verification script.
 - **[`examples/tracing/compose.yaml`](../examples/tracing/compose.yaml)** — ready-to-run Docker Compose stack (`docker compose up -d --build`).
 - **`tests/Beesharp.Tracing.E2E.Tests`** — automated .NET Aspire end-to-end test that verifies the full `beesharp → shop-api → payment-api` trace tree without Docker (`dotnet test tests/Beesharp.Tracing.E2E.Tests`).
+
+---
+
+## 7. Fetching the services' traces into the run
+
+Beesharp can fetch the distributed traces of selected bees from the trace store **while the run goes on** and keep them
+with the run, so nobody has to open Jaeger to see why a call was slow. Jaeger 2.x is supported; Elastic is planned behind
+the same interface. The command line (built for CI and AI agents) shows one trace and the hotspots; the UI and the assistant
+do not show traces yet (brain 0065).
+
+**Configure** it in the **Environment** the run uses (so a dev cluster and production differ only there):
+
+| Key | Meaning |
+|---|---|
+| `TraceStore.Url` | Base URL of the trace store's query API, e.g. `http://localhost:16686` (Jaeger). Required; without any `TraceStore.*` key nothing is fetched. |
+| `TraceStore.Kind` | `jaeger` (default). |
+| `TraceStore.Token` | Optional Bearer token; `${env:NAME}` reads an operating-system variable. |
+| `TraceStore.MaxTraces` | Optional cap per run (default 500). |
+| `TraceStore.SettleSeconds` | Optional: how long a bee must have ended before its trace is asked for (default 15, spans arrive late). |
+
+This is separate from `Tracing:OtlpEndpoint` (where Beesharp *sends* its own spans) and from `Tracing:TraceUrlTemplate`
+(the link to open a trace in your tracing tool).
+
+**What is fetched:** all failed bees (up to 100), the 5 slowest slow calls and 3 typical calls (the baseline) per endpoint,
+at most 500 traces and 2000 spans per trace, in batches of 20 with at least 200 ms between requests and at most two
+requests per trace. After the run, the last traces are fetched and the missing ones retried once. The traces are saved with
+the run (also in `--export` bundles), so they stay available after the trace store has forgotten them. A trace store that is
+down never fails or slows the run.
+
+**Where to see it:**
+
+```sh
+beesharp runs hotspots latest --url http://localhost:5281      # per endpoint: which span took the time of the slow calls
+beesharp runs trace latest <traceId|B5> --url http://localhost:5281   # one bee's trace as a flat list (self time, share, db.query.text)
+beesharp runs logs latest --entry host --url http://localhost:5281    # what the fetcher did (category Beesharp.Traces)
+```
+
+`beesharp run` prints "Traces  42 of 50 found" with its summary, includes `traces` in `--json`, and shows the fetcher's lines
+with `--logs info`. The fetcher logs the store and where, each batch, a final "traces: 42 of 50 found, 8 not found: …" line,
+one warning per problem (store unreachable or answering with an error), and per-trace details at Debug.
+
+**Traces that are missing** are recorded with a likely reason: `not-arrived` (the bee ended shortly before the last try),
+`not-in-store` (the store does not have it: service not instrumented, sampled out, or exporting elsewhere), `expired`
+(older than 72 h), `store-unreachable`, `store-error`; for traces never asked for, `not-selected` and `not-configured`.
+`runs trace` prints the reason and exits with code 3.
+
+See [`docs/cli.md`](cli.md) for all options and [`examples/tracing/README.md`](../examples/tracing/README.md) to try it with the compose stack.
