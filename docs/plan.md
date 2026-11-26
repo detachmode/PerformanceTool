@@ -8,6 +8,7 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Done (user feedback):** scenario settings in a side panel / phone sheet, float parameters as slider + number input (0066).
 - Done: …, player bar (0027), stable clicking (0026).
 - **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
   ordering and outcome-coloured actor numbers in the Logs popup.

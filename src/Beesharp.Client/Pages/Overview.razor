@@ -14,6 +14,7 @@
 @inject LogsLinks Logs
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PhoneState Phone
 
 <PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
 
@@ -35,7 +36,7 @@
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
 }
 
-<div class="page @(editMode ? "editor" : "")">
+<div class="page @(editMode ? "editor" : "") @(cfg is not null && !Phone.IsPhone ? "ed-side-open" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
             <h1 title="@Sim.PresetName">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Scenarios" : Sim.PresetName)</h1>
@@ -315,18 +316,9 @@
     </section>
     }
 
-    @if (editMode)
-    {
-        @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
-
-        <div class="grid ed-grid" aria-label="Edit scenarios">
-            @for (var i = 0; i < plan.Scenarios.Count; i++)
-            {
-                var idx = i;
-                var c = plan.Scenarios[idx];
-                @if (idx == selected)
-                {
-                    <section class="card card-expanded selected" @key="c" aria-label="Edit @LabelOf(c)">
+    @{
+        RenderFragment editorPanel = @<div class="ed-panel-in">
+            @{ var c = cfg!; }
                         <div class="detail-head">
                             <span class="card-title">
                                 @if (Sim.IsEntryChanged(c)) { <i class="edit-dot" title="Unsaved changes"></i> }
@@ -471,14 +463,21 @@
                             <span class="spacer"></span>
                             <button type="button" class="btn @(dirty ? "ghost" : "primary") small" @onclick="() => selected = -1">Done</button>
                         </div>
-                    </section>
-                }
-                else
-                {
-                    <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Bees="NoBees" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
-                                  Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="false"
+        </div>;
+    }
+
+    @if (editMode)
+    {
+        @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
+
+        <div class="grid ed-grid" aria-label="Edit scenarios">
+            @for (var i = 0; i < plan.Scenarios.Count; i++)
+            {
+                var idx = i;
+                var c = plan.Scenarios[idx];
+                <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Bees="NoBees" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
+                                  Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="idx == selected"
                                   Edited="Sim.IsEntryChanged(c)" OnOpen="Select" OnDelete="RemoveAt" ActionsDisabled="locked" />
-                }
             }
 
             @if (addOpen)
@@ -506,6 +505,21 @@
                 </button>
             }
         </div>
+
+        @if (cfg is not null)
+        {
+            @* The scenario's settings and parameters in a side panel (right on desktop like the assistant, a bottom sheet on the phone like the bee on the scenario page). *@
+            @if (Phone.IsPhone)
+            {
+                <Sheet Open="true" Resizable="true" Full="editSheetFull" FullChanged="v => editSheetFull = v" OnClose="() => selected = -1" Label="@("Edit " + LabelOf(cfg))" Class="ed-sheet">
+                    <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
+                </Sheet>
+            }
+            else
+            {
+                <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
+            }
+        }
     }
     else if (!DataMode.IsFakeMode && !ApiRun.PreflightDismissed && ApiRun.PreflightState is "Running" or "Failed")
     {
@@ -631,6 +645,7 @@
     private bool preflightWrap = true;
     private bool wasRunning;
     private int selected = -1;
+    private bool editSheetFull;
     private bool addOpen, saveAsOpen, savedNote;
     private string saveAsName = "";
     private string? pendingLoad;

@@ -693,6 +693,16 @@ label { font-size: .74rem; color: var(--muted); }
 .card-expanded:hover, .card-add-open:hover { background: var(--panel); }
 .card-expanded.selected { background: var(--panel); }
 .card-add-open { border-style: dashed; border-color: var(--accent2); }
+/* ----- scenario settings side panel (brain 0066): right panel on desktop like the assistant, the bottom Sheet on the phone ----- */
+:root { --ed-side: clamp(340px, 30vw, 460px); }
+.ed-side { position: fixed; top: var(--top-h); right: 0; bottom: 4.6rem; width: var(--ed-side); z-index: 64; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45); }
+.ed-side .ed-panel-in { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.page.ed-side-open { margin-right: var(--ed-side); }
+.shell.asst-open .ed-side { right: var(--asst-w); }
+.shell.asst-open .page.ed-side-open { margin-right: var(--ed-side); }
+@media (max-width: 860px) { .ed-side { width: min(100%, 420px); } .page.ed-side-open { margin-right: 0; } }
+html.phone .ed-side { position: static; width: auto; box-shadow: none; border: 0; flex: 1 1 auto; min-height: 0; z-index: auto; }
+html.phone .ed-sheet .sheet-body { display: flex; flex-direction: column; min-height: 0; }
 .add-menu.inline { border: 0; background: transparent; padding: .45rem; }
 .detail-foot { flex: none; display: flex; align-items: center; gap: .5rem; border-top: 1px solid var(--border); padding: .6rem 1.1rem; background: var(--panel); }
 
