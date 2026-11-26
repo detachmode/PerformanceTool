@@ -28,6 +28,7 @@
         Views3DKind.Surface => surfaceScene?.HasData ?? false,
         Views3DKind.RunHistory => historyScene?.HasData ?? false,
         Views3DKind.ErrorCascade => errorScene?.HasData ?? false,
+        Views3DKind.CallsMatrix => callsMatrixScene?.HasData ?? false,
         _ => (swarmScene?.HasData ?? false) && !(snap.State == FakeRunState.Idle && totalFinished == 0 && snap.Scenarios.Sum(x => x.InFlight) == 0),
     };
 }
@@ -69,6 +70,13 @@
                     aria-selected="@Aria.Bool(activeKind == Views3DKind.SwarmMatrix)"
                     @onclick="() => SetViewKind(Views3DKind.SwarmMatrix)">
                 5. Swarm: Dead or Alive
+            </button>
+            <button type="button"
+                    class="@(activeKind == Views3DKind.CallsMatrix ? "on" : "")"
+                    role="tab"
+                    aria-selected="@Aria.Bool(activeKind == Views3DKind.CallsMatrix)"
+                    @onclick="() => SetViewKind(Views3DKind.CallsMatrix)">
+                6. Calls Matrix
             </button>
         </div>
 
@@ -203,6 +211,26 @@
                         }
                     </div>
                 }
+                else if (activeKind == Views3DKind.CallsMatrix)
+                {
+                    <div class="v3d-sub" role="group" aria-label="Response time metric">
+                        <button type="button"
+                                class="chip @(callsMatrixMetric == CallsMatrixMetric.P95 ? "on" : "")"
+                                @onclick="() => SetCallsMatrixMetric(CallsMatrixMetric.P95)">
+                            p95
+                        </button>
+                        <button type="button"
+                                class="chip @(callsMatrixMetric == CallsMatrixMetric.Avg ? "on" : "")"
+                                @onclick="() => SetCallsMatrixMetric(CallsMatrixMetric.Avg)">
+                            Avg
+                        </button>
+                        <button type="button"
+                                class="chip @(callsMatrixMetric == CallsMatrixMetric.Max ? "on" : "")"
+                                @onclick="() => SetCallsMatrixMetric(CallsMatrixMetric.Max)">
+                            Max
+                        </button>
+                    </div>
+                }
                 else
                 {
                     <div class="v3d-sub">
@@ -231,7 +259,7 @@
                     </div>
                 }
 
-                @if (activeKind != Views3DKind.SwarmMatrix)
+                @if (activeKind is not (Views3DKind.SwarmMatrix or Views3DKind.CallsMatrix))
                 {
                     <div class="v3d-sub v3d-res" role="group" aria-label="Grid resolution">
                         <button type="button"
@@ -255,7 +283,7 @@
                     </div>
                 }
 
-                <div class="v3d-hint">Drag to orbit · Scroll to zoom · Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : "bar") to inspect</div>
+                <div class="v3d-hint">Drag to orbit · Scroll to zoom · Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : activeKind == Views3DKind.CallsMatrix ? "call cell" : "bar") to inspect</div>
             </div>
 
             <canvas class="v3d-canvas" @ref="canvasEl" aria-label="Interactive 3D run chart"></canvas>
@@ -268,6 +296,10 @@
                     {
                         <p>No errors recorded in this run yet.</p>
                     }
+                    else if (activeKind == Views3DKind.CallsMatrix && callsMatrixLoading)
+                    {
+                        <p>Loading call endpoint metrics…</p>
+                    }
                     else if (activeKind == Views3DKind.RunHistory && historyLoading)
                     {
                         <p>Loading matching previous runs…</p>
@@ -275,6 +307,10 @@
                     else if (snap.State == FakeRunState.Idle && totalFinished == 0 && !(activeKind == Views3DKind.RunHistory && historyScene is { Lanes.Count: > 1 }))
                     {
                         <p>No run data yet. Start a run from the player bar or pick a stored run to explore it in 3D.</p>
+                    }
+                    else if (activeKind == Views3DKind.CallsMatrix)
+                    {
+                        <p>No HTTP calls recorded in this run yet.</p>
                     }
                     else if (activeKind == Views3DKind.Terrain && terrainGrouping == TerrainGrouping.Steps && !string.IsNullOrEmpty(terrainScene?.Note))
                     {
@@ -304,6 +340,13 @@
                     <span><i class="dot" style="background:var(--failed)"></i>Failed</span>
                     <span><i class="dot" style="background:#38bdf8"></i>Jump / loop arc</span>
                     <span><i class="dot" style="background:#3a3632;border:1px solid rgba(255,255,255,0.2)"></i>Undeclared pad</span>
+                }
+                else if (activeKind == Views3DKind.CallsMatrix)
+                {
+                    <span><i class="dot" style="background:var(--good)"></i>Good</span>
+                    <span><i class="dot" style="background:var(--slow)"></i>Slow (&gt;2× typical)</span>
+                    <span><i class="dot" style="background:var(--failed)"></i>Failed</span>
+                    <span><i class="dot" style="background:#3a3632;border:1px solid rgba(255,255,255,0.2)"></i>Not called</span>
                 }
                 else
                 {
@@ -374,6 +417,28 @@
                         {
                             <p class="v3d-note">@Format.Num(es.DistinctErrorCount) distinct @(es.DistinctErrorCount == 1 ? "signature" : "signatures") · @Format.Num(es.TotalErrors) total failures.</p>
                         }
+                    }
+                }
+                else if (activeKind == Views3DKind.CallsMatrix)
+                {
+                    var metricLabel = callsMatrixMetric switch
+                    {
+                        CallsMatrixMetric.Avg => "Avg ms",
+                        CallsMatrixMetric.Max => "Max ms",
+                        _ => "p95 ms",
+                    };
+                    <div class="v3d-view-title">6. Calls Matrix</div>
+                    <p class="v3d-desc">
+                        X = distinct calls &amp; endpoints (top @Views3DProjection.MaxCallsMatrixColumns), Z = scenario entries, Y = @metricLabel.
+                        Dashed floor pads mark endpoints a scenario did not call.
+                    </p>
+                    @if (callsMatrixScene is { TotalDistinctEndpoints: > Views3DProjection.MaxCallsMatrixColumns } cms)
+                    {
+                        <p class="v3d-note">Showing top @Views3DProjection.MaxCallsMatrixColumns of @Format.Num(cms.TotalDistinctEndpoints) endpoints (@Format.Num(cms.TotalCalls) total calls).</p>
+                    }
+                    else if (callsMatrixScene is { TotalCalls: > 0 } cmsAll)
+                    {
+                        <p class="v3d-note">@Format.Num(cmsAll.Columns.Count) @(cmsAll.Columns.Count == 1 ? "endpoint" : "endpoints") · @Format.Num(cmsAll.TotalCalls) calls.</p>
                     }
                 }
                 else
@@ -540,6 +605,22 @@
                                     aria-pressed="@Aria.Bool(iso)"
                                     @onclick="() => ToggleIsolatedLaneAsync(idx)">
                                 <span class="v3d-lane-name">@lane.Name <span class="muted">(@lane.DeclaredSteps)</span></span>
+                                <span class="v3d-lane-meta @metaCls">@lane.Meta</span>
+                            </button>
+                        }
+                    }
+                    else if (activeKind == Views3DKind.CallsMatrix && callsMatrixScene is { Lanes.Count: > 0 } cmLanes)
+                    {
+                        @foreach (var lane in cmLanes.Lanes)
+                        {
+                            var idx = lane.Index;
+                            var iso = isolatedLane == idx;
+                            var metaCls = lane.FailedCalls > 0 ? "bad" : lane.SlowCalls > 0 ? "warn" : "";
+                            <button type="button"
+                                    class="v3d-lane-btn @(iso ? "isolated" : "")"
+                                    aria-pressed="@Aria.Bool(iso)"
+                                    @onclick="() => ToggleIsolatedLaneAsync(idx)">
+                                <span class="v3d-lane-name">@lane.Name</span>
                                 <span class="v3d-lane-meta @metaCls">@lane.Meta</span>
                             </button>
                         }
@@ -801,9 +882,49 @@
                         }
                     </div>
                 }
+                else if (activeKind == Views3DKind.CallsMatrix && selectedCallsMatrixCell is { } cmc)
+                {
+                    var durCls = cmc.FailedCount > 0 ? "bad" : cmc.SlowCount > 0 || cmc.Ratio >= SlowCallRule.Factor ? "warn" : "good";
+                    <div class="v3d-sel-title">@cmc.Endpoint</div>
+                    <div class="v3d-desc">@cmc.ScenarioName</div>
+                    <div class="v3d-stat-grid">
+                        <div class="v3d-stat">
+                            <div class="k">Calls</div>
+                            <div class="v">@Format.Num(cmc.CallCount)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Slow / Failed</div>
+                            <div class="v">
+                                <span class="@(cmc.SlowCount > 0 ? "warn" : "")">@cmc.SlowCount</span>
+                                <span class="muted"> / </span>
+                                <span class="@(cmc.FailedCount > 0 ? "bad" : "")">@cmc.FailedCount</span>
+                            </div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">p95 / Avg</div>
+                            <div class="v @durCls">@Format.Ms(cmc.P95Ms) · @Format.Ms(cmc.AvgMs)</div>
+                        </div>
+                        <div class="v3d-stat">
+                            <div class="k">Max</div>
+                            <div class="v @durCls">@Format.Ms(cmc.MaxMs)</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(cmc.SampleError))
+                    {
+                        <div class="v3d-err-box">@cmc.SampleError</div>
+                    }
+                    <div class="v3d-actions">
+                        <button type="button" class="chip" @onclick="() => OpenCallsMatrixCalls(cmc)">Open /calls →</button>
+                        <a class="chip" href="@ScenarioLink.Href(cmc.Entry, BuildCallsMatrixScenarioFilter(cmc))">Open /scenario/@(cmc.Entry + 1) →</a>
+                        @if (cmc.SampleBeeSequence is { } seq)
+                        {
+                            <a class="chip" href="@ScenarioLink.Href(cmc.Entry, new ScenarioFilter(Bee: seq))">Bee B@(seq + 1) →</a>
+                        }
+                    </div>
+                }
                 else
                 {
-                    <p class="v3d-desc">Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : "bar") in the 3D scene to inspect metrics, view sample errors, and drill down into scenarios or logs.</p>
+                    <p class="v3d-desc">Click any @(activeKind == Views3DKind.SwarmMatrix ? "step cell" : activeKind == Views3DKind.CallsMatrix ? "call cell" : "bar") in the 3D scene to inspect metrics, view sample errors, and drill down into scenarios or logs.</p>
                 }
             </section>
         </aside>
@@ -825,12 +946,15 @@
     private ErrorCascadeSort errorSort = ErrorCascadeSort.FirstSeen;
     private int? errorScenarioFilter;
     private SwarmDisplayMode swarmMode = SwarmDisplayMode.Stacked;
+    private CallsMatrixMetric callsMatrixMetric = CallsMatrixMetric.P95;
     private bool showJumpArcs = true;
     private int? gridBucketOverride;
     private bool historySameSetupOnly = true;
     private bool historyLoading;
+    private bool callsMatrixLoading;
     private bool loadingStoredRun;
     private string? historyLoadedForKey;
+    private string? callsMatrixLoadedForKey;
     private CameraPreset? activePreset = CameraPreset.Iso;
     private int? isolatedLane;
     private (int LaneIndex, int BucketIndex)? selectedKey;
@@ -840,6 +964,9 @@
     private RunHistoryScene? historyScene;
     private ErrorCascadeScene? errorScene;
     private SwarmScene? swarmScene;
+    private CallsMatrixScene? callsMatrixScene;
+    private readonly Dictionary<int, CallEndpointsResult> liveCallEndpointsByEntry = [];
+    private long lastCallsMatrixFetchTick;
     private IReadOnlyList<HistoryRunCandidate> fakeCandidates = [];
     private IReadOnlyList<HistoryRunInput> fakeHistoryInputs = [];
     private readonly List<HistoryRunCandidate> liveCandidates = [];
@@ -859,6 +986,7 @@
     private CancellationTokenSource? throttleCts;
     private CancellationTokenSource? stepDetailCts;
     private CancellationTokenSource? historyCts;
+    private CancellationTokenSource? callsMatrixCts;
     private bool disposed;
 
     private TerrainCell? selectedTerrainCell =>
@@ -895,6 +1023,14 @@
         && k.BucketIndex >= 0 && k.BucketIndex < sw.Grid[k.LaneIndex].Count
         && !sw.Grid[k.LaneIndex][k.BucketIndex].IsEmptyPad
             ? sw.Grid[k.LaneIndex][k.BucketIndex]
+            : null;
+
+    private CallsMatrixCell? selectedCallsMatrixCell =>
+        activeKind == Views3DKind.CallsMatrix && selectedKey is { } k && callsMatrixScene is { } cm
+        && k.LaneIndex >= 0 && k.LaneIndex < cm.Grid.Count
+        && k.BucketIndex >= 0 && k.BucketIndex < cm.Grid[k.LaneIndex].Count
+        && !cm.Grid[k.LaneIndex][k.BucketIndex].IsEmptyPad
+            ? cm.Grid[k.LaneIndex][k.BucketIndex]
             : null;
 
     protected override void OnInitialized()
@@ -1067,6 +1203,13 @@
         RebuildScene();
     }
 
+    private void SetCallsMatrixMetric(CallsMatrixMetric metric)
+    {
+        if (callsMatrixMetric == metric) return;
+        callsMatrixMetric = metric;
+        RebuildScene();
+    }
+
     private async Task ToggleShowJumpArcsAsync()
     {
         showJumpArcs = !showJumpArcs;
@@ -1109,6 +1252,7 @@
         Views3DKind.Surface => surfaceScene?.TimeBuckets ?? 0,
         Views3DKind.RunHistory => historyScene?.TimeBuckets ?? 0,
         Views3DKind.ErrorCascade => errorScene?.TimeBuckets ?? 0,
+        Views3DKind.CallsMatrix => callsMatrixScene?.Columns.Count ?? 0,
         _ => swarmScene?.MaxSteps ?? 0,
     };
 
@@ -1118,6 +1262,7 @@
         Views3DKind.Surface => surfaceScene?.Bands.Count ?? 0,
         Views3DKind.RunHistory => historyScene?.Lanes.Count ?? 0,
         Views3DKind.ErrorCascade => errorScene?.Lanes.Count ?? 0,
+        Views3DKind.CallsMatrix => callsMatrixScene?.Lanes.Count ?? 0,
         _ => swarmScene?.Lanes.Count ?? 0,
     };
 
@@ -1264,6 +1409,9 @@
         if (modeOrRunChanged)
         {
             historyLoadedForKey = null;
+            callsMatrixLoadedForKey = null;
+            lastCallsMatrixFetchTick = 0;
+            liveCallEndpointsByEntry.Clear();
             if (fakeModeChanged)
                 selectedHistoryRunIds = null;
         }
@@ -1333,6 +1481,28 @@
             errorScene = Views3DProjection.BuildErrorCascade(snap, errorSort, errorScenarioFilter, gridBucketOverride);
             currentPayload = Views3DProjection.ToJsPayload(errorScene);
         }
+        else if (activeKind == Views3DKind.CallsMatrix)
+        {
+            if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId) && snap.Count > 0)
+            {
+                var key = $"{ApiRun.CurrentRunId}|{snap.Count}";
+                var nowTick = Environment.TickCount64;
+                if (!string.Equals(callsMatrixLoadedForKey, key, StringComparison.Ordinal)
+                    || (snap.Running && nowTick - lastCallsMatrixFetchTick >= 1500)
+                    || modeOrRunChanged)
+                {
+                    callsMatrixLoadedForKey = key;
+                    lastCallsMatrixFetchTick = nowTick;
+                    _ = LoadLiveCallsMatrixAsync(snap.Count);
+                }
+            }
+
+            callsMatrixScene = Views3DProjection.BuildCallsMatrix(
+                snap,
+                callsMatrixMetric,
+                !DataMode.IsFakeMode && liveCallEndpointsByEntry.Count > 0 ? liveCallEndpointsByEntry : null);
+            currentPayload = Views3DProjection.ToJsPayload(callsMatrixScene);
+        }
         else
         {
             swarmScene = Views3DProjection.BuildSwarmMatrix(snap, swarmMode);
@@ -1344,6 +1514,8 @@
         if (selectedKey is { } sk && (sk.LaneIndex < 0 || sk.LaneIndex >= laneCount || sk.BucketIndex < 0 || sk.BucketIndex >= bucketCount))
             selectedKey = null;
         if (activeKind == Views3DKind.SwarmMatrix && selectedSwarmCell is null)
+            selectedKey = null;
+        if (activeKind == Views3DKind.CallsMatrix && selectedCallsMatrixCell is null)
             selectedKey = null;
         if (isolatedLane is { } iso && (iso < 0 || iso >= laneCount))
             isolatedLane = null;
@@ -1689,6 +1861,72 @@
         return ScenarioFilter.Default;
     }
 
+    private async Task LoadLiveCallsMatrixAsync(int entryCount)
+    {
+        if (disposed || DataMode.IsFakeMode || string.IsNullOrEmpty(ApiRun.CurrentRunId) || entryCount <= 0) return;
+
+        callsMatrixCts?.Cancel();
+        callsMatrixCts?.Dispose();
+        callsMatrixCts = new CancellationTokenSource();
+        var ct = callsMatrixCts.Token;
+
+        if (liveCallEndpointsByEntry.Count == 0)
+        {
+            callsMatrixLoading = true;
+            await InvokeAsync(StateHasChanged);
+        }
+
+        try
+        {
+            var tasks = Enumerable.Range(0, entryCount)
+                .Select(async entry =>
+                {
+                    var res = await ApiRun.QueryCallEndpointsAsync(entry, slowOnly: false, failedOnly: false, minMs: null, search: null, ct: ct);
+                    return (entry, res);
+                })
+                .ToArray();
+
+            var results = await Task.WhenAll(tasks);
+            if (ct.IsCancellationRequested || disposed) return;
+
+            foreach (var (entry, res) in results)
+            {
+                if (res is not null)
+                    liveCallEndpointsByEntry[entry] = res;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch { }
+        finally
+        {
+            callsMatrixLoading = false;
+            if (!disposed)
+            {
+                await InvokeAsync(() =>
+                {
+                    if (disposed) return;
+                    RebuildScene();
+                    StateHasChanged();
+                });
+            }
+        }
+    }
+
+    private void OpenCallsMatrixCalls(CallsMatrixCell cell)
+    {
+        var filter = CallsFilter.None
+            .WithEndpoint(cell.Endpoint)
+            .WithEntry(cell.Entry);
+        Calls.Show(filter);
+    }
+
+    private static ScenarioFilter BuildCallsMatrixScenarioFilter(CallsMatrixCell cell)
+    {
+        if (cell.FailedCount > 0) return new ScenarioFilter(DetailFilter.Failed);
+        if (cell.SlowCount > 0) return new ScenarioFilter(DetailFilter.Slow);
+        return ScenarioFilter.Default;
+    }
+
     private async Task LoadAndOpenStoredRunAsync(HistoryLane lane, HistoryCell hc)
     {
         if (Sim.IsRunning || loadingStoredRun || string.IsNullOrEmpty(lane.RunId)) return;
@@ -1721,6 +1959,10 @@
         historyCts?.Cancel();
         historyCts?.Dispose();
         historyCts = null;
+
+        callsMatrixCts?.Cancel();
+        callsMatrixCts?.Dispose();
+        callsMatrixCts = null;
 
         if (handle is not null)
         {

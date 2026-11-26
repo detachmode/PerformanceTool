@@ -10,6 +10,15 @@ public enum Views3DKind
     RunHistory,
     ErrorCascade,
     SwarmMatrix,
+    CallsMatrix,
+}
+
+/// <summary>Response time metric controlling bar height in the 6. Calls Matrix view.</summary>
+public enum CallsMatrixMetric
+{
+    P95,
+    Avg,
+    Max,
 }
 
 /// <summary>How error signature lanes are ordered in the 4. Error Cascade view.</summary>
@@ -340,6 +349,63 @@ public sealed record SwarmScene(
     bool IsRunning)
 {
     public bool HasData => Lanes.Count > 0 && MaxSteps > 0;
+}
+
+/// <summary>One distinct call/endpoint column along the X axis in the 6. Calls Matrix view.</summary>
+public sealed record CallsMatrixColumn(
+    int Index,
+    string Endpoint,
+    string DisplayLabel,
+    string? Method,
+    int TotalCalls,
+    int SlowCalls,
+    int FailedCalls,
+    double AvgMs,
+    double P95Ms,
+    double MaxMs);
+
+/// <summary>One scenario entry lane along the Z axis in the 6. Calls Matrix view.</summary>
+public sealed record CallsMatrixLane(
+    int Index,
+    int Entry,
+    string Name,
+    string Meta,
+    int TotalCalls,
+    int SlowCalls,
+    int FailedCalls);
+
+/// <summary>One (scenario × endpoint/call) cell in the 6. Calls Matrix view.</summary>
+public sealed record CallsMatrixCell(
+    int LaneIndex,
+    int Entry,
+    int ColumnIndex,
+    string ScenarioName,
+    string Endpoint,
+    string DisplayEndpoint,
+    bool IsEmptyPad,
+    int CallCount,
+    int SlowCount,
+    int FailedCount,
+    double AvgMs,
+    double P95Ms,
+    double MaxMs,
+    double TypicalMs,
+    double Ratio,
+    string? SampleError,
+    int? SampleBeeSequence,
+    int[] ColorRgb);
+
+/// <summary>Complete projected data for Tab 6: Calls Matrix (Call/Endpoint × Scenario Entry × Response Time).</summary>
+public sealed record CallsMatrixScene(
+    CallsMatrixMetric Metric,
+    IReadOnlyList<CallsMatrixColumn> Columns,
+    IReadOnlyList<CallsMatrixLane> Lanes,
+    IReadOnlyList<IReadOnlyList<CallsMatrixCell>> Grid,
+    double MaxMetricMs,
+    int TotalDistinctEndpoints,
+    int TotalCalls)
+{
+    public bool HasData => Lanes.Count > 0 && Columns.Count > 0 && Grid.Any(r => r.Any(c => !c.IsEmptyPad && c.CallCount > 0));
 }
 
 /// <summary>Key/value row rendered inside the JS hover tooltip.</summary>

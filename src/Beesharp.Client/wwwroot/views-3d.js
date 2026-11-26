@@ -211,6 +211,124 @@ export function mount(canvas, tooltip, dotnet) {
     return bounds;
   }
 
+  function drawEmptyPad(queue, x, z, padW, padD, dim) {
+    const hx = padW * 0.46, hz = padD * 0.46;
+    const pts = [
+      project(x - hx, 0.01, z - hz),
+      project(x + hx, 0.01, z - hz),
+      project(x + hx, 0.01, z + hz),
+      project(x - hx, 0.01, z + hz),
+    ];
+    const centerDepth = (pts[0].depth + pts[2].depth) / 2;
+    queue.push({
+      depth: centerDepth + 0.02,
+      yOrder: 0,
+      draw() {
+        drawPoly(
+          pts,
+          dim ? 'rgba(255,255,255,0.008)' : 'rgba(255,255,255,0.018)',
+          dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+          1,
+          true
+        );
+      },
+    });
+  }
+
+  function renderCallsMatrix() {
+    const lanes = scene.lanes;
+    const numCols = scene.timeBuckets;
+    const xSpan = scene.xSpan || 20;
+    const zSpan = scene.zSpan || 12;
+
+    const cellX = (colIdx) => -xSpan / 2 + ((colIdx + 0.5) / numCols) * xSpan;
+    const cellZ = (laneIdx) => -zSpan / 2 + ((laneIdx + 0.5) / lanes.length) * zSpan;
+
+    drawFloorGrid(-xSpan / 2, xSpan / 2, -zSpan / 2, zSpan / 2, xSpan / numCols, zSpan / lanes.length);
+
+    // X-axis endpoint/call column headers (staggered slightly when dense)
+    for (let k = 0; k < numCols; k++) {
+      const header = (scene.stepHeaders && scene.stepHeaders[k]) ? scene.stepHeaders[k] : `Call ${k + 1}`;
+      const zOff = numCols > 5 && k % 2 === 1 ? -zSpan / 2 - 1.65 : -zSpan / 2 - 0.95;
+      drawLabel3D(header, cellX(k), 0, zOff, '#a19c94', 'center', 10.5);
+    }
+
+    // Z-axis scenario lane labels
+    for (let l = 0; l < lanes.length; l++) {
+      const lane = lanes[l];
+      const z = cellZ(l);
+      const isIso = isolatedLane === l;
+      const dim = isolatedLane !== null && !isIso;
+      const col = isIso ? '#ffffff' : (dim ? 'rgba(161,156,148,0.28)' : '#f1efea');
+      const shortName = lane.name.length > 28 ? lane.name.slice(0, 27) + '…' : lane.name;
+      drawLabel3D(shortName, -xSpan / 2 - 1.0, 0.15, z, col, 'right', 11.5);
+    }
+
+    const padW = (xSpan / numCols) * 0.74;
+    const padD = (zSpan / lanes.length) * 0.68;
+    const barW = padW * 0.68;
+    const barD = padD * 0.68;
+    const queue = [];
+
+    for (const cell of scene.cells) {
+      const x = cellX(cell.bucketIndex);
+      const z = cellZ(cell.laneIndex);
+      const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
+
+      if (cell.isEmptyPad) {
+        drawEmptyPad(queue, x, z, padW, padD, dim);
+        continue;
+      }
+
+      const isSel = selected && selected.laneIndex === cell.laneIndex && selected.bucketIndex === cell.bucketIndex;
+      const isHov = hovered && hovered.laneIndex === cell.laneIndex && hovered.bucketIndex === cell.bucketIndex;
+
+      const padBounds = queueBox(queue, x, 0, z, padW, 0.08, padD, [40, 37, 34], {
+        dim,
+        alpha: 0.92,
+        stroke: isSel ? 'rgba(255,255,255,0.9)' : isHov ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)',
+      });
+
+      const pb = queueBox(queue, x, 0.08, z, barW, cell.height, barD, cell.color, {
+        dim,
+        selected: isSel,
+        hovered: isHov,
+      });
+
+      hitTargets.push({
+        box: {
+          minX: Math.min(padBounds.minX, pb.minX) - 3,
+          maxX: Math.max(padBounds.maxX, pb.maxX) + 3,
+          minY: Math.min(padBounds.minY, pb.minY) - 3,
+          maxY: Math.max(padBounds.maxY, pb.maxY) + 3,
+        },
+        depth: Math.min(padBounds.depth, pb.depth),
+        data: cell,
+      });
+
+      if (cell.badgeText && (cell.alertBadge || isSel || isHov)) {
+        const topY = 0.08 + cell.height;
+        const labelPt = project(x, topY + 0.36, z);
+        queue.push({
+          depth: labelPt.depth - 0.6,
+          yOrder: topY + 1,
+          draw() {
+            if (dim) return;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '600 10.5px Inter, system-ui, sans-serif';
+            ctx.fillStyle = cell.alertBadge ? '#ff9b9b' : '#ffffff';
+            ctx.fillText(cell.badgeText, labelPt.sx, labelPt.sy);
+          },
+        });
+      }
+    }
+
+    queue.sort((a, b) => (b.depth - a.depth) || ((a.yOrder ?? 0) - (b.yOrder ?? 0)));
+    for (const item of queue) item.draw();
+    hitTargets.sort((a, b) => a.depth - b.depth);
+  }
+
   function renderSwarm() {
     const lanes = scene.lanes;
     const maxSteps = scene.timeBuckets;
@@ -271,27 +389,7 @@ export function mount(canvas, tooltip, dotnet) {
       const dim = isolatedLane !== null && isolatedLane !== cell.laneIndex;
 
       if (cell.isEmptyPad) {
-        const hx = padW * 0.46, hz = padD * 0.46;
-        const pts = [
-          project(x - hx, 0.01, z - hz),
-          project(x + hx, 0.01, z - hz),
-          project(x + hx, 0.01, z + hz),
-          project(x - hx, 0.01, z + hz),
-        ];
-        const centerDepth = (pts[0].depth + pts[2].depth) / 2;
-        queue.push({
-          depth: centerDepth + 0.02,
-          yOrder: 0,
-          draw() {
-            drawPoly(
-              pts,
-              dim ? 'rgba(255,255,255,0.008)' : 'rgba(255,255,255,0.018)',
-              dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
-              1,
-              true
-            );
-          },
-        });
+        drawEmptyPad(queue, x, z, padW, padD, dim);
         continue;
       }
 
@@ -518,6 +616,11 @@ export function mount(canvas, tooltip, dotnet) {
 
     if (scene.kind === 'swarm') {
       renderSwarm();
+      return;
+    }
+
+    if (scene.kind === 'calls') {
+      renderCallsMatrix();
       return;
     }
 

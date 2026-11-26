@@ -7,6 +7,7 @@ namespace Beesharp.Services.Scenarios;
 public static class HttpRequestCallExtensions
 {
     internal static readonly HttpRequestOptionsKey<string> CallNameKey = new("Beesharp.CallName");
+    internal static readonly HttpRequestOptionsKey<string> CallTagKey = new("Beesharp.CallTag");
     internal static readonly HttpRequestOptionsKey<double> SlowThresholdMsKey = new("Beesharp.SlowThresholdMs");
     internal static readonly HttpRequestOptionsKey<bool> RecordedKey = new("Beesharp.CallRecorded");
     internal static readonly HttpRequestOptionsKey<bool> TimingSplitKey = new("Beesharp.MeasureTimingSplit");
@@ -20,6 +21,21 @@ public static class HttpRequestCallExtensions
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         request.Options.Set(CallNameKey, name.Trim());
+        return request;
+    }
+
+    /// <summary>
+    /// Appends a <c>[tag]</c> suffix to the recorded endpoint and call name for this HTTP request,
+    /// distinguishing different payload actions hitting the same endpoint while keeping auto-normalization intact.
+    /// </summary>
+    /// <param name="request">The outgoing HTTP request message.</param>
+    /// <param name="tag">The non-empty tag label to append as <c>[tag]</c>.</param>
+    /// <returns>The same <see cref="HttpRequestMessage"/> instance for fluent chaining.</returns>
+    public static HttpRequestMessage WithCallTag(this HttpRequestMessage request, string tag)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tag);
+        request.Options.Set(CallTagKey, tag.Trim());
         return request;
     }
 
@@ -49,7 +65,7 @@ public static class HttpRequestCallExtensions
 }
 
 /// <summary>Ambient override active inside <see cref="ScenarioContext.CallScope"/>.</summary>
-internal sealed record CallScopeOverride(string? Name, double? SlowThresholdMs);
+internal sealed record CallScopeOverride(string? Name, double? SlowThresholdMs, string? Tag = null);
 
 /// <summary>
 /// <see cref="DelegatingHandler"/> that records every <see cref="HttpClient"/> request against the active bee's

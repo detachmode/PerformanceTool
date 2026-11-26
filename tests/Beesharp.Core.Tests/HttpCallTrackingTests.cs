@@ -148,6 +148,109 @@ public class HttpCallTrackingTests
     }
 
     [Fact]
+    public async Task AsCall_WithCallTag_and_CallScope_produce_distinct_endpoints_while_preserving_url_and_method()
+    {
+        await using var server = await LoopbackHttpServer.StartAsync();
+        var calls = new List<RecordedCall>();
+
+        using var recordingHandler = new RecordingHttpHandler(new SocketsHttpHandler());
+        using var ctxHttp = new HttpClient(recordingHandler);
+        var ctx = new ScenarioContext(ctxHttp, callSink: calls.Add);
+
+        Assert.Throws<ArgumentNullException>(() => HttpRequestCallExtensions.WithCallTag(null!, "VIP"));
+        using (var invalidReq = new HttpRequestMessage(HttpMethod.Get, server.Url("/test")))
+            Assert.Throws<ArgumentException>(() => invalidReq.WithCallTag("   "));
+
+        using (ctx.Activate())
+        {
+            using var plainHttp = new HttpClient();
+
+            // 1. Auto-normalized baseline
+            await ctx.Http.PostAsync(server.Url("/api/orders/101?mode=base"), new StringContent("{}", Encoding.UTF8, "application/json"));
+
+            // 2. WithCallTag keeps normalized endpoint + original Url & Method, appends [tag]
+            using var taggedReq = new HttpRequestMessage(HttpMethod.Post, server.Url("/api/orders/202?mode=vip"))
+                .WithCallTag("VIP");
+            await ctx.Http.SendAsync(taggedReq);
+
+            // 3. AsCall overrides endpoint name while preserving original Url & Method
+            using var namedReq = new HttpRequestMessage(HttpMethod.Post, server.Url("/api/orders/303?mode=custom"))
+                .AsCall("Order · Custom");
+            await plainHttp.SendAsync(namedReq);
+
+            // 4. Combined AsCall + WithCallTag
+            using var combinedReq = new HttpRequestMessage(HttpMethod.Post, server.Url("/api/orders/404?mode=express"))
+                .AsCall("Order · Express")
+                .WithCallTag("VIP");
+            await ctx.Http.SendAsync(combinedReq);
+
+            // 5. Idempotency: does not double-append [VIP] when AsCall already ends with [VIP]
+            using var alreadyTaggedReq = new HttpRequestMessage(HttpMethod.Post, server.Url("/api/orders/505"))
+                .AsCall("Order [VIP]")
+                .WithCallTag("VIP");
+            await ctx.Http.SendAsync(alreadyTaggedReq);
+
+            // 6. CallScope(tag: ...) and nested CallScope(name: ...)
+            using (ctx.CallScope(tag: "ExpressVip"))
+            {
+                await plainHttp.PostAsync(server.Url("/api/inventory/reserve?sku=1"), new StringContent("{}", Encoding.UTF8, "application/json"));
+
+                using (ctx.CallScope(name: "Reserve · Override"))
+                {
+                    // Inherits tag "ExpressVip" from outer scope
+                    await ctx.Http.PostAsync(server.Url("/api/inventory/reserve?sku=2"), new StringContent("{}", Encoding.UTF8, "application/json"));
+                }
+
+                // MeasureCallAsync honors scope tag
+                await ctx.MeasureCallAsync("POST /api/settlement", () => Task.CompletedTask);
+            }
+        }
+
+        Assert.Equal(8, calls.Count);
+
+        Assert.Equal("POST /api/orders/{id}", calls[0].Endpoint);
+        Assert.Equal("POST", calls[0].Method);
+        Assert.Contains("/api/orders/101?mode=base", calls[0].Url);
+
+        Assert.Equal("POST /api/orders/{id} [VIP]", calls[1].Endpoint);
+        Assert.Equal("POST /api/orders/202?mode=vip [VIP]", calls[1].Name);
+        Assert.Equal("POST", calls[1].Method);
+        Assert.Contains("/api/orders/202?mode=vip", calls[1].Url);
+
+        Assert.Equal("Order · Custom", calls[2].Endpoint);
+        Assert.Equal("Order · Custom", calls[2].Name);
+        Assert.Equal("POST", calls[2].Method);
+        Assert.Contains("/api/orders/303?mode=custom", calls[2].Url);
+
+        Assert.Equal("Order · Express [VIP]", calls[3].Endpoint);
+        Assert.Equal("Order · Express [VIP]", calls[3].Name);
+        Assert.Equal("POST", calls[3].Method);
+        Assert.Contains("/api/orders/404?mode=express", calls[3].Url);
+
+        Assert.Equal("Order [VIP]", calls[4].Endpoint);
+        Assert.Equal("Order [VIP]", calls[4].Name);
+        Assert.Equal("POST", calls[4].Method);
+        Assert.Contains("/api/orders/505", calls[4].Url);
+
+        Assert.Equal("POST /api/inventory/reserve [ExpressVip]", calls[5].Endpoint);
+        Assert.Equal("POST /api/inventory/reserve?sku=1 [ExpressVip]", calls[5].Name);
+        Assert.Equal("POST", calls[5].Method);
+        Assert.Contains("/api/inventory/reserve?sku=1", calls[5].Url);
+
+        Assert.Equal("Reserve · Override [ExpressVip]", calls[6].Endpoint);
+        Assert.Equal("Reserve · Override [ExpressVip]", calls[6].Name);
+        Assert.Equal("POST", calls[6].Method);
+        Assert.Contains("/api/inventory/reserve?sku=2", calls[6].Url);
+
+        Assert.Equal("POST /api/settlement [ExpressVip]", calls[7].Endpoint);
+        Assert.Equal("POST /api/settlement [ExpressVip]", calls[7].Name);
+        Assert.Equal("POST", calls[7].Method);
+
+        // Distinct grouped endpoint names across baseline, tagged, named, and combined
+        Assert.Equal(8, calls.Select(c => c.Endpoint).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public async Task Captures_allowlisted_headers_and_optional_http_timing_split()
     {
         var calls = new List<RecordedCall>();

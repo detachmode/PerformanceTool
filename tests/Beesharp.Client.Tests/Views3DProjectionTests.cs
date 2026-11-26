@@ -603,5 +603,104 @@ public sealed class Views3DProjectionTests
         Assert.Equal(0, jsAuthFailed.Height);
     }
 
+    [Fact]
+    public void BuildCallsMatrix_projects_shared_exclusive_and_tagged_endpoints_empty_pads_and_metrics()
+    {
+        var emptySnap = new RunSnapshot(FakeRunState.Idle, 0, new LoadPlan(), [], [], new RunStore(0));
+        var emptyCalls = Views3DProjection.BuildCallsMatrix(emptySnap);
+        Assert.False(emptyCalls.HasData);
+        Assert.Empty(emptyCalls.Lanes);
+        Assert.Empty(emptyCalls.Columns);
+
+        var plan = new LoadPlan { DurationSeconds = 60 };
+        plan.Scenarios.Add(new ScenarioRunConfig { ScenarioId = "demo-shop", Label = "Checkout", RatePerMinute = 60 });
+        plan.Scenarios.Add(new ScenarioRunConfig { ScenarioId = "demo-shop", Label = "Express VIP", RatePerMinute = 30 });
+
+        var store = new RunStore(2);
+        var errPay = store.Errors.Intern("HTTP 504 Payment timeout");
+
+        // Entry 0 (Checkout): calls GET /api/products, tagged POST /api/inventory/reserve [Checkout], and named Order · Standard (slow + failed)
+        var checkoutCalls = new List<FakeCall>
+        {
+            new(0, "GET /api/products?q=honey", 0, 40, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 40, Errors: store.Errors, Endpoint: "GET /api/products"),
+            new(1, "POST /api/inventory/reserve [Checkout]", 50, 90, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 85, Errors: store.Errors, Endpoint: "POST /api/inventory/reserve [Checkout]"),
+            new(2, "Order · Standard", 150, 420, 200, ErrorDictionary.None, false, 0, Slow: true, TypicalMs: 120, Errors: store.Errors, Endpoint: "Order · Standard"),
+        };
+        var checkoutCalls2 = new List<FakeCall>
+        {
+            new(0, "GET /api/products?q=tea", 0, 44, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 40, Errors: store.Errors, Endpoint: "GET /api/products"),
+            new(1, "POST /api/inventory/reserve [Checkout]", 50, 80, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 85, Errors: store.Errors, Endpoint: "POST /api/inventory/reserve [Checkout]"),
+            new(2, "Order · Standard", 150, 680, 504, errPay, false, 0, Slow: false, TypicalMs: 120, Errors: store.Errors, Endpoint: "Order · Standard"),
+        };
+        store.Complete(new BeeRecord(0, 0, 1.0, 550, 1, ErrorDictionary.None, store.Errors), new BeeDetail(0, 0, checkoutCalls, () => []));
+        store.Complete(new BeeRecord(1, 0, 2.0, 804, 0, errPay, store.Errors), new BeeDetail(1, 0, checkoutCalls2, () => []));
+
+        // Entry 1 (Express VIP): shares GET /api/products, has its own tagged POST /api/inventory/reserve [ExpressVip] and Order · VIP Express (fast)
+        var vipCalls = new List<FakeCall>
+        {
+            new(0, "GET /api/products?q=honey", 0, 35, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 40, Errors: store.Errors, Endpoint: "GET /api/products"),
+            new(1, "POST /api/inventory/reserve [ExpressVip]", 40, 105, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 110, Errors: store.Errors, Endpoint: "POST /api/inventory/reserve [ExpressVip]"),
+            new(2, "Order · VIP Express", 170, 110, 200, ErrorDictionary.None, false, 0, Slow: false, TypicalMs: 100, Errors: store.Errors, Endpoint: "Order · VIP Express"),
+        };
+        store.Complete(new BeeRecord(2, 1, 1.5, 265, 0, ErrorDictionary.None, store.Errors), new BeeDetail(2, 1, vipCalls, () => []));
+
+        var snap = new RunSnapshot(
+            FakeRunState.Finished,
+            10.0,
+            plan,
+            ["Checkout", "Express VIP"],
+            [new ScenarioView(2, 1, 1, 1, 0, 2), new ScenarioView(1, 0, 0, 0, 0, 1)],
+            store);
+
+        var p95Scene = Views3DProjection.BuildCallsMatrix(snap, CallsMatrixMetric.P95);
+        Assert.True(p95Scene.HasData);
+        Assert.Equal(2, p95Scene.Lanes.Count);
+        Assert.Equal(5, p95Scene.Columns.Count); // 5 distinct endpoints (tagged endpoints stay separate!)
+        Assert.Equal(9, p95Scene.TotalCalls);
+
+        // Ordered by worst p95 descending: "Order · Standard" (680ms) must be first!
+        Assert.Equal("Order · Standard", p95Scene.Columns[0].Endpoint);
+        Assert.Contains(p95Scene.Columns, c => c.Endpoint == "POST /api/inventory/reserve [Checkout]");
+        Assert.Contains(p95Scene.Columns, c => c.Endpoint == "POST /api/inventory/reserve [ExpressVip]");
+
+        // Shared GET /api/products has non-empty cells in BOTH scenarios
+        var sharedColIdx = p95Scene.Columns.ToList().FindIndex(c => c.Endpoint == "GET /api/products");
+        Assert.False(p95Scene.Grid[0][sharedColIdx].IsEmptyPad);
+        Assert.False(p95Scene.Grid[1][sharedColIdx].IsEmptyPad);
+        Assert.Equal(2, p95Scene.Grid[0][sharedColIdx].CallCount);
+        Assert.Equal(1, p95Scene.Grid[1][sharedColIdx].CallCount);
+
+        // Exclusive tagged endpoint: Checkout has empty pad for [ExpressVip], Express VIP has Bar
+        var vipReserveIdx = p95Scene.Columns.ToList().FindIndex(c => c.Endpoint == "POST /api/inventory/reserve [ExpressVip]");
+        Assert.True(p95Scene.Grid[0][vipReserveIdx].IsEmptyPad);
+        Assert.False(p95Scene.Grid[1][vipReserveIdx].IsEmptyPad);
+        Assert.Equal(Views3DProjection.GoodRgb, p95Scene.Grid[1][vipReserveIdx].ColorRgb);
+
+        // Order · Standard failed on Checkout -> red color, sample error & bee sequence captured, empty pad on VIP
+        var stdOrderCell = p95Scene.Grid[0][0];
+        Assert.False(stdOrderCell.IsEmptyPad);
+        Assert.Equal(1, stdOrderCell.FailedCount);
+        Assert.Equal(1, stdOrderCell.SlowCount);
+        Assert.Equal("HTTP 504 Payment timeout", stdOrderCell.SampleError);
+        Assert.Equal(1, stdOrderCell.SampleBeeSequence);
+        Assert.Equal(Views3DProjection.FailedRgb, stdOrderCell.ColorRgb);
+        Assert.True(p95Scene.Grid[1][0].IsEmptyPad);
+
+        // Metric scaling switches height between P95, Avg, and Max
+        var avgScene = Views3DProjection.BuildCallsMatrix(snap, CallsMatrixMetric.Avg);
+        var maxScene = Views3DProjection.BuildCallsMatrix(snap, CallsMatrixMetric.Max);
+        Assert.Equal(420, avgScene.Grid[0][0].AvgMs);
+        Assert.Equal(680, maxScene.Grid[0][0].MaxMs);
+
+        var jsP95 = Views3DProjection.ToJsPayload(p95Scene);
+        Assert.Equal("calls", jsP95.Kind);
+        Assert.Equal(5, jsP95.TimeBuckets);
+        Assert.Contains(jsP95.Cells, c => c.IsEmptyPad);
+        var jsStdOrder = jsP95.Cells.First(c => c.LaneIndex == 0 && c.BucketIndex == 0);
+        Assert.False(jsStdOrder.IsEmptyPad);
+        Assert.True(jsStdOrder.AlertBadge);
+        Assert.Equal(Views3DProjection.FailedRgb, jsStdOrder.Color);
+    }
+
     private static BeeDetail EmptyDetail(int seq) => new(seq, 0, [], () => []);
 }

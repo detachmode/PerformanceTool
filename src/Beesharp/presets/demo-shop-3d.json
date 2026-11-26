@@ -1,61 +1,85 @@
 {
   "name": "Demo Shop (3D)",
-  "savedAt": "2026-11-25T22:55:00+00:00",
+  "savedAt": "2026-11-26T00:57:00+00:00",
   "plan": {
     "scenarios": [
       {
         "scenarioId": "script-demo-shop",
         "label": "Browse Catalog",
-        "ratePerMinute": 90,
+        "ratePerMinute": 240,
         "pattern": "Linear",
-        "maxInFlight": 40,
+        "maxInFlight": 80,
         "parameters": {
           "baseUrl": "http://127.0.0.1:5399",
           "mode": "Browse",
-          "query": "honey"
+          "query": "honey",
+          "maxBrowseSteps": 4,
+          "backLoopPercent": 0
         }
       },
       {
         "scenarioId": "script-demo-shop",
-        "label": "Search Burst",
-        "ratePerMinute": 54,
+        "label": "Flash Search Burst",
+        "ratePerMinute": 180,
         "pattern": "Bursts",
-        "beesPerBurst": 18,
-        "burstsPerMinute": 3,
-        "maxInFlight": 50,
+        "beesPerBurst": 45,
+        "burstsPerMinute": 4,
+        "maxInFlight": 100,
         "parameters": {
           "baseUrl": "http://127.0.0.1:5399",
           "mode": "SearchBurst",
-          "query": "flash-sale"
+          "query": "flash-sale",
+          "maxBrowseSteps": 2,
+          "backLoopPercent": 20
         }
       },
       {
         "scenarioId": "script-demo-shop",
         "label": "Add to Cart",
-        "ratePerMinute": 55,
+        "ratePerMinute": 160,
         "pattern": "Linear",
-        "maxInFlight": 40,
+        "maxInFlight": 80,
         "parameters": {
           "baseUrl": "http://127.0.0.1:5399",
           "mode": "Cart",
-          "query": "honey"
+          "query": "honey",
+          "maxBrowseSteps": 3,
+          "backLoopPercent": 45
         }
       },
       {
         "scenarioId": "script-demo-shop",
         "label": "Checkout",
-        "ratePerMinute": 45,
+        "ratePerMinute": 140,
         "pattern": "Linear",
-        "maxInFlight": 40,
+        "maxInFlight": 80,
         "parameters": {
           "baseUrl": "http://127.0.0.1:5399",
           "mode": "Checkout",
-          "query": "honey"
+          "query": "honey",
+          "maxBrowseSteps": 3,
+          "backLoopPercent": 40
+        }
+      },
+      {
+        "scenarioId": "script-demo-shop",
+        "label": "VIP Express Burst",
+        "ratePerMinute": 90,
+        "pattern": "Bursts",
+        "beesPerBurst": 30,
+        "burstsPerMinute": 3,
+        "maxInFlight": 80,
+        "parameters": {
+          "baseUrl": "http://127.0.0.1:5399",
+          "mode": "ExpressVip",
+          "query": "vip-drop",
+          "maxBrowseSteps": 2,
+          "backLoopPercent": 15
         }
       }
     ],
-    "durationSeconds": 180,
-    "maxConcurrency": 150,
+    "durationSeconds": 300,
+    "maxConcurrency": 350,
     "timeoutSeconds": 30,
     "preflightScriptId": null,
     "shutdownScriptId": null

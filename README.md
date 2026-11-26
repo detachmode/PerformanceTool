@@ -10,6 +10,10 @@
 
 A load-testing tool with a web UI: scenarios are C# (built in or uploaded as scripts), runs are stored in DuckDB.
 
+- **[API & Scripting Guide](docs/api-guide.md)** — define scenarios & C# 15 union step machines, name/tag HTTP calls, configure load plans & presets, embed `Beesharp.Host`, and use the REST API.
+- **[CLI Reference](docs/cli.md)** — headless CI runs (`beesharp run`) and offline/remote run inspection (`beesharp runs`).
+- **[Domain Language](docs/context.md)** — shared vocabulary (actors/bees, scenarios, steps, calls, bursts).
+
 ## Run with Docker Compose
 
 The image is published to the GitHub Container Registry for `linux/amd64` and `linux/arm64` (see `.github/workflows/ci.yml`), gated by unit/integration tests and an end-to-end smoke test on both architectures.

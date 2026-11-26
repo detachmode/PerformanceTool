@@ -3,6 +3,7 @@ using Beesharp.Client.Data;
 using Beesharp.Client.Runs;
 using Beesharp.Client.Shared;
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 
 namespace Beesharp.Client.Views3D;
 
@@ -23,6 +24,7 @@ public static class Views3DProjection
     public const int MaxBucketCount = 120;
     public const int DefaultHistoryMaxBars = 64;
     public const int MaxErrorCascadeLanes = 8;
+    public const int MaxCallsMatrixColumns = 12;
     private const int MaxSwarmDetailedBees = 250;
 
     private static readonly double[] NiceLadderMs =
@@ -1530,6 +1532,289 @@ public static class Views3DProjection
         return new JsScenePayload("swarm", xSpan, zSpan, scene.MaxSteps, lanes, [], cells, jsArcs, scene.StepHeaders, scene.IsRunning);
     }
 
+    /// <summary>
+    /// Projects Tab 6: Calls Matrix (<c>Call / Endpoint × Scenario Entry × Response Time</c>), showing which scenarios
+    /// hit each normalized/named/tagged endpoint, its response time (<c>p95</c>, <c>Avg</c>, or <c>Max</c>), and failures/slow calls.
+    /// </summary>
+    public static CallsMatrixScene BuildCallsMatrix(
+        RunSnapshot snapshot,
+        CallsMatrixMetric metric = CallsMatrixMetric.P95,
+        IReadOnlyDictionary<int, CallEndpointsResult>? remoteEndpointsByEntry = null)
+    {
+        if (snapshot.Count == 0)
+            return new CallsMatrixScene(metric, [], [], [], 0, 0, 0);
+
+        var entryCells = new Dictionary<string, CallsMatrixEntryMetric>[snapshot.Count];
+        var columnMap = new Dictionary<string, CallsMatrixColumnAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var laneTotals = new (int Total, int Slow, int Failed)[snapshot.Count];
+
+        for (var e = 0; e < snapshot.Count; e++)
+        {
+            var localMap = new Dictionary<string, CallsMatrixCellAccumulator>(StringComparer.OrdinalIgnoreCase);
+            var bees = snapshot.Store.Bees(e);
+            var finished = FinishedCount(snapshot, e, bees.Count);
+
+            for (var i = 0; i < finished; i++)
+            {
+                var bee = bees[i];
+                var detail = snapshot.Store.Detail(bee.Sequence);
+                if (detail is null || IsPlaceholderDetail(detail)) continue;
+
+                foreach (var c in detail.Calls)
+                {
+                    if (c.Skipped) continue;
+                    var ep = !string.IsNullOrWhiteSpace(c.Endpoint) ? c.Endpoint.Trim() : EndpointNormalizer.NormalizeCallName(c.Name);
+                    if (string.IsNullOrWhiteSpace(ep)) continue;
+
+                    if (!localMap.TryGetValue(ep, out var acc))
+                    {
+                        var method = EndpointNormalizer.TryExtractMethod(ep) ?? EndpointNormalizer.TryExtractMethod(c.Name);
+                        localMap[ep] = acc = new CallsMatrixCellAccumulator(ep, method);
+                    }
+                    acc.Add(c, bee.Sequence);
+                }
+            }
+
+            var resolved = new Dictionary<string, CallsMatrixEntryMetric>(StringComparer.OrdinalIgnoreCase);
+            if (remoteEndpointsByEntry is not null
+                && remoteEndpointsByEntry.TryGetValue(e, out var remoteResult)
+                && remoteResult.Endpoints.Count > 0)
+            {
+                foreach (var dto in remoteResult.Endpoints)
+                {
+                    if (string.IsNullOrWhiteSpace(dto.Endpoint) || dto.TotalCount <= 0) continue;
+                    var ep = dto.Endpoint.Trim();
+                    localMap.TryGetValue(ep, out var local);
+                    var entryMetric = new CallsMatrixEntryMetric(
+                        ep,
+                        dto.Method ?? local?.Method ?? EndpointNormalizer.TryExtractMethod(ep),
+                        dto.TotalCount,
+                        dto.SlowCount,
+                        dto.FailedCount,
+                        dto.AvgMs,
+                        dto.P95Ms,
+                        dto.MaxMs,
+                        dto.TypicalMs,
+                        local?.MaxNonFailedRatio ?? 1.0,
+                        local?.SampleError,
+                        local?.SampleBeeSequence,
+                        local?.Durations);
+                    resolved[ep] = entryMetric;
+                }
+            }
+            else
+            {
+                foreach (var (ep, acc) in localMap)
+                    resolved[ep] = acc.ToMetric();
+            }
+
+            entryCells[e] = resolved;
+
+            var tCalls = 0;
+            var tSlow = 0;
+            var tFail = 0;
+            foreach (var (ep, m) in resolved)
+            {
+                tCalls += m.TotalCount;
+                tSlow += m.SlowCount;
+                tFail += m.FailedCount;
+
+                if (!columnMap.TryGetValue(ep, out var colAcc))
+                    columnMap[ep] = colAcc = new CallsMatrixColumnAccumulator(ep, m.Method);
+                colAcc.Add(m);
+            }
+            laneTotals[e] = (tCalls, tSlow, tFail);
+        }
+
+        if (columnMap.Count == 0)
+        {
+            var emptyLanes = Enumerable.Range(0, snapshot.Count)
+                .Select(e => new CallsMatrixLane(e, e, ScenarioDisplayName(snapshot, e), "no calls", 0, 0, 0))
+                .ToList();
+            return new CallsMatrixScene(metric, [], emptyLanes, [], 0, 0, 0);
+        }
+
+        var orderedCols = columnMap.Values
+            .Select(c => c.FinalizeStats())
+            .OrderByDescending(c => c.P95Ms)
+            .ThenByDescending(c => c.TotalCalls)
+            .ThenBy(c => c.Endpoint, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var totalDistinct = orderedCols.Count;
+        var topCols = orderedCols.Take(MaxCallsMatrixColumns).ToList();
+
+        var columns = new List<CallsMatrixColumn>(topCols.Count);
+        for (var i = 0; i < topCols.Count; i++)
+        {
+            var c = topCols[i];
+            columns.Add(new CallsMatrixColumn(
+                i,
+                c.Endpoint,
+                FormatErrorSignature(c.Endpoint, 26),
+                c.Method,
+                c.TotalCalls,
+                c.SlowCalls,
+                c.FailedCalls,
+                c.AvgMs,
+                c.P95Ms,
+                c.MaxMs));
+        }
+
+        var lanes = new List<CallsMatrixLane>(snapshot.Count);
+        var grid = new List<IReadOnlyList<CallsMatrixCell>>(snapshot.Count);
+        var maxMetricMs = 0.0;
+        var totalCallsAll = 0;
+
+        for (var e = 0; e < snapshot.Count; e++)
+        {
+            var scnName = ScenarioDisplayName(snapshot, e);
+            var (tCalls, tSlow, tFail) = laneTotals[e];
+            totalCallsAll += tCalls;
+
+            var meta = tFail > 0
+                ? $"{Format.Num(tCalls)} · {tFail} fail"
+                : tSlow > 0
+                    ? $"{Format.Num(tCalls)} · {tSlow} slow"
+                    : tCalls > 0
+                        ? $"{Format.Num(tCalls)} calls"
+                        : "no calls";
+
+            lanes.Add(new CallsMatrixLane(e, e, scnName, meta, tCalls, tSlow, tFail));
+
+            var row = new List<CallsMatrixCell>(columns.Count);
+            var byEp = entryCells[e];
+
+            for (var colIdx = 0; colIdx < columns.Count; colIdx++)
+            {
+                var col = columns[colIdx];
+                var colTypical = topCols[colIdx].TypicalMs;
+                if (!byEp.TryGetValue(col.Endpoint, out var m) || m.TotalCount <= 0)
+                {
+                    row.Add(new CallsMatrixCell(
+                        e,
+                        e,
+                        colIdx,
+                        scnName,
+                        col.Endpoint,
+                        col.DisplayLabel,
+                        IsEmptyPad: true,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1.0,
+                        null,
+                        null,
+                        [40, 37, 34]));
+                    continue;
+                }
+
+                var metricVal = metric switch
+                {
+                    CallsMatrixMetric.Avg => m.AvgMs,
+                    CallsMatrixMetric.Max => m.MaxMs,
+                    _ => m.P95Ms,
+                };
+                if (metricVal > maxMetricMs) maxMetricMs = metricVal;
+
+                var typicalRef = colTypical > 0 ? colTypical : m.TypicalMs;
+                var avgRatio = typicalRef > 0 && m.AvgMs > 0 ? SlowCallRule.Ratio(m.AvgMs, typicalRef) : 1.0;
+                var ratio = Math.Max(m.MaxNonFailedRatio, avgRatio);
+                var color = OutcomeRgb(m.FailedCount, m.SlowCount, ratio);
+
+                row.Add(new CallsMatrixCell(
+                    e,
+                    e,
+                    colIdx,
+                    scnName,
+                    col.Endpoint,
+                    col.DisplayLabel,
+                    IsEmptyPad: false,
+                    m.TotalCount,
+                    m.SlowCount,
+                    m.FailedCount,
+                    m.AvgMs,
+                    m.P95Ms,
+                    m.MaxMs,
+                    m.TypicalMs,
+                    Math.Round(ratio, 2),
+                    m.SampleError,
+                    m.SampleBeeSequence,
+                    color));
+            }
+            grid.Add(row);
+        }
+
+        return new CallsMatrixScene(metric, columns, lanes, grid, maxMetricMs, totalDistinct, totalCallsAll);
+    }
+
+    /// <summary>Converts a <see cref="CallsMatrixScene"/> into the compact JS payload for <c>views-3d.js</c>.</summary>
+    public static JsScenePayload ToJsPayload(CallsMatrixScene scene)
+    {
+        var lanes = scene.Lanes
+            .Select(l => new JsSceneLane(l.Index, l.Name, l.FailedCalls > 0 || l.SlowCalls > 0))
+            .ToList();
+
+        var headers = scene.Columns.Select(c => c.DisplayLabel).ToList();
+        var scaleMs = Math.Max(50.0, scene.MaxMetricMs);
+        var cells = new List<JsSceneCell>();
+
+        foreach (var row in scene.Grid)
+        {
+            foreach (var c in row)
+            {
+                if (c.IsEmptyPad)
+                {
+                    cells.Add(new JsSceneCell(
+                        c.LaneIndex,
+                        c.ColumnIndex,
+                        0,
+                        [40, 37, 34],
+                        "",
+                        [],
+                        null,
+                        IsEmptyPad: true));
+                    continue;
+                }
+
+                var metricMs = scene.Metric switch
+                {
+                    CallsMatrixMetric.Avg => c.AvgMs,
+                    CallsMatrixMetric.Max => c.MaxMs,
+                    _ => c.P95Ms,
+                };
+                var h = Math.Clamp(0.28 + (metricMs / scaleMs) * 6.8, 0.28, 7.2);
+                var alert = c.FailedCount > 0 || c.SlowCount > 0;
+                var ttRows = new List<JsTooltipRow>(3)
+                {
+                    new("Calls", $"{Format.Num(c.CallCount)} ({c.SlowCount} slow · {c.FailedCount} failed)"),
+                    new("p95 / Avg", $"{Format.Ms(c.P95Ms)} / {Format.Ms(c.AvgMs)}"),
+                    new("Max", Format.Ms(c.MaxMs)),
+                };
+
+                cells.Add(new JsSceneCell(
+                    c.LaneIndex,
+                    c.ColumnIndex,
+                    Math.Round(h, 3),
+                    c.ColorRgb,
+                    $"{c.Endpoint} · {c.ScenarioName}",
+                    ttRows,
+                    c.SampleError,
+                    IsEmptyPad: false,
+                    BadgeText: Format.Ms(metricMs),
+                    AlertBadge: alert));
+            }
+        }
+
+        var xSpan = Math.Clamp(scene.Columns.Count * 2.6, 12.0, 28.0);
+        var zSpan = Math.Clamp(scene.Lanes.Count * 2.6, 8.0, 15.0);
+        return new JsScenePayload("calls", xSpan, zSpan, scene.Columns.Count, lanes, [], cells, StepHeaders: headers);
+    }
+
     private static List<int> ExtractStepPath(
         IReadOnlyList<RecordedStepVisit>? stepVisits,
         IReadOnlyList<FakeCall> calls,
@@ -2226,6 +2511,157 @@ public static class Views3DProjection
             {
                 SampleStep = bee.FailedStep;
             }
+        }
+    }
+
+    private sealed record CallsMatrixEntryMetric(
+        string Endpoint,
+        string? Method,
+        int TotalCount,
+        int SlowCount,
+        int FailedCount,
+        double AvgMs,
+        double P95Ms,
+        double MaxMs,
+        double TypicalMs,
+        double MaxNonFailedRatio,
+        string? SampleError,
+        int? SampleBeeSequence,
+        List<double>? Durations);
+
+    private sealed class CallsMatrixCellAccumulator(string endpoint, string? method)
+    {
+        public string Endpoint { get; } = endpoint;
+        public string? Method { get; } = method;
+        public int TotalCount;
+        public int SlowCount;
+        public int FailedCount;
+        public double SumAll;
+        public double SumOk;
+        public double MaxMs;
+        public double MaxNonFailedRatio = 1.0;
+        public string? SampleError;
+        public int? SampleBeeSequence;
+        private double sampleScore = -1;
+        public List<double> Durations { get; } = [];
+        private readonly List<double> okDurations = [];
+
+        public void Add(in FakeCall c, int beeSequence)
+        {
+            TotalCount++;
+            SumAll += c.DurationMs;
+            Durations.Add(c.DurationMs);
+            if (c.DurationMs > MaxMs) MaxMs = c.DurationMs;
+
+            if (c.Failed)
+            {
+                FailedCount++;
+                SampleError ??= c.Error;
+                if (sampleScore < 1_000_000)
+                {
+                    sampleScore = 1_000_000;
+                    SampleBeeSequence = beeSequence;
+                }
+            }
+            else
+            {
+                okDurations.Add(c.DurationMs);
+                SumOk += c.DurationMs;
+                if (c.Slow) SlowCount++;
+                if (c.TypicalMs is > 0 || c.SlowThresholdMs is > 0)
+                {
+                    var r = SlowCallRule.Ratio(c.DurationMs, c.TypicalMs, c.SlowThresholdMs);
+                    if (r > MaxNonFailedRatio) MaxNonFailedRatio = r;
+                }
+                var score = (c.Slow ? 10_000 : 0) + c.DurationMs;
+                if (score > sampleScore)
+                {
+                    sampleScore = score;
+                    SampleBeeSequence = beeSequence;
+                }
+            }
+        }
+
+        public CallsMatrixEntryMetric ToMetric()
+        {
+            var baseline = okDurations.Count > 0 ? okDurations : Durations;
+            baseline.Sort();
+            var typicalMs = baseline.Count > 0 ? baseline[(baseline.Count - 1) / 2] : 0;
+            var p95Ms = baseline.Count > 0 ? baseline[Math.Max(0, (int)Math.Ceiling(0.95 * baseline.Count) - 1)] : 0;
+            var avgMs = okDurations.Count > 0 ? SumOk / okDurations.Count : SumAll / Math.Max(1, TotalCount);
+
+            return new CallsMatrixEntryMetric(
+                Endpoint,
+                Method,
+                TotalCount,
+                SlowCount,
+                FailedCount,
+                avgMs,
+                p95Ms,
+                MaxMs,
+                typicalMs,
+                MaxNonFailedRatio,
+                SampleError,
+                SampleBeeSequence,
+                Durations);
+        }
+    }
+
+    private sealed record CallsMatrixColumnStats(
+        string Endpoint,
+        string? Method,
+        int TotalCalls,
+        int SlowCalls,
+        int FailedCalls,
+        double AvgMs,
+        double P95Ms,
+        double MaxMs,
+        double TypicalMs);
+
+    private sealed class CallsMatrixColumnAccumulator(string endpoint, string? method)
+    {
+        private readonly string endpoint = endpoint;
+        private string? method = method;
+        private int totalCalls;
+        private int slowCalls;
+        private int failedCalls;
+        private double weightedAvgSum;
+        private double maxP95;
+        private double maxMs;
+        private readonly List<double> pooledDurations = [];
+        private readonly List<double> fallbackTypicals = [];
+
+        public void Add(CallsMatrixEntryMetric m)
+        {
+            method ??= m.Method;
+            totalCalls += m.TotalCount;
+            slowCalls += m.SlowCount;
+            failedCalls += m.FailedCount;
+            weightedAvgSum += m.AvgMs * m.TotalCount;
+            if (m.P95Ms > maxP95) maxP95 = m.P95Ms;
+            if (m.MaxMs > maxMs) maxMs = m.MaxMs;
+            if (m.Durations is { Count: > 0 } durs)
+                pooledDurations.AddRange(durs);
+            else if (m.TypicalMs > 0)
+                fallbackTypicals.Add(m.TypicalMs);
+        }
+
+        public CallsMatrixColumnStats FinalizeStats()
+        {
+            var avg = totalCalls > 0 ? weightedAvgSum / totalCalls : 0;
+            double p95 = maxP95;
+            double typical;
+            if (pooledDurations.Count > 0)
+            {
+                pooledDurations.Sort();
+                p95 = pooledDurations[Math.Max(0, (int)Math.Ceiling(0.95 * pooledDurations.Count) - 1)];
+                typical = pooledDurations[(pooledDurations.Count - 1) / 2];
+            }
+            else
+            {
+                typical = fallbackTypicals.Count > 0 ? Median(fallbackTypicals) : avg;
+            }
+            return new CallsMatrixColumnStats(endpoint, method, totalCalls, slowCalls, failedCalls, avg, p95, maxMs, typical);
         }
     }
 }
