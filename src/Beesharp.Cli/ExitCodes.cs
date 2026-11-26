@@ -11,4 +11,6 @@ public static class ExitCodes
     public const int BeesFailed = HeadlessExitCodes.BeesFailed;
     /// <summary>The run could not run: bad arguments, preset or environment not found, a script that does not compile, unknown placeholders, the preflight failed.</summary>
     public const int CouldNotRun = HeadlessExitCodes.CouldNotRun;
+    /// <summary><c>beesharp runs trace</c>: the trace is not stored with the run (not selected, not found in the trace store, no trace store configured); the message gives the likely reason (brain 0065).</summary>
+    public const int TraceNotFound = 3;
 }

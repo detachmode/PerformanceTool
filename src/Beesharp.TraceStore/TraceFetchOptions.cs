@@ -18,6 +18,9 @@ public sealed class TraceFetchOptions
     /// <summary>How many typical calls per endpoint get their trace fetched, as the baseline of "slow vs normal" (default 3).</summary>
     public int TypicalPerEndpoint { get; set; } = 3;
 
+    /// <summary>Calls of an endpoint needed before its typical calls are chosen during the run (default 10); the final pass chooses them whatever the number.</summary>
+    public int TypicalMinSample { get; set; } = 10;
+
     /// <summary>How many endpoints are tracked for selection (default 200); calls of further endpoints are ignored.</summary>
     public int MaxEndpoints { get; set; } = 200;
 

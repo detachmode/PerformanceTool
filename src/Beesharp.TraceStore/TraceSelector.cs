@@ -96,9 +96,14 @@ public sealed class TraceSelector
         }
     }
 
-    /// <summary>The traces to fetch now, in priority order, at most <see cref="TraceFetchOptions.MaxTraces"/>. Changes as the run goes on (a slower call replaces a less slow one).</summary>
+    /// <summary>
+    /// The traces to fetch now, in priority order, at most <see cref="TraceFetchOptions.MaxTraces"/>. Changes as the run goes on (a slower call replaces a less slow one).
+    /// During the run an endpoint's typical calls are only chosen once <see cref="TraceFetchOptions.TypicalMinSample"/> calls were seen (a baseline from three calls is no baseline);
+    /// <paramref name="final"/> chooses them whatever the sample.
+    /// </summary>
+    /// <param name="final">The run is over: choose typical calls of every endpoint.</param>
     /// <returns>The candidates, each trace once with all its reasons.</returns>
-    public IReadOnlyList<TraceCandidate> Select()
+    public IReadOnlyList<TraceCandidate> Select(bool final = false)
     {
         lock (sync)
         {
@@ -121,7 +126,7 @@ public sealed class TraceSelector
                 foreach (var name in names)
                     if (rank < endpoints[name].Slowest.Count) Add(endpoints[name].Slowest[rank], "slowest " + name);
 
-            var typical = names.ToDictionary(n => n, n => NearestToMedian(endpoints[n].Sample));
+            var typical = names.ToDictionary(n => n, n => final || endpoints[n].Sample.Count >= options.TypicalMinSample ? NearestToMedian(endpoints[n].Sample) : []);
             for (var rank = 0; rank < options.TypicalPerEndpoint; rank++)
                 foreach (var name in names)
                     if (rank < typical[name].Count) Add(typical[name][rank], "typical " + name);

@@ -113,25 +113,31 @@ public sealed class TraceFetchSession : IAsyncDisposable
     }
 
     /// <summary>Adds the selector's current choice to what is tracked, within the caps (failed bees keep room of their own).</summary>
-    private void Refresh()
+    private void Refresh(bool final = false)
     {
-        var chosen = selector.Select();
+        var chosen = selector.Select(final);
         lock (sync)
         {
-            var failedBudget = Math.Min(options.MaxFailed, options.MaxTraces / 2);
-            var otherBudget = options.MaxTraces - failedBudget;
+            var reservedForFailed = Math.Min(options.MaxFailed, options.MaxTraces / 2);   // others may not use this room; failed bees may use all of the cap
+            var otherBudget = options.MaxTraces - reservedForFailed;
             var failedCount = tracked.Values.Count(t => t.IsFailedBee);
             var otherCount = tracked.Count - failedCount;
+            // The selection moves while the run goes (a slower call replaces a less slow one), so every endpoint gets a budget per kind of reason: a rolling
+            // "slowest" fetches at most twice as many as the final top, typical calls as many as asked for. Without it a long run would fetch up to the per-run cap.
+            var reasonCounts = tracked.Values.SelectMany(t => t.Candidate.Reasons).Where(r => r != "failed").GroupBy(r => r).ToDictionary(g => g.Key, g => g.Count());
+            int ReasonBudget(string reason) => reason.StartsWith("slowest ", StringComparison.Ordinal) ? options.SlowestPerEndpoint * 2 : options.TypicalPerEndpoint;
             foreach (var candidate in chosen)
             {
                 if (tracked.TryGetValue(candidate.TraceId, out var existing))
                 {
-                    existing.Candidate = existing.Candidate with { Reasons = candidate.Reasons };
+                    existing.Candidate = existing.Candidate with { Reasons = existing.Candidate.Reasons.Union(candidate.Reasons).ToList() };
                     continue;
                 }
                 var isFailed = candidate.Reasons.Contains("failed");
-                if (isFailed ? failedCount >= failedBudget : otherCount >= otherBudget) continue;
+                if (!isFailed && !candidate.Reasons.Any(r => reasonCounts.GetValueOrDefault(r) < ReasonBudget(r))) continue;
+                if (failedCount + otherCount >= options.MaxTraces || (isFailed ? failedCount >= options.MaxFailed : otherCount >= otherBudget)) continue;
                 tracked[candidate.TraceId] = new Tracked(candidate);
+                foreach (var r in candidate.Reasons.Where(r => r != "failed")) reasonCounts[r] = reasonCounts.GetValueOrDefault(r) + 1;
                 if (isFailed) failedCount++; else otherCount++;
             }
         }
@@ -268,7 +274,7 @@ public sealed class TraceFetchSession : IAsyncDisposable
         timeout.CancelAfter(options.FinalPassTimeout);
         try
         {
-            Refresh();
+            Refresh(final: true);
             if (!stopped) await WaitUntilSettledAsync(timeout.Token);
             await FinalRoundAsync(retry: false, timeout.Token);
             if (!stopped && storeProblem is null && Pending(attempts: 1).Count > 0)

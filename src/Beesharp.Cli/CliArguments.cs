@@ -57,6 +57,8 @@ public enum CliCommand
     RunsBee,
     RunsCompare,
     RunsTimeline,
+    RunsTrace,
+    RunsHotspots,
     Invalid,
 }
 
@@ -80,7 +82,7 @@ public static class CliArguments
 
         Run "beesharp run --help" or "beesharp runs --help" for subcommand options.
 
-        Exit codes: 0 all bees succeeded (or inspection succeeded), 1 a bee failed (or was canceled), 2 invalid arguments or could not run.
+        Exit codes: 0 all bees succeeded (or inspection succeeded), 1 a bee failed (or was canceled), 2 invalid arguments or could not run, 3 "runs trace": the trace is not stored.
         """;
 
     public const string RunUsage = """

@@ -179,6 +179,44 @@ internal static class RunsCommandHandler
                 }
                 return ExitCodes.Ok;
             }
+            case CliCommand.RunsTrace:
+            {
+                var opts = parsed.Runs!.Trace!;
+                var url = ResolveRemoteUrl(opts.Url, getEnv, opts.File);
+                RunTraceReport report;
+                if (url is not null)
+                {
+                    using var client = new RemoteRunClient(url, httpHandler);
+                    var runId = await client.ResolveRunIdAsync(opts.File, ct);
+                    report = await client.GetTraceAsync(runId, opts, ct);
+                }
+                else
+                {
+                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls | BundleTables.Traces);
+                    report = bundle.GetTrace(opts);
+                }
+                WriteResult(output, opts.Json, report, report.ToText());
+                return report.ExitCode;
+            }
+            case CliCommand.RunsHotspots:
+            {
+                var opts = parsed.Runs!.Hotspots!;
+                var url = ResolveRemoteUrl(opts.Url, getEnv, opts.File);
+                HotspotsResultDto report;
+                if (url is not null)
+                {
+                    using var client = new RemoteRunClient(url, httpHandler);
+                    var runId = await client.ResolveRunIdAsync(opts.File, ct);
+                    report = await client.GetHotspotsAsync(runId, opts, ct);
+                }
+                else
+                {
+                    using var bundle = RunBundleReader.Open(opts.File, BundleTables.Runs | BundleTables.RunSteps | BundleTables.Bees | BundleTables.Calls | BundleTables.Traces);
+                    report = bundle.GetHotspots(opts);
+                }
+                WriteResult(output, opts.Json, report, HotspotsText.ToText(report));
+                return ExitCodes.Ok;
+            }
             default:
                 throw new InvalidOperationException($"Unsupported runs command {parsed.Command}.");
         }
