@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- End-to-end test of the tracing example (brain 0063): Aspire starts Beesharp, shop-api and payment-api as processes,
+       the test is their OTLP endpoint (Kestrel, http/protobuf) and checks the spans it receives. No Docker needed. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Testing" Version="13.6.5" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Tools" Version="2.85.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Beesharp.Tracing.E2E.AppHost/Beesharp.Tracing.E2E.AppHost.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Core/Beesharp.Core.csproj" />
+    <ProjectReference Include="../../src/Beesharp.Contracts/Beesharp.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- The OTLP trace messages (opentelemetry-proto v1.8.0, Apache-2.0), vendored so the test decodes what the services send. -->
+  <ItemGroup>
+    <Protobuf Include="Protos/opentelemetry/proto/**/*.proto" ProtoRoot="Protos" GrpcServices="None" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

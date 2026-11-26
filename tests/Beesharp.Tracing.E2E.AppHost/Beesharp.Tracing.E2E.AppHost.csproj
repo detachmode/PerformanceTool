@@ -1,0 +1,21 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+
+  <!-- The tracing example as an Aspire app model (brain 0063): Beesharp (src/Beesharp) and examples/tracing/shop-api
+       twice (as shop-api and payment-api), all as plain processes, no containers. The end-to-end test
+       (../Beesharp.Tracing.E2E.Tests) starts it with Aspire.Hosting.Testing and points every resource at its own OTLP receiver. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- Aspire 13 offers an optional CLI bundle (ASPIRE010); the classic DCP packages are all this test needs. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Beesharp/Beesharp.csproj" />
+    <ProjectReference Include="../../examples/tracing/shop-api/ShopApi.csproj" />
+  </ItemGroup>
+
+</Project>

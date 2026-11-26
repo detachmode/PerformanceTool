@@ -14,6 +14,9 @@
     <Project Path="src/Beesharp.Host/Beesharp.Host.csproj" />
     <Project Path="src/Beesharp/Beesharp.csproj" />
   </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/tracing/shop-api/ShopApi.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Beesharp.Core.Tests/Beesharp.Core.Tests.csproj" />
     <Project Path="tests/Beesharp.Contracts.Tests/Beesharp.Contracts.Tests.csproj" />
@@ -24,6 +27,8 @@
     <Project Path="tests/Beesharp.Client.Tests/Beesharp.Client.Tests.csproj" />
     <Project Path="tests/Beesharp.Ai.Tests/Beesharp.Ai.Tests.csproj" />
     <Project Path="tests/Beesharp.Cli.Tests/Beesharp.Cli.Tests.csproj" />
+    <Project Path="tests/Beesharp.Tracing.E2E.Tests/Beesharp.Tracing.E2E.Tests.csproj" />
+    <Project Path="tests/Beesharp.Tracing.E2E.AppHost/Beesharp.Tracing.E2E.AppHost.csproj" />
     <Project Path="tests/Beesharp.Tests/Beesharp.Tests.csproj" />
   </Folder>
 </Solution>
