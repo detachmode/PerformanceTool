@@ -8,7 +8,7 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
-- **Now (D, user request 2026-11-27):** the run's duration slider is not linear: fine steps for seconds at the start, then it speeds up to minutes and hours, so one slider goes from a few seconds to long runs; the readout shows the duration as time (e.g. 45 s, 2 min, 1 h 30 min), typing stays possible.
+- **Done (D, user request 2026-11-27):** non-linear duration slider (`DurationScale`, `Shared/DurationSlider`), value as time, typed forms, unit marks, usual-durations menu (0073). Screenshots `docs/screenshots/2026-11-27-duration-slider/`.
 - **Done (2026-11-27, user):** bluish dark theme in Grafana's tones (`--bg #181b1f`, `--panel #22252b`, `--panel2 #2c3038`, cool text and borders), preflight/shutdown strips back above the cards.
 
 ### Open tasks (handover 2026-11-27, from a desktop UI test pass and the V/W/X agents)

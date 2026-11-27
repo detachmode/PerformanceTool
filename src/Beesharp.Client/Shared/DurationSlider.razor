@@ -1,0 +1,121 @@
+@* The run's duration control (brain 0073): a non-linear slider (seconds first, then minutes and hours, see DurationScale), faint marks under the track
+   where the units change, the value as time ("2 min 30 s") in a field you can type into ("90", "2m", "1h 30m", "1:30:00"), and one small ▾ with a
+   short list of usual durations (DropMenu, brain 0068). The plan keeps plain seconds. *@
+@using Beesharp.Services.Scenarios.Spec
+
+<div class="slider with-input dur-slider">
+    <div class="dur-track">
+        <input id="@Id-range" type="range" min="0" max="@DurationScale.MaxPosition" step="1" value="@DurationScale.PositionFor(Seconds)"
+               aria-label="Duration slider" aria-valuetext="@DurationScale.Format(Seconds)" disabled="@Disabled" @oninput="OnSlide" />
+        <div class="dur-ticks" aria-hidden="true">
+            @foreach (var mark in DurationScale.Marks)
+            {
+                <span style="--f:@Frac(mark.Position)">@mark.Label</span>
+            }
+        </div>
+    </div>
+    <span class="dur-value">
+        <input id="@Id" class="slider-num dur-num @(invalid || Invalid ? "invalid" : "")" type="text" inputmode="text" autocomplete="off" spellcheck="false"
+               value="@text" aria-label="Duration" placeholder="e.g. 90, 2m, 1h 30m" title="@(invalid ? "Use a time like 90, 2m, 1h 30m or 1:30:00" : "Type a time, for example 90, 2m or 1h 30m")"
+               disabled="@Disabled" aria-invalid="@Aria.Bool(invalid || Invalid)" @oninput="OnInput" @onchange="OnChange" />
+        <button type="button" class="dur-more" aria-label="Usual durations" aria-haspopup="menu" aria-expanded="@Aria.Bool(menuOpen)" title="Usual durations"
+                disabled="@Disabled" @onclick="() => menuOpen = !menuOpen">▾</button>
+        @if (menuOpen)
+        {
+            <DropMenu Class="right dur-menu" Label="Usual durations" OnClose="@(() => menuOpen = false)" Total="DurationScale.Presets.Count">
+                <Head><div class="dd-lbl">Usual durations</div></Head>
+                <ChildContent>
+                    @foreach (var p in DurationScale.Presets)
+                    {
+                        var seconds = p;
+                        var current = seconds == Seconds;
+                        <button type="button" class="dd-item @(current ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(current)" @onclick="() => Pick(seconds)">
+                            <span class="dd-check" aria-hidden="true">@(current ? "✓" : "")</span>
+                            <span class="dd-text">@DurationScale.Format(seconds)</span>
+                        </button>
+                    }
+                </ChildContent>
+            </DropMenu>
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "p-dur";
+    /// <summary>The duration in seconds (the plan's value, whether or not it is on the slider's grid).</summary>
+    [Parameter] public int Seconds { get; set; }
+    [Parameter] public EventCallback<int> SecondsChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>The owner found the value invalid (for example below one second): the field is marked.</summary>
+    [Parameter] public bool Invalid { get; set; }
+    /// <summary>A pick (slide, menu or the end of typing) is final: the owner may push it to the server at once.</summary>
+    [Parameter] public EventCallback OnCommit { get; set; }
+
+    private string text = "";
+    private int? shown;
+    private bool invalid;
+    private bool menuOpen;
+
+    private static string Frac(int position) => ((double)position / DurationScale.MaxPosition).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override void OnParametersSet()
+    {
+        if (shown != Seconds)
+        {
+            shown = Seconds;
+            text = DurationScale.Format(Seconds);
+            invalid = false;
+        }
+    }
+
+    private async Task OnSlide(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var position)) return;
+        await Set(DurationScale.SecondsAt(position));
+        await OnCommit.InvokeAsync();
+    }
+
+    private async Task Pick(int seconds)
+    {
+        menuOpen = false;
+        await Set(seconds);
+        await OnCommit.InvokeAsync();
+    }
+
+    // While typing: store the value as soon as it parses, keep the typed text and say nothing yet.
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        text = e.Value?.ToString() ?? "";
+        if (DurationScale.TryParse(text, out var seconds))
+        {
+            invalid = false;
+            shown = seconds;
+            await SecondsChanged.InvokeAsync(seconds);
+        }
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        text = e.Value?.ToString() ?? "";
+        if (DurationScale.TryParse(text, out var seconds))
+        {
+            invalid = false;
+            shown = seconds;
+            text = DurationScale.Format(seconds);
+            await SecondsChanged.InvokeAsync(seconds);
+            await OnCommit.InvokeAsync();
+        }
+        else
+        {
+            invalid = true;
+        }
+    }
+
+    private async Task Set(int seconds)
+    {
+        invalid = false;
+        shown = seconds;
+        text = DurationScale.Format(seconds);
+        await SecondsChanged.InvokeAsync(seconds);
+    }
+}
