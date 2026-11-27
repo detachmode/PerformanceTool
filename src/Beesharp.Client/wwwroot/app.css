@@ -79,7 +79,7 @@ label { font-size: .74rem; color: var(--muted); }
 .seg .n { color: inherit; opacity: .68; font-variant-numeric: tabular-nums; margin-left: .24rem; }
 
 /* ----- top bar (fixed, YouTube obsidian glass) ----- */
-:root { --top-h: 56px; }
+:root { --top-h: 56px; --player-h: 77px; }
 .top { position: fixed; top: 0; left: 0; right: 0; z-index: 70; height: var(--top-h); display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; padding: 0 1.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.07); box-shadow: none; }
 /* The blur lives on a pseudo-element: backdrop-filter on .top itself would trap fixed children (dropdown backdrops) inside the bar. */
 .top::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(15, 14, 13, 0.94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -103,7 +103,7 @@ label { font-size: .74rem; color: var(--muted); }
 .drawer-actions { display: flex; flex-direction: column; gap: .4rem; border-top: 1px solid var(--border); padding-top: .75rem; }
 .drawer-actions .btn { text-align: left; }
 .drawer-foot { border-top: 1px solid var(--border); padding-top: .65rem; }
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
     .top { padding: 0 .5rem; gap: .35rem; }
     .brand-hex { width: 26px; height: 26px; }
     .nav { gap: 0; }
@@ -116,6 +116,13 @@ label { font-size: .74rem; color: var(--muted); }
 .top-desktop > * { flex: none; }
 .top-desktop .env-picker { flex: 0 1 auto; min-width: 0; }
 @media (max-width: 1320px) { .top .build-stamp { display: none; } }
+/* Brain 0068: the top bar never overflows. Least important first: the build stamp (1320), then the brand name and the environment label, then the room for the breadcrumb and the environment name. */
+@media (max-width: 1180px) {
+    .brand-name { display: none; }
+    .top .env-btn .env-label { display: none; }
+    .top .env-btn { max-width: 11rem; }
+    .crumb { max-width: 10rem; }
+}
 @media (max-width: 1120px) {
     .top { gap: .5rem; padding: 0 .85rem; }
     .nav-item { padding: 0 .5rem; }
@@ -136,7 +143,7 @@ label { font-size: .74rem; color: var(--muted); }
 
 /* ----- pages ----- */
 .main { max-width: 1280px; margin: 0 auto; padding: calc(var(--top-h) + 1.15rem) 1.5rem 2.5rem; }
-.shell:has(.player) .main { padding-bottom: 7.5rem; } /* clear bottom player bar only when visible */
+.shell:has(.player) .main { padding-bottom: calc(var(--player-h) + 1.5rem); } /* clear bottom player bar only when visible */
 .page-head { display: flex; align-items: baseline; gap: .9rem; margin-bottom: 1rem; flex-wrap: wrap; }
 
 /* ----- overview cards (YouTube-inspired Stage & Scrubber + Outline Icons) ----- */
@@ -263,8 +270,9 @@ label { font-size: .74rem; color: var(--muted); }
 .offline-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); box-shadow: 0 0 8px var(--failed); flex: none; }
 .shell:has(.offline-banner) .main { padding-top: calc(var(--top-h) + 3.2rem); }
 .mode-dd .dd-menu.mode-runs-menu { min-width: 270px; max-height: 68dvh; }   /* desktop: drops down right under the mode button */
+.mode-menu-mobile .dd-menu.mode-runs-menu.parts { overflow: hidden; }
 .mode-menu-mobile .dd-menu.mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); bottom: auto; right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
-@media (min-width: 861px) { .mode-menu-mobile { display: none; } }
+@media (min-width: 1001px) { .mode-menu-mobile { display: none; } }
 .top:has(.mode-dd .dd-menu) { z-index: 130; }   /* while open, lift the bar so the backdrop and menu also cover the player bar */
 
 /* ----- popups ----- */
@@ -713,12 +721,18 @@ label { font-size: .74rem; color: var(--muted); }
 .card-add-open { border-style: dashed; border-color: var(--accent2); }
 /* ----- scenario settings side panel (brain 0066): right panel on desktop like the assistant, the bottom Sheet on the phone ----- */
 :root { --ed-side: clamp(340px, 30vw, 460px); }
-.ed-side { position: fixed; top: var(--top-h); right: 0; bottom: 4.6rem; width: var(--ed-side); z-index: 64; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45); }
+.ed-side { position: fixed; top: var(--top-h); right: 0; bottom: 0; width: var(--ed-side); z-index: 64; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45); }
 .ed-side .ed-panel-in { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
-.page.ed-side-open { margin-right: var(--ed-side); }
+.shell:has(.player) .ed-side { bottom: var(--player-h); }   /* from the top bar down to the player bar, no gap and not behind it */
+/* Edit mode keeps the settings column even before a scenario is chosen (brain 0068), so the card grid never reflows. The page only gives up the width the side panel
+   takes beyond the free margin a wide window has next to the centred 1280 px page. */
+.page.ed-side-open { margin-right: max(0px, calc(var(--ed-side) - max(0px, (100vw - 1280px) / 2) - .25rem)); }
+.ed-side-idle { align-items: center; justify-content: center; }
+.ed-side .btn { white-space: nowrap; flex: none; }
+.ed-side-hint { margin: 0; padding: 0 1.5rem; text-align: center; color: var(--faint); font-size: .86rem; }
 .shell.asst-open .ed-side { right: var(--asst-w); }
 .shell.asst-open .page.ed-side-open { margin-right: var(--ed-side); }
-@media (max-width: 860px) { .ed-side { width: min(100%, 420px); } .page.ed-side-open { margin-right: 0; } }
+@media (max-width: 860px) { .ed-side { width: min(100%, 420px); } .page.ed-side-open { margin-right: 0; } .ed-side-idle { display: none; } }
 html.phone .ed-side { position: static; width: auto; box-shadow: none; border: 0; flex: 1 1 auto; min-height: 0; z-index: auto; }
 html.phone .ed-sheet .sheet-body { display: flex; flex-direction: column; min-height: 0; }
 .add-menu.inline { border: 0; background: transparent; padding: .45rem; }
@@ -739,7 +753,7 @@ html.phone .ed-sheet .sheet-body { display: flex; flex-direction: column; min-he
 @media (pointer: coarse) { .chart.dense .bar-hit { padding: 0; } }
 
 /* ----- player bar (YouTube obsidian glass + pill controls) ----- */
-.player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 120; display: flex; align-items: center; gap: 0; padding: .65rem 1.5rem calc(.65rem + env(safe-area-inset-bottom)); background: rgba(16, 15, 14, 0.96); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid rgba(255, 255, 255, 0.07); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.55); }
+.player { position: fixed; left: 0; right: 0; bottom: 0; min-height: var(--player-h); z-index: 120; display: flex; align-items: center; gap: 0; padding: .65rem 1.5rem calc(.65rem + env(safe-area-inset-bottom)); background: rgba(16, 15, 14, 0.96); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid rgba(255, 255, 255, 0.07); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.55); }
 .pl-main { display: flex; align-items: center; gap: .75rem; padding-right: 1.2rem; }
 .play { flex: none; display: inline-flex; align-items: center; gap: .6rem; padding: 0 .35rem 0 0; border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 999px; font-size: .9rem; font-weight: 600; }
 .play .disc { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: #f1efea; color: #0f0e0d; border: 0; box-shadow: none; transition: background .12s, transform .08s; }
@@ -780,6 +794,14 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .more-btn { display: none; }
 @media (prefers-reduced-motion: reduce) { .state-lamp.run i { animation: none; } .gauge i, .play .disc { transition: none; } }
 @media (max-width: 1100px) { .play-label { display: none; } .inst { padding: .1rem .8rem; min-width: 0; } .state-lamp { min-width: 0; } .inst.clock { min-width: 9rem; } .pl-main { padding-right: .9rem; } }
+/* Brain 0068: below 900 px the player bar gives up the words of the state lamp (the dot stays, the text is still read by screen readers) and some padding, so no label is cut off. */
+@media (max-width: 900px) and (min-width: 761px) {
+    .player { padding-left: 1rem; padding-right: 1rem; }
+    .pl-main { gap: .5rem; padding-right: .6rem; }
+    .state-lamp span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .inst { padding: .1rem .55rem; }
+    .pl-end { padding-left: .5rem; }
+}
 
 /* Stable clicking on a live chart (brain 0026): calm badge while the chart is held still */
 .chart-wrap { position: relative; }
@@ -1005,7 +1027,7 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 /* ----- dedicated full-screen C# script editor & syntax highlighter ----- */
 .main:has(.script-fullscreen) { max-width: none; padding: var(--top-h) 0 0; }
 .script-fullscreen { display: flex; flex-direction: column; height: calc(100dvh - var(--top-h)); background: var(--input); }
-.shell:has(.player) .script-fullscreen { height: calc(100dvh - var(--top-h) - 72px); }
+.shell:has(.player) .script-fullscreen { height: calc(100dvh - var(--top-h) - var(--player-h)); }
 .script-bar { flex: none; display: flex; align-items: center; gap: .45rem; padding: .4rem .75rem; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .script-file-btn { display: inline-flex; align-items: center; gap: .4rem; max-width: min(260px, 52vw); }
 .script-file-btn .mono { font-family: var(--mono); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1507,7 +1529,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .bp-ratio { color: var(--good); }
 .bp-ratio.warn { color: var(--warn); }
 .bp-head .bee-note { margin: .1rem 0 0; font-size: .8rem; color: var(--muted); }
-.bp-tabbar { display: flex; align-items: center; gap: .4rem; margin: .4rem -1.1rem 0; padding: 0 1.1rem; border-bottom: 1px solid var(--border); min-height: 2.6rem; }
+.bp-tabbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .4rem -1.1rem 0; padding: 0 1.1rem; border-bottom: 1px solid var(--border); min-height: 2.6rem; }
 .bp-tabs { display: flex; gap: .2rem; align-self: stretch; }
 .bp-tab { border: 0; background: transparent; padding: 0 .55rem; margin-left: -.55rem; margin-right: .3rem; color: var(--muted); font-weight: 500; font-size: .86rem; cursor: pointer; position: relative; white-space: nowrap; }
 .bp-tab:first-child { margin-left: -.55rem; }
@@ -1516,6 +1538,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .bp-tab.on { color: var(--title); font-weight: 600; }
 .bp-tab.on::after { content: ""; position: absolute; left: .55rem; right: .55rem; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--title); }
 .bp-tabbar .btn.small { padding: .22rem .65rem; font-size: .76rem; }
+@media (max-width: 1180px) { .bp-tab { font-size: .82rem; padding: 0 .45rem; margin-left: -.45rem; margin-right: .15rem; } .bp-tab.on::after { left: .45rem; right: .45rem; } .bp-tabbar .btn.small { padding: .2rem .5rem; } }   /* the narrow bee column keeps the tabs and Expand all on one line (brain 0068) */
 .bp-tabbar .icon-toggle { padding: .26rem .5rem; }
 .scn-right > .bp > .bee-error { margin: .6rem 1.1rem 0; font-size: .82rem; }
 .bp-body { flex: 1; min-height: 0; overflow-y: auto; padding: .9rem 1.1rem 1.4rem; }
@@ -1557,7 +1580,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 /* logs page: a filter column with counts, a full-width search, the active filters as chips, the virtualised lines */
 .main:has(.logs-page) { max-width: none; padding: var(--top-h) 0 0; }
 .logs-page { position: relative; display: grid; grid-template-columns: var(--logs-left, 250px) minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
-.shell:has(.player) .logs-page { height: calc(100dvh - var(--top-h) - 72px); }
+.shell:has(.player) .logs-page { height: calc(100dvh - var(--top-h) - var(--player-h)); }
 .lg-filters { overflow-y: auto; padding: .9rem .7rem 1.2rem; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 1.1rem; min-height: 0; }
 .lg-group { display: flex; flex-direction: column; gap: 1px; }
 .lg-group h2 { font-size: .72rem; font-weight: 600; color: var(--muted); margin: 0 0 .25rem .6rem; letter-spacing: .01em; overflow-wrap: anywhere; }
@@ -1677,7 +1700,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 /* ----- Calls analysis page (/calls, brain 0060) ----- */
 .main:has(.calls-page) { max-width: none; padding: var(--top-h) 0 0; }
 .calls-page { position: relative; --calls-left-default: 340px; display: grid; grid-template-columns: var(--calls-left, var(--calls-left-default)) minmax(0, 1fr); height: calc(100dvh - var(--top-h)); background: var(--bg); }
-.shell:has(.player) .calls-page { height: calc(100dvh - var(--top-h) - 72px); }
+.shell:has(.player) .calls-page { height: calc(100dvh - var(--top-h) - var(--player-h)); }
 .calls-page > * { min-width: 0; min-height: 0; }
 
 /* left: endpoint master list */

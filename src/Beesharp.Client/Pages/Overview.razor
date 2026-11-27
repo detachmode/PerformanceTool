@@ -36,7 +36,7 @@
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
 }
 
-<div class="page @(editMode ? "editor" : "") @(cfg is not null && !Phone.IsPhone ? "ed-side-open" : "")">
+<div class="page @(editMode ? "editor" : "") @(editMode && !Phone.IsPhone ? "ed-side-open" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
             <h1 title="@Sim.PresetName">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Scenarios" : Sim.PresetName)</h1>
@@ -534,6 +534,13 @@
             {
                 <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
             }
+        }
+        else if (!Phone.IsPhone)
+        {
+            @* Brain 0068: the column of the settings panel is kept in edit mode, also while no scenario is selected, so the cards never reflow when it fills. *@
+            <aside class="ed-side ed-side-idle" aria-label="Scenario settings">
+                <p class="ed-side-hint">Select a scenario to edit its settings.</p>
+            </aside>
         }
     }
     else if (!DataMode.IsFakeMode && !ApiRun.PreflightDismissed && ApiRun.PreflightState is "Running" or "Failed")
