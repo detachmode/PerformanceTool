@@ -12,6 +12,7 @@
 @inject CallsLinks Links
 @inject NavigationManager Nav
 @inject PhoneState Phone
+@inject IJSRuntime JS
 
 <PageTitle>Calls · Beesharp</PageTitle>
 
@@ -20,7 +21,8 @@
     var hasRun = DataMode.IsFakeMode || !string.IsNullOrEmpty(ApiRun.CurrentRunId);
 }
 
-<div class="calls-page @(Phone.IsPhone ? "cl-phone" : "")" data-tab="@phoneTab">
+<div class="calls-page @(Phone.IsPhone ? "cl-phone" : "") @(view.PanelOpen && !Phone.IsPhone ? "bee-side-open" : "")" data-tab="@phoneTab">
+    <ScrollMemory Key="calls-window" />
     @if (Phone.IsPhone)
     {
         <div class="scn-tabs cl-phone-tabs" role="tablist" aria-label="Calls sections">
@@ -96,6 +98,11 @@
             </div>
         }
 
+        @if (sortedEndpoints.Count > 0)
+        {
+            @* The endpoint list keeps its place when the page is left and shown again (brain 0069, 0070); bound once the list has rows to scroll. *@
+            <ScrollMemory Key="calls-endpoints" Selector=".cl-ep-list" />
+        }
         <div class="cl-ep-list" role="list" aria-label="Detected endpoints">
             @if (!hasRun)
             {
@@ -148,6 +155,13 @@
     }
 
     <section class="cl-right" aria-label="Endpoint analysis">
+        <ScrollMemory Key="@("calls-right:" + (selectedEndpoint ?? ""))" Selector=".cl-right" />
+        @if (view.Origin is { } org)
+        {
+            var orgLabel = org.Entry >= 0 && org.Entry < s.Labels.Count ? s.Labels[org.Entry] : null;
+            <a class="cl-origin" href="@org.ScenarioHref()" @onclick="BackToOriginAsync" @onclick:preventDefault
+               title="Back to B@(org.Bee + 1) where you opened this call">‹ B@(org.Bee + 1)@(orgLabel is null ? "" : " · " + orgLabel)</a>
+        }
         @if (!hasRun)
         {
             <div class="cl-right-empty muted">
@@ -307,8 +321,10 @@
                            ShowScenario="filter.Entry is null && s.Count > 1"
                            Sort="@filter.Sort"
                            ResetKey="@listResetKey"
+                           MemoryKey="@("calls:" + runKey + ":" + filter.ToQueryString())"
+                           OnOpenBee="OpenBee"
                            OnFilterScenario="e => ApplyFilter(filter.WithEntry(e))"
-                           OnSelect="c => selectedCall = c"
+                           OnSelect="SelectCall"
                            OnSortChange="OnSortChange"
                            OnLoadMore="LoadMoreAsync" />
 
@@ -319,6 +335,13 @@
         }
     </section>
 </div>
+
+@if (view.OpenBee is { } openSeq)
+{
+    @* The bee side panel (brain 0069, 0070): a bee clicked in the call list or the detail opens here; the lists, the selected call and their scroll positions stay as they are.
+       The bee is its own address parameter (?open=). Clicking a call in the panel's Calls tab selects it here instead of leaving the page. *@
+    <BeeSidePanel Snapshot="s" Sequence="openSeq" Tab="view.Tab" TabChanged="PanelTabChanged" OnClose="ClosePanel" OnCallOpen="OpenCallOfBee" />
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "endpoint")] public string? QEndpoint { get; set; }
@@ -331,8 +354,18 @@
     [SupplyParameterFromQuery(Name = "sort")] public string? QSort { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
     [SupplyParameterFromQuery(Name = "target")] public string? QTarget { get; set; }
+    [SupplyParameterFromQuery(Name = "call")] public string? QCall { get; set; }
+    [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
+    [SupplyParameterFromQuery(Name = "open")] public string? QOpen { get; set; }
+    [SupplyParameterFromQuery(Name = "beeTab")] public string? QBeeTab { get; set; }
 
     private CallsFilter filter = CallsFilter.None;
+    /// <summary>What the address keeps besides the filter (brain 0070): the selected call, where the user came from, the bee side panel.</summary>
+    private CallsView view = CallsView.None;
+    /// <summary>The call in the address was not picked by the user in this page yet (link, reload, Back): load as many calls as it takes to show it.</summary>
+    private bool chaseCall;
+    private bool panelPushed;      // this visit pushed the panel's history entry, so closing it goes back
+    private bool cameFromHistory;  // this visit opened the call out of the origin's bee, so history goes back to it
     private string searchText = "";
     private string minMsText = "";
     private int epFilter; // 0=all, 1=slow, 2=failed
@@ -343,6 +376,7 @@
     private CallSampleDto? selectedCall;
     private string? selectedEndpoint;
     private int callLimit = 200;
+    private const int MaxCallLimit = 1000;   // what one request may ask for (CallAnalytics clamps there)
     private string listResetKey = "";
     private string phoneTab = "overview";
     private bool initialized, disposed, endpointsLoading, detailLoading;
@@ -374,25 +408,44 @@
     protected override void OnParametersSet()
     {
         var fromUrl = CallsFilter.FromQuery(QEndpoint, QScenario, QShow, QMinMs, QMaxMs, QFrom, QTo, QSort, QSearch, QTarget);
+        var nextView = CallsAddress.Parse(QCall, QOrigin, QOpen, QBeeTab);
+        var callChanged = nextView.Call != view.Call;
+        view = nextView;
+        if (!view.PanelOpen) panelPushed = false;
         if (!initialized)
         {
             initialized = true;
             var hasUrl = !string.IsNullOrEmpty(fromUrl.ToQueryString());
             filter = hasUrl ? fromUrl : Links.Last;
+            if (!hasUrl && view.Call is null && filter.Endpoint is not null && CallKey.IsValid(Links.LastCall)) view = view with { Call = Links.LastCall };
+            cameFromHistory = view.Origin is { } o && Links.TakeArrival() == o;
+            chaseCall = view.Call is not null;
             phoneTab = !string.IsNullOrWhiteSpace(filter.Endpoint) ? "detail" : "overview";
             SyncInputsFromFilter();
             runKey = CurrentRunKey();
-            if (!hasUrl && !string.IsNullOrEmpty(filter.ToQueryString()))
-                Nav.NavigateTo(filter.Href(), replace: true);
+            if (!hasUrl && (!string.IsNullOrEmpty(filter.ToQueryString()) || view.Call is not null))
+                Nav.NavigateTo(CallsAddress.Href(filter, view), replace: true);
             _ = ReloadAllAsync();
         }
         else if (!fromUrl.SameAs(filter))
         {
             filter = fromUrl;
+            chaseCall = view.Call is not null;
             phoneTab = !string.IsNullOrWhiteSpace(filter.Endpoint) ? "detail" : "overview";
             SyncInputsFromFilter();
             Links.Last = filter;
             _ = ReloadAllAsync();
+        }
+        else if (callChanged && view.Call is not null && (selectedCall is null || CallKey.Of(selectedCall) != view.Call))
+        {
+            // the address names another call than the selected one (a link, Back): show that one
+            chaseCall = true;
+            _ = ReloadDetailAsync();
+        }
+        if (afterClose is { } pending && !view.PanelOpen)
+        {
+            afterClose = null;
+            ShowCallOfBee(pending);
         }
     }
 
@@ -403,15 +456,16 @@
         minMsText = filter.MinMs is { } lo && filter.MaxMs is null ? lo.ToString("0.##", CultureInfo.InvariantCulture) : "";
     }
 
-    private void ApplyFilter(CallsFilter next, bool reloadEndpoints = false)
+    private void ApplyFilter(CallsFilter next, bool reloadEndpoints = false, bool chase = false)
     {
         if (next.SameAs(filter) && !reloadEndpoints) return;
         filter = next;
         selectedEndpoint = next.Endpoint;
         callLimit = 200;
+        chaseCall = chase;   // a filter the user chose: the selected call stays when it is in the new list, else the first one
         listResetKey = next.ToQueryString();
         Links.Last = next;
-        Nav.NavigateTo(next.Href(), replace: true);
+        Nav.NavigateTo(CallsAddress.Href(next, view), replace: true);
         if (reloadEndpoints) _ = ReloadAllAsync();
         else _ = ReloadDetailAsync();
     }
@@ -422,6 +476,7 @@
         if (selectedEndpoint is null) return;
         minMsText = "";
         selectedCall = null;
+        view = view with { Call = null };
         ApplyFilter(filter.WithEndpoint(null));
     }
 
@@ -431,6 +486,7 @@
         if (selectedEndpoint is null && sortedEndpoints.Count > 0)
         {
             minMsText = "";
+            view = view with { Call = null };
             ApplyFilter(filter.WithEndpoint(sortedEndpoints[0].Endpoint));
         }
     }
@@ -440,6 +496,7 @@
         phoneTab = "detail";
         if (string.Equals(selectedEndpoint, endpoint, StringComparison.OrdinalIgnoreCase)) return;
         minMsText = "";
+        view = view with { Call = null };
         ApplyFilter(filter.WithEndpoint(endpoint));
     }
 
@@ -447,6 +504,7 @@
     {
         phoneTab = "detail";
         minMsText = "";
+        view = view with { Call = null };
         ApplyFilter(filter.WithEndpoint(endpoint).WithOutcome(BeeShow.Failed));
     }
 
@@ -562,7 +620,23 @@
     private void SelectCallById(long id)
     {
         if (detail is null) return;
-        selectedCall = detail.Calls.FirstOrDefault(c => c.Id == id);
+        SelectCall(detail.Calls.FirstOrDefault(c => c.Id == id));
+    }
+
+    /// <summary>The user picked a call: it goes into the address (replace), so reload, Back and links come back to it (brain 0070).</summary>
+    private void SelectCall(CallSampleDto? call)
+    {
+        selectedCall = call;
+        chaseCall = false;
+        WriteCall(call is null ? null : CallKey.Of(call));
+    }
+
+    private void WriteCall(string? key)
+    {
+        if (disposed || key == view.Call) return;
+        view = view with { Call = key };
+        Links.LastCall = key;
+        Nav.NavigateTo(CallsAddress.Href(filter, view), replace: true);
     }
 
     private void SelectMaxCall()
@@ -570,12 +644,93 @@
         if (filter.IsDefaultDetailFilter && string.Equals(filter.Sort, "slowest", StringComparison.Ordinal))
         {
             if (detail is { Calls.Count: > 0 })
-                selectedCall = detail.Calls.MaxBy(c => c.DurationMs);
+                SelectCall(detail.Calls.MaxBy(c => c.DurationMs));
             return;
         }
         minMsText = "";
         selectedCall = null;
+        view = view with { Call = null };
         ApplyFilter(filter.ClearDetailFilters().WithSort("slowest"));
+    }
+
+    // ---------- the bee side panel and the way back (brain 0069, 0070) ----------
+
+    /// <summary>A bee number (call row, selected call, "Open B…") opens the bee side panel; the page stays as it is. Another bee while it is open replaces the entry, so one Back closes the panel.</summary>
+    private void OpenBee(int sequence)
+    {
+        if (view.OpenBee == sequence) return;
+        var wasOpen = view.PanelOpen;
+        if (!wasOpen) panelPushed = true;
+        view = view with { OpenBee = sequence };
+        Nav.NavigateTo(CallsAddress.Href(filter, view), replace: wasOpen);
+    }
+
+    private void PanelTabChanged(BeeTab tab)
+    {
+        if (!view.PanelOpen) return;
+        view = view with { Tab = tab };
+        Nav.NavigateTo(CallsAddress.Href(filter, view), replace: true);
+    }
+
+    /// <summary>✕ or Escape: back in history when this visit opened the panel, otherwise the address loses its panel part (replace).</summary>
+    private async Task ClosePanel()
+    {
+        if (!view.PanelOpen) return;
+        if (panelPushed)
+        {
+            panelPushed = false;
+            try { await JS.InvokeVoidAsync("history.back"); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+            return;
+        }
+        view = view with { OpenBee = null, Tab = BeeTab.Steps };
+        Nav.NavigateTo(CallsAddress.Href(filter, view), replace: true);
+    }
+
+    private (int Sequence, FakeCall Call)? afterClose;
+
+    /// <summary>A call in the panel's Calls tab was clicked: select it here (its endpoint, the call, enough loaded calls to show it). The panel stays open on desktop; the phone's sheet covers the page, so it closes first.</summary>
+    private async Task OpenCallOfBee((int Sequence, FakeCall Call) x)
+    {
+        if (Phone.IsPhone && panelPushed)
+        {
+            afterClose = x;
+            await ClosePanel();
+            return;
+        }
+        ShowCallOfBee(x);
+    }
+
+    private void ShowCallOfBee((int Sequence, FakeCall Call) x)
+    {
+        var entry = BeeLookup.Find(Sim.Current, x.Sequence)?.Entry;
+        var next = filter.WithEndpoint(CallKey.EndpointOf(x.Call));
+        if (filter.Entry is not null && entry is { } e && filter.Entry != e) next = next.WithEntry(e);
+        phoneTab = "detail";
+        minMsText = "";
+        view = view with { Call = x.Call.Skipped ? null : CallKey.Of(x.Sequence, x.Call) };
+        var chase = view.Call is not null;
+        if (next.SameAs(filter))
+        {
+            chaseCall = chase;
+            Nav.NavigateTo(CallsAddress.Href(filter, view), replace: true);
+            _ = ReloadDetailAsync();
+        }
+        else ApplyFilter(next, reloadEndpoints: next.Entry != filter.Entry, chase: chase);
+    }
+
+    /// <summary>"‹ B4668 · Checkout": back to where the call was opened. History goes back when that is where this visit came from (the bee's list keeps its place), else the scenario page opens on that bee's Calls tab.</summary>
+    private async Task BackToOriginAsync()
+    {
+        if (view.Origin is not { } o) return;
+        if (cameFromHistory && !panelPushed)
+        {
+            try { await JS.InvokeVoidAsync("history.back"); return; }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
+        Nav.NavigateTo(o.ScenarioHref());
     }
 
     private Task LoadMoreAsync()
@@ -693,7 +848,12 @@
             {
                 detail = null;
             }
-            SyncSelectedCall(preserveSelection);
+            if (SyncSelectedCall(preserveSelection))
+            {
+                callLimit += 200;
+                await ReloadDetailAsync(preserveSelection);
+                return;
+            }
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -754,11 +914,17 @@
                 filter.Sort,
                 0,
                 callLimit);
-            SyncSelectedCall(preserveSelection);
+            if (SyncSelectedCall(preserveSelection))
+            {
+                callLimit += 200;
+                await ReloadDetailAsync(preserveSelection);
+                return;
+            }
             await InvokeAsync(StateHasChanged);
             return;
         }
 
+        var more = false;
         detailLoading = true;
         await InvokeAsync(StateHasChanged);
         try
@@ -777,13 +943,18 @@
                 240);
             if (g != gen || disposed) return;
             detail = d;
-            SyncSelectedCall(preserveSelection);
+            more = SyncSelectedCall(preserveSelection);
         }
         catch { }
         finally
         {
             detailLoading = false;
             if (g == gen && !disposed) await InvokeAsync(StateHasChanged);
+        }
+        if (more && !disposed)
+        {
+            callLimit += 200;
+            await ReloadDetailAsync(preserveSelection);
         }
     }
 
@@ -796,19 +967,34 @@
         filter = filter with { Endpoint = null };
     }
 
-    private void SyncSelectedCall(bool preserveSelection)
+    /// <summary>Picks the selected call after the calls were (re)loaded: the one in the address first (brain 0070), else the one that was selected, else the first. Returns true when the call in the
+    /// address is not in the loaded calls yet but more can be loaded (the caller loads another page and calls this again), so a call far down the list is found without clicking "Load more".</summary>
+    private bool SyncSelectedCall(bool preserveSelection)
     {
-        if (detail is null || detail.Calls.Count == 0)
+        if (detail is null) { selectedCall = null; return false; }
+        if (detail.Calls.Count == 0)
         {
             selectedCall = null;
-            return;
+            chaseCall = false;
+            WriteCall(null);
+            return false;
         }
-        if (preserveSelection && selectedCall is { } prev && detail.Calls.FirstOrDefault(c => c.Id == prev.Id) is { } match)
+        CallSampleDto? pick = null;
+        if (view.Call is { } want)
         {
-            selectedCall = match;
-            return;
+            pick = detail.Calls.FirstOrDefault(c => CallKey.Of(c) == want);
+            if (pick is null && chaseCall)
+            {
+                if (detail.Calls.Count < detail.MatchingCalls && callLimit < MaxCallLimit) return true;
+                chaseCall = false;
+            }
         }
-        selectedCall = detail.Calls[0];
+        if (pick is null && preserveSelection && selectedCall is { } prev) pick = detail.Calls.FirstOrDefault(c => c.Id == prev.Id);
+        pick ??= detail.Calls[0];
+        selectedCall = pick;
+        chaseCall = false;
+        WriteCall(CallKey.Of(pick));
+        return false;
     }
 
     private void SortEndpoints()

@@ -198,6 +198,8 @@
     [Parameter] public IReadOnlyDictionary<int, string>? Notes { get; set; }
     [Parameter] public Func<int, Task>? EnsureDetail { get; set; }
     [Parameter] public Func<int, Task>? OpenLogs { get; set; }
+    /// <summary>A call in the Calls tab or the steps was clicked (bee sequence and the call). Set by the Calls page, which then selects it in place; otherwise the click goes to the Calls page.</summary>
+    [Parameter] public EventCallback<(int Sequence, FakeCall Call)> OnCallOpen { get; set; }
     /// <summary>There is a bee above / below the selected one in the bee list (‹ and ›).</summary>
     [Parameter] public bool CanPrev { get; set; }
     [Parameter] public bool CanNext { get; set; }
@@ -346,8 +348,16 @@
         else LogsPopup.Show(entry: Index, bee: sequence);
     }
 
-    private void OpenEndpoint(FakeCall call) =>
-        CallsLink.Show(endpoint: string.IsNullOrWhiteSpace(call.Endpoint) ? EndpointNormalizer.NormalizeCallName(call.Name) : call.Endpoint, entry: Index);
+    /// <summary>A call of the bee was clicked: the Calls page opens on its endpoint with this call selected, and offers the way back to this bee (brain 0070).
+    /// A page that shows the Calls analysis itself (<see cref="OnCallOpen"/>) selects it in place instead.</summary>
+    private void OpenEndpoint(FakeCall call)
+    {
+        var seq = Bee?.Sequence ?? Running?.Sequence;
+        if (seq is null) return;
+        if (OnCallOpen.HasDelegate) { _ = OnCallOpen.InvokeAsync((seq.Value, call)); return; }
+        CallsLink.ShowCall(CallsFilter.None.WithEndpoint(CallKey.EndpointOf(call)).WithEntry(Index),
+            call.Skipped ? null : CallKey.Of(seq.Value, call), new CallsOrigin(Index, seq.Value));
+    }
 
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
 

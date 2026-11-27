@@ -1,6 +1,5 @@
 @* Virtualised list of recorded calls for the chosen endpoint + compact inspector for the selected call (exact URL, bee & logs links). *@
 @using System.Globalization
-@inject NavigationManager Nav
 @inject LogsLinks Logs
 
 <section class="cl-card cl-calls-card" aria-label="Recorded calls">
@@ -19,7 +18,7 @@
             </div>
 
             <div class="cl-list-wrap">
-                <VirtualList TItem="CallSampleDto" Class="cl-list" RowHeight="38" Items="Calls" ResetKey="@ResetKey" Label="Calls list" Role="list">
+                <VirtualList TItem="CallSampleDto" Class="cl-list" RowHeight="38" Items="Calls" ResetKey="@ResetKey" MemoryKey="@MemoryKey" ScrollToIndex="SelectedIndex" Label="Calls list" Role="list">
                     <ItemContent Context="call">
                         @{
                             var ratio = call.Error is null ? SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs) : 1;
@@ -38,7 +37,7 @@
                                 <span class="cl-scn muted" title="@scLabel">@scLabel</span>
                             }
                             <span class="cl-at muted tnum">@Format.Time(call.AtSeconds)</span>
-                            <span class="cl-bee achip @(call.Error is not null ? "bad" : "")">@call.BeeName</span>
+                            <span class="cl-bee achip @(call.Error is not null ? "bad" : "")" role="link" title="Open @call.BeeName in the side panel" @onclick="() => OnOpenBee.InvokeAsync(call.Sequence)">@call.BeeName</span>
                         </button>
                     </ItemContent>
                     <Empty><p class="muted cl-empty">No calls match these filters.</p></Empty>
@@ -82,7 +81,7 @@
                         <dd>
                             <BeeChip Sequence="sel.Sequence" State="@(sel.Error is not null ? BeeState.Failed : sel.IsSlow ? BeeState.Slow : BeeState.Ok)"
                                      Tint="@(sel.Error is null && !sel.IsSlow ? SlowCallRule.Step(selRatio) : 0)"
-                                     OnClick="() => OpenBee(sel)" Title="Open this bee on the Scenario page" />
+                                     OnClick="() => OnOpenBee.InvokeAsync(sel.Sequence)" Title="Open this bee in the side panel" />
                         </dd>
                     </div>
                     <div><dt>Time</dt><dd class="tnum">@Format.Time(sel.AtSeconds)</dd></div>
@@ -140,7 +139,7 @@
                 }
                 <div class="cl-detail-actions">
                     <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
-                    <button type="button" class="btn ghost small" @onclick="() => OpenBee(sel)">Open @sel.BeeName</button>
+                    <button type="button" class="btn ghost small" @onclick="() => OnOpenBee.InvokeAsync(sel.Sequence)">Open @sel.BeeName</button>
                 </div>
             }
             else
@@ -168,8 +167,20 @@
 
     private Task OnSortChanged(ChangeEventArgs e) => OnSortChange.InvokeAsync(e.Value?.ToString() ?? "slowest");
 
-    private void OpenBee(CallSampleDto c) =>
-        Nav.NavigateTo(ScenarioLink.Href(c.Entry, new ScenarioFilter(Bee: c.Sequence)));
+    /// <summary>The bee side panel of the page opens on this bee (brain 0070); nothing navigates away.</summary>
+    [Parameter] public EventCallback<int> OnOpenBee { get; set; }
+    /// <summary>Scroll memory of the call list (brain 0069), including what makes it a different list (endpoint, filter, sort).</summary>
+    [Parameter] public string? MemoryKey { get; set; }
+
+    private int? SelectedIndex
+    {
+        get
+        {
+            if (Selected is null) return null;
+            for (var i = 0; i < Calls.Count; i++) if (Calls[i].Id == Selected.Id) return i;
+            return null;
+        }
+    }
 
     private void OpenLogs(CallSampleDto c) =>
         Logs.Show(entry: c.Entry, bee: c.Sequence);

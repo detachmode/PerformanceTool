@@ -113,6 +113,11 @@ public sealed record CallsFilter
 public sealed class CallsLinks(NavigationManager nav)
 {
     public CallsFilter Last { get; set; } = CallsFilter.None;
+    /// <summary>The call that was selected when the page was left (brain 0070), so the menu's "Calls" comes back to it together with <see cref="Last"/>.</summary>
+    public string? LastCall { get; set; }
+    /// <summary>Set when a call was opened out of a bee in this visit of the app: the Calls page then knows that history goes back to that bee. Read once.</summary>
+    private CallsOrigin? arrivedFrom;
+    public CallsOrigin? TakeArrival() { var a = arrivedFrom; arrivedFrom = null; return a; }
 
     public void Show(string? endpoint = null, int? entry = null, BeeShow outcome = BeeShow.All) =>
         Show(CallsFilter.None.WithEndpoint(endpoint).WithEntry(entry).WithOutcome(outcome));
@@ -120,6 +125,16 @@ public sealed class CallsLinks(NavigationManager nav)
     public void Show(CallsFilter filter)
     {
         Last = filter;
+        LastCall = null;
         nav.NavigateTo(filter.Href());
+    }
+
+    /// <summary>A call of a bee was clicked (brain 0070): the Calls page opens on its endpoint with the call selected, and shows "‹ B4668 · Checkout" to go back.</summary>
+    public void ShowCall(CallsFilter filter, string? callKey, CallsOrigin origin)
+    {
+        Last = filter;
+        LastCall = callKey;
+        arrivedFrom = origin;
+        nav.NavigateTo(CallsAddress.Href(filter, new CallsView(callKey, origin)));
     }
 }
