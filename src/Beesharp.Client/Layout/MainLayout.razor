@@ -101,7 +101,7 @@
                     <span>@ModeBtnLabel(compact: false)</span>
                     <span class="caret" aria-hidden="true">▾</span>
                 </button>
-                @if (modeMenuOpen)
+                @if (modeMenuOpen && !Phone.IsCompact)
                 {
                     @ModeMenu
                 }
@@ -143,7 +143,7 @@
     }
 
     @* Small screens: the menu sits outside the header (fixed; a bottom sheet below 760px) so it can rise above the assistant sheet. *@
-    @if (modeMenuOpen)
+    @if (modeMenuOpen && (Phone.IsPhone || Phone.IsCompact))
     {
         <div class="mode-menu-mobile">
             @ModeMenu

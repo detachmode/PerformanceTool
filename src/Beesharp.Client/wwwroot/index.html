@@ -24,6 +24,12 @@
                 is: () => q.matches,
                 listen: ref => q.addEventListener('change', e => { apply(); ref.invokeMethodAsync('OnChanged', e.matches); }),
             };
+            // The top bar's compact form (up to 1000 px, app.css): the mode menu is rendered once, under the desktop button or as the compact bar's menu.
+            const c = matchMedia('(max-width: 1000px)');
+            window.beesharpCompact = {
+                is: () => c.matches,
+                listen: ref => c.addEventListener('change', e => ref.invokeMethodAsync('OnCompactChanged', e.matches)),
+            };
             const isText = t => t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button', 'submit'].includes(t.type)) || t.isContentEditable);
             document.addEventListener('focusin', e => { if (isText(e.target)) document.documentElement.classList.add('kb'); });
             document.addEventListener('focusout', () => document.documentElement.classList.remove('kb'));

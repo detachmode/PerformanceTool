@@ -116,10 +116,10 @@
                     <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
                             aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
                             @onclick="ToggleViewMenu" aria-label="More actions" title="Run actions">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="5" cy="12" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="19" cy="12" r="2" />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2.2" />
+                            <circle cx="12" cy="12" r="2.2" />
+                            <circle cx="19" cy="12" r="2.2" />
                         </svg>
                     </button>
                     @if (viewMenuOpen)
@@ -259,7 +259,7 @@
                         <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Change preflight script">
                             <span class="run-pf-text">
                                 <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
-                                <small class="muted">Preflight · tap to change</small>
+                                <small class="muted">Preflight · @(Phone.IsPhone ? "tap" : "click") to change</small>
                             </span>
                         </button>
                         <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
@@ -277,28 +277,23 @@
                 }
                 else
                 {
-                    <button type="button" class="run-pf-trigger @(hasPreflight ? "has-pf" : "")"
+                    @* The main button always says what it does (brain 0071: it stays and reads "Running…"). The preflight is shown quietly next to it. *@
+                    <button type="button" class="run-pf-trigger"
                             disabled="@(locked || plan.Scenarios.Count == 0)"
                             @onclick="StartRun"
-                            title="@(locked ? "Run is in progress" : hasPreflight ? "Run preflight and start scenarios" : "Start load test run")">
+                            title="@(locked ? "Run is in progress" : hasPreflight ? "Run the preflight, then start the scenarios" : "Start load test run")">
                         <span class="run-pf-play" aria-hidden="true">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>
                         </span>
-                        <span class="run-pf-text">
-                            @if (hasPreflight)
-                            {
-                                <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
-                                <small class="muted">@(locked ? "Running…" : "Preflight · tap to run")</small>
-                            }
-                            else
-                            {
-                                <b>@(locked ? "Running…" : "Start run")</b>
-                            }
-                        </span>
+                        <span class="run-pf-text"><b>@(locked ? "Running…" : "Start run")</b></span>
                     </button>
-                    @if (!DataMode.IsFakeMode && !hasPreflight)
+                    @if (hasPreflight)
                     {
-                        <button type="button" class="run-pf-plus" disabled="@locked" @onclick="OpenPreflightPickerAsync" aria-label="Add preflight program" title="Add preflight program">+</button>
+                        <span class="run-pf-note" title="Runs once before the scenarios start. Change it with Edit.">Preflight: <span class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</span></span>
+                    }
+                    else if (!DataMode.IsFakeMode)
+                    {
+                        <button type="button" class="run-pf-add" disabled="@locked" @onclick="OpenPreflightPickerAsync" aria-label="Add preflight program" title="Add a preflight program: a script that runs once before the scenarios start">+ Preflight</button>
                     }
                 }
             </div>
@@ -310,7 +305,7 @@
                         <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Change shutdown program">
                             <span class="run-pf-text">
                                 <b class="mono">@(activeSd?.FileName ?? $"{plan.ShutdownScriptId}.cs")</b>
-                                <small class="muted">Shutdown · always runs at the end · tap to change</small>
+                                <small class="muted">Shutdown · always runs at the end · @(Phone.IsPhone ? "tap" : "click") to change</small>
                             </span>
                         </button>
                         <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemoveShutdown" aria-label="Remove shutdown program" title="Remove shutdown program">✕</button>
@@ -630,7 +625,8 @@
                                   Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
                                   InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
                                   OnOpenStep="t => OpenScenario(t.Index, new(FailedStep: t.Step))"
-                                  OnOpenStepInFlight="t => OpenScenario(t.Index, new(NowStep: t.Step))" />
+                                  OnOpenStepInFlight="t => OpenScenario(t.Index, new(NowStep: t.Step))"
+                                  OnOpenStepLogs="t => Logs.Show(LogFilter.None.WithEntry(t.Index).WithStep(t.Step))" />
                 }
             </div>
         }

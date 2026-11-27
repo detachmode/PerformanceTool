@@ -146,7 +146,7 @@
         @if (Steps.Any)
         {
             <StepTrack Steps="Steps" FailedPer="FailedPerStep" InFlightPer="InFlightPerStep" Finished="View.Finished" Compact="true" Live="isActive"
-                       OnFailed="st => OnOpenStep.InvokeAsync((Index, st))" OnInFlight="st => OnOpenStepInFlight.InvokeAsync((Index, st))" AriaLabel="@("Steps of " + Label)" />
+                       OnFailed="st => OnOpenStep.InvokeAsync((Index, st))" OnInFlight="st => OnOpenStepInFlight.InvokeAsync((Index, st))" OnLogs="st => OnOpenStepLogs.InvokeAsync((Index, st))" AriaLabel="@("Steps of " + Label)" />
         }
     }
 </div>
@@ -191,6 +191,7 @@
     [Parameter] public EventCallback<(int Index, int Step)> OnOpenStep { get; set; }
     /// <summary>The "now" count of a step was clicked: open the popup showing the bees in flight at that step.</summary>
     [Parameter] public EventCallback<(int Index, int Step)> OnOpenStepInFlight { get; set; }
+    [Parameter] public EventCallback<(int Index, int Step)> OnOpenStepLogs { get; set; }
 
     private readonly ScenarioStats stats = new();
     private List<BeeBar> stageBars = [];

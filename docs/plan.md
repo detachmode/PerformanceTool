@@ -13,7 +13,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 ### Open tasks (handover 2026-11-27, from a desktop UI test pass and the V/W/X agents)
 Not yet agreed with the user one by one: propose, let the user pick, then work one at a time (brain 0020). How to test: AGENTS.md; run the host with
 `Storage__Provider=Memory ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile --project src/Beesharp -- --Urls http://127.0.0.1:<port>` (appsettings forces https:7050),
-Fake mode via the top bar "Live ▾" (`.dd-menu:visible`), `?stepcount=8,14` for many steps; Live presets "Funny jokes"/"Funny two" run without external services; `tests/e2e/layout-sizes.mjs` after layout changes.
+Fake mode via the top bar "Live ▾" (`.mode-runs-menu`), `?stepcount=8,14` for many steps; Live presets "Funny jokes"/"Funny two" run without external services; `tests/e2e/layout-sizes.mjs` after layout changes.
 Editing a scenario (user asked for these):
 - **E1 Make finishing an edit obvious.** Two "Done" buttons mean different things (the settings panel's closes the panel, the page's ends edit mode). Idea: sticky bar "Editing plan · unsaved changes to preset X · Discard / Save to preset / Done"; rename the panel's button "Close".
 - **E2 Show what changed** in edit mode (changed values, preset marked modified).
@@ -40,11 +40,9 @@ Overview steps (brain 0071):
 - **O3** Uneven groups (8 steps fold into 2, 2, 1, 1).
 Look and labels:
 - **L1** (Dropped by the user 2026-11-27) Red and amber dominate the charts: with the Slow filter or an all-slow scenario the chart is a solid wall of amber, and "100.0 % ok" next to all-amber bars reads contradictory. Idea: quiet normal bars, softer red/amber, full strength only for selected/hovered.
-- **L2** (Now, user approved 2026-11-27, with L3 to L5) Low contrast: the "⋯" next to Edit, the disabled Preset/Edit while a run goes, the "Click to edit" hints.
-- **L3** (Now, user approved 2026-11-27, with L4 and L5) Unclear labels: the play button is labelled with the preflight file ("check-readiness.cs · Preflight · tap to run", "tap" on desktop); the "+" next to Start run has no label; "‹ failed / failed ›" on the scenario page is unclear; clicking a step's name does nothing (only its counts).
-- **L4** The bee's Calls tab cuts URLs to "GET /prod…", hiding the distinguishing part.
-- **L5** The mode menu is rendered twice (desktop and mobile copy).
+- **L2–L5 Done (2026-11-27, brain 0072):** readable faint controls, clear labels (Start run, + Preflight, Failed bee ‹ ›, step name opens its logs), Calls tab names cut in the middle, mode menu rendered once. Screenshots `docs/screenshots/2026-11-27-labels-l3-l5/`.
 
+- **Done (L2 to L5, user approved 2026-11-27, brain 0072):** one commit each. L2 readable faint controls (the "⋯" icon was squeezed to 6 px, disabled controls legible, `--faint` lighter, hints and card icons muted); L3 clear labels (Start run with a quiet "Preflight: file" note, "+ Preflight", "Failed bee ‹ ›" with tooltips, a step name opens the logs of that step); L4 the bee's Calls tab keeps the end of a call name (`Format.CallNameParts`, wider name column); L5 the mode menu is rendered once (`PhoneState.IsCompact`). Screenshots `docs/screenshots/2026-11-27-labels-l3-l5/`.
 - **Done (X, user approved 2026-11-27, brain 0071):** a calm overview while a run goes. X1: steps fold by position (groups keep their Now/Failed sums, never unfold by themselves), so the cards keep their height (measured 6 to 7 distinct heights per card before, 1 after); X2: the run bar stays in place while a run goes, preflight/shutdown strips sat below the cards (moved back above by the user, 0071 update; cards moved 82 px at the start before, 0 after). Screenshots `docs/screenshots/2026-11-27-calm-overview-run/`.
 - **Done (W1, user approved 2026-11-27, brain 0069):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
   Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
