@@ -8,6 +8,7 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Now (C, user request 2026-11-28):** one card look for the Overview's scenario cards in view and edit mode: same rounded corners, same header (name, subtitle on the next line), and a slight centered radial gradient behind the header so it stands out from the rest of the card (the user overrides brain 0018's "no gradients" here).
 - **Done (D, user request 2026-11-27):** non-linear duration slider (`DurationScale`, `Shared/DurationSlider`), value as time, typed forms, unit marks, usual-durations menu (0073). Screenshots `docs/screenshots/2026-11-27-duration-slider/`.
 - **Done (2026-11-27, user):** bluish dark theme in Grafana's tones (`--bg #181b1f`, `--panel #22252b`, `--panel2 #2c3038`, cool text and borders), preflight/shutdown strips back above the cards.
 
