@@ -89,7 +89,7 @@ try {
     await page.waitForTimeout(1500);
     // Fake mode: the seeded finished run and scenarios with steps, independent of server data.
     await page.locator('.mode-btn:visible').first().click();
-    await page.locator('.dd-menu:visible').getByText('Fake mode').click();
+    await page.locator('.mode-runs-menu').getByText('Fake mode').click();
     await page.waitForTimeout(2500);
 
     await state('overview-finished');
