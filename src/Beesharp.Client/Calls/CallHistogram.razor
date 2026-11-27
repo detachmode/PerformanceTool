@@ -4,20 +4,6 @@
 <section class="cl-card cl-hist-card" aria-label="Duration distribution">
     <div class="cl-card-head">
         <span class="cl-card-title">Duration distribution</span>
-        <span class="cl-hover-info @(hovered is not null ? "active" : "")">
-            @if (hovered is { } hb)
-            {
-                <text>@Format.Ms(hb.FromMs)–@Format.Ms(hb.ToMs) · @Format.Plural(hb.Count, "call", "calls")@(hb.SlowCount > 0 ? $" · {hb.SlowCount} slow" : "")@(hb.FailedCount > 0 ? $" · {hb.FailedCount} failed" : "")</text>
-            }
-            else if (MinMs is not null && MaxMs is not null)
-            {
-                <text>Filtered: @Format.Ms(MinMs.Value)–@Format.Ms(MaxMs.Value) · click again to clear</text>
-            }
-            else
-            {
-                <text>Click a bar to filter calls by duration range</text>
-            }
-        </span>
     </div>
 
     @if (Buckets.Count == 0)
@@ -76,6 +62,20 @@
             <span>@Format.Ms(histLo)</span>
             <span>@Format.Ms((histLo + histHi) / 2)</span>
             <span>@Format.Ms(histHi)</span>
+        </div>
+        <div class="cl-hover-info @(hovered is not null || MinMs is not null ? "active" : "")" aria-live="polite">
+            @if (hovered is { } hb)
+            {
+                <text>@Format.Ms(hb.FromMs)–@Format.Ms(hb.ToMs) · @Format.Plural(hb.Count, "call", "calls")@(hb.SlowCount > 0 ? $" · {hb.SlowCount} slow" : "")@(hb.FailedCount > 0 ? $" · {hb.FailedCount} failed" : "")</text>
+            }
+            else if (MinMs is not null && MaxMs is not null)
+            {
+                <text>@Format.Ms(MinMs.Value)–@Format.Ms(MaxMs.Value) · click again to clear</text>
+            }
+            else
+            {
+                <text>Click a bar to filter by duration</text>
+            }
         </div>
     }
 </section>

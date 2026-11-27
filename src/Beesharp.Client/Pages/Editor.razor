@@ -23,7 +23,7 @@
     <div class="script-bar" role="toolbar" aria-label="Script editor toolbar">
         <div class="dd">
             <button type="button" class="btn ghost small script-file-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(filesOpen)"
-                    @onclick="() => { filesOpen = !filesOpen; moreOpen = false; }" title="Switch, create, or upload .cs scripts">
+                    @onclick="() => { filesOpen = !filesOpen; fileFilter = string.Empty; moreOpen = false; }" title="Switch, create, or upload .cs scripts">
                 @if (isPreflight)
                 {
                     <span class="pf-tag">@(isShutdown ? "END" : "PRE")</span>
@@ -33,60 +33,70 @@
             </button>
             @if (filesOpen)
             {
-                <div class="dd-backdrop" @onclick="() => filesOpen = false"></div>
-                <div class="dd-menu script-files-menu" role="menu" aria-label="C# script files">
-                    <ScrollMemory Key="editor-files" Selector=".script-files-menu" />
-                    <div class="dd-lbl">Scenarios (@scripts.Count)</div>
-                    @if (scripts.Count == 0)
-                    {
-                        <div class="muted" style="padding:.3rem .55rem">No scenario .cs files yet.</div>
-                    }
-                    @foreach (var s in scripts)
-                    {
-                        var item = s;
-                        var isCur = !isPreflight && selectedId == item.ScriptId;
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickScenarioFile(item)" style="flex-direction:column;align-items:flex-start;gap:.05rem">
-                            <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
-                            <span class="muted" style="font-size:.72rem">@item.ScenarioName</span>
-                        </button>
-                    }
-                    <div class="dd-sep" role="separator"></div>
-                    <div class="dd-lbl">Preflight scripts (@preflights.Count)</div>
-                    @if (preflights.Count == 0)
-                    {
-                        <div class="muted" style="padding:.3rem .55rem">No preflight scripts yet.</div>
-                    }
-                    @foreach (var pf in preflights)
-                    {
-                        var item = pf;
-                        var isCur = isPreflight && !isShutdown && selectedId == item.ScriptId;
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickPreflightFile(item)">
-                            <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
-                        </button>
-                    }
-                    <div class="dd-sep" role="separator"></div>
-                    <div class="dd-lbl">Shutdown programs (@shutdowns.Count)</div>
-                    @if (shutdowns.Count == 0)
-                    {
-                        <div class="muted" style="padding:.3rem .55rem">No shutdown programs yet.</div>
-                    }
-                    @foreach (var sd in shutdowns)
-                    {
-                        var item = sd;
-                        var isCur = isShutdown && selectedId == item.ScriptId;
-                        <button type="button" class="dd-item" role="menuitem" @onclick="() => PickShutdownFile(item)">
-                            <span>@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
-                        </button>
-                    }
-                    <div class="dd-sep" role="separator"></div>
-                    <button type="button" class="dd-item" role="menuitem" @onclick="NewScenarioScript">+ New scenario .cs</button>
-                    <button type="button" class="dd-item" role="menuitem" @onclick="NewPreflightScript">+ New preflight .cs</button>
-                    <button type="button" class="dd-item" role="menuitem" @onclick="NewShutdownScript">+ New shutdown .cs</button>
-                    <label class="dd-item" role="menuitem" style="cursor:pointer">
-                        Upload .cs…
-                        <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
-                    </label>
-                </div>
+                bool Match(string? t) => fileFilter.Length == 0 || (t?.Contains(fileFilter, StringComparison.OrdinalIgnoreCase) ?? false);
+                var shownScripts = scripts.Where(x => Match(x.FileName) || Match(x.ScenarioName)).ToList();
+                var shownPre = preflights.Where(x => Match(x.FileName)).ToList();
+                var shownEnd = shutdowns.Where(x => Match(x.FileName)).ToList();
+                <DropMenu Class="script-files-menu" Label="C# script files" OnClose="@(() => filesOpen = false)" Total="scripts.Count + preflights.Count + shutdowns.Count"
+                          @bind-Filter="fileFilter" FilterPlaceholder="Filter scripts…">
+                    <ChildContent>
+                        <div class="dd-lbl">Scenarios (@scripts.Count)</div>
+                        @if (scripts.Count == 0)
+                        {
+                            <div class="muted dd-empty">No scenario .cs files yet.</div>
+                        }
+                        @foreach (var s in shownScripts)
+                        {
+                            var item = s;
+                            var isCur = !isPreflight && selectedId == item.ScriptId;
+                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName · @item.ScenarioName" @onclick="() => PickScenarioFile(item)">
+                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                                <span class="muted file-sub">@item.ScenarioName</span>
+                            </button>
+                        }
+                        <div class="dd-sep" role="separator"></div>
+                        <div class="dd-lbl">Preflight scripts (@preflights.Count)</div>
+                        @if (preflights.Count == 0)
+                        {
+                            <div class="muted dd-empty">No preflight scripts yet.</div>
+                        }
+                        @foreach (var pf in shownPre)
+                        {
+                            var item = pf;
+                            var isCur = isPreflight && !isShutdown && selectedId == item.ScriptId;
+                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName" @onclick="() => PickPreflightFile(item)">
+                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                            </button>
+                        }
+                        <div class="dd-sep" role="separator"></div>
+                        <div class="dd-lbl">Shutdown programs (@shutdowns.Count)</div>
+                        @if (shutdowns.Count == 0)
+                        {
+                            <div class="muted dd-empty">No shutdown programs yet.</div>
+                        }
+                        @foreach (var sd in shownEnd)
+                        {
+                            var item = sd;
+                            var isCur = isShutdown && selectedId == item.ScriptId;
+                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName" @onclick="() => PickShutdownFile(item)">
+                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                            </button>
+                        }
+                        @if (fileFilter.Length > 0 && shownScripts.Count + shownPre.Count + shownEnd.Count == 0)
+                        {
+                            <div class="dd-none">No script matches “@fileFilter”.</div>
+                        }
+                    </ChildContent>
+                    <Foot>
+                        <button type="button" class="dd-item" role="menuitem" @onclick="NewScenarioScript">+ New scenario .cs</button>
+                        <button type="button" class="dd-item" role="menuitem" @onclick="NewPreflightScript">+ New preflight .cs</button>
+                        <button type="button" class="dd-item" role="menuitem" @onclick="NewShutdownScript">+ New shutdown .cs</button>
+                        <label class="dd-item" role="menuitem" style="cursor:pointer">
+                            Upload .cs…
+                            <InputFile OnChange="OnFileUpload" accept=".cs,.csx" style="display:none" />
+                        </label>
+                    </Foot>
+                </DropMenu>
             }
         </div>
 
@@ -218,6 +228,7 @@
     private string scriptCode = ScenarioTemplate;
     private bool wordWrap = true;
     private bool filesOpen;
+    private string fileFilter = string.Empty;
     private bool moreOpen;
     private enum EdTab { Code, Try }
     private EdTab edTab;

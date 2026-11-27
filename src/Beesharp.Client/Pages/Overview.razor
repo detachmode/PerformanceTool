@@ -40,7 +40,7 @@
 @* Coming back from a scenario page, the Logs, ...: the overview scrolls to where it was (brain 0059, 0068). *@
 <ScrollMemory Key="@(editMode ? "overview-edit" : "overview")" />
 
-<div class="page @(editMode ? "editor" : "") @(cfg is not null && !Phone.IsPhone ? "ed-side-open" : "")">
+<div class="page @(editMode ? "editor" : "") @(editMode && !Phone.IsPhone ? "ed-side-open" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
             <h1 title="@Sim.PresetName">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Scenarios" : Sim.PresetName)</h1>
@@ -65,37 +65,41 @@
                 </button>
                 @if (presetMenuOpen)
                 {
-                    <div class="dd-backdrop" @onclick="() => presetMenuOpen = false"></div>
-                    <div class="dd-menu right preset-menu" role="menu" aria-label="Presets">
-                        <div class="dd-lbl">Switch preset</div>
-                        @if (Sim.PresetNames.Count == 0)
-                        {
-                            <div class="muted dd-empty">No saved presets yet.</div>
-                        }
-                        else
-                        {
-                            @foreach (var p in Sim.PresetNames)
+                    var shownPresets = Sim.PresetNames.Where(n => presetFilter.Length == 0 || n.Contains(presetFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+                    <DropMenu Class="right preset-menu" Label="Presets" OnClose="@(() => presetMenuOpen = false)" Total="Sim.PresetNames.Count"
+                              @bind-Filter="presetFilter" FilterPlaceholder="Filter presets…">
+                        <Head><div class="dd-lbl">Switch preset</div></Head>
+                        <ChildContent>
+                            @if (Sim.PresetNames.Count == 0)
+                            {
+                                <div class="muted dd-empty">No saved presets yet.</div>
+                            }
+                            else if (shownPresets.Count == 0)
+                            {
+                                <div class="dd-none">No preset matches “@presetFilter”.</div>
+                            }
+                            @foreach (var p in shownPresets)
                             {
                                 var preset = p;
                                 var isCurrent = string.Equals(preset, Sim.PresetName, StringComparison.OrdinalIgnoreCase);
-                                <button type="button" class="dd-item @(isCurrent ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCurrent)"
+                                <button type="button" class="dd-item @(isCurrent ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCurrent)" title="@preset"
                                         disabled="@locked" @onclick="() => { presetMenuOpen = false; PickPreset(preset); }">
                                     <span class="dd-check" aria-hidden="true">@(isCurrent ? "✓" : "")</span>
                                     <span class="dd-text">@preset</span>
                                 </button>
                             }
-                        }
-                        <div class="dd-sep" role="separator"></div>
-                        <div class="dd-lbl">Save</div>
-                        <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" @onclick="() => { presetMenuOpen = false; Save(); }">
-                            <span class="dd-check" aria-hidden="true"></span>
-                            <span class="dd-text">Save “@Sim.PresetName”</span>
-                        </button>
-                        <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { presetMenuOpen = false; OpenSaveAs(); }">
-                            <span class="dd-check" aria-hidden="true"></span>
-                            <span class="dd-text">Save as new preset…</span>
-                        </button>
-                    </div>
+                        </ChildContent>
+                        <Foot>
+                            <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" title="Save “@Sim.PresetName”" @onclick="() => { presetMenuOpen = false; Save(); }">
+                                <span class="dd-check" aria-hidden="true"></span>
+                                <span class="dd-text">Save “@Sim.PresetName”</span>
+                            </button>
+                            <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { presetMenuOpen = false; OpenSaveAs(); }">
+                                <span class="dd-check" aria-hidden="true"></span>
+                                <span class="dd-text">Save as new preset…</span>
+                            </button>
+                        </Foot>
+                    </DropMenu>
                 }
             </div>
             @if (editMode)
@@ -139,8 +143,8 @@
     {
         <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
             <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
-            <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
             <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
+            <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
         </div>
     }
     @if (saveAsOpen)
@@ -148,8 +152,8 @@
         <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
             <label for="save-as">Save the scenarios as preset</label>
             <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
-            <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
             <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
+            <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
         </form>
     }
 
@@ -218,17 +222,24 @@
                     }
                     <button type="button" class="icon-btn" @onclick="() => preflightPickerOpen = false" aria-label="Close">✕</button>
                 </div>
-                <ul class="add-menu inline" aria-label="@(forShutdown ? "Available shutdown programs" : "Available preflight scripts")">
-                    @foreach (var pf in pickList)
+                @if (pickList.Count >= DropMenu.FilterFrom)
+                {
+                    <div class="pick-filter"><input type="text" placeholder="Filter scripts…" aria-label="Filter scripts" autocomplete="off" spellcheck="false" @bind="pickFilter" @bind:event="oninput" /></div>
+                }
+                <ul class="add-menu inline scroll" aria-label="@(forShutdown ? "Available shutdown programs" : "Available preflight scripts")">
+                    @foreach (var pf in pickList.Where(x => pickFilter.Length == 0 || x.FileName.Contains(pickFilter, StringComparison.OrdinalIgnoreCase)))
                     {
                         var chosen = pf;
+                        var isCurrent = string.Equals(chosen.ScriptId, forShutdown ? plan.ShutdownScriptId : plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase);
                         <li>
-                            <button type="button" @onclick="() => PickPreflight(chosen.ScriptId)">
+                            <button type="button" class="@(isCurrent ? "on" : "")" aria-current="@Aria.Bool(isCurrent)" title="@chosen.FileName" @onclick="() => PickPreflight(chosen.ScriptId)">
                                 <b>@chosen.FileName</b>
                                 <span>@(forShutdown ? "Always runs at the end of the run" : "Runs once before scenarios start")</span>
                             </button>
                         </li>
                     }
+                </ul>
+                <ul class="add-menu inline pinned" aria-label="Create">
                     <li>
                         <button type="button" @onclick='() => Nav.NavigateTo(forShutdown ? "editor?shutdown=new" : "editor?preflight=new")'>
                             <b>@(forShutdown ? "+ Create new shutdown .cs…" : "+ Create new preflight .cs…")</b>
@@ -493,11 +504,15 @@
                         <span class="spacer"></span>
                         <button type="button" class="icon-btn" @onclick="() => addOpen = false" aria-label="Close">✕</button>
                     </div>
-                    <ul class="add-menu inline" aria-label="Scenario types">
-                        @foreach (var sc in Catalog.All)
+                    @if (Catalog.All.Count >= DropMenu.FilterFrom)
+                    {
+                        <div class="pick-filter"><input type="text" placeholder="Filter scenario types…" aria-label="Filter scenario types" autocomplete="off" spellcheck="false" @bind="addFilter" @bind:event="oninput" /></div>
+                    }
+                    <ul class="add-menu inline scroll" aria-label="Scenario types">
+                        @foreach (var sc in Catalog.All.Where(x => addFilter.Length == 0 || x.Name.Contains(addFilter, StringComparison.OrdinalIgnoreCase) || x.Description.Contains(addFilter, StringComparison.OrdinalIgnoreCase)))
                         {
                             var chosen = sc;
-                            <li><button type="button" @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
+                            <li><button type="button" title="@chosen.Name" @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
                         }
                     </ul>
                 </section>
@@ -523,6 +538,13 @@
             {
                 <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
             }
+        }
+        else if (!Phone.IsPhone)
+        {
+            @* Brain 0068: the column of the settings panel is kept in edit mode, also while no scenario is selected, so the cards never reflow when it fills. *@
+            <aside class="ed-side ed-side-idle" aria-label="Scenario settings">
+                <p class="ed-side-hint">Select a scenario to edit its settings.</p>
+            </aside>
         }
     }
     else if (!DataMode.IsFakeMode && !ApiRun.PreflightDismissed && ApiRun.PreflightState is "Running" or "Failed")
@@ -628,6 +650,7 @@
     private void OpenScenario(int index, ScenarioFilter filter = default) => Nav.NavigateTo(ScenarioLink.Href(index, filter));
     private bool viewMenuOpen;
     private bool presetMenuOpen;
+    private string presetFilter = string.Empty, addFilter = string.Empty, pickFilter = string.Empty;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
     private bool pickerIsShutdown;
@@ -708,6 +731,7 @@
     private async Task OpenPreflightPickerAsync()
     {
         pickerIsShutdown = false;
+        pickFilter = string.Empty;
         preflightPickerOpen = true;
         await LoadPreflightsAsync();
     }
@@ -715,6 +739,7 @@
     private async Task OpenShutdownPickerAsync()
     {
         pickerIsShutdown = true;
+        pickFilter = string.Empty;
         preflightPickerOpen = true;
         await LoadPreflightsAsync();
     }
@@ -756,6 +781,7 @@
     {
         viewMenuOpen = false;
         presetMenuOpen = !presetMenuOpen;
+        presetFilter = string.Empty;
     }
 
     private void ToggleViewMenu()
@@ -869,6 +895,7 @@
     private void ToggleAdd()
     {
         addOpen = !addOpen;
+        addFilter = string.Empty;
         if (addOpen) _ = ScriptApi.SyncCatalogAsync();
     }
 

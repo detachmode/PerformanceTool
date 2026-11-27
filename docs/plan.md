@@ -8,6 +8,16 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Now (W1, user approved 2026-11-27):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
+  Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
+  is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
+- **Next (W2, after V):** Calls page: the selected call in the address (`&call=`), endpoint list and call list keep their scroll on Back; "Open B…" opens the bee side panel
+  instead of navigating away; clicking a call in a bee's Calls tab shows where you came from ("‹ B4668 · Checkout") on the Calls page.
+- **Done (V, user feedback 2026-11-27, from a UI test pass; brain 0068):** one commit each:
+  V1 failed is red, not orange, on the overview card chart (`.sc-chart i.bad` blends coral at 62% opacity into brown-orange);
+  V2 long lists scale (100 presets, stored runs, environments, scripts, scenarios in a plan): menus scroll with their actions kept reachable, sensible button order;
+  V3 layout holds at every window size (side panels, settings panel, bee column, Try column, player bar, top bar);
+  V4 the Calls page's selected call reads well, the duration distribution is smaller.
 - **Done (user feedback):** scenario settings in a side panel / phone sheet, float parameters as slider + number input (0066).
 - Done: …, player bar (0027), stable clicking (0026).
 - **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
@@ -66,6 +76,7 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (AB, user request 0064):** tracing end-to-end test on Aspire (`tests/Beesharp.Tracing.E2E.Tests`, own OTLP receiver, no Docker) and CI validation of `examples/tracing/compose.yaml`; the compose stack checked by hand in Jaeger and Kibana (`docs/screenshots/2026-11-25-tracing-stack/`).
 - **Done (AC, user decision 0065):** Beesharp fetches the services' traces of selected bees (failed, slowest and typical calls per endpoint) from Jaeger in the background into the run (new module `Beesharp.TraceStore`, configured in the Environment: `TraceStore.Url/Kind/Token`; DuckDB schema 6, export bundles, `IRunStorage`), one trace engine `TraceAnalytics` in Contracts, REST `/api/runs/{id}/traces/{key}` and `/hotspots`, CLI `beesharp runs trace` and `runs hotspots` (exit code 3 when a trace is not stored), trace IDs in `runs calls --slowest` and `runs bee`, the fetcher's logs in the run's host logs, and an Aspire end-to-end test with a Jaeger-like receiver. Next (not started): Elastic adapter behind the same `ITraceStore`, the UI (trace view in the call inspector, hotspots on `/calls`), assistant tools.
 - **Done (AD, user decision 0067):** `/calls` overview chart (`CallsOverviewChart.razor`, `CallsOverviewScale.cs`) — horizontal p50 vs. p95 bar comparison across all endpoints, autoscaled to max, 50 ms default target line (with scenario default & inline `?target=` override), green→greenish-yellow→amber bar colour for slowness, red failure pill for failed calls, pinned sidebar Overview + mobile `Overview` tab, click row/pill to drill down. Screenshots `docs/screenshots/2026-11-26-calls-overview-chart/`.
+- **Done (V1 to V4, user request 0068):** V1 failed bars, step numbers and chips read clearly red and slow amber (solid mixes instead of opacity, `--failed-bar`/`--slow-bar`); V2 long lists (about 100 presets, environments, stored runs, 30 scenarios): `Shared/DropMenu` for the Preset, mode/stored runs, Environment and Editor file menus (scroll inside, fixed header and footer actions, filter from 10 entries, current entry in view), scrolling pickers with filter, fixed-height Environments dialog, Logs scenario filter, cancel-before-primary button order; V3 layout at every size (settings side panel fills the height, column kept in edit mode so the grid never reflows, `--player-h`, top bar collapses at 1000 px, `tests/e2e/layout-sizes.mjs`); V4 Calls page: compact duration distribution beside the over-time chart and a detail column for the selected call. Screenshots `docs/screenshots/2026-11-27-ui-scaling-layout/`.
 
 Open questions for the user (ask one at a time): what counts as "slow"; duration summary; call grouping.
 

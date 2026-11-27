@@ -44,3 +44,6 @@ A scenario card's outline is **red** when it has failed actors, **yellow** when 
 **Generally, positive things are shown in green across the UI** (successful actors, healthy scenarios, OK states, a
 finished run). This includes **Information-level log lines**, which get a green level marker. Errors stay red, warnings/
 slow yellow, running blue; debug/trace stay neutral.
+
+## Implementation notes (V1, 2026-11-27, with 0068)
+- The overview card bars for failed and slow read brown and orange on the dark panel when they use lowered opacity. They are now solid mixes with the panel colour (`--failed-bar`, `--slow-bar` in `app.css`, 86 % of the colour), full colour on card hover; the Calls charts (buckets, stems) use the same tokens, the step-number chips use `--failed`, and the pinkish `#f2737d` of the preflight view became the one red `--failed`. Slow stays one amber (`--slow`).

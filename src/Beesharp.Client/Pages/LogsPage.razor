@@ -46,6 +46,11 @@
 
         <div class="lg-group" role="group" aria-label="Scenario">
             <h2>Scenario</h2>
+            @if (s.Count >= DropMenu.FilterFrom)
+            {
+                <div class="lg-filterbox"><input type="text" placeholder="Filter scenarios…" aria-label="Filter scenarios" autocomplete="off" spellcheck="false" @bind="scenarioFilter" @bind:event="oninput" /></div>
+            }
+            <div class="lg-scroll">
             @if (facets.Preflight > 0 || filter.Entry == ProgramLogEntry.Preflight)
             {
                 var on = filter.Entry == ProgramLogEntry.Preflight;
@@ -56,6 +61,7 @@
             @for (var i = 0; i < s.Count; i++)
             {
                 var entry = i;
+                if (scenarioFilter.Length > 0 && !s.Labels[entry].Contains(scenarioFilter, StringComparison.OrdinalIgnoreCase) && filter.Entry != entry) continue;
                 var on = filter.Entry == entry;
                 <button type="button" class="lg-opt @(on ? "on" : "")" aria-pressed="@Aria.Bool(on)" @onclick="() => Apply(filter.ToggleEntry(entry))" title="@(on ? "Remove" : "Show only") @s.Labels[entry]">
                     <span class="lg-opt-name">@s.Labels[entry]</span><span class="n">@Format.Num(facets.Entries.ElementAtOrDefault(entry))</span>
@@ -76,6 +82,7 @@
                 </button>
             }
             @if (s.Count == 0 && facets.Preflight == 0 && facets.Shutdown == 0 && facets.Host == 0) { <p class="muted lg-none">No scenarios in the run.</p> }
+            </div>
         </div>
 
         @if (stepsOfEntry.Any)
@@ -233,6 +240,7 @@
     private LogPanel panel = LogPanel.None;
     private bool panelPushed;   // this visit pushed the panel's history entry, so closing it goes back instead of leaving a stale "open=" behind
     private string searchText = "";
+    private string scenarioFilter = "";
     private bool wrap = true, atEnd = true, filtersOpen, scrollEnd = true, loading, initialized, disposed;
     private string? loadError;
     private LogFacets facets = NoFacets;
