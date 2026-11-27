@@ -223,7 +223,7 @@ label { font-size: .74rem; color: var(--muted); }
 .sc-card:hover .sc-chart i.warn { background: var(--slow); }
 .sc-card:hover .sc-chart i.bad { background: var(--failed); }
 .sc-chart i.run { background: var(--running); opacity: 1; animation: running-pulse 1.8s ease-in-out infinite; }
-.sc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .35rem; margin-top: -.35rem; color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 0; }
+.sc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .35rem; margin-top: -.35rem; color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 0; min-height: 1.15rem; }
 .sc-foot .sep { opacity: .5; }
 .sc-link { border: 0; background: transparent; padding: .1rem .25rem; margin: 0 -.25rem; border-radius: 6px; font: inherit; color: inherit; cursor: pointer; }
 .sc-link:hover { color: var(--title); background: rgba(255, 255, 255, 0.07); }
@@ -317,7 +317,8 @@ label { font-size: .74rem; color: var(--muted); }
 .sls.live .sls-row { grid-template-columns: 1.6rem minmax(0, 1fr) 4.6rem 4.6rem; }
 .sls-row + .sls-row:not(.end) { border-top: 1px solid rgba(255, 255, 255, 0.045); }
 .sls-headrow { min-height: 1.5rem; color: var(--faint); font-size: .72rem; font-weight: 500; }
-.sls-headrow .sls-col { justify-content: flex-end; }
+.sls-headrow .sls-col { justify-content: flex-end; white-space: nowrap; }
+.sls:not(.compact) .sls-headrow { height: 1.5rem; }
 .sls-headrow .sls-col.run { color: var(--running); gap: .35rem; }
 .sls-no { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #2a2825; color: var(--muted); font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sls-headrow .sls-no { background: none; }
@@ -1171,6 +1172,7 @@ button.inst:focus-visible { outline: 2px solid #f1efea; outline-offset: -2px; }
 .pf-badge.ok { background: rgba(52, 211, 153, 0.1); color: var(--good); border: 0; }
 .preflight-view.done { border-left-color: var(--border); }
 .shutdown-strip { margin-bottom: 1rem; }
+.page .grid ~ .shutdown-strip, .page .plan-empty ~ .shutdown-strip { margin-top: 1rem; margin-bottom: 0; }
 .shutdown-strip.done { border-left-width: 1px; }
 .shutdown-strip.done .preflight-head { padding: .45rem .55rem .45rem .9rem; border-bottom: 0; background: transparent; }
 .shutdown-strip .preflight-head .mono { font-size: .82rem; color: var(--muted); }

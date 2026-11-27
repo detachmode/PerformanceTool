@@ -2,8 +2,8 @@
    scenario page, always open, so the steps are the first thing you see. Every count drills down (brain 0029): a failed count opens the bees
    that failed at that step, an active count the bees in flight there.
    The step list (user's choice): per step the bees there right now and the bees that failed there, then the bees that finished all steps.
-   Any number of steps (brain 0056): past a few steps, runs of quiet steps (no failed and no active bees) fold into one "+N steps" item that opens
-   on click, so a failure is never pushed out of sight; the first and the last step always show. Debug URL "?stepcount=1,8,24". *@
+   Any number of steps (brain 0056): past a few steps the steps between the first and the last fold into fixed groups by position (brain 0071); a group keeps the
+   sum of its steps' Now and Failed counts and opens on click, so the rows never change while a run goes. Debug URL "?stepcount=1,8,24". *@
 @{
     var n = Steps.Count;
     var failed = new int[n];
@@ -18,7 +18,7 @@
     var before = 0;
     for (var i = 0; i < n; i++) { reached[i] = Math.Max(0, Finished - before); before += failed[i]; }
     var passedAll = Math.Max(0, Finished - before);
-    var items = Items(n, failed, flight, Compact ? 6 : 10);
+    var items = Items(n, Compact ? 6 : 10);
 }
 
 @if (n > 0)
@@ -39,13 +39,29 @@
                 if (item.IsGroup)
                 {
                     var grp = item;
-                    <div class="sls-row grp" role="row">
+                    var gFlight = 0; var gFailed = 0;
+                    for (var k = grp.From; k <= grp.To; k++) { gFlight += flight[k]; gFailed += failed[k]; }
+                    <div class="sls-row grp @(gFlight > 0 ? "has-run" : "") @(gFailed > 0 ? "has-bad" : "")" role="row">
                         <span class="sls-no" aria-hidden="true">⋯</span>
                         <button type="button" class="sls-name sls-grp" role="cell" @onclick="() => Expand(grp.From)" @onclick:stopPropagation="true" title="@GroupTitle(grp)">
                             Steps @(grp.From + 1)–@(grp.To + 1) <small>@(grp.Count) steps</small>
                         </button>
-                        @if (Live) { <span class="sls-col zero" role="cell">–</span> }
-                        <span class="sls-col zero" role="cell">–</span>
+                        @* The folded steps keep their counts (brain 0071): bees moving in and out never unfold the group, the height stays. A count opens the group, where each step's count opens its bees. *@
+                        @if (Live)
+                        {
+                            @if (gFlight > 0)
+                            {
+                                <button type="button" class="sls-col sls-num run" role="cell" @onclick="() => Expand(grp.From)" @onclick:stopPropagation="true"
+                                        title="@Format.Plural(gFlight, "bee is", "bees are") in steps @(grp.From + 1)–@(grp.To + 1) right now: show the steps">@Format.Num(gFlight)</button>
+                            }
+                            else { <span class="sls-col zero" role="cell">–</span> }
+                        }
+                        @if (gFailed > 0)
+                        {
+                            <button type="button" class="sls-col sls-num bad" role="cell" @onclick="() => Expand(grp.From)" @onclick:stopPropagation="true"
+                                    title="@Format.Plural(gFailed, "bee", "bees") failed in steps @(grp.From + 1)–@(grp.To + 1): show the steps">@Format.Num(gFailed)</button>
+                        }
+                        else { <span class="sls-col zero" role="cell">–</span> }
                     </div>
                     continue;
                 }
@@ -105,19 +121,28 @@
         public int Count => To - From + 1;
     }
 
-    /// <summary>All steps when they fit (<paramref name="max"/>); otherwise runs of two or more quiet steps fold into one item, unless the user opened them.</summary>
-    private List<Item> Items(int n, int[] failed, int[] flight, int max)
+    /// <summary>
+    /// All steps when they fit (<paramref name="max"/>). Otherwise the first and the last step show and the steps between are cut into
+    /// <c>max - 2</c> even groups by position only, never by activity (brain 0071): bees in flight or failures appearing never add or remove a row,
+    /// the card keeps its height while a run goes. A group the user opened (or that holds the selected step) shows its steps.
+    /// </summary>
+    private List<Item> Items(int n, int max)
     {
-        var list = new List<Item>(n);
-        bool Quiet(int i) => failed[i] == 0 && flight[i] == 0 && Selected != i;
-        for (var i = 0; i < n; i++)
+        var list = new List<Item>(Math.Min(n, max));
+        if (n <= max) { for (var i = 0; i < n; i++) list.Add(new Item(i, i)); return list; }
+        list.Add(new Item(0, 0));
+        var middle = n - 2;
+        var slots = Math.Max(1, max - 2);
+        var at = 1;
+        for (var g = 0; g < slots && at <= n - 2; g++)
         {
-            var j = i;
-            if (n > max && i > 0 && Quiet(i) && !expanded.Contains(i))
-                while (j + 1 < n - 1 && Quiet(j + 1)) j++;
-            if (j > i) { list.Add(new Item(i, j)); i = j; }
-            else list.Add(new Item(i, i));
+            var size = middle / slots + (g < middle % slots ? 1 : 0);
+            var to = at + size - 1;
+            if (size > 1 && !expanded.Contains(at) && (Selected is not { } sel || sel < at || sel > to)) list.Add(new Item(at, to));
+            else for (var i = at; i <= to; i++) list.Add(new Item(i, i));
+            at = to + 1;
         }
+        list.Add(new Item(n - 1, n - 1));
         return list;
     }
 
