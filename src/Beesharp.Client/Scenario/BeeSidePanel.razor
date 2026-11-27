@@ -33,7 +33,7 @@
         else
         {
             <BeePanel Snapshot="s" Index="entry" Steps="s.StepsOf(entry)" Bee="found?.Finished" Running="found?.Running ?? (gap ? lastRunning : null)"
-                      Tab="Tab" TabChanged="TabChanged" ShowNav="OnStep.HasDelegate" ShowMore="false"
+                      Tab="Tab" TabChanged="TabChanged" OnCallOpen="OnCallOpen" ShowNav="OnStep.HasDelegate" ShowMore="false"
                       CanPrev="CanPrev" CanNext="CanNext" OnStep="OnStep" OnStepFilter="FilterByStep" />
         }
     </text>;
@@ -65,6 +65,8 @@ else
     [Parameter] public EventCallback<int> OnStep { get; set; }
     /// <summary>"failed at Step" was clicked in the bee's header.</summary>
     [Parameter] public EventCallback<int> OnStepFilter { get; set; }
+    /// <summary>A call in the bee's Calls tab was clicked (the Calls page selects it in place; other pages leave it unset and the click goes to the Calls page, brain 0070).</summary>
+    [Parameter] public EventCallback<(int Sequence, FakeCall Call)> OnCallOpen { get; set; }
     /// <summary>Extra actions of the page next to "Open in scenario" (the Logs page: "Only its lines").</summary>
     [Parameter] public RenderFragment? HeaderActions { get; set; }
 

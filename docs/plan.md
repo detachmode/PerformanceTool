@@ -11,8 +11,8 @@ work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, 
 - **Done (W1, user approved 2026-11-27, brain 0069):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
   Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
   is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
-- **Next (W2, after V):** Calls page: the selected call in the address (`&call=`), endpoint list and call list keep their scroll on Back; "Open B…" opens the bee side panel
-  instead of navigating away; clicking a call in a bee's Calls tab shows where you came from ("‹ B4668 · Checkout") on the Calls page.
+- **Done (W2, user approved 2026-11-27, brain 0070):** the Calls page keeps its state: the selected call in the address (`&call=`, stable key bee.step.rep.offset, "Load more" depth loaded as far as needed), endpoint list and call list keep their scroll on Back; "Open B…", the bee chip and bee numbers in the rows open the bee side panel
+  instead of navigating away; clicking a call in a bee's Calls tab shows where you came from ("‹ B4668 · Checkout", `&origin=`) on the Calls page.
 - **Done (V, user feedback 2026-11-27, from a UI test pass; brain 0068):** one commit each:
   V1 failed is red, not orange, on the overview card chart (`.sc-chart i.bad` blends coral at 62% opacity into brown-orange);
   V2 long lists scale (100 presets, stored runs, environments, scripts, scenarios in a plan): menus scroll with their actions kept reachable, sensible button order;

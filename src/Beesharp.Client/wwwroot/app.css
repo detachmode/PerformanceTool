@@ -1958,7 +1958,12 @@ button.cl-kpi.on { background: var(--selected); border-color: rgba(255, 255, 255
 .cl-raw { min-width: 0; font-family: var(--mono); font-size: .78rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cl-scn { max-width: 9rem; font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cl-at { font-size: .75rem; }
-.cl-bee { font-size: .74rem; }
+.cl-bee { font-size: .74rem; cursor: pointer; border-radius: 3px; }
+.cl-bee:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* where the call was opened from (brain 0070): small, quiet, at the top of the right column */
+.cl-origin { align-self: flex-start; flex: none; max-width: 100%; margin: -.25rem 0 -.2rem; padding: .15rem .45rem .15rem .2rem; border-radius: 4px; font-size: .8rem; color: var(--muted); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-origin:hover { color: var(--title); background: var(--panel2); }
+html.phone .cl-origin { min-height: 40px; display: inline-flex; align-items: center; }
 .cl-more { padding: .55rem .95rem; border-top: 1px solid var(--border); display: flex; justify-content: center; }
 .cl-note { flex: none; margin: 0; font-size: .76rem; }
 .shell.asst-open .calls-page { --calls-left-default: 270px; }
@@ -2345,6 +2350,8 @@ html.phone .v3d-lane-btn, html.phone .v3d-actions .chip { min-height: 40px; }
 .shell:has(.player) .bee-side { bottom: var(--player-h); }
 .shell.asst-open .bee-side { right: var(--asst-w); }
 .logs-page.bee-side-open { margin-right: var(--bee-side); }
+/* The Calls page has its own left column and a call detail column, so it only makes room for the panel on a wide window; below that the panel overlays the page (brain 0070). */
+@media (min-width: 1560px) { .calls-page.bee-side-open { margin-right: var(--bee-side); } }
 @media (max-width: 860px) { .bee-side { width: min(100%, 420px); } .logs-page.bee-side-open { margin-right: 0; } }
 .bsp-head { flex: none; display: flex; align-items: center; gap: .6rem; padding: .45rem .55rem .35rem 1.1rem; border-bottom: 1px solid var(--border); min-height: 2.6rem; }
 .bsp-where { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: .7rem; }
