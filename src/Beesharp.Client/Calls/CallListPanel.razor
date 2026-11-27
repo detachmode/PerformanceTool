@@ -4,115 +4,151 @@
 @inject LogsLinks Logs
 
 <section class="cl-card cl-calls-card" aria-label="Recorded calls">
-    @if (Selected is { } sel)
-    {
-        var selRatio = sel.Error is null ? SlowCallRule.Ratio(sel.DurationMs, sel.TypicalMs, sel.SlowThresholdMs) : 1;
-        var selCls = sel.Error is not null ? "bad" : sel.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(selRatio));
-        var stepsDecl = Snapshot.StepsOf(sel.Entry);
-        var scenarioLabel = sel.Entry >= 0 && sel.Entry < Snapshot.Labels.Count ? Snapshot.Labels[sel.Entry] : $"Scenario {sel.Entry + 1}";
-        var rawTarget = !string.IsNullOrWhiteSpace(sel.Url) ? sel.Url : sel.RawName;
+    <div class="cl-calls-body">
+        <div class="cl-list-col">
+            <div class="cl-list-head">
+                <span>Calls (@Format.Num(MatchingCalls))</span>
+                <div class="cl-sort-row">
+                    <label for="cl-sort" class="visually-hidden">Sort calls</label>
+                    <select id="cl-sort" value="@Sort" @onchange="OnSortChanged">
+                        <option value="slowest">Slowest first</option>
+                        <option value="time">Chronological</option>
+                        <option value="failed">Failed first</option>
+                    </select>
+                </div>
+            </div>
 
-        <div class="cl-insp" aria-label="Selected call details">
-            <div class="cl-insp-top">
-                <span class="cl-status @(sel.Error is not null ? "bad" : "")">@StatusText(sel)</span>
-                <b class="cl-insp-dur @selCls tnum">@Format.Ms(sel.DurationMs)</b>
-                @if (sel.Error is null && Format.OverTypical(selRatio))
-                {
-                    <span class="cl-insp-ratio @selCls tnum">@Format.Times(selRatio) typical</span>
-                }
-                <BeeChip Sequence="sel.Sequence" State="@(sel.Error is not null ? BeeState.Failed : sel.IsSlow ? BeeState.Slow : BeeState.Ok)"
-                         Tint="@(sel.Error is null && !sel.IsSlow ? SlowCallRule.Step(selRatio) : 0)"
-                         OnClick="() => OpenBee(sel)" Title="Open this bee on the Scenario page" />
-                <span class="muted tnum">at @Format.Time(sel.AtSeconds) · @scenarioLabel</span>
-                <span class="spacer"></span>
-                <button type="button" class="btn ghost small" @onclick="() => OpenBee(sel)">Open @sel.BeeName</button>
-                <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
+            <div class="cl-list-wrap">
+                <VirtualList TItem="CallSampleDto" Class="cl-list" RowHeight="38" Items="Calls" ResetKey="@ResetKey" Label="Calls list" Role="list">
+                    <ItemContent Context="call">
+                        @{
+                            var ratio = call.Error is null ? SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs) : 1;
+                            var cls = call.Error is not null ? "bad" : call.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(ratio));
+                            var active = Selected?.Id == call.Id;
+                            var displayTarget = !string.IsNullOrWhiteSpace(call.Url) ? call.Url : call.RawName;
+                            var scLabel = call.Entry >= 0 && call.Entry < Snapshot.Labels.Count ? Snapshot.Labels[call.Entry] : "";
+                        }
+                        <button type="button" class="cl-row @(active ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(active)" @onclick="() => OnSelect.InvokeAsync(call)">
+                            <span class="cl-status @(call.Error is not null ? "bad" : "")">@StatusText(call)</span>
+                            <span class="cl-dur @cls tnum">@Format.Ms(call.DurationMs)</span>
+                            <span class="cl-ratio tnum">@(call.Error is null && Format.OverTypical(ratio) ? Format.Times(ratio) : "—")</span>
+                            <span class="cl-raw" title="@displayTarget">@displayTarget</span>
+                            @if (ShowScenario && scLabel.Length > 0)
+                            {
+                                <span class="cl-scn muted" title="@scLabel">@scLabel</span>
+                            }
+                            <span class="cl-at muted tnum">@Format.Time(call.AtSeconds)</span>
+                            <span class="cl-bee achip @(call.Error is not null ? "bad" : "")">@call.BeeName</span>
+                        </button>
+                    </ItemContent>
+                    <Empty><p class="muted cl-empty">No calls match these filters.</p></Empty>
+                </VirtualList>
             </div>
-            <div class="cl-insp-url">
-                <code title="@rawTarget">@rawTarget</code>
-                <CopyButton GetText="() => rawTarget" Title="Copy exact call URL / target" />
-            </div>
-            <div class="cl-insp-meta muted tnum">
-                @if (sel.TypicalMs is { } typ)
-                {
-                    <span>Typical @Format.Ms(typ)</span>
-                }
-                @if (sel.SlowThresholdMs is { } lim)
-                {
-                    <span>· @(HasCustomThreshold ? "Threshold" : "Slow above") @Format.Ms(lim)</span>
-                }
-                @if (stepsDecl.Any && sel.Step >= 0 && sel.Step < stepsDecl.Count)
-                {
-                    <span>· Step: @stepsDecl.Name(sel.Step)@(sel.Rep > 0 ? $" (#{sel.Rep + 1})" : "")</span>
-                }
-                @if (sel.Bytes > 0)
-                {
-                    <span>· @Format.Num(sel.Bytes) B</span>
-                }
-            </div>
-            @if (!string.IsNullOrWhiteSpace(sel.Error))
+
+            @if (MatchingCalls > Calls.Count && OnLoadMore.HasDelegate)
             {
-                <p class="cl-insp-err bad">@sel.Error</p>
-            }
-            @if (!string.IsNullOrEmpty(sel.TraceId))
-            {
-                @* The distributed trace of the bee (brain 0063): small and quiet; reveals a copy button and (when configured) a direct link to the tracing UI. *@
-                var traceTip = string.IsNullOrEmpty(sel.SpanId) ? $"Trace ID {sel.TraceId}" : $"Trace ID {sel.TraceId} · call span {sel.SpanId}";
-                <div class="trace-id" aria-label="Distributed trace of this call">
-                    <span class="trace-id-label">Trace</span>
-                    <TraceIdView TraceId="@sel.TraceId" SpanId="@sel.SpanId" Title="@traceTip" />
+                <div class="cl-more">
+                    <button type="button" class="btn ghost small" @onclick="() => OnLoadMore.InvokeAsync()">
+                        Load more (@Format.Num(Calls.Count) of @Format.Num(MatchingCalls))
+                    </button>
                 </div>
             }
         </div>
-    }
 
-    <div class="cl-list-head">
-        <span>Calls (@Format.Num(MatchingCalls))</span>
-        <div class="cl-sort-row">
-            <label for="cl-sort" class="visually-hidden">Sort calls</label>
-            <select id="cl-sort" value="@Sort" @onchange="OnSortChanged">
-                <option value="slowest">Slowest first</option>
-                <option value="time">Chronological</option>
-                <option value="failed">Failed first</option>
-            </select>
-        </div>
-    </div>
+        @* The selected call (a column beside the list, so selecting never pushes the list down; stacked above it on narrow screens): its figures in one aligned grid,
+           the URL and the trace id with copy buttons, and the actions grouped at the bottom. Calm UI (brain 0016): only what the call is, nothing repeated. *@
+        <aside class="cl-detail" aria-label="Selected call details">
+            @if (Selected is { } sel)
+            {
+                var selRatio = sel.Error is null ? SlowCallRule.Ratio(sel.DurationMs, sel.TypicalMs, sel.SlowThresholdMs) : 1;
+                var selCls = sel.Error is not null ? "bad" : sel.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(selRatio));
+                var stepsDecl = Snapshot.StepsOf(sel.Entry);
+                var scenarioLabel = sel.Entry >= 0 && sel.Entry < Snapshot.Labels.Count ? Snapshot.Labels[sel.Entry] : $"Scenario {sel.Entry + 1}";
+                var rawTarget = !string.IsNullOrWhiteSpace(sel.Url) ? sel.Url : sel.RawName;
+                var hasStep = stepsDecl.Any && sel.Step >= 0 && sel.Step < stepsDecl.Count;
 
-    <div class="cl-list-wrap">
-        <VirtualList TItem="CallSampleDto" Class="cl-list" RowHeight="38" Items="Calls" ResetKey="@ResetKey" Label="Calls list" Role="list">
-            <ItemContent Context="call">
-                @{
-                    var ratio = call.Error is null ? SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs) : 1;
-                    var cls = call.Error is not null ? "bad" : call.IsSlow ? "warn" : BeeOrder.Good(SlowCallRule.Step(ratio));
-                    var active = Selected?.Id == call.Id;
-                    var displayTarget = !string.IsNullOrWhiteSpace(call.Url) ? call.Url : call.RawName;
-                    var scLabel = call.Entry >= 0 && call.Entry < Snapshot.Labels.Count ? Snapshot.Labels[call.Entry] : "";
-                }
-                <button type="button" class="cl-row @(active ? "on" : "")" role="listitem" aria-pressed="@Aria.Bool(active)" @onclick="() => OnSelect.InvokeAsync(call)">
-                    <span class="cl-status @(call.Error is not null ? "bad" : "")">@StatusText(call)</span>
-                    <span class="cl-dur @cls tnum">@Format.Ms(call.DurationMs)</span>
-                    <span class="cl-ratio tnum">@(call.Error is null && Format.OverTypical(ratio) ? Format.Times(ratio) : "—")</span>
-                    <span class="cl-raw" title="@displayTarget">@displayTarget</span>
-                    @if (ShowScenario && scLabel.Length > 0)
+                <div class="cl-detail-title">Selected call</div>
+                <div class="cl-detail-main">
+                    <span class="cl-status @(sel.Error is not null ? "bad" : "")" title="Status">@StatusText(sel)</span>
+                    <b class="cl-insp-dur @selCls tnum">@Format.Ms(sel.DurationMs)</b>
+                    @if (sel.Error is null && Format.OverTypical(selRatio))
                     {
-                        <span class="cl-scn muted" title="@scLabel">@scLabel</span>
+                        <span class="cl-insp-ratio @selCls tnum">@Format.Times(selRatio) typical</span>
                     }
-                    <span class="cl-at muted tnum">@Format.Time(call.AtSeconds)</span>
-                    <span class="cl-bee achip @(call.Error is not null ? "bad" : "")">@call.BeeName</span>
-                </button>
-            </ItemContent>
-            <Empty><p class="muted cl-empty">No calls match these filters.</p></Empty>
-        </VirtualList>
+                </div>
+                <dl class="cl-facts">
+                    <div>
+                        <dt>Bee</dt>
+                        <dd>
+                            <BeeChip Sequence="sel.Sequence" State="@(sel.Error is not null ? BeeState.Failed : sel.IsSlow ? BeeState.Slow : BeeState.Ok)"
+                                     Tint="@(sel.Error is null && !sel.IsSlow ? SlowCallRule.Step(selRatio) : 0)"
+                                     OnClick="() => OpenBee(sel)" Title="Open this bee on the Scenario page" />
+                        </dd>
+                    </div>
+                    <div><dt>Time</dt><dd class="tnum">@Format.Time(sel.AtSeconds)</dd></div>
+                    <div class="wide">
+                        <dt>Scenario</dt>
+                        <dd>
+                            @if (OnFilterScenario.HasDelegate && sel.Entry >= 0)
+                            {
+                                <button type="button" class="cl-fact-link" title="Show only the calls of this scenario" @onclick="() => OnFilterScenario.InvokeAsync(sel.Entry)">@scenarioLabel</button>
+                            }
+                            else
+                            {
+                                <span title="@scenarioLabel">@scenarioLabel</span>
+                            }
+                        </dd>
+                    </div>
+                    @if (hasStep)
+                    {
+                        <div class="wide"><dt>Step</dt><dd title="@stepsDecl.Name(sel.Step)">@stepsDecl.Name(sel.Step)@(sel.Rep > 0 ? $" (#{sel.Rep + 1})" : "")</dd></div>
+                    }
+                    @if (sel.TypicalMs is { } typ)
+                    {
+                        <div><dt>Typical</dt><dd class="tnum">@Format.Ms(typ)</dd></div>
+                    }
+                    @if (sel.SlowThresholdMs is { } lim)
+                    {
+                        <div><dt>@(HasCustomThreshold ? "Threshold" : "Slow above")</dt><dd class="tnum">@Format.Ms(lim)</dd></div>
+                    }
+                    @if (sel.Bytes > 0)
+                    {
+                        <div><dt>Size</dt><dd class="tnum">@Format.Num(sel.Bytes) B</dd></div>
+                    }
+                </dl>
+                <div class="cl-detail-block">
+                    <span class="cl-detail-lbl">URL</span>
+                    <div class="cl-insp-url">
+                        <code title="@rawTarget">@rawTarget</code>
+                        <CopyButton GetText="() => rawTarget" Title="Copy exact call URL / target" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(sel.TraceId))
+                {
+                    @* The distributed trace of the bee (brain 0063): small and quiet; reveals a copy button and (when configured) a direct link to the tracing UI. *@
+                    var traceTip = string.IsNullOrEmpty(sel.SpanId) ? $"Trace ID {sel.TraceId}" : $"Trace ID {sel.TraceId} · call span {sel.SpanId}";
+                    <div class="cl-detail-block">
+                        <span class="cl-detail-lbl">Trace</span>
+                        <div class="trace-id" aria-label="Distributed trace of this call">
+                            <TraceIdView TraceId="@sel.TraceId" SpanId="@sel.SpanId" Title="@traceTip" />
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(sel.Error))
+                {
+                    <p class="cl-insp-err bad">@sel.Error</p>
+                }
+                <div class="cl-detail-actions">
+                    <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
+                    <button type="button" class="btn ghost small" @onclick="() => OpenBee(sel)">Open @sel.BeeName</button>
+                </div>
+            }
+            else
+            {
+                <p class="muted cl-detail-empty">Select a call to see its details.</p>
+            }
+        </aside>
     </div>
-
-    @if (MatchingCalls > Calls.Count && OnLoadMore.HasDelegate)
-    {
-        <div class="cl-more">
-            <button type="button" class="btn ghost small" @onclick="() => OnLoadMore.InvokeAsync()">
-                Load more (@Format.Num(Calls.Count) of @Format.Num(MatchingCalls))
-            </button>
-        </div>
-    }
 </section>
 
 @code {
@@ -125,6 +161,8 @@
     [Parameter] public string Sort { get; set; } = "slowest";
     [Parameter] public object? ResetKey { get; set; }
     [Parameter] public EventCallback<CallSampleDto> OnSelect { get; set; }
+    /// <summary>The selected call's scenario was clicked: filter the calls to it (brain 0029).</summary>
+    [Parameter] public EventCallback<int> OnFilterScenario { get; set; }
     [Parameter] public EventCallback<string> OnSortChange { get; set; }
     [Parameter] public EventCallback OnLoadMore { get; set; }
 

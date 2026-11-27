@@ -278,6 +278,7 @@
                 </div>
             </header>
 
+            <div class="cl-analysis">
             <CallDurationChart Summary="detail.Summary"
                                Timeline="detail.Timeline"
                                RunElapsedSeconds="detail.RunElapsedSeconds"
@@ -296,6 +297,7 @@
                            MaxMs="filter.MaxMs"
                            SelectedDurationMs="selectedCall?.DurationMs"
                            OnSelectBucket="OnHistogramBucket" />
+            </div>
 
             <CallListPanel Snapshot="s"
                            Calls="detail.Calls"
@@ -305,6 +307,7 @@
                            ShowScenario="filter.Entry is null && s.Count > 1"
                            Sort="@filter.Sort"
                            ResetKey="@listResetKey"
+                           OnFilterScenario="e => ApplyFilter(filter.WithEntry(e))"
                            OnSelect="c => selectedCall = c"
                            OnSortChange="OnSortChange"
                            OnLoadMore="LoadMoreAsync" />

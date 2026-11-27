@@ -21,3 +21,6 @@
 ## Consequences
 - No new attribute: `[Range]` already exposes min/max (brain 0007); `SliderScale` is plain Core logic with tests.
 - Rejected: a new `[Step]` attribute (not needed yet; add it if a parameter needs a hand-picked step).
+
+## Update (V3, 2026-11-27, brain 0068): the grid does not reflow
+- The side panel stopped about 75 px above the window bottom (`bottom: 4.6rem` for a player bar that edit mode never shows); it now runs from the top bar to the window bottom (to the player bar when one shows). In edit mode on the desktop the settings column is kept even while no scenario is selected (a hint says to select one) and the page reserves its width beyond the free margin of a wide window, so opening the panel no longer changes the number of card columns.

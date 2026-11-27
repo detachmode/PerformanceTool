@@ -1745,7 +1745,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .cl-badge.n { color: var(--muted); background: rgba(255, 255, 255, 0.06); }
 
 /* right: endpoint detail */
-.cl-right { overflow-y: auto; padding: 1rem 1.25rem 2rem; display: flex; flex-direction: column; gap: .85rem; }
+.cl-right { overflow-y: auto; padding: 1rem 1.25rem 2rem; display: flex; flex-direction: column; gap: .85rem; container-type: inline-size; container-name: clr; }
 .cl-right-empty { margin: auto; text-align: center; padding: 2rem 1rem; }
 .cl-empty { padding: 1.2rem .75rem; margin: 0; text-align: center; }
 .cl-head { flex: none; display: flex; flex-direction: column; gap: .6rem; }
@@ -1864,6 +1864,19 @@ button.cl-kpi.on { background: var(--selected); border-color: rgba(255, 255, 255
 .cl-xaxis { display: flex; justify-content: space-between; font-size: .7rem; color: var(--faint); font-variant-numeric: tabular-nums; padding-left: 3.9rem; }
 .cl-hist-card .cl-xaxis { padding-left: 0; }
 
+/* V4: the over-time chart and the (compact) duration distribution side by side; stacked when the pane is narrow */
+.cl-analysis { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 16.5rem; gap: .85rem; align-items: stretch; }
+.cl-analysis > .cl-card { min-width: 0; }
+.cl-hist-card { gap: .45rem; }
+.cl-hist-card .cl-card-head { min-height: 0; }
+.cl-hist-card .cl-hist-plot { flex: 1 1 auto; min-height: 84px; }
+.cl-hist-card .cl-xaxis { padding-left: 0; }
+.cl-hist-card .cl-hover-info { flex: none; min-height: 1.15em; font-size: .72rem; }
+@container clr (max-width: 640px) {
+    .cl-analysis { grid-template-columns: minmax(0, 1fr); }
+    .cl-hist-card { max-width: 26rem; }
+    .cl-hist-card .cl-hist-plot { flex: none; height: 72px; min-height: 0; }
+}
 /* histogram */
 .cl-hist-plot { position: relative; height: 64px; display: flex; align-items: flex-end; gap: 3px; padding: 4px 2px 0; background: var(--input); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .cl-hist-limit { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed rgba(251, 191, 36, 0.55); pointer-events: none; z-index: 2; }
@@ -1879,8 +1892,34 @@ button.cl-kpi.on { background: var(--selected); border-color: rgba(255, 255, 255
 .cl-hbar .seg-warn { background: var(--slow); }
 .cl-hbar .seg-bad { background: var(--failed); }
 
-/* selected call inspector + call list */
+/* the call list with the selected call's details in a column beside it (V4); the details stack above the list when the pane is narrow */
 .cl-calls-card { padding: 0; overflow: hidden; gap: 0; }
+.cl-calls-body { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; }
+.cl-list-col { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.cl-detail { min-width: 0; padding: .85rem 1rem 1rem; background: var(--panel2); display: flex; flex-direction: column; gap: .75rem; }
+.cl-detail-title { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.cl-detail-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem .6rem; }
+.cl-detail-main .cl-insp-dur { font-size: 1.35rem; letter-spacing: -.015em; }
+.cl-detail-main .cl-status { align-self: center; }
+.cl-facts { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1rem; }
+.cl-facts > div { min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+.cl-facts > div.wide { grid-column: 1 / -1; }
+.cl-facts dt, .cl-detail-lbl { font-size: .68rem; color: var(--muted); }
+.cl-facts dd { margin: 0; min-width: 0; font-size: .84rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-fact-link { max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); }
+.cl-fact-link:hover { color: var(--title); border-bottom-color: var(--title); }
+.cl-detail-block { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.cl-detail-actions { margin-top: auto; padding-top: .25rem; display: flex; justify-content: flex-end; gap: .4rem; flex-wrap: wrap; }
+.cl-detail-empty { margin: auto; padding: 1rem 0; text-align: center; font-size: .82rem; }
+@container clr (max-width: 840px) {
+    .cl-calls-body { grid-template-columns: minmax(0, 1fr); }
+    .cl-detail { order: -1; border-bottom: 1px solid var(--border); }
+    .cl-list-col { border-right: 0; }
+    .cl-detail-empty { padding: .2rem 0; }
+    .cl-facts { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+    .cl-facts > div.wide { grid-column: auto; }
+}
+/* selected call inspector + call list */
 .cl-insp { padding: .75rem .95rem; border-bottom: 1px solid var(--border); background: var(--panel2); display: flex; flex-direction: column; gap: .4rem; }
 .cl-insp-top { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .55rem; }
 .cl-insp-dur { font-size: .95rem; color: var(--title); }
