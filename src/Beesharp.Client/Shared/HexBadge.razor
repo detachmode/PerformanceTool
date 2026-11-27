@@ -1,21 +1,32 @@
-@* Orbiting little bee spinner (#8) + honeycomb hexagonal status icons (ok / warn clock / bad). *@
+@* Rollercoaster cursive-l egg-loop spinner (#6 Heavy Ribbon, 1.1s) + honeycomb hexagonal status icons (ok / warn clock / bad / num). *@
 @using System.Globalization
+@using System.Threading
 
 <span class="hex-badge @Kind @Class" style="--hex-sz:@(Size)px" aria-hidden="true">
-    <svg class="hex-svg" viewBox="0 0 100 100" width="@Size" height="@Size" fill="none">
-        @if (Kind == "spin")
-        {
-            <circle class="hex-orbit-track" cx="50" cy="50" r="41" stroke-width="@OrbitTrackSw" stroke-dasharray="6 7" />
-            <g class="hex-bee-orbit">
-                <path class="hex-orbit-trail" d="M 50 9 A 41 41 0 0 0 18 24" stroke-width="@OrbitTrailSw" stroke-linecap="round" />
-                <ellipse cx="50" cy="9" rx="9.5" ry="6.4" fill="#f5b700" stroke="#110f0c" stroke-width="1.8" />
-                <line x1="48" y1="3.6" x2="48" y2="14.4" stroke="#110f0c" stroke-width="2.4" />
-                <line x1="53" y1="4.2" x2="53" y2="13.8" stroke="#110f0c" stroke-width="2.2" />
-                <ellipse cx="47" cy="3.2" rx="4.6" ry="2.7" fill="#dbeafe" opacity=".92" />
-            </g>
-        }
-        else
-        {
+    @if (Kind == "spin")
+    {
+        <svg class="hex-svg" viewBox="0 0 40 40" width="@Size" height="@Size" fill="none">
+            <path id="@_loopId" pathLength="100" class="hex-loop-track" d="@LoopPath" stroke-width="4.2" stroke-linecap="round" />
+            <path pathLength="100" class="hex-loop-trail" d="@LoopPath" stroke-width="4.4" stroke-linecap="round" stroke-dasharray="22 140">
+                <animate attributeName="stroke-dashoffset" values="22;-28;-78;-101"
+                         calcMode="spline" keyTimes="0;0.36;0.80;1"
+                         keySplines="0.4 0.1 0.65 0.65; 0.32 0.39 0.68 0.68; 0 0 1 1"
+                         dur="1.1s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0;0.75;0.75;0" keyTimes="0;0.06;0.93;1" dur="1.1s" repeatCount="indefinite" />
+            </path>
+            <circle r="4.6" class="hex-loop-dot">
+                <animateMotion dur="1.1s" repeatCount="indefinite"
+                               calcMode="spline" keyTimes="0;0.36;0.80;1" keyPoints="0;0.5;1;1"
+                               keySplines="0.4 0.1 0.65 0.65; 0.32 0.39 0.68 0.68; 0 0 1 1">
+                    <mpath href="#@_loopId" />
+                </animateMotion>
+                <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.06;0.74;0.80;1" dur="1.1s" repeatCount="indefinite" />
+            </circle>
+        </svg>
+    }
+    else
+    {
+        <svg class="hex-svg" viewBox="0 0 100 100" width="@Size" height="@Size" fill="none">
             <path class="hex-fill" d="@HexPath" stroke-width="@Sw" />
             @if (Kind == "bad")
             {
@@ -34,8 +45,8 @@
             {
                 <path class="hex-glyph" d="M 31 52 L 45 66 L 70 36" stroke-width="@GlyphSw" stroke-linecap="round" stroke-linejoin="round" />
             }
-        }
-    </svg>
+        </svg>
+    }
     @if (ChildContent is not null)
     {
         <span class="hex-content">@ChildContent</span>
@@ -43,6 +54,13 @@
 </span>
 
 @code {
+    private static int _nextLoopId;
+    private readonly string _loopId = $"hb-loop-{Interlocked.Increment(ref _nextLoopId)}";
+
+    // Single continuous cursive-"l" egg-shaped rollercoaster loop (exact C1 continuity).
+    private const string LoopPath =
+        "M 4 32 C 12 32 22 30 26.5 23 C 29.65 18.1 26.2 6.5 20 6.5 C 13.8 6.5 10.35 18.1 13.5 23 C 18 30 28 32 36 32";
+
     // Pointy-top regular hexagon centered at (50,50), radius 44, subtly rounded corners.
     private const string HexPath =
         "M 53.9 8.25 L 84.2 25.75 Q 88.1 28 88.1 32.5 " +
@@ -52,7 +70,7 @@
         "L 11.9 32.5 Q 11.9 28 15.8 25.75 " +
         "L 46.1 8.25 Q 50 6 53.9 8.25 Z";
 
-    /// <summary>"spin", "ok", "warn", or "bad".</summary>
+    /// <summary>"spin", "ok", "warn", "bad", or "num".</summary>
     [Parameter] public string Kind { get; set; } = "spin";
     [Parameter] public int Size { get; set; } = 36;
     [Parameter] public double StrokeWidth { get; set; } = 5.5;
@@ -62,6 +80,4 @@
     private string Sw => StrokeWidth.ToString("0.##", CultureInfo.InvariantCulture);
     private string GlyphSw => Math.Max(8.0, StrokeWidth + 2.5).ToString("0.##", CultureInfo.InvariantCulture);
     private string ClockSw => Math.Max(5.5, StrokeWidth).ToString("0.##", CultureInfo.InvariantCulture);
-    private string OrbitTrackSw => (Size <= 20 ? 6.0 : 3.4).ToString("0.##", CultureInfo.InvariantCulture);
-    private string OrbitTrailSw => (Size <= 20 ? 6.5 : 4.0).ToString("0.##", CultureInfo.InvariantCulture);
 }

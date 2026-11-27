@@ -85,7 +85,7 @@
         <div class="sc-figs">
             @if (isActive)
             {
-                <span class="sc-big run"><i class="yt-live-dot" aria-hidden="true"></i>@View.InFlight<small>active</small></span>
+                <span class="sc-big run"><HexBadge Kind="spin" Size="24" />@View.InFlight<small>active</small></span>
             }
             else if (View.Finished > 0)
             {

@@ -144,7 +144,7 @@
             <p class="scn-line" title="@settingsLine">
                 @if (dlgActive)
                 {
-                    <button type="button" class="scn-fig run" @onclick="() => { SetShow(BeeShow.All); GoToBees(); }" title="Show the bees in flight first"><i class="yt-live-dot" aria-hidden="true"></i>@Format.Num(view.InFlight) active</button>
+                    <button type="button" class="scn-fig run" @onclick="() => { SetShow(BeeShow.All); GoToBees(); }" title="Show the bees in flight first"><HexBadge Kind="spin" Size="18" />@Format.Num(view.InFlight) active</button>
                     <span class="scn-sep" aria-hidden="true">·</span>
                     <span class="tnum">@Format.Time(s.Elapsed)@(s.Plan.DurationSeconds > 0 ? $" / {Format.Time(s.Plan.DurationSeconds)}" : "")</span>
                 }

@@ -29,7 +29,7 @@
             <div class="sls-row sls-headrow" role="row">
                 <span class="sls-no" role="columnheader"></span>
                 <span class="sls-name" role="columnheader">@(Compact ? "" : "Step")</span>
-                @if (Live) { <span class="sls-col run" role="columnheader"><i class="yt-live-dot" aria-hidden="true"></i>Now</span> }
+                @if (Live) { <span class="sls-col run" role="columnheader"><HexBadge Kind="spin" Size="15" />Now</span> }
                 @* A neutral heading: red is only for real failures, so a scenario without failures says "Failed 0" in grey. *@
                 <span class="sls-col" role="columnheader">@(before == 0 ? "Failed 0" : "Failed")</span>
             </div>
