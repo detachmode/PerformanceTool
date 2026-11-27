@@ -3,7 +3,7 @@ using Beesharp.Client.Runs;
 
 namespace Beesharp.Client.Logs;
 
-/// <summary>The bee side panel of the Logs page (brain 0068): which bee is open (by sequence, B7 is 6) and its tab. Not part of the <see cref="LogFilter"/>: opening a bee leaves the list as it is.</summary>
+/// <summary>The bee side panel of the Logs page (brain 0069): which bee is open (by sequence, B7 is 6) and its tab. Not part of the <see cref="LogFilter"/>: opening a bee leaves the list as it is.</summary>
 public readonly record struct LogPanel(int? Bee = null, BeeTab Tab = BeeTab.Steps)
 {
     public static readonly LogPanel None = new();

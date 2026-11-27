@@ -213,7 +213,7 @@
 
 @if (panel.Bee is { } openSeq)
 {
-    @* The bee side panel (brain 0068): a bee clicked in a line opens here; the list, its filters and its scroll position stay as they are. The bee is its own address parameter (?open=). *@
+    @* The bee side panel (brain 0069): a bee clicked in a line opens here; the list, its filters and its scroll position stay as they are. The bee is its own address parameter (?open=). *@
     <BeeSidePanel Snapshot="s" Sequence="openSeq" Tab="panel.Tab" TabChanged="PanelTabChanged" OnClose="ClosePanel">
         <HeaderActions>
             <button type="button" class="link-btn bsp-only" @onclick="() => FilterBee(openSeq)" title="Filter the log list to the lines of B@(openSeq + 1)">Only its lines</button>
@@ -236,7 +236,7 @@
     [SupplyParameterFromQuery(Name = "beeTab")] public string? QBeeTab { get; set; }
 
     private LogFilter filter = LogFilter.None;
-    /// <summary>The bee in the side panel, from the address (brain 0068).</summary>
+    /// <summary>The bee in the side panel, from the address (brain 0069).</summary>
     private LogPanel panel = LogPanel.None;
     private bool panelPushed;   // this visit pushed the panel's history entry, so closing it goes back instead of leaving a stale "open=" behind
     private string searchText = "";
@@ -321,7 +321,7 @@
 
     private void ClearAll() => Apply(LogFilter.None);
 
-    /// <summary>A bee number in a line opens the bee side panel; the list is not touched (brain 0068). Another bee while it is open replaces the entry, so one Back closes the panel.</summary>
+    /// <summary>A bee number in a line opens the bee side panel; the list is not touched (brain 0069). Another bee while it is open replaces the entry, so one Back closes the panel.</summary>
     private void OpenBee(int sequence)
     {
         if (panel.Bee == sequence) return;

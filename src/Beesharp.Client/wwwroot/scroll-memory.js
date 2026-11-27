@@ -1,4 +1,4 @@
-// Scroll memory (brain 0059, 0068): a list or a page lands where the user left it when they come back from drilling down (Back, a tab, a link).
+// Scroll memory (brain 0059, 0069): a list or a page lands where the user left it when they come back from drilling down (Back, a tab, a link).
 // bind(key, selector) restores the saved position of the page (no selector: the window) or of the scroll container the selector finds, then keeps
 // saving it while the user scrolls. The position lives in sessionStorage under "scroll:<key>", so it survives the page being re-created, not a new tab.
 // Lists that have rows of their own (VirtualList) remember the first visible ROW instead (VirtualList.razor.js, same sessionStorage), which stays right when

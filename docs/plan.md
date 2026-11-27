@@ -8,7 +8,7 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
-- **Now (W1, user approved 2026-11-27):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
+- **Done (W1, user approved 2026-11-27, brain 0069):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
   Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
   is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
 - **Next (W2, after V):** Calls page: the selected call in the address (`&call=`), endpoint list and call list keep their scroll on Back; "Open B…" opens the bee side panel

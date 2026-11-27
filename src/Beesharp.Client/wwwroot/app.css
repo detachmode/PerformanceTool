@@ -2336,13 +2336,13 @@ html.phone .v3d-hint { display: none; }
 html.phone .v3d-lane-btn, html.phone .v3d-actions .chip { min-height: 40px; }
 
 /* ===================================================================================================================
-   W1 (brain 0068): the bee side panel (a bee next to any page: Logs now, Calls next). Own block, nothing above is changed.
+   W1 (brain 0069): the bee side panel (a bee next to any page: Logs now, Calls next). Own block, nothing above is changed.
    Desktop: a fixed panel on the right like the scenario settings panel (.ed-side, brain 0066) and the assistant; it starts under the top bar and ends above the
    player bar, and the page it belongs to makes room (margin) instead of being covered. Phone: the bottom Sheet (class bee-sheet) with .bsp-phone inside.
    =================================================================================================================== */
 :root { --bee-side: clamp(360px, 32vw, 480px); }
 .bee-side { position: fixed; top: var(--top-h); right: 0; bottom: 0; width: var(--bee-side); z-index: 64; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45); outline: none; }
-.shell:has(.player) .bee-side { bottom: 72px; }
+.shell:has(.player) .bee-side { bottom: var(--player-h); }
 .shell.asst-open .bee-side { right: var(--asst-w); }
 .logs-page.bee-side-open { margin-right: var(--bee-side); }
 @media (max-width: 860px) { .bee-side { width: min(100%, 420px); } .logs-page.bee-side-open { margin-right: 0; } }

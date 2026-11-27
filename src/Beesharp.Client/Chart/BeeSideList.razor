@@ -19,7 +19,7 @@
     [Parameter] public Func<BeeRow, string?>? Info { get; set; }
     /// <summary>The row to keep in view (the selected bee, e.g. after ‹ ›): the list scrolls only when it is out of sight.</summary>
     [Parameter] public int? RevealIndex { get; set; }
-    /// <summary>Scroll memory (brain 0068): the list comes back to the row it was scrolled to when the page is shown again (Back from the Logs or Calls page).</summary>
+    /// <summary>Scroll memory (brain 0069): the list comes back to the row it was scrolled to when the page is shown again (Back from the Logs or Calls page).</summary>
     [Parameter] public string? MemoryKey { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No bees in this time frame.";
 

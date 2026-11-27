@@ -7,7 +7,7 @@ using Beesharp.Services.Scenarios.BuiltIn;
 
 namespace Beesharp.Client.Tests;
 
-/// <summary>The addresses behind "drill down and come back" (brain 0068): the bee column's tab, the Logs page's bee side panel, the Overview's edit state, and finding a bee by its number.</summary>
+/// <summary>The addresses behind "drill down and come back" (brain 0069): the bee column's tab, the Logs page's bee side panel, the Overview's edit state, and finding a bee by its number.</summary>
 public sealed class BeeSidePanelLogicTests
 {
     // ----- the bee column's tab on the scenario page: beeTab=logs|calls, Steps is the default and not written -----

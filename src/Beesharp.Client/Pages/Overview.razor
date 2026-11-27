@@ -37,7 +37,7 @@
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
 }
 
-@* Coming back from a scenario page, the Logs, ...: the overview scrolls to where it was (brain 0059, 0068). *@
+@* Coming back from a scenario page, the Logs, ...: the overview scrolls to where it was (brain 0059, 0069). *@
 <ScrollMemory Key="@(editMode ? "overview-edit" : "overview")" />
 
 <div class="page @(editMode ? "editor" : "") @(editMode && !Phone.IsPhone ? "ed-side-open" : "")">
@@ -677,7 +677,7 @@
     private bool addressApplied;
 
     /// <summary>
-    /// Edit mode and the open settings panel live in the address (<c>/?edit=1&amp;entry=3</c>, brain 0068), so a drill down and the way back land in the same state. A fresh visit by the tab (an
+    /// Edit mode and the open settings panel live in the address (<c>/?edit=1&amp;entry=3</c>, brain 0069), so a drill down and the way back land in the same state. A fresh visit by the tab (an
     /// address with no word about it) picks up where the Overview was left (<see cref="OverviewEditMemory"/>). "?edit=..." links (the assistant's) open the editor; each carries a new value, so
     /// they work again after leaving edit mode.
     /// </summary>

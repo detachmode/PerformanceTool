@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Beesharp.Client.Overview;
 
-/// <summary>The Overview's edit state (brain 0068): whether the plan is being edited and which scenario's settings panel is open (a zero-based entry; null = none).</summary>
+/// <summary>The Overview's edit state (brain 0069): whether the plan is being edited and which scenario's settings panel is open (a zero-based entry; null = none).</summary>
 public readonly record struct OverviewView(bool Edit = false, int? Entry = null)
 {
     public static readonly OverviewView Viewing = new();
@@ -50,7 +50,7 @@ public static class OverviewLink
     }
 }
 
-/// <summary>Where the Overview was left (brain 0068): going to another page and back by the Overview tab (an address without <c>?edit</c>) restores edit mode and the open settings panel.</summary>
+/// <summary>Where the Overview was left (brain 0069): going to another page and back by the Overview tab (an address without <c>?edit</c>) restores edit mode and the open settings panel.</summary>
 public sealed class OverviewEditMemory
 {
     public OverviewView Last { get; set; } = OverviewView.Viewing;

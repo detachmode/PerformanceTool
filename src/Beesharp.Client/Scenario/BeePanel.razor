@@ -206,7 +206,7 @@
     /// <summary>"failed at Step" was clicked: filter the list by that step.</summary>
     [Parameter] public EventCallback<int> OnStepFilter { get; set; }
 
-    /// <summary>The shown tab, from the address (brain 0068: <c>beeTab=logs|calls</c>); the panel follows it when it changes from outside and reports the user's choice through <see cref="TabChanged"/>.</summary>
+    /// <summary>The shown tab, from the address (brain 0069: <c>beeTab=logs|calls</c>); the panel follows it when it changes from outside and reports the user's choice through <see cref="TabChanged"/>.</summary>
     [Parameter] public BeeTab Tab { get; set; }
     [Parameter] public EventCallback<BeeTab> TabChanged { get; set; }
     /// <summary>Show ‹ › (where the host has a list to walk); the side panel of the Logs page has none.</summary>

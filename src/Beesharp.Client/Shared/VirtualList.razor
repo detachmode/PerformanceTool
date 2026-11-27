@@ -47,7 +47,7 @@
     [Parameter] public EventCallback<bool> AtEndChanged { get; set; }
     /// <summary>Raised after a render in which the rows in the DOM changed: the first and last row index (exclusive) of the window, for lazy-loading the rows in it.</summary>
     [Parameter] public EventCallback<(int First, int Last)> OnWindow { get; set; }
-    /// <summary>Scroll memory (brain 0068): the list remembers its first visible row under this key (page plus list plus whatever makes the rows a different list, e.g. the filter) and comes back to it
+    /// <summary>Scroll memory (brain 0069): the list remembers its first visible row under this key (page plus list plus whatever makes the rows a different list, e.g. the filter) and comes back to it
     /// when it is shown again, e.g. after Back from a drill down. Null = no memory. A list that follows its end and was left at the end simply opens at the end again.</summary>
     [Parameter] public string? MemoryKey { get; set; }
 
@@ -157,7 +157,7 @@
                 {
                     // a list that is not shown yet (another tab of the phone page) cannot scroll: it keeps waiting until it has a size
                     reset = false; pendingScrollTo = null;
-                    if (await module.InvokeAsync<bool>("restoreTo", root, Math.Max(0, Offset(want.Row) + want.Off))) { pendingRestore = null; restoredNow = true; }
+                    if (await module.InvokeAsync<bool>("restoreTo", root, Math.Max(0, Offset(want.Row) + want.Off), want.Row, want.Off)) { pendingRestore = null; restoredNow = true; }
                 }
             }
             if (reset)
@@ -217,7 +217,7 @@
         recalled.TrySetResult();
     }
 
-    /// <summary>Scrolls to the last row, unless the list is about to go back to a remembered row (the page was left and is shown again, brain 0068).</summary>
+    /// <summary>Scrolls to the last row, unless the list is about to go back to a remembered row (the page was left and is shown again, brain 0069).</summary>
     public async Task ScrollToEndUnlessRestoringAsync()
     {
         if (MemoryKey is not null) await Task.WhenAny(recalled.Task, Task.Delay(1500));

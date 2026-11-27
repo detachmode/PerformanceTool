@@ -16,8 +16,14 @@ export function attach(el, ref) {
         lastWidth = w;
         if (rec && !el.__vpre) el.__vpre = { i: +rec.i, off: -rec.top };
     };
+    // A restore (brain 0069) jumps to an estimated place; until the rows of that place are rendered, rec must stay the remembered row, so keep() then puts exactly that row back.
+    let hold = null;
     const record = () => {
         widthCheck();
+        if (hold) {
+            if (el.querySelector(`${rowSel}[data-i="${hold.i}"]`) || Date.now() > hold.until) hold = null;
+            else return;
+        }
         const lt = el.getBoundingClientRect().top;
         rec = null;
         for (const r of el.querySelectorAll(rowSel)) {
@@ -25,7 +31,7 @@ export function attach(el, ref) {
             if (t.bottom > lt + 1) { rec = { i: r.dataset.i, top: t.top - lt, st: el.scrollTop }; return; }
         }
     };
-    // scroll memory (brain 0068): the first visible row and how far it is scrolled off, so the list comes back to the same row even when row heights are estimated again.
+    // scroll memory (brain 0069): the first visible row and how far it is scrolled off, so the list comes back to the same row even when row heights are estimated again.
     // Written after a scroll and again after Blazor rendered the rows of the new place (a big jump is a frame ahead of its rows).
     const remember = () => {
         if (!scrolled || !el.__vkey || !rec) return;
@@ -64,6 +70,7 @@ export function attach(el, ref) {
     ro.observe(el);
     el.__vlist = () => { el.removeEventListener('scroll', onScroll); ro.disconnect(); mo.disconnect(); };
     el.__vrecord = record;
+    el.__vhold = (row, off) => { rec = { i: String(row), top: -off, st: el.scrollTop }; hold = { i: row, until: Date.now() + 2500 }; };
     el.__vfollow = v => { follow = v; if (v && pinned) keep(); };
     el.__vunpin = () => { pinned = false; };
     el.__vpin = () => { pinned = true; el.scrollTop = el.scrollHeight; record(); on(); };
@@ -86,7 +93,7 @@ export function setFollow(el, follow) { el.__vfollow?.(follow); }
 export function pinToEnd(el) { el.__vpin?.(); }
 export function scrollToTop(el) { el.scrollTop = 0; el.__vrecord?.(); }
 // Scrolls to y when the list has a size (it may be hidden, e.g. on another tab of the phone page); true when it did.
-export function restoreTo(el, y) { if (el.clientHeight <= 0) return false; el.scrollTop = y; el.__vrecord?.(); return true; }
+export function restoreTo(el, y, row, off) { if (el.clientHeight <= 0) return false; el.scrollTop = y; el.__vhold?.(row, off); return true; }
 export function scrollTo(el, y) { el.scrollTop = y; el.__vrecord?.(); }
 
 // [scrollTop, index, height, index, height, ...] of the rendered rows
