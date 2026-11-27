@@ -68,3 +68,6 @@ Screenshots: `docs/screenshots/2026-11-25-phone-layouts/`.
 - **Touch:** 40 px targets (small figures that drill down keep their look, their invisible touch area is bigger), text inputs 16 px (no iOS zoom), no sideways scrolling of the page (checked at 390 × 844, 360 × 740 and 844 × 390).
 - **Not done / open:** the dock-magnified chart's own bars stay below 40 px (the gesture, not the bar, is the control: tap, pinch, swipe all work); the assistant panel and the old dialogs (settings, environments) keep their first-version phone look; an empty Live plan shows no empty-state text on the Overview (as before).
 
+
+## Implementation notes (V3, 2026-11-27, brain 0068)
+- The top bar switches to the compact variant (`.top-mobile`, hamburger) below 1000 px (was 860 px) because the tabs, breadcrumb, mode and environment no longer fit; the build stamp, then the brand name and the environment label, then the breadcrumb and the environment name give way first. `--player-h` (77 px) is the player bar height every fixed panel and full-height page uses. `tests/e2e/layout-sizes.mjs` checks overflow, bars and panels at 12 widths and two heights.

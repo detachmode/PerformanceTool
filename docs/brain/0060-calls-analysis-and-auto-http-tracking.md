@@ -32,3 +32,6 @@ Users often write scenarios with typed HTTP clients (`AddHttpClient<T>()`), SDKs
 ## Consequences
 - DuckDB `calls` table bumped to schema v3 (`ALTER TABLE calls ADD COLUMN IF NOT EXISTS endpoint/method/host/url/slow_threshold_ms`).
 - Existing `SlowCallRule` / `CallTypicals` moved from `Beesharp.Client/Runs/` to `Beesharp.Core/Services/` so server (`RunManager`) and client share one slowness rule.
+
+## Implementation notes (V4, 2026-11-27, brain 0068)
+- Endpoint detail layout: the duration distribution (`CallHistogram`) is a compact card (16.5 rem) beside the over-time chart (`.cl-analysis`), stacked and still compact below a 640 px pane. The selected call is no longer a strip above the list but a detail column (`.cl-detail` in `CallListPanel`): status, duration and ratio to typical, a figure grid (bee, time, scenario, step, typical, slow limit, size), the URL and the trace id with copy buttons, and Logs / Open bee at the bottom. The bee and the scenario stay clickable (the scenario filters the list). The right pane is a CSS size container (`clr`), so stacking follows the pane (list and detail stack below 840 px).

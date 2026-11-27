@@ -1,0 +1,53 @@
+@* The menu pattern for lists that can grow (brain 0068): a backdrop and a popup whose list scrolls INSIDE it. A fixed header (Head) and footer (Foot) keep the
+   actions (Save, Configure…, New…) reachable however many entries there are; the filter field appears from FilterFrom entries; the current entry (.on or
+   aria-checked) is scrolled into view when the menu opens. The caller owns "open" and renders the entries (already filtered by Filter) as ChildContent. *@
+@inject IJSRuntime JS
+
+<div class="dd-backdrop" @onclick="OnClose" role="presentation"></div>
+<div class="dd-menu parts @Class" role="menu" aria-label="@Label" @ref="menu" @onkeydown="OnKey">
+    @if (Head is not null) { <div class="dd-head">@Head</div> }
+    @if (Total >= FilterFrom)
+    {
+        <div class="dd-filter">
+            <input type="text" class="dd-filter-input" placeholder="@FilterPlaceholder" aria-label="@FilterPlaceholder" autocomplete="off" spellcheck="false"
+                   value="@Filter" @oninput="e => FilterChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+            @if (Filter.Length > 0) { <button type="button" class="dd-filter-x" aria-label="Clear filter" @onclick="() => FilterChanged.InvokeAsync(string.Empty)">✕</button> }
+        </div>
+    }
+    <div class="dd-scroll">@ChildContent</div>
+    @if (Foot is not null) { <div class="dd-foot">@Foot</div> }
+</div>
+
+@code {
+    /// <summary>From this many entries the menu offers a filter field (brain 0068).</summary>
+    public const int FilterFrom = 10;
+
+    [Parameter] public string Label { get; set; } = "Menu";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>How many entries the list has before filtering; decides whether the filter field shows.</summary>
+    [Parameter] public int Total { get; set; }
+    [Parameter] public string Filter { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> FilterChanged { get; set; }
+    [Parameter] public string FilterPlaceholder { get; set; } = "Filter…";
+    [Parameter] public RenderFragment? Head { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Foot { get; set; }
+
+    private ElementReference menu;
+    private bool opened;
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (opened) return;
+        opened = true;
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./drop-menu.js");
+            await module.InvokeVoidAsync("opened", menu);
+        }
+        catch (Exception) { /* no JS (prerender or tests): the menu still works, just without the scroll */ }
+    }
+}
