@@ -47,12 +47,14 @@
             <div class="more-sheet">
                 <div class="drawer-sec">
                     <span class="drawer-lbl">Environment</span>
-                    <button type="button" class="more-row @(Envs.ActiveName is null ? "on" : "")" @onclick="() => PickEnv(null)"><i aria-hidden="true">@(Envs.ActiveName is null ? "✓" : "")</i>No environment</button>
-                    @foreach (var env in Envs.Environments)
-                    {
-                        var envName = env.Name;
-                        <button type="button" class="more-row @(envName == Envs.ActiveName ? "on" : "")" @onclick="() => PickEnv(envName)"><i aria-hidden="true">@(envName == Envs.ActiveName ? "✓" : "")</i>@envName</button>
-                    }
+                    <div class="more-scroll">
+                        <button type="button" class="more-row @(Envs.ActiveName is null ? "on" : "")" @onclick="() => PickEnv(null)"><i aria-hidden="true">@(Envs.ActiveName is null ? "✓" : "")</i>No environment</button>
+                        @foreach (var env in Envs.Environments)
+                        {
+                            var envName = env.Name;
+                            <button type="button" class="more-row @(envName == Envs.ActiveName ? "on" : "")" title="@envName" @onclick="() => PickEnv(envName)"><i aria-hidden="true">@(envName == Envs.ActiveName ? "✓" : "")</i><span class="more-text">@envName</span></button>
+                        }
+                    </div>
                     <button type="button" class="more-row" @onclick="OpenEnvsFromMore">Configure environments…</button>
                 </div>
                 <div class="drawer-sec">
@@ -101,8 +103,7 @@
                 </button>
                 @if (modeMenuOpen)
                 {
-                    <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
-                    <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">@ModeMenuItems</div>
+                    @ModeMenu
                 }
             </div>
             <EnvironmentPicker />
@@ -145,8 +146,7 @@
     @if (modeMenuOpen)
     {
         <div class="mode-menu-mobile">
-            <div class="dd-backdrop" @onclick="() => modeMenuOpen = false"></div>
-            <div class="dd-menu mode-runs-menu" role="menu" aria-label="Data mode and stored runs">@ModeMenuItems</div>
+            @ModeMenu
         </div>
     }
 
@@ -228,48 +228,59 @@
 
     private RenderFragment BrandHex => @<img src="beesharp-mark.png" alt="" width="30" height="30" class="brand-hex" aria-hidden="true" />;
     private bool modeMenuOpen;
-    // One menu body, shown under the desktop mode button or as the small-screen sheet.
-    private RenderFragment ModeMenuItems => @<text>
-        <div class="dd-lbl">Data mode</div>
-        <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
-            <span class="mode-dot live" aria-hidden="true"></span>
-            <span>@(!DataMode.IsFakeMode && !ApiRun.IsViewingHistory ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
-        </button>
-        <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
-            <span class="mode-dot fake" aria-hidden="true"></span>
-            <span>@(DataMode.IsFakeMode ? "✓ " : "")<b>Fake mode</b> <span class="muted">· simulation</span></span>
-        </button>
-        @if (!DataMode.IsFakeMode)
-        {
-            <div class="dd-sep" role="separator"></div>
-            <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
-            @if (Sim.IsRunning)
+    // One menu, shown under the desktop mode button or as the small-screen sheet. Brain 0068: the mode switch is the fixed header, Import the fixed footer,
+    // the stored runs (there can be a hundred) scroll in between and can be filtered.
+    private RenderFragment ModeMenu => @<DropMenu Class="mode-runs-menu" Label="Data mode and stored runs" OnClose="@(() => modeMenuOpen = false)"
+                                                  Total="storedRuns.Count" @bind-Filter="runFilter" FilterPlaceholder="Filter runs (date, failed)…">
+        <Head>
+            <div class="dd-lbl">Data mode</div>
+            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(false)">
+                <span class="mode-dot live" aria-hidden="true"></span>
+                <span>@(!DataMode.IsFakeMode && !ApiRun.IsViewingHistory ? "✓ " : "")<b>Live mode</b> <span class="muted">· server API</span></span>
+            </button>
+            <button type="button" class="dd-item" role="menuitem" @onclick="() => SetModeAsync(true)">
+                <span class="mode-dot fake" aria-hidden="true"></span>
+                <span>@(DataMode.IsFakeMode ? "✓ " : "")<b>Fake mode</b> <span class="muted">· simulation</span></span>
+            </button>
+        </Head>
+        <ChildContent>
+            @if (!DataMode.IsFakeMode)
             {
-                <div class="muted" style="padding:.4rem .55rem">Stop the active run to open a past run.</div>
-            }
-            else if (runsLoading)
-            {
-                <div class="muted" style="padding:.4rem .55rem">Loading…</div>
-            }
-            else if (storedRuns.Count == 0)
-            {
-                <div class="muted" style="padding:.4rem .55rem">No stored runs yet.</div>
-            }
-            else
-            {
-                @foreach (var r in storedRuns)
+                <div class="dd-lbl">Stored runs (@ApiRun.StorageProvider)</div>
+                @if (Sim.IsRunning)
                 {
-                    var item = r;
-                    var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
-                    <button type="button" class="dd-item" role="menuitem" @onclick="() => PickRunAsync(item.RunId)" style="flex-direction:column;align-items:flex-start;gap:.1rem">
-                        <span>@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
-                        <span class="muted" style="font-size:.74rem">@Format.Num(item.TotalBees) bees · @(item.FailedBees > 0 ? $"{item.FailedBees} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
-                    </button>
+                    <div class="muted dd-empty">Stop the active run to open a past run.</div>
+                }
+                else if (runsLoading)
+                {
+                    <div class="muted dd-empty">Loading…</div>
+                }
+                else if (storedRuns.Count == 0)
+                {
+                    <div class="muted dd-empty">No stored runs yet.</div>
+                }
+                else
+                {
+                    var shownRuns = storedRuns.Where(RunMatches).ToList();
+                    @if (shownRuns.Count == 0)
+                    {
+                        <div class="dd-none">No run matches “@runFilter”.</div>
+                    }
+                    @foreach (var r in shownRuns)
+                    {
+                        var item = r;
+                        var isCurrent = string.Equals(item.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
+                        <button type="button" class="dd-item run-item @(isCurrent ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCurrent)" @onclick="() => PickRunAsync(item.RunId)" title="@item.RunId">
+                            <span class="run-line">@(isCurrent ? "✓ " : "")<b>@item.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss")</b> <span class="muted">(@item.ElapsedSeconds.ToString("0.#")s)</span></span>
+                            <span class="muted run-sub">@Format.Num(item.TotalBees) bees · @(item.FailedBees > 0 ? $"{item.FailedBees} failed · " : "")@Format.Num((int)Math.Min(int.MaxValue, item.TotalLogs)) logs</span>
+                        </button>
+                    }
                 }
             }
-            @if (!Sim.IsRunning)
+        </ChildContent>
+        <Foot>
+            @if (!DataMode.IsFakeMode && !Sim.IsRunning)
             {
-                <div class="dd-sep" role="separator"></div>
                 <label class="dd-item" role="menuitem" style="cursor:pointer" title="Import an exported run (.zip Parquet bundle, .duckdb, or .json)">
                     <InputFile OnChange="ImportRunFileAsync" accept=".zip,.duckdb,.json" style="display:none" />
                     <span>@(importingRun ? "Importing…" : "Import run…")</span>
@@ -279,8 +290,14 @@
                     <div class="bad" style="padding:.25rem .55rem;font-size:.76rem">@importError</div>
                 }
             }
-        }
-    </text>;
+        </Foot>
+    </DropMenu>;
+    private string runFilter = string.Empty;
+    private bool RunMatches(StoredRunSummary r) =>
+        runFilter.Length == 0
+        || r.StartedUtc.ToLocalTime().ToString("dd MMM HH:mm:ss").Contains(runFilter, StringComparison.OrdinalIgnoreCase)
+        || (runFilter.StartsWith("fail", StringComparison.OrdinalIgnoreCase) && r.FailedBees > 0)
+        || r.RunId.Contains(runFilter, StringComparison.OrdinalIgnoreCase);
     private bool runsLoading, importingRun;
     private string? importError;
     private List<StoredRunSummary> storedRuns = [];
@@ -289,9 +306,10 @@
     {
         menuOpen = false;
         modeMenuOpen = !modeMenuOpen;
+        runFilter = string.Empty;
         if (!modeMenuOpen || DataMode.IsFakeMode || Sim.IsRunning) return;
         runsLoading = true;
-        try { storedRuns = await ApiRun.ListRunsAsync(30); }
+        try { storedRuns = await ApiRun.ListRunsAsync(200); }
         finally { runsLoading = false; }
     }
 
@@ -314,7 +332,7 @@
         if (!fake) ApiRun.ReturnToLive();
         modeMenuOpen = false;
         if (!fake && !Sim.IsRunning)
-            storedRuns = await ApiRun.ListRunsAsync(30);
+            storedRuns = await ApiRun.ListRunsAsync(200);
     }
 
     private async Task PickRunAsync(string runId)
@@ -342,7 +360,7 @@
             modeMenuOpen = false;
             await Asst.CloseIfMobileAsync();
             if (summary is not null)
-                storedRuns = await ApiRun.ListRunsAsync(30);
+                storedRuns = await ApiRun.ListRunsAsync(200);
         }
         catch (Exception ex)
         {

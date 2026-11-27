@@ -21,24 +21,30 @@
         {
             <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
                 <span>Discard the unsaved changes in @drafts.Count(Dirty) environment(s)?</span>
-                <button class="btn primary" @onclick="Popup.Close">Discard and close</button>
                 <button class="btn ghost" @onclick="() => confirmClose = false">Keep editing</button>
+                <button class="btn primary" @onclick="Popup.Close">Discard and close</button>
             </div>
         }
 
         <div class="env-body">
             <nav class="env-list" aria-label="Environments">
-                @foreach (var d in drafts)
+                @if (drafts.Count >= DropMenu.FilterFrom)
                 {
-                    var draft = d;
-                    var isActive = draft.Original is not null && draft.Original == Envs.ActiveName;
-                    <button type="button" class="env-item @(draft == current ? "on" : "")" aria-current="@Aria.Bool(draft == current)" @onclick="() => Select(draft)">
-                        <span class="nm">@(string.IsNullOrWhiteSpace(draft.Env.Name) ? "(no name)" : draft.Env.Name)</span>
-                        @if (Dirty(draft)) { <i class="dirty" title="Unsaved changes" aria-label="Unsaved changes"></i> }
-                        @if (isActive) { <span class="tag">active</span> }
-                        <small class="muted">@KeyCount(draft) @(KeyCount(draft) == 1 ? "key" : "keys")</small>
-                    </button>
+                    <div class="env-list-filter"><input type="text" placeholder="Filter environments…" aria-label="Filter environments" autocomplete="off" spellcheck="false" @bind="listFilter" @bind:event="oninput" /></div>
                 }
+                <div class="env-list-scroll" @ref="listScroll">
+                    @foreach (var d in drafts.Where(x => listFilter.Length == 0 || x.Env.Name.Contains(listFilter, StringComparison.OrdinalIgnoreCase) || x == current))
+                    {
+                        var draft = d;
+                        var isActive = draft.Original is not null && draft.Original == Envs.ActiveName;
+                        <button type="button" class="env-item @(draft == current ? "on" : "")" aria-current="@Aria.Bool(draft == current)" title="@draft.Env.Name" @onclick="() => Select(draft)">
+                            <span class="nm">@(string.IsNullOrWhiteSpace(draft.Env.Name) ? "(no name)" : draft.Env.Name)</span>
+                            @if (Dirty(draft)) { <i class="dirty" title="Unsaved changes" aria-label="Unsaved changes"></i> }
+                            @if (isActive) { <span class="tag">active</span> }
+                            <small class="muted">@KeyCount(draft) @(KeyCount(draft) == 1 ? "key" : "keys")</small>
+                        </button>
+                    }
+                </div>
                 <button type="button" class="btn ghost small add-env" @onclick="AddEnvironment">+ Add environment</button>
             </nav>
 
@@ -58,14 +64,13 @@
                         {
                             <button class="btn ghost small" @onclick="() => Envs.SetActive(current.Original)" title="Use this environment for scenarios">Use this environment</button>
                         }
-                        <button class="btn ghost danger small" @onclick="() => confirmDelete = true">Delete</button>
                     </div>
                     @if (confirmDelete)
                     {
                         <div class="notice" role="alertdialog" aria-label="Delete environment?">
                             <span>Delete “<b>@current.Env.Name</b>”? Its keys are gone.</span>
-                            <button class="btn primary" @onclick="DeleteCurrent">Delete</button>
                             <button class="btn ghost" @onclick="() => confirmDelete = false">Cancel</button>
+                            <button class="btn primary" @onclick="DeleteCurrent">Delete</button>
                         </div>
                     }
 
@@ -96,6 +101,8 @@
                     @foreach (var err in errors) { <small class="field-error" role="alert">@err</small> }
 
                     <div class="env-foot">
+                        <button class="btn ghost danger" @onclick="() => confirmDelete = true">Delete environment</button>
+                        <span class="spacer"></span>
                         <button class="btn primary" @onclick="Save" disabled="@(!Dirty(current) || errors.Count > 0)" title="Save this environment">Save</button>
                     </div>
                 }
@@ -114,6 +121,8 @@
     }
 
     private ElementReference root;
+    private ElementReference listScroll;
+    private string listFilter = string.Empty;
     private ElementReference valueInput;
     private readonly List<Draft> drafts = [];
     private Draft? current;
