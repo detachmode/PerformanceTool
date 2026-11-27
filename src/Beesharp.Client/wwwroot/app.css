@@ -2383,3 +2383,24 @@ html.phone .bsp-phone { display: flex; flex-direction: column; }
 html.phone .bsp-phone .bsp-head { padding: .1rem max(.6rem, env(safe-area-inset-right)) .2rem max(1rem, env(safe-area-inset-left)); touch-action: none; }
 html.phone .bsp-phone .bsp-head .icon-btn { width: 44px; height: 44px; font-size: 1.1rem; }
 html.phone .bsp-phone .bsp-open, html.phone .bsp-head .bsp-only { min-height: 40px; display: inline-flex; align-items: center; }
+
+/* ----- run duration slider: non-linear track, faint unit marks, value as time, one small caret (brain 0073) ----- */
+.dur-slider { flex: 1; min-width: 0; }
+.dur-track { position: relative; flex: 1 1 auto; min-width: 0; padding-bottom: .62rem; }   /* the marks sit in this padding: the bar keeps its height (brain 0071) */
+.plan-ctrl .dur-track input[type=range] { display: block; width: 100%; }
+.dur-ticks { position: absolute; left: 0; right: 0; bottom: 0; height: .62rem; pointer-events: none; font-size: .62rem; line-height: .62rem; color: var(--muted); opacity: .6; font-variant-numeric: tabular-nums; }
+.dur-ticks span { position: absolute; left: calc(8px + (100% - 16px) * var(--f)); transform: translateX(-50%); white-space: nowrap; }
+.dur-ticks span::before { content: ""; position: absolute; left: 50%; top: -.3rem; width: 1px; height: .2rem; background: currentColor; opacity: .7; }
+.dur-ticks span:last-child { transform: translateX(-100%); }
+.dur-ticks span:last-child::before { left: 100%; }
+.dur-value { position: relative; flex: none; display: inline-flex; align-items: center; gap: .15rem; }
+.plan-ctrl .slider.with-input input.slider-num.dur-num { flex: 0 0 6.2rem; width: 6.2rem; }
+.dur-num.invalid { border-color: var(--bad, #e0626b); }
+.dur-more { flex: none; background: transparent; border: 0; color: var(--muted); padding: .1rem .3rem; font-size: .8rem; line-height: 1; cursor: pointer; border-radius: 6px; }
+.dur-more:hover:not(:disabled), .dur-more[aria-expanded="true"] { color: var(--title); background: rgba(255, 255, 255, 0.07); }
+.dur-more:disabled { opacity: .5; cursor: default; }
+.dur-menu { min-width: 9rem; }
+html.phone .dur-more { min-width: 30px; min-height: 36px; }
+html.phone .plan-ctrl .slider.with-input input.slider-num.dur-num { flex-basis: 5.4rem; width: 5.4rem; }
+html.phone .dur-ticks { font-size: .58rem; }
+@media (max-width: 480px) { .dur-ticks span:last-child { display: none; } }   /* phone: the end mark would touch "1 h" */

@@ -195,16 +195,9 @@
     {
     <section class="run-launch-card" aria-label="Run and preflight controls">
         <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
-            <label for="p-dur-range">Duration (s)</label>
-            <div class="slider with-input">
-                <input id="p-dur-range" type="range" min="10" max="600" step="10" value="@Math.Clamp(plan.DurationSeconds, 10, 600)"
-                       aria-label="Duration slider" disabled="@locked"
-                       @oninput="e => { SetPlanInt(e, v => plan.DurationSeconds = v); Committed(); }" />
-                <input id="p-dur" class="slider-num" type="number" inputmode="numeric" min="1" step="1" value="@plan.DurationSeconds"
-                       aria-label="Duration in seconds"
-                       @oninput="e => SetPlanInt(e, v => plan.DurationSeconds = v)" @onchange="Committed"
-                       disabled="@locked" aria-invalid="@Aria.Bool(planErr.ContainsKey("dur"))" />
-            </div>
+            <label for="p-dur">Duration</label>
+            <DurationSlider Id="p-dur" Seconds="plan.DurationSeconds" Disabled="locked" Invalid='planErr.ContainsKey("dur")'
+                            SecondsChanged="v => { plan.DurationSeconds = v; Edited(); }" OnCommit="Committed" />
         </div>
         @foreach (var e in planErr.Values) { <small class="field-error" role="alert">@e</small> }
 
