@@ -8,6 +8,9 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Now (X, user approved 2026-11-27):** a calm overview while a run goes. X1: the cards keep their height while a run goes (today folded quiet steps unfold and
+  fold as bees move, so a row of cards changes between 370 and 426 px about once a second and every row below jumps); X2: starting a run does not move the page
+  (today the bar with Start run and the duration disappears and the cards move up about 80 px).
 - **Done (W1, user approved 2026-11-27, brain 0069):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
   Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
   is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
