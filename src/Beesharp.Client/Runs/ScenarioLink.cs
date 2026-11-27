@@ -24,7 +24,7 @@ public readonly record struct PhoneView(PhoneTab Tab = PhoneTab.Steps, bool Shee
 public static class ScenarioLink
 {
     /// <summary>The relative address (to the base href) of scenario entry <paramref name="index"/> (zero-based) with a filter.</summary>
-    public static string Href(int index, ScenarioFilter filter = default)
+    public static string Href(int index, ScenarioFilter filter = default, BeeTab beeTab = BeeTab.Steps)
     {
         var parts = new List<string>(2);
         var show = ShowName(filter.Show);
@@ -32,6 +32,7 @@ public static class ScenarioLink
         if (filter.FailedStep is { } f) parts.Add("failedStep=" + (f + 1).ToString(CultureInfo.InvariantCulture));
         else if (filter.NowStep is { } n) parts.Add("nowStep=" + (n + 1).ToString(CultureInfo.InvariantCulture));
         if (filter.Bee is { } b) parts.Add("bee=" + (b + 1).ToString(CultureInfo.InvariantCulture));
+        if (BeeTabName(beeTab) is { } tabName) parts.Add("beeTab=" + tabName);
         var path = "scenario/" + (index + 1).ToString(CultureInfo.InvariantCulture);
         return parts.Count == 0 ? path : path + "?" + string.Join("&", parts);
     }
@@ -114,6 +115,54 @@ public static class ScenarioLink
         var path = "scenario/" + (index + 1).ToString(CultureInfo.InvariantCulture);
         return kept.Count == 0 ? path : path + "?" + string.Join("&", kept);
     }
+
+    /// <summary>The same address with the bee column's tab replaced (<c>beeTab=logs|calls</c>, Steps is the default and not written); the filter, the phone's view and every other query part stay.</summary>
+    public static string WithBeeTab(string uri, BeeTab tab)
+    {
+        var index = IndexOf(uri) ?? 0;
+        var q = uri.IndexOf('?');
+        var kept = new List<string>();
+        if (q >= 0)
+        {
+            var rest = uri[(q + 1)..];
+            var hash = rest.IndexOf('#');
+            if (hash >= 0) rest = rest[..hash];
+            foreach (var pair in rest.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=');
+                var key = Uri.UnescapeDataString(eq < 0 ? pair : pair[..eq]).ToLowerInvariant();
+                if (key != "beetab") kept.Add(pair);
+            }
+        }
+        if (BeeTabName(tab) is { } name) kept.Add("beeTab=" + name);
+        var path = "scenario/" + (index + 1).ToString(CultureInfo.InvariantCulture);
+        return kept.Count == 0 ? path : path + "?" + string.Join("&", kept);
+    }
+
+    /// <summary>The bee column's tab in a query string or address (<c>beeTab=logs|calls</c>); anything else is Steps.</summary>
+    public static BeeTab ParseBeeTab(string? query)
+    {
+        if (string.IsNullOrEmpty(query)) return BeeTab.Steps;
+        var q = query;
+        var mark = q.IndexOf('?');
+        if (mark >= 0) q = q[(mark + 1)..];
+        var hash = q.IndexOf('#');
+        if (hash >= 0) q = q[..hash];
+        foreach (var pair in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            var key = Uri.UnescapeDataString(eq < 0 ? pair : pair[..eq]);
+            if (!key.Equals("beeTab", StringComparison.OrdinalIgnoreCase)) continue;
+            return ParseBeeTabName(eq < 0 ? "" : Uri.UnescapeDataString(pair[(eq + 1)..]));
+        }
+        return BeeTab.Steps;
+    }
+
+    /// <summary>"logs" or "calls" for the address; null for Steps (the default is not written).</summary>
+    public static string? BeeTabName(BeeTab tab) => tab switch { BeeTab.Logs => "logs", BeeTab.Calls => "calls", _ => null };
+
+    /// <summary>The tab a <c>beeTab</c> value names; unknown values mean Steps.</summary>
+    public static BeeTab ParseBeeTabName(string? value) => value?.ToLowerInvariant() switch { "logs" => BeeTab.Logs, "calls" => BeeTab.Calls, _ => BeeTab.Steps };
 
     /// <summary>The phone's view encoded in a query string or address. Unknown values mean the default (Steps, no sheet).</summary>
     public static PhoneView ParseView(string? query)

@@ -11,6 +11,7 @@ using Beesharp.Client.Calls;
 using Beesharp.Client.Data;
 using Beesharp.Client.Layout;
 using Beesharp.Client.Logs;
+using Beesharp.Client.Overview;
 using Beesharp.Client.Editor;
 using Beesharp.Client.Environments;
 
@@ -22,6 +23,7 @@ builder.Services.AddSingleton(sp => new HttpClient { BaseAddress = new Uri(build
 builder.Services.AddSingleton<ScenarioCatalog>();
 builder.Services.AddSingleton<CallsLinks>();
 builder.Services.AddSingleton<LogsLinks>();
+builder.Services.AddSingleton<OverviewEditMemory>();
 builder.Services.AddSingleton<ViewSettings>();
 builder.Services.AddSingleton<PhoneState>();
 builder.Services.AddSingleton<EnvironmentsPopupState>();

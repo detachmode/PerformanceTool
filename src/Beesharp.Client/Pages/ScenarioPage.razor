@@ -19,7 +19,7 @@
 {
     @* Re-created only for another scenario: the address changes with every filter click and must not reset the chart. *@
     <ScenarioDetail @key="Number" Index="index" Snapshot="s" InitialShow="initial.Show" InitialFailedStep="initial.FailedStep" InitialInFlightStep="initial.NowStep" InitialBee="initial.Bee"
-                  Tab="view.Tab" Sheet="view.Sheet" OnTabChanged="TabChanged" OnSheetChanged="SheetChanged"
+                  Tab="view.Tab" Sheet="view.Sheet" OnTabChanged="TabChanged" OnSheetChanged="SheetChanged" BeeTab="beeTab" OnBeeTabChanged="BeeTabChanged"
                   OnFilterChanged="FilterChanged" />
 }
 else
@@ -36,6 +36,7 @@ else
 
     private ScenarioFilter initial;
     private PhoneView view;
+    private BeeTab beeTab;
     private int shownNumber = -1;
     private bool sheetPushed;   // this visit pushed the sheet's history entry, so closing it goes back instead of leaving a stale "sheet=1" behind
 
@@ -44,6 +45,7 @@ else
         Sim.Changed += OnChanged; DataMode.Changed += OnChanged;
         Nav.LocationChanged += OnLocation;
         view = ScenarioLink.ParseView(Nav.Uri);
+        beeTab = ScenarioLink.ParseBeeTab(Nav.Uri);
     }
 
     // The phone's tab and bee sheet live in the address (brain 0059): a tab is a history entry, the sheet too (the browser's Back closes it).
@@ -56,6 +58,14 @@ else
         else Nav.NavigateTo(ScenarioLink.WithView(Nav.Uri, view with { Sheet = false }), new NavigationOptions { ReplaceHistoryEntry = true });
     }
 
+    // The bee column's tab (Steps / Logs / Calls) lives in the address (brain 0069), history entry replaced: a click on a call leaves for /calls, and Back lands on the Calls tab again.
+    private void BeeTabChanged(BeeTab tab)
+    {
+        beeTab = tab;
+        var next = ScenarioLink.WithBeeTab(Nav.Uri, tab);
+        if (Nav.ToBaseRelativePath(Nav.Uri) != next) Nav.NavigateTo(next, new NavigationOptions { ReplaceHistoryEntry = true });
+    }
+
     private async Task BackAsync()
     {
         try { await JS.InvokeVoidAsync("history.back"); }
@@ -65,6 +75,7 @@ else
     private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         view = ScenarioLink.ParseView(e.Location);
+        if (ScenarioLink.IndexOf(e.Location) is not null) beeTab = ScenarioLink.ParseBeeTab(e.Location);   // not while leaving for another page (its address has no beeTab)
         if (!view.Sheet) sheetPushed = false;
         try { _ = InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }

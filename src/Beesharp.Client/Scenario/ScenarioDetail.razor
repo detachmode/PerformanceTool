@@ -315,14 +315,14 @@
             {
                 <p class="scn-listhead muted">@Format.Plural(sideRows.Count, "bee", "bees") shown</p>
             }
-            <BeeSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" RevealIndex="@(revealAt >= 0 ? revealAt : null)"
+            <BeeSideList Rows="sideRows" SelectedSequence="@selSeq" OnSelect="SelectRow" ResetKey="@sideReset" MemoryKey="@(Selection ? null : "scenario:" + ScenarioLink.Href(Index, Current() with { Bee = null }))" RevealIndex="@(revealAt >= 0 ? revealAt : null)"
                          Info="@(row => RowInfo(row, bees, runBy, stepsDecl, s.Elapsed, s.Store))" />
         </div>
     </section>
 
     @{
         RenderFragment beePanel = @<BeePanel Snapshot="s" Index="Index" Steps="stepsDecl" Selection="Selection" Bee="selected" Running="panelRunning" Notes="Notes"
-                  EnsureDetail="EnsureDetail" OpenLogs="OpenLogs"
+                  EnsureDetail="EnsureDetail" OpenLogs="OpenLogs" Tab="BeeTab" TabChanged="OnBeeTabChanged"
                   CanPrev="@(BeeNavigator.Neighbour(rowSeqs, selSequence, -1) is not null)" CanNext="@(BeeNavigator.Neighbour(rowSeqs, selSequence, 1) is not null)"
                   OnStep="StepBee" OnStepFilter="st => { ToggleStepFilter(st, false); GoToBees(); }" />;
     }
@@ -369,6 +369,9 @@
     [Parameter] public bool Sheet { get; set; }
     [Parameter] public EventCallback<PhoneTab> OnTabChanged { get; set; }
     [Parameter] public EventCallback<bool> OnSheetChanged { get; set; }
+    /// <summary>The bee column's tab (Steps / Logs / Calls), from the address (<c>beeTab</c>, brain 0069) so Back from the Calls page lands on the Calls tab again; the user's choice is reported back.</summary>
+    [Parameter] public BeeTab BeeTab { get; set; }
+    [Parameter] public EventCallback<BeeTab> OnBeeTabChanged { get; set; }
 
     private ElementReference root;
     private PhoneTab tab, lastTabParam;
