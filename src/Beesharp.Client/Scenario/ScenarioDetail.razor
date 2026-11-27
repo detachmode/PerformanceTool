@@ -169,7 +169,8 @@
                 var inFlightPer = StepLogic.InFlightCounts(stepsDecl, runningRaw, s.Elapsed);
                 <StepTrack Steps="stepsDecl" FailedPer="failedPer" InFlightPer="inFlightPer" Finished="view.Finished" Live="dlgActive"
                            Selected="stepFilter?.Step" SelectedInFlight="@(stepFilter?.InFlight ?? false)"
-                           OnFailed="st => { ToggleStepFilter(st, false); GoToBees(); }" OnInFlight="st => { ToggleStepFilter(st, true); GoToBees(); }" AriaLabel="@("Steps of " + label)" />
+                           OnFailed="st => { ToggleStepFilter(st, false); GoToBees(); }" OnInFlight="st => { ToggleStepFilter(st, true); GoToBees(); }"
+                           OnLogs="st => Logs.Show(LogFilter.None.WithEntry(Index).WithStep(st))" AriaLabel="@("Steps of " + label)" />
             }
             else
             {
@@ -235,9 +236,11 @@
             <span class="spacer"></span>
             @if (StepCount(view) > 0)
             {
-                <span class="scn-step" role="group" aria-label="Step through @StepWord bees">
-                    <button type="button" class="link-btn" @onclick="() => StepTo(-1)" title="Previous @StepWord bee in the chart">‹ @StepWord</button>
-                    <button type="button" class="link-btn" @onclick="() => StepTo(1)" title="Next @StepWord bee in the chart">@StepWord ›</button>
+                @* Jumps through the failed (or slow) bees in the chart, in time order: "Failed bee ‹ ›" with the arrows saying previous / next. *@
+                <span class="scn-step" role="group" aria-label="Step through the @StepWord bees">
+                    <span class="scn-step-lbl">@(show == BeeShow.Slow ? "Slow" : "Failed") bee</span>
+                    <button type="button" class="link-btn" @onclick="() => StepTo(-1)" title="Previous @StepWord bee in the chart" aria-label="Previous @StepWord bee">‹</button>
+                    <button type="button" class="link-btn" @onclick="() => StepTo(1)" title="Next @StepWord bee in the chart" aria-label="Next @StepWord bee">›</button>
                 </span>
             }
         </div>
