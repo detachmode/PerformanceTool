@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beesharp · editing the current plan (draft)</title>
+<style>
+  :root {
+    --bg:#181b1f; --panel:#22252b; --panel2:#2c3038; --line:#363b45; --text:#d8dee9; --muted:#8b93a3;
+    --accent:#6e9fff; --ok:#5fbf77; --slow:#e0a83a; --bad:#e5534b; --changed:#c9a2ff; --r:6px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+  button, select, input { font:inherit; color:inherit; }
+  button { background:var(--panel2); border:1px solid var(--line); border-radius:var(--r); padding:5px 11px; cursor:pointer; }
+  button:hover { border-color:#4a5160; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#0d1420; font-weight:600; }
+  button.danger { border-color:var(--bad); color:#ffb4ae; }
+  button.link { background:none; border:none; padding:2px 4px; color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  input, select { background:var(--bg); border:1px solid var(--line); border-radius:var(--r); padding:4px 7px; }
+  input[type=range] { padding:0; accent-color:var(--accent); }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+  .chip { display:inline-block; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--muted); vertical-align:1px; }
+  .chip.code { border-color:#4b6aa8; color:#9db9ff; } .chip.over { border-color:var(--slow); color:var(--slow); }
+  .chip.chg { border-color:var(--changed); color:var(--changed); } .chip.bad { border-color:var(--bad); color:#ffb4ae; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--changed); margin-right:5px; }
+
+  /* draft switcher */
+  .draft { background:#11161d; border-bottom:1px dashed #3a4a66; padding:6px 14px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .draft b { color:#9db9ff; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
+  .seg button { border:none; border-radius:0; padding:3px 10px; background:transparent; font-size:12px; }
+  .seg button.on { background:var(--panel2); color:#fff; }
+
+  /* top bar */
+  .top { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .logo { font-weight:700; letter-spacing:.3px; margin-right:6px; }
+  .grow { flex:1; }
+  .menu { position:relative; }
+  .pop { position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:330px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); box-shadow:0 8px 30px #0008; padding:6px; }
+  .pop h4 { margin:6px 8px 4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .pop .row { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--r); }
+  .pop .row:hover { background:var(--panel2); }
+  .pop .row .name { flex:1; cursor:pointer; }
+  .pop .foot { border-top:1px solid var(--line); margin-top:6px; padding:6px 4px 2px; display:flex; gap:6px; }
+
+  /* plan state bar */
+  .state { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--line); background:#1d2026; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
+  .state.dirty { background:#231f2b; border-bottom-color:#4c3f63; }
+  .state .title { font-weight:600; }
+
+  main { display:flex; gap:0; min-height:calc(100vh - 120px); }
+  .page { flex:1; padding:14px; min-width:0; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .card.changed { border-color:#5a4a78; }
+  .card.sel { outline:2px solid var(--accent); outline-offset:-1px; }
+  .card .head { display:flex; align-items:center; gap:6px; }
+  .card .head .t { font-weight:600; flex:1; }
+  .card .sum { font-size:12px; color:var(--muted); }
+  .bars { display:flex; align-items:flex-end; gap:2px; height:38px; }
+  .bars i { flex:1; background:#3d6b4a; border-radius:1px; }
+  .bars i.bs { background:#7a6230; } .bars i.bf { background:#8a3b36; }
+  .card .acts { display:flex; gap:6px; }
+  .section-title { margin:22px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+
+  /* side panel */
+  .side { width:420px; flex:none; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; max-height:calc(100vh - 40px); position:sticky; top:40px; }
+  .side header { padding:12px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
+  .side header .t { font-weight:600; flex:1; }
+  .side .body { padding:6px 14px 14px; overflow:auto; flex:1; }
+  .side footer { padding:10px 14px; border-top:1px solid var(--line); display:flex; gap:8px; }
+
+  /* flat parameter list (E3/E4) */
+  .form h5 { margin:16px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:600; }
+  .f { display:grid; grid-template-columns:130px 1fr 26px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #2a2e35; }
+  .f label { color:var(--muted); font-size:13px; }
+  .f.changed label { color:var(--changed); }
+  .f .ctl { display:flex; gap:8px; align-items:center; min-width:0; }
+  .f .ctl input[type=range] { flex:1; min-width:60px; }
+  .f .ctl input[type=number] { width:78px; text-align:right; }
+  .f .ctl input[type=text] { width:100%; }
+  .f .unit { color:var(--muted); font-size:12px; min-width:22px; }
+  .f .range { grid-column:2; font-size:11px; color:#646c7b; margin-top:-4px; }
+  .f .rev { visibility:hidden; padding:0 4px; color:var(--changed); background:none; border:none; }
+  .f.changed .rev { visibility:visible; }
+  .f .was { grid-column:2; font-size:11px; color:var(--changed); margin-top:-3px; }
+  .f.ro .ctl { color:var(--text); }
+  .f.gone label { text-decoration:line-through; } .f.gone .ctl { color:var(--muted); }
+
+  /* plan table (layout B) */
+  table.plan { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  table.plan th, table.plan td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.plan th { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:600; background:#1f2228; }
+  table.plan tr.entry { cursor:pointer; } table.plan tr.entry:hover td { background:#262a31; }
+  table.plan tr.open td { background:#262a31; }
+  table.plan td.exp { background:#1d2026; padding:4px 18px 14px; }
+  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:0 28px; }
+
+  /* dialog */
+  .shade { position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  .dlg { background:var(--panel); border:1px solid var(--line); border-radius:10px; width:min(640px,100%); max-height:90vh; display:flex; flex-direction:column; }
+  .dlg header { padding:14px 16px 6px; font-weight:600; font-size:16px; display:flex; align-items:center; gap:8px; }
+  .dlg .body { padding:6px 16px 12px; overflow:auto; }
+  .dlg footer { padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+  .opt { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; display:flex; gap:10px; align-items:flex-start; cursor:pointer; }
+  .opt.on { border-color:var(--accent); background:#1f2633; }
+  .warn { border-left:3px solid var(--slow); background:#2a2519; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
+  .info { border-left:3px solid var(--accent); background:#1c2331; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
+  .badline { border-left:3px solid var(--bad); background:#2b1c1c; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
+  ul.changes { list-style:none; margin:6px 0; padding:0; }
+  ul.changes li { display:flex; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #2a2e35; font-size:13px; }
+  ul.changes li span.what { flex:1; }
+  .old { color:var(--muted); text-decoration:line-through; } .new { color:var(--changed); }
+
+  .runs { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  .runs .r { display:flex; gap:10px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); }
+  .runs .r:last-child { border-bottom:none; }
+  .runs .r .n { width:44px; color:var(--muted); }
+  .runs .r .p { flex:1; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#2f3542; border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:60; }
+
+  @media (max-width:860px) {
+    main { flex-direction:column; }
+    .side { width:auto; position:fixed; inset:auto 0 0 0; max-height:75vh; border-left:none; border-top:1px solid var(--line); border-radius:12px 12px 0 0; z-index:30; box-shadow:0 -10px 30px #0009; }
+    .f { grid-template-columns:110px 1fr 22px; }
+    .twocol { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ---------------------------------------------------------------- fake catalog (current scenario definitions)
+const CATALOG = {
+  checkout: { name:'Checkout', params:[
+    { k:'baseUrl', l:'Base URL', t:'text', d:'{{ShopUrl}}', g:'Target' },
+    { k:'items', l:'Items in cart', t:'int', min:1, max:10, d:2, g:'Story' },
+    { k:'payWith', l:'Pay with', t:'enum', opts:['Card','PayPal','Invoice'], d:'Card', g:'Story' },
+    { k:'think', l:'Think time', t:'int', min:0, max:5000, step:50, unit:'ms', d:500, g:'Story' },
+    { k:'stopOnFail', l:'Stop on failure', t:'bool', d:true, g:'Story' },
+  ]},
+  search: { name:'Search products', params:[
+    { k:'baseUrl', l:'Base URL', t:'text', d:'{{ShopUrl}}', g:'Target' },
+    { k:'query', l:'Query', t:'text', d:'red shoes', g:'Story' },
+    { k:'open', l:'Results to open', t:'int', min:1, max:10, d:5, g:'Story' },
+    { k:'delay', l:'Delay', t:'float', min:0, max:5, step:.1, unit:'s', d:.5, g:'Story' },
+  ]},
+  jokes: { name:'Funny jokes', params:[
+    { k:'category', l:'Category', t:'enum', opts:['Programming','Pun','Misc'], d:'Programming', g:'Story' },
+    { k:'count', l:'Jokes per bee', t:'int', min:1, max:20, d:3, g:'Story' },
+  ]},
+};
+const SPAWN = [
+  { k:'rate', l:'Bees / minute', t:'int', min:1, max:600, unit:'/min', g:'Spawning' },
+  { k:'maxInFlight', l:'Max in-flight', t:'int', min:1, max:1000, g:'Spawning' },
+];
+const PLANF = [
+  { k:'duration', l:'Duration', t:'int', min:10, max:3600, step:10, unit:'s', g:'Run' },
+  { k:'maxConc', l:'Max in-flight', t:'int', min:1, max:1000, g:'Run' },
+  { k:'timeout', l:'Timeout', t:'int', min:1, max:300, unit:'s', g:'Run' },
+  { k:'preflight', l:'Preflight', t:'enum', opts:['none','check-readiness.cs','seed-users.cs'], g:'Programs' },
+  { k:'shutdown', l:'Shutdown', t:'enum', opts:['none','cleanup.cs'], g:'Programs' },
+];
+const ALLF = [...SPAWN, ...PLANF, ...Object.values(CATALOG).flatMap(s=>s.params)];
+const fieldOf = k => ALLF.find(f=>f.k===k) || { k, l:k, t:'text' };
+
+function entry(sc, label, rate, over={}) {
+  const p = {}; CATALOG[sc].params.forEach(x=>p[x.k]=x.d);
+  return { sc, label, rate, maxInFlight:50, params:{...p, ...over} };
+}
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// ---------------------------------------------------------------- presets
+const CODE_PRESETS = {
+  'Smoke': { duration:60, maxConc:20, timeout:30, preflight:'check-readiness.cs', shutdown:'none', entries:[ entry('checkout','Checkout',10), entry('search','Search',20) ] },
+  'Black Friday': { duration:900, maxConc:400, timeout:30, preflight:'check-readiness.cs', shutdown:'cleanup.cs', entries:[ entry('checkout','Checkout',240,{items:4,think:300}), entry('search','Search',480,{open:3}), entry('checkout','Checkout · PayPal',60,{payWith:'PayPal'}) ] },
+};
+let state = {
+  layout: 'A', editMode: 'always',
+  presets: {
+    'Smoke': { code:true, override:null },
+    'Black Friday': { code:true, override: (()=>{ const p=clone(CODE_PRESETS['Black Friday']); p.entries[0].rate=300; return p; })() },
+    'Funny jokes': { code:false, plan:{ duration:120, maxConc:50, timeout:30, preflight:'none', shutdown:'none', entries:[ entry('jokes','Jokes',30) ] } },
+    'Nightly': { code:false, plan:{ duration:1800, maxConc:100, timeout:60, preflight:'seed-users.cs', shutdown:'cleanup.cs', entries:[ entry('checkout','Checkout',60), entry('search','Search',120) ] } },
+  },
+  current: null, base: null, origin: null,   // current plan, the preset it came from (snapshot), the preset name
+  selected: 0, open: null, menu: null, dialog: null, editing: false, showChanges: false, toast: null,
+};
+const presetPlan = name => { const p=state.presets[name]; return clone(p.code ? (p.override || CODE_PRESETS[name]) : p.plan); };
+function loadPreset(name) { state.current = presetPlan(name); state.base = presetPlan(name); state.origin = name; state.selected = 0; state.open = 0; }
+loadPreset('Black Friday');
+
+// ---------------------------------------------------------------- runs (history)
+const RUNS = [
+  { id:41, when:'today 14:12', preset:'Black Friday', ok:98.7, plan: presetPlan('Black Friday'), note:'' },
+  { id:38, when:'yesterday 02:00', preset:'Nightly', ok:100, note:'Checkout changed since',
+    plan:{ duration:1800, maxConc:100, timeout:60, preflight:'seed-users.cs', shutdown:'cleanup.cs', entries:[
+      { sc:'checkout', label:'Checkout', rate:60, maxInFlight:50, params:{ baseUrl:'{{ShopUrl}}', items:2, think:800, stopOnFail:true, coupon:'BF-2026' } },
+      entry('search','Search',120) ] } },
+  { id:35, when:'Nov 24 18:40', preset:'(current plan)', ok:91.2, note:'scenario unknown',
+    plan:{ duration:300, maxConc:50, timeout:30, preflight:'none', shutdown:'none', entries:[
+      { sc:'legacyLogin', label:'Legacy login', rate:30, maxInFlight:50, params:{ user:'demo', retries:2 } },
+      entry('search','Search',60) ] } },
+];
+
+// ---------------------------------------------------------------- diffing
+function diff(a, b) {   // changes from plan a to plan b
+  const out = [];
+  PLANF.forEach(f => { if (a[f.k] !== b[f.k]) out.push({ where:'Plan', e:-1, k:f.k, from:a[f.k], to:b[f.k] }); });
+  const n = Math.max(a.entries.length, b.entries.length);
+  for (let i=0;i<n;i++) {
+    const x=a.entries[i], y=b.entries[i];
+    if (!x) { out.push({ where:y.label, e:i, k:'(added)', from:null, to:CATALOG[y.sc]?.name }); continue; }
+    if (!y) { out.push({ where:x.label, e:i, k:'(removed)', from:x.label, to:null }); continue; }
+    SPAWN.forEach(f => { if (x[f.k] !== y[f.k]) out.push({ where:y.label, e:i, k:f.k, from:x[f.k], to:y[f.k] }); });
+    const keys = new Set([...Object.keys(x.params), ...Object.keys(y.params)]);
+    keys.forEach(k => { if (x.params[k] !== y.params[k]) out.push({ where:y.label, e:i, k, from:x.params[k], to:y.params[k] }); });
+  }
+  return out;
+}
+const changes = () => diff(state.base, state.current);
+const isChanged = (e, k) => changes().some(c => c.e===e && c.k===k);
+const baseVal = (e, k) => e<0 ? state.base[k] : state.base.entries[e]?.[k] ?? state.base.entries[e]?.params[k];
+function fmt(v, f) { if (v===null || v===undefined) return '—'; if (typeof v==='boolean') return v?'on':'off'; return v + (f?.unit ? ' '+f.unit : ''); }
+
+// ---------------------------------------------------------------- mutations
+function setVal(e, k, v) {
+  if (e < 0) state.current[k] = v;
+  else { const en = state.current.entries[e]; if (k in en && k!=='params') en[k]=v; else en.params[k]=v; }
+  render();
+}
+function revert(e, k) { setVal(e, k, baseVal(e, k)); }
+function revertAll() { state.current = clone(state.base); state.dialog=null; toast('Current plan is back to “'+state.origin+'”'); }
+function toast(t) { state.toast=t; render(); clearTimeout(toast.h); toast.h=setTimeout(()=>{state.toast=null;render();},2600); }
+
+function savePreset(name, overwrite) {
+  const p = state.presets[name];
+  if (p && p.code) p.override = clone(state.current);
+  else state.presets[name] = { code:false, plan:clone(state.current) };
+  state.base = clone(state.current); state.origin = name; state.dialog = null;
+  toast(overwrite ? '“'+name+'” overwritten' + (p?.code ? ' (Reset to code brings the original back)' : '') : 'Saved as new preset “'+name+'”');
+}
+function resetCode(name) { state.presets[name].override = null; if (state.origin===name) { state.base = presetPlan(name); } toast('“'+name+'” is back to its code version'); }
+
+// ---------------------------------------------------------------- rendering helpers
+const h = (s) => s;
+function ctl(f, v, e, ro) {
+  const id = `${e}:${f.k}`;
+  if (ro) return `<span>${fmt(v, f)}</span>`;
+  if (f.t==='bool') return `<input type="checkbox" data-id="${id}" ${v?'checked':''}> <span class="muted small">${v?'on':'off'}</span>`;
+  if (f.t==='enum') return `<select data-id="${id}">${f.opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+  if (f.t==='text') return `<input type="text" data-id="${id}" value="${String(v??'').replace(/"/g,'&quot;')}">`;
+  const step = f.step || (f.t==='float'?.1:1);
+  return `<input type="range" data-id="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}">
+          <input type="number" data-id="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}"><span class="unit">${f.unit||''}</span>`;
+}
+function fieldRow(f, v, e, ro, extra={}) {
+  const ch = !ro && isChanged(e, f.k);
+  const cls = ['f', ch?'changed':'', ro?'ro':'', extra.gone?'gone':''].join(' ');
+  const range = !ro && f.min!==undefined ? `<div class="range">${f.min} – ${f.max}${f.unit?' '+f.unit:''}</div>` : '';
+  const was = ch ? `<div class="was">was ${fmt(baseVal(e,f.k), f)} in “${state.origin}”</div>` : '';
+  const note = extra.note ? `<div class="was" style="color:${extra.noteColor||'var(--muted)'}">${extra.note}</div>` : '';
+  return `<div class="${cls}"><label title="${f.k}">${f.l}</label><div class="ctl">${ctl(f, v, e, ro)}</div>
+    <button class="rev" title="Back to the preset's value" data-rev="${e}:${f.k}">↺</button>${range}${was}${note}</div>`;
+}
+function groupForm(fields, valOf, e, ro) {
+  let out='', g=null;
+  fields.forEach(f => { if (f.g!==g) { g=f.g; out+=`<h5>${g}</h5>`; } out += fieldRow(f, valOf(f), e, ro); });
+  return `<div class="form">${out}</div>`;
+}
+function entryForm(e, ro, plan=state.current) {
+  const en = plan.entries[e]; const sc = CATALOG[en.sc];
+  return groupForm([...SPAWN, ...sc.params], f => f.k in en && f.k!=='params' ? en[f.k] : en.params[f.k], e, ro);
+}
+function bars(seed) { let o=''; for (let i=0;i<34;i++){ const x=Math.sin(seed*97+i*13.7)*10000; const r=x-Math.floor(x); const c=r>.95?'bf':r>.85?'bs':''; o+=`<i class="${c}" style="height:${25+r*75}%"></i>`;} return `<div class="bars">${o}</div>`; }
+function entrySummary(en) {
+  const sc = CATALOG[en.sc]; const p = en.params;
+  const bits = sc.params.filter(f=>f.g==='Story').slice(0,3).map(f=>`${f.l.toLowerCase()} ${fmt(p[f.k],f)}`);
+  return `${en.rate} bees/min · ${bits.join(' · ')}`;
+}
+function presetChip(name) {
+  const p = state.presets[name]; if (!p) return '';
+  return p.code ? (p.override ? `<span class="chip over" title="Saved over the code version">code · changed</span>` : `<span class="chip code">code</span>`) : `<span class="chip">saved</span>`;
+}
+
+// ---------------------------------------------------------------- views
+function draftBar() {
+  const L = (id, t) => `<button class="${state.layout===id?'on':''}" data-layout="${id}">${t}</button>`;
+  const M = (id, t) => `<button class="${state.editMode===id?'on':''}" data-mode="${id}">${t}</button>`;
+  return `<div class="draft"><b>DRAFT</b> placeholder data, nothing is saved
+    <span>Layout <span class="seg">${L('A','A · cards + side panel')}${L('B','B · plan table')}${L('C','C · split: list | editor')}</span></span>
+    <span>Editing <span class="seg">${M('always','always editable')}${M('explicit','Edit button')}</span></span></div>`;
+}
+function topBar() {
+  return `<div class="top"><span class="logo">🐝 Beesharp</span>
+    <div class="menu"><button data-menu="presets">Presets ▾</button>${state.menu==='presets'?presetMenu():''}</div>
+    <div class="menu"><button data-menu="runs">Runs ▾</button>${state.menu==='runs'?runMenu():''}</div>
+    <span class="grow"></span><span class="muted small">Environment: Staging ▾</span>
+    <button class="primary">▶ Start run</button></div>`;
+}
+function presetMenu() {
+  const names = Object.keys(state.presets);
+  const row = n => { const p=state.presets[n];
+    return `<div class="row"><span class="name" data-load="${n}">${n===state.origin?'● ':''}${n}</span>${presetChip(n)}
+      ${p.code && p.override ? `<button class="link small" data-reset="${n}">Reset to code</button>`:''}</div>`; };
+  return `<div class="pop">
+    <h4>From code</h4>${names.filter(n=>state.presets[n].code).map(row).join('')}
+    <h4>Saved</h4>${names.filter(n=>!state.presets[n].code).map(row).join('')}
+    <div class="foot"><span class="muted small" style="flex:1;padding:4px">Loading a preset copies it into the current plan. Edits never touch the preset.</span></div></div>`;
+}
+function runMenu() {
+  return `<div class="pop" style="min-width:380px"><h4>Stored runs</h4>${RUNS.map(r=>`<div class="row"><span class="muted">#${r.id}</span><span class="name" data-inspect="${r.id}">${r.preset} <span class="muted small">${r.when}</span></span>
+    ${r.note?`<span class="chip ${r.note.includes('unknown')?'bad':'over'}">${r.note}</span>`:''}<button class="link small" data-inspect="${r.id}">Setup</button></div>`).join('')}</div>`;
+}
+function stateBar() {
+  const c = changes(); const dirty = c.length>0;
+  const canEdit = state.editMode==='always' || state.editing;
+  return `<div class="state ${dirty?'dirty':''}">
+    <span class="title">Current plan</span>
+    <span class="muted">from</span> <b>${state.origin}</b> ${presetChip(state.origin)}
+    ${dirty ? `<button class="link" data-show-changes><span class="dot"></span>${c.length} change${c.length>1?'s':''}</button>` : `<span class="muted small">same as preset</span>`}
+    <span class="grow"></span>
+    ${state.editMode==='explicit' ? `<button data-toggle-edit>${state.editing?'Done editing':'✎ Edit plan'}</button>`:''}
+    <button data-plan-setup>Plan setup</button>
+    <button ${dirty?'':'disabled'} data-revert-all>Discard changes</button>
+    <button ${canEdit||dirty?'':''} data-save>Save as preset…</button>
+  </div>`;
+}
+function cardsView() {
+  const canEdit = state.editMode==='always' || state.editing;
+  const cards = state.current.entries.map((en,i)=> {
+    const ch = changes().filter(c=>c.e===i).length;
+    return `<div class="card ${ch?'changed':''} ${state.open===i?'sel':''}">
+      <div class="head"><span class="t">${en.label}</span>${ch?`<span class="chip chg">${ch} changed</span>`:''}</div>
+      <div class="sum">${CATALOG[en.sc].name} · ${entrySummary(en)}</div>${bars(i+3)}
+      <div class="acts"><button data-open="${i}">${canEdit?'✎ Edit':'Setup'}</button><span class="grow"></span><span class="muted small">98.9 % ok</span></div></div>`;
+  }).join('');
+  return `<div class="cards">${cards}</div>`;
+}
+function sidePanel() {
+  if (state.open===null) return '';
+  const canEdit = state.editMode==='always' || state.editing;
+  const isPlan = state.open===-1;
+  const title = isPlan ? 'Plan setup' : state.current.entries[state.open].label;
+  const sub = isPlan ? 'duration, limits, programs' : CATALOG[state.current.entries[state.open].sc].name;
+  const body = isPlan ? groupForm(PLANF, f=>state.current[f.k], -1, !canEdit) : entryForm(state.open, !canEdit);
+  return `<aside class="side"><header><span class="t">${title} <span class="muted small">${sub}</span></span><button data-close>Close</button></header>
+    <div class="body">${canEdit?'':`<div class="info">Read only. ${state.editMode==='explicit'?'Press “Edit plan” to change it.':''}</div>`}${body}</div>
+    <footer class="small muted">Changes go to the current plan right away. “${state.origin}” stays as it is.</footer></aside>`;
+}
+function tableView() {
+  const canEdit = state.editMode==='always' || state.editing;
+  const rows = state.current.entries.map((en,i)=>{
+    const ch = changes().filter(c=>c.e===i).length; const open = state.open===i;
+    return `<tr class="entry ${open?'open':''}" data-open="${i}"><td>${open?'▾':'▸'} <b>${en.label}</b> ${ch?`<span class="chip chg">${ch} changed</span>`:''}</td>
+      <td>${CATALOG[en.sc].name}</td><td>${en.rate} /min</td><td class="muted small">${entrySummary(en)}</td></tr>
+      ${open?`<tr><td colspan="4" class="exp"><div class="twocol">${entryForm(i, !canEdit)}</div></td></tr>`:''}`;
+  }).join('');
+  const planOpen = state.open===-1;
+  return `<table class="plan"><thead><tr><th>Scenario entry</th><th>Scenario</th><th>Rate</th><th>Settings</th></tr></thead><tbody>
+    <tr class="entry ${planOpen?'open':''}" data-open="-1"><td>${planOpen?'▾':'▸'} <b>Plan</b> ${changes().some(c=>c.e===-1)?'<span class="chip chg">changed</span>':''}</td><td class="muted">—</td><td class="muted">—</td>
+      <td class="muted small">${state.current.duration}s · max in-flight ${state.current.maxConc} · preflight ${state.current.preflight}</td></tr>
+    ${planOpen?`<tr><td colspan="4" class="exp"><div class="twocol">${groupForm(PLANF, f=>state.current[f.k], -1, !canEdit)}</div></td></tr>`:''}
+    ${rows}</tbody></table>
+    <p class="muted small">Tip: click a row to fold it open. All edits stay in the current plan.</p>`;
+}
+function splitView() {
+  const canEdit = state.editMode==='always' || state.editing;
+  const sel = state.open ?? 0;
+  const item = (i, label, sub) => { const ch = changes().filter(c=>c.e===i).length;
+    return `<div class="r" style="cursor:pointer;${sel===i?'background:#262a31':''}" data-open="${i}"><span class="p"><b>${label}</b><br><span class="muted small">${sub}</span></span>${ch?`<span class="chip chg">${ch}</span>`:''}</div>`; };
+  const list = item(-1,'Plan', `${state.current.duration}s · ${state.current.entries.length} entries`) + state.current.entries.map((en,i)=>item(i, en.label, CATALOG[en.sc].name+' · '+en.rate+'/min')).join('');
+  const body = sel===-1 ? groupForm(PLANF, f=>state.current[f.k], -1, !canEdit) : entryForm(sel, !canEdit);
+  const c = changes();
+  return `<div style="display:grid;grid-template-columns:minmax(200px,260px) 1fr minmax(220px,280px);gap:14px;align-items:start" class="splitgrid">
+    <div class="runs">${list}</div>
+    <div class="runs" style="padding:4px 16px 16px">${body}</div>
+    <div class="runs" style="padding:10px 12px"><div class="muted small" style="margin-bottom:6px">CHANGES TO “${state.origin}”</div>${c.length?changeList(c):'<span class="muted small">None. The current plan equals the preset.</span>'}</div></div>`;
+}
+function changeList(c) {
+  return `<ul class="changes">${c.map(x=>{ const f=fieldOf(x.k);
+    return `<li><span class="what"><span class="muted">${x.where} ·</span> ${f.l}<br><span class="old">${fmt(x.from,f)}</span> → <span class="new">${fmt(x.to,f)}</span></span>
+      ${x.e!==undefined && !x.k.startsWith('(')?`<button class="link" data-rev="${x.e}:${x.k}" title="Undo this change">↺</button>`:''}</li>`; }).join('')}</ul>`;
+}
+function historySection() {
+  return `<div class="section-title">Stored runs · inspect what ran</div><div class="runs">${RUNS.map(r=>`<div class="r"><span class="n">#${r.id}</span>
+    <span class="p">${r.preset} <span class="muted small">${r.when} · ${r.plan.entries.length} entries · ${r.ok}% ok</span></span>
+    ${r.note?`<span class="chip ${r.note.includes('unknown')?'bad':'over'}">${r.note}</span>`:''}
+    <button data-inspect="${r.id}">Setup</button></div>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------- dialogs
+function dialog() {
+  const d = state.dialog; if (!d) return '';
+  if (d.type==='changes') return shell('Changes in the current plan', `<p class="muted small">Compared to the preset “${state.origin}”. The preset itself is unchanged.</p>${changeList(changes())}`,
+    `<button data-revert-all class="danger">Discard all</button><span class="grow"></span><button data-close-dlg>Close</button><button class="primary" data-save>Save as preset…</button>`);
+  if (d.type==='load') return shell(`Load “${d.name}”?`, `<div class="warn">The current plan has ${changes().length} change(s) that are not in any preset. Loading “${d.name}” replaces them.</div>${changeList(changes())}`,
+    `<button data-close-dlg>Cancel</button><button data-save>Save them as preset first…</button><button class="primary" data-force-load="${d.name}">Load and drop changes</button>`);
+  if (d.type==='save') return saveDialog(d);
+  if (d.type==='inspect') return inspectDialog(d);
+  return '';
+}
+function shell(title, body, foot) { return `<div class="shade" data-shade><div class="dlg"><header>${title}</header><div class="body">${body}</div><footer>${foot}</footer></div></div>`; }
+function saveDialog(d) {
+  const names = Object.keys(state.presets);
+  const target = d.mode==='over' ? d.target : null; const tp = target ? state.presets[target] : null;
+  const exists = d.mode==='new' && names.some(n=>n.toLowerCase()===d.name.trim().toLowerCase());
+  const overDiff = target ? diff(presetPlan(target), state.current) : [];
+  const body = `
+    <div class="opt ${d.mode==='new'?'on':''}" data-savemode="new"><input type="radio" ${d.mode==='new'?'checked':''}><div style="flex:1">
+      <b>New preset</b><br><input type="text" id="newname" value="${d.name}" placeholder="Name" style="width:100%;margin-top:6px">
+      ${exists?`<div class="small" style="color:var(--slow);margin-top:4px">A preset with this name exists. Pick “Overwrite” below to replace it.</div>`:''}</div></div>
+    <div class="opt ${d.mode==='over'?'on':''}" data-savemode="over"><input type="radio" ${d.mode==='over'?'checked':''}><div style="flex:1">
+      <b>Overwrite a preset</b><br><select id="overname" style="margin-top:6px">${names.map(n=>`<option ${n===target?'selected':''}>${n}</option>`).join('')}</select>
+      ${target ? `<div class="small muted" style="margin-top:6px">${overDiff.length} difference(s) to what “${target}” holds now:</div>${changeList(overDiff).replace(/<button[^>]*>↺<\/button>/g,'')}
+        ${tp.code?`<div class="info">“${target}” comes from code. Overwriting saves your version next to it; <b>Reset to code</b> in the Presets menu brings the original back.</div>`
+          :`<div class="warn">“${target}” is replaced for everyone using this server. This cannot be undone.</div>`}`:''}</div></div>`;
+  const ok = d.mode==='new' ? (d.name.trim() && !exists) : !!target;
+  const btn = d.mode==='new' ? `<button class="primary" ${ok?'':'disabled'} data-do-save>Save new preset</button>`
+                             : `<button class="primary ${tp&&!tp.code?'danger':''}" ${ok?'':'disabled'} data-do-save>Overwrite “${target}”</button>`;
+  return shell('Save current plan as preset', body, `<button data-close-dlg>Cancel</button>${btn}`);
+}
+function inspectDialog(d) {
+  const r = RUNS.find(x=>x.id===d.id); const p = r.plan;
+  const parts = [];
+  parts.push(`<p class="muted small">What run #${r.id} (${r.when}, from “${r.preset}”) ran with. Stored with the run, so it shows even if the preset or the scenario code changed since.</p>`);
+  parts.push(`<h5 style="margin:12px 0 4px" class="muted small">PLAN</h5>` + PLANF.map(f=>fieldRow(f, p[f.k], -1, true)).join(''));
+  p.entries.forEach((en,i)=>{
+    const sc = CATALOG[en.sc];
+    parts.push(`<h5 style="margin:16px 0 4px">${en.label} <span class="muted small">${sc?sc.name:en.sc}</span></h5>`);
+    if (!sc) { parts.push(`<div class="badline">Scenario “${en.sc}” is not known to this server any more. Values are shown as stored; this entry cannot be loaded.</div>`);
+      Object.entries(en.params).forEach(([k,v])=>parts.push(fieldRow({k,l:k,t:'text'}, v, i, true))); return; }
+    SPAWN.forEach(f=>parts.push(fieldRow(f, en[f.k], i, true)));
+    const known = new Set(sc.params.map(f=>f.k));
+    sc.params.forEach(f=>{ const has = f.k in en.params;
+      parts.push(fieldRow(f, has?en.params[f.k]:f.d, i, true, has?{}:{ note:`new since this run · would use default ${fmt(f.d,f)}`, noteColor:'var(--slow)' })); });
+    Object.keys(en.params).filter(k=>!known.has(k)).forEach(k=>parts.push(fieldRow({k,l:k,t:'text'}, en.params[k], i, true, { gone:true, note:'no longer a parameter of this scenario · dropped when loaded', noteColor:'var(--slow)' })));
+  });
+  const unknown = p.entries.some(en=>!CATALOG[en.sc]);
+  return shell(`Setup of run #${r.id}`, parts.join(''), `<button data-close-dlg>Close</button>
+    <button class="primary" data-use-run="${r.id}">Load into current plan${unknown?' (known entries)':''}</button>`);
+}
+
+// ---------------------------------------------------------------- main render
+function render() {
+  const page = state.layout==='A' ? cardsView() : state.layout==='B' ? tableView() : splitView();
+  document.getElementById('app').innerHTML = draftBar() + topBar() + stateBar() +
+    `<main><div class="page">${page}${historySection()}</div>${state.layout==='A'?sidePanel():''}</main>` + dialog() +
+    (state.toast?`<div class="toast">${state.toast}</div>`:'');
+}
+
+// ---------------------------------------------------------------- events
+const app = document.getElementById('app');
+app.addEventListener('click', ev => {
+  const t = ev.target.closest('[data-layout],[data-mode],[data-menu],[data-load],[data-reset],[data-inspect],[data-open],[data-close],[data-rev],[data-revert-all],[data-save],[data-show-changes],[data-close-dlg],[data-force-load],[data-savemode],[data-do-save],[data-use-run],[data-toggle-edit],[data-plan-setup],[data-shade]');
+  if (!t) { if (state.menu) { state.menu=null; render(); } return; }
+  const ds = t.dataset;
+  if ('shade' in ds && ev.target!==t) return;
+  if (ds.layout) { state.layout=ds.layout; state.open = ds.layout==='A'?null:(state.open??0); }
+  else if (ds.mode) { state.editMode=ds.mode; state.editing=false; }
+  else if (ds.menu) { state.menu = state.menu===ds.menu?null:ds.menu; render(); return; }
+  else if (ds.load) { state.menu=null; if (changes().length) state.dialog={type:'load',name:ds.load}; else { loadPreset(ds.load); toast('Loaded “'+ds.load+'” into the current plan'); return; } }
+  else if (ds.forceLoad) { loadPreset(ds.forceLoad); state.dialog=null; toast('Loaded “'+ds.forceLoad+'”'); return; }
+  else if (ds.reset) { state.menu=null; resetCode(ds.reset); return; }
+  else if (ds.inspect) { state.menu=null; state.dialog={type:'inspect', id:+ds.inspect}; }
+  else if ('planSetup' in ds) { state.open = -1; }
+  else if (ds.open!==undefined) { const i=+ds.open; state.open = (state.layout==='B' && state.open===i) ? null : i; }
+  else if ('close' in ds) { state.open=null; }
+  else if (ds.rev) { const [e,k]=ds.rev.split(':'); revert(+e,k); return; }
+  else if ('revertAll' in ds) { revertAll(); return; }
+  else if ('save' in ds) { state.dialog={type:'save', mode:'new', name: state.origin+' (copy)', target:null}; }
+  else if ('showChanges' in ds) { state.dialog={type:'changes'}; }
+  else if ('closeDlg' in ds || 'shade' in ds) { state.dialog=null; }
+  else if (ds.savemode) { const d=state.dialog; d.mode=ds.savemode; if (d.mode==='over' && !d.target) d.target=state.origin; }
+  else if ('doSave' in ds) { const d=state.dialog; savePreset(d.mode==='new'?d.name.trim():d.target, d.mode==='over'); return; }
+  else if (ds.useRun) { const r=RUNS.find(x=>x.id===+ds.useRun); const p=clone(r.plan);
+    p.entries = p.entries.filter(en=>CATALOG[en.sc]).map(en=>{ const sc=CATALOG[en.sc]; const params={}; sc.params.forEach(f=>params[f.k]= f.k in en.params?en.params[f.k]:f.d); return {...en, params}; });
+    state.current=p; state.base=clone(p); state.origin='run #'+r.id; state.dialog=null; toast('Run #'+r.id+'’s setup is now the current plan'); return; }
+  else if ('toggleEdit' in ds) { state.editing=!state.editing; }
+  render();
+});
+app.addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.id==='newname') { state.dialog.name = el.value; const pos=el.selectionStart; render(); const n=document.getElementById('newname'); n.focus(); n.setSelectionRange(pos,pos); return; }
+  if (!el.dataset.id) return;
+  const [e,k] = el.dataset.id.split(':'); const f = fieldOf(k);
+  let v = el.type==='checkbox' ? el.checked : el.value;
+  if (f.t==='int') v = parseInt(v,10); if (f.t==='float') v = Math.round(parseFloat(v)*10)/10;
+  if ((f.t==='int'||f.t==='float') && isNaN(v)) return;
+  const pos = el.selectionStart; const tag = el.type;
+  setVal(+e, k, v);
+  const again = app.querySelector(`[data-id="${el.dataset.id}"][type="${tag}"]`) || app.querySelector(`[data-id="${el.dataset.id}"]`);
+  if (again && tag!=='checkbox') { again.focus(); try { if (pos!=null) again.setSelectionRange(pos,pos); } catch {} }
+});
+app.addEventListener('change', ev => { if (ev.target.id==='overname') { state.dialog.target = ev.target.value; render(); } });
+render();
+</script>
+</body>
+</html>
