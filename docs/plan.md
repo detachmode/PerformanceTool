@@ -21,6 +21,7 @@ Editing a scenario (user asked for these):
 - **E4 Units and range:** "Delay 500" has no unit; min/max of sliders are not shown.
 - **E5 "Steps (URLs)" list** shows every URL twice (input plus preview line).
 - **E6 Below 860 px** the settings panel overlays the page and covers the page's Done button.
+- **E7 Load parameters from a stored or imported run** (user asked 2026-11-27): a run's "Setup" shows the plan it ran with (`runs.plan_json`), read only, also for imported runs, and "Load into current plan" copies it into the current plan (never into a preset). Against today's scenario definitions: a parameter added since uses its default (shown), one removed since is dropped (shown), an entry whose scenario is unknown is shown with its stored values but not loaded. Draft: `docs/demos/plan-editing-draft.html`.
 Bugs:
 - **B1** Loading another preset while a finished run is shown: the title shows the new preset but the cards still show the previous plan's run.
 - **B2** Bees/min shows nonsense at the very start of a run (e.g. "4512 / 100" in the first second).
