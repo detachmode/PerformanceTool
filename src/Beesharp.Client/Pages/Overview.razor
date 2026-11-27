@@ -597,6 +597,9 @@
     }
     else
     {
+        @* Above the cards, so a failed preflight or shutdown is seen without scrolling past many scenarios (user, brain 0071 update). *@
+        <PreflightStrip Run="s.Preflight" />
+        <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
         @if (s.Count == 0 && (DataMode.IsFakeMode || ApiRun.HasLoadedPlan || !ApiRun.IsServerReachable))
         {
             <section class="plan-empty" aria-label="Empty plan">
@@ -631,9 +634,6 @@
                 }
             </div>
         }
-        @* Below the cards, so a strip that appears or goes never pushes them (brain 0071). *@
-        <PreflightStrip Run="s.Preflight" />
-        <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
     }
 </div>
 

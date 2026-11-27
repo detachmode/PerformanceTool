@@ -108,14 +108,14 @@ function registerThemeAndLanguage(monaco) {
             { token: 'log.banner', foreground: '8c8578' },
         ],
         colors: {
-            'editor.background': '#141311',
-            'editorGutter.background': '#141311',
+            'editor.background': '#1c1f24',
+            'editorGutter.background': '#1c1f24',
             'editor.foreground': '#f1efea',
             'editorLineNumber.foreground': '#6f6a63',
             'editorLineNumber.activeForeground': '#b8b2a8',
             'editor.selectionBackground': '#38342e',
             'editor.inactiveSelectionBackground': '#2a2723',
-            'editor.lineHighlightBackground': '#1c1a17',
+            'editor.lineHighlightBackground': '#262a31',
             'editor.lineHighlightBorder': '#24211d',
             'editorCursor.foreground': '#f1efea',
             'editorIndentGuide.background1': '#24211d',
@@ -123,7 +123,7 @@ function registerThemeAndLanguage(monaco) {
             'scrollbarSlider.background': '#3a363080',
             'scrollbarSlider.hoverBackground': '#504b43a0',
             'scrollbarSlider.activeBackground': '#6a6359c0',
-            'editorWidget.background': '#1a1917',
+            'editorWidget.background': '#22252b',
             'editorWidget.border': '#2e2b26',
         }
     });

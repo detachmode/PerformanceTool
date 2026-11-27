@@ -20,3 +20,7 @@ A load test is watched for minutes. Cards that breathe once a second make the nu
 ## Known limits
 - In Live mode the step list of a scenario is only known when the run's status arrives; a card that has no steps yet grows when they arrive (once, at the start). Fixing it needs the scenario catalog to expose the declared steps before a run.
 - A shutdown program that fails is now reported under the cards, one scroll away on a page with many cards.
+
+## Update (user, 2026-11-27): the strips go back above the cards
+With many scenarios a failed preflight or shutdown below the cards was out of sight. The user chose visibility: `PreflightStrip` and `ShutdownStrip`
+sit above the cards again. They appear at most once per phase (preflight at the start, shutdown at the end), so the cards move by a strip's height then.
