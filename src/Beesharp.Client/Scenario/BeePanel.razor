@@ -103,7 +103,7 @@
                         var callRatio = call.Skipped || call.Failed ? 1 : SlowCallRule.Ratio(call.DurationMs, call.TypicalMs, call.SlowThresholdMs);
                         var cls = call.Failed ? "bad" : call.Slow ? "warn" : call.Skipped ? "" : BeeOrder.Good(SlowCallRule.Step(callRatio));
                         <li class="call @cls @(call.Skipped ? "skipped" : "")">
-                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="Analyse all durations of @(call.Endpoint ?? call.Name)">@call.Name</button>
+                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="@CallTitle(call)"><span class="cn-head">@Format.CallNameParts(call.Name).Head</span><span class="cn-tail">@Format.CallNameParts(call.Name).Tail</span></button>
                             <span class="track"><i style="left:@Pct(call.OffsetMs / Math.Max(1, fb.DurationMs))%;width:@(Math.Max(0.8, call.DurationMs / Math.Max(1, fb.DurationMs) * 100).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                             <span class="call-dur">@(call.Skipped ? "" : Format.Ms(call.DurationMs))</span>
                             <span class="call-status" title="@(call.TypicalMs is { } tyMs && !call.Skipped ? $"Typical for this call: {Format.Ms(tyMs)}" : call.Error)">@CallStatus(call)</span>
@@ -173,7 +173,7 @@
                         var cls = !done ? "run" : call.Failed ? "bad" : "good";
                         var w = (done ? call.DurationMs : elapsedMs - call.OffsetMs) / denom * 100;
                         <li class="call @cls">
-                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="Analyse all durations of @(call.Endpoint ?? call.Name)">@call.Name</button>
+                            <button type="button" class="call-name call-link" @onclick="() => OpenEndpoint(call)" title="@CallTitle(call)"><span class="cn-head">@Format.CallNameParts(call.Name).Head</span><span class="cn-tail">@Format.CallNameParts(call.Name).Tail</span></button>
                             <span class="track"><i style="left:@Pct(call.OffsetMs / denom)%;width:@(Math.Max(0.8, w).ToString("0.##", CultureInfo.InvariantCulture))%"></i></span>
                             <span class="call-dur">@(done ? Format.Ms(call.DurationMs) : "")</span>
                             <span class="call-status">@(!done ? "running" : call.Failed ? (call.Status?.ToString() ?? (ExecutionResult.IsCanceledError(call.Error) ? "canceled" : "timeout")) : call.Status?.ToString() ?? "")</span>
@@ -360,6 +360,10 @@
     }
 
     private static string Pct(double f) => Math.Clamp(f * 100, 3, 100).ToString("0.#", CultureInfo.InvariantCulture);
+
+    /// <summary>The call's full name (the column cuts long ones in the middle) and URL, and what a click does.</summary>
+    private static string CallTitle(FakeCall c) =>
+        $"{c.Name}{(c.RawUrl is { Length: > 0 } url ? "\n" + url : "")}\nAnalyse all durations of {c.Endpoint ?? c.Name}";
 
     private static string CallStatus(FakeCall c) =>
         c.Skipped ? "skipped" : c.Failed ? (c.Status?.ToString() ?? (ExecutionResult.IsCanceledError(c.Error) ? "canceled" : "timeout")) : c.Slow ? "slow" : c.Status?.ToString() ?? "";

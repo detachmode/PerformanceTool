@@ -29,5 +29,18 @@ public static class Format
     /// <summary>Whether a bee is far enough over its typical time to name the figure ("1.4× typical"): below about 1.05 it only has the faintest tint.</summary>
     public static bool OverTypical(double ratio) => ratio >= 1.05;
 
+    /// <summary>
+    /// A call name ("GET /products/12/reviews") in two parts for a narrow column: the head (method and start of the path) may be cut with an ellipsis, the tail
+    /// (the end of the path, at a "/" when there is one) always stays, so the part that tells calls apart is never hidden. A short name has no tail.
+    /// </summary>
+    public static (string Head, string Tail) CallNameParts(string name)
+    {
+        const int Short = 24, TailMax = 18, TailMin = 6, Fallback = 14;
+        if (name.Length <= Short) return (name, "");
+        var from = name.LastIndexOf('/', name.Length - TailMin);
+        var cut = from > 0 && name.Length - from <= TailMax ? from : name.Length - Fallback;
+        return (name[..cut], name[cut..]);
+    }
+
     public static string Plural(int n, string one, string many) => $"{Num(n)} {(n == 1 ? one : many)}";
 }

@@ -1556,6 +1556,7 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 .bp-body { flex: 1; min-height: 0; overflow-y: auto; padding: .9rem 1.1rem 1.4rem; }
 .bp-body .sl-console.compact { max-height: none; }
 .bp-body .calls { margin: 0; }
+.bp-body .call { grid-template-columns: minmax(0, 3fr) minmax(1.5rem, 1.2fr) 3.6rem 3rem; gap: .5rem; }   /* the name gets the room: it tells calls apart (brain 0072) */
 .bp-body .stp-time { white-space: nowrap; }
 .stp-consolewrap { position: relative; }
 .stp-copy { position: absolute; top: .55rem; right: .3rem; z-index: 2; opacity: 0; transition: opacity .12s; }
@@ -1707,6 +1708,9 @@ button.step-now.bad:hover { text-decoration: underline; text-underline-offset: 3
 
 /* ----- BeePanel call link ----- */
 .call-name.call-link { background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-name.call-link { display: flex; min-width: 0; }
+.call-name.call-link .cn-head { flex: 0 1 auto; min-width: 4.6em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.call-name.call-link .cn-tail { flex: none; white-space: pre; }
 .call-name.call-link:hover { color: var(--title); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; }
 
 /* ----- Calls analysis page (/calls, brain 0060) ----- */
