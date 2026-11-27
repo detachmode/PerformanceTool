@@ -2232,3 +2232,29 @@ html.phone .v3d-cams button { white-space: nowrap; min-height: 36px; }
 html.phone .v3d-stage-wrap { height: 52dvh; min-height: 310px; }
 html.phone .v3d-hint { display: none; }
 html.phone .v3d-lane-btn, html.phone .v3d-actions .chip { min-height: 40px; }
+
+/* ===================================================================================================================
+   W1 (brain 0068): the bee side panel (a bee next to any page: Logs now, Calls next). Own block, nothing above is changed.
+   Desktop: a fixed panel on the right like the scenario settings panel (.ed-side, brain 0066) and the assistant; it starts under the top bar and ends above the
+   player bar, and the page it belongs to makes room (margin) instead of being covered. Phone: the bottom Sheet (class bee-sheet) with .bsp-phone inside.
+   =================================================================================================================== */
+:root { --bee-side: clamp(360px, 32vw, 480px); }
+.bee-side { position: fixed; top: var(--top-h); right: 0; bottom: 0; width: var(--bee-side); z-index: 64; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45); outline: none; }
+.shell:has(.player) .bee-side { bottom: 72px; }
+.shell.asst-open .bee-side { right: var(--asst-w); }
+.logs-page.bee-side-open { margin-right: var(--bee-side); }
+@media (max-width: 860px) { .bee-side { width: min(100%, 420px); } .logs-page.bee-side-open { margin-right: 0; } }
+.bsp-head { flex: none; display: flex; align-items: center; gap: .6rem; padding: .45rem .55rem .35rem 1.1rem; border-bottom: 1px solid var(--border); min-height: 2.6rem; }
+.bsp-where { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: .7rem; }
+.bsp-scn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--title); font-size: .84rem; font-weight: 600; }
+.bsp-open { flex: none; white-space: nowrap; font-size: .8rem; color: var(--muted); text-decoration: none; }
+.bsp-open:hover { color: var(--title); text-decoration: underline; text-underline-offset: 3px; }
+.bsp-head .bsp-only { flex: none; white-space: nowrap; margin: 0; }
+.bee-side .bp, .bsp-phone .bp { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.bee-side .bp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.bee-side .bp-hint, .bsp-phone .bp-hint { margin: 1.2rem 1.1rem; }
+.lg-bee.open { color: var(--title); text-decoration-color: var(--muted); }
+html.phone .bsp-phone { display: flex; flex-direction: column; }
+html.phone .bsp-phone .bsp-head { padding: .1rem max(.6rem, env(safe-area-inset-right)) .2rem max(1rem, env(safe-area-inset-left)); touch-action: none; }
+html.phone .bsp-phone .bsp-head .icon-btn { width: 44px; height: 44px; font-size: 1.1rem; }
+html.phone .bsp-phone .bsp-open, html.phone .bsp-head .bsp-only { min-height: 40px; display: inline-flex; align-items: center; }

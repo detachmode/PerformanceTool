@@ -26,6 +26,8 @@
     var shownTotal = (rt is null ? 0 : runRows.Count + rt.Entries.Sum(e => e.Values.Count(v => Match(v.Key))));
 }
 
+<ScrollMemory Key="environment" />
+
 <div class="page env-page">
     @if (staticTotal + total >= 8)
     {

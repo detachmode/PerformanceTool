@@ -1,0 +1,98 @@
+@* One bee in a side panel (brain 0068): the scenario page's bee view (BeePanel: Steps / Logs / Calls, live logs of a bee in flight, copy buttons) for any page that wants to show
+   a bee without leaving itself: the Logs page now, the Calls page next. A fixed panel on the right of the page on desktop (same pattern as the scenario settings panel and the
+   assistant, brain 0066), the bottom Sheet on the phone (like the scenario page's bee, brain 0059). The page owns "open" (usually an address parameter, so Back closes it) and
+   renders this component only while a bee is open. The bee is found by its number in the loaded run (BeeLookup), so Fake mode, a running run and a stored run all work. *@
+@inject PhoneState Phone
+@inject NavigationManager Nav
+
+@{
+    var s = Snapshot;
+    var found = BeeLookup.Find(s, Sequence);
+    if (found is { Running: { } flying }) lastRunning = flying;
+    var gap = found is null && lastRunning?.Sequence == Sequence;   // a bee that just finished is for a moment in neither list
+    var entry = found?.Entry ?? (gap ? lastRunning!.Entry : -1);
+    var label = entry >= 0 && entry < s.Labels.Count ? s.Labels[entry] : null;
+    var open = entry >= 0 ? ScenarioLink.Href(entry, new ScenarioFilter(Bee: Sequence), Tab) : null;
+    RenderFragment body = @<text>
+        <div class="bsp-head">
+            <div class="bsp-where">
+                @if (label is not null)
+                {
+                    <span class="bsp-scn" title="@label">@label</span>
+                    <a class="bsp-open" href="@open" title="Open B@(Sequence + 1) in the scenario page, with its list, filters and chart">Open in scenario ›</a>
+                }
+                else { <span class="bsp-scn muted">B@(Sequence + 1)</span> }
+            </div>
+            @HeaderActions
+            <button type="button" class="icon-btn" @onclick="CloseAsync" aria-label="Close the bee" title="Close (Esc)">✕</button>
+        </div>
+        @if (found is null && !gap)
+        {
+            <p class="bp-hint muted">B@(Sequence + 1) is not in the loaded run. Pick the run it belongs to from the mode menu, or close this panel.</p>
+        }
+        else
+        {
+            <BeePanel Snapshot="s" Index="entry" Steps="s.StepsOf(entry)" Bee="found?.Finished" Running="found?.Running ?? (gap ? lastRunning : null)"
+                      Tab="Tab" TabChanged="TabChanged" ShowNav="OnStep.HasDelegate" ShowMore="false"
+                      CanPrev="CanPrev" CanNext="CanNext" OnStep="OnStep" OnStepFilter="FilterByStep" />
+        }
+    </text>;
+}
+
+@if (Phone.IsPhone)
+{
+    <Sheet Open="true" Resizable="true" Full="full" FullChanged="v => full = v" OnClose="CloseAsync" Label="@("Bee B" + (Sequence + 1))" Class="bee-sheet">
+        <aside class="scn-right bsp-phone" aria-label="Bee B@(Sequence + 1)">@body</aside>
+    </Sheet>
+}
+else
+{
+    <aside class="bee-side" aria-label="Bee B@(Sequence + 1)" tabindex="-1" @ref="panel" @onkeydown="OnKey">@body</aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
+    /// <summary>The bee to show, by its sequence (B7 is 6).</summary>
+    [Parameter, EditorRequired] public int Sequence { get; set; }
+    /// <summary>The tab of the bee view; the page keeps it in its address (<c>beeTab</c>).</summary>
+    [Parameter] public BeeTab Tab { get; set; }
+    [Parameter] public EventCallback<BeeTab> TabChanged { get; set; }
+    /// <summary>✕, Escape, or a swipe down on the phone. The page decides how to close (go back in history, or replace the address).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>‹ ›: only shown when the page has a list to walk (<see cref="OnStep"/> set).</summary>
+    [Parameter] public bool CanPrev { get; set; }
+    [Parameter] public bool CanNext { get; set; }
+    [Parameter] public EventCallback<int> OnStep { get; set; }
+    /// <summary>"failed at Step" was clicked in the bee's header.</summary>
+    [Parameter] public EventCallback<int> OnStepFilter { get; set; }
+    /// <summary>Extra actions of the page next to "Open in scenario" (the Logs page: "Only its lines").</summary>
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+
+    private ElementReference panel;
+    private bool full;
+    private RunningBee? lastRunning;
+    private int? focusedFor;
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    /// <summary>"failed at Step": the bees that failed there live on the scenario page, so a page without a step filter of its own goes there (brain 0029).</summary>
+    private Task FilterByStep(int step)
+    {
+        if (OnStepFilter.HasDelegate) return OnStepFilter.InvokeAsync(step);
+        var entry = BeeLookup.Find(Snapshot, Sequence)?.Entry ?? lastRunning?.Entry ?? -1;
+        if (entry >= 0) Nav.NavigateTo(ScenarioLink.Href(entry, new ScenarioFilter(FailedStep: step)));
+        return Task.CompletedTask;
+    }
+
+    private Task OnKey(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keyboard focus into the panel, so Escape closes it (once per bee; not while the user works inside it).
+        if (Phone.IsPhone || focusedFor == Sequence) return;
+        focusedFor = Sequence;
+        try { await panel.FocusAsync(preventScroll: true); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+    }
+}

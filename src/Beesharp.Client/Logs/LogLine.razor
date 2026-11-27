@@ -1,4 +1,4 @@
-@* One line of the Logs page (brain 0059), console style: [0:05.9] ERR Checkout B7 message, an exception below it. The bee number filters the page to that bee (brain 0029).
+@* One line of the Logs page (brain 0059), console style: [0:05.9] ERR Checkout B7 message, an exception below it. The bee number opens that bee in the side panel (brain 0029, 0068).
    Colour only where it means something: the level tag (red error, amber warning, green information) and the message of an error. *@
 @if (ReferenceEquals(Line, PagedLogList.Placeholder))
 {
@@ -6,13 +6,15 @@
 }
 else
 {
-    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Stamp(Line, TimeMode)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }@if (Line.Sequence >= 0) { <button type="button" class="lg-bee" title="Show only the logs of B@(Line.Sequence + 1)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button> }<span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
+    <div class="lg-line lv-@Line.Level"><span class="lg-t">[@LogText.Stamp(Line, TimeMode)]</span><span class="lg-lv">@LogText.Tag(Line.Level)</span>@if (Scenario.Length > 0) { <span class="lg-sc">@Scenario</span> }@if (Line.Sequence >= 0) { <button type="button" class="lg-bee @(OpenBee == Line.Sequence ? "open" : "")" title="Open B@(Line.Sequence + 1): its steps, logs and calls" aria-pressed="@Aria.Bool(OpenBee == Line.Sequence)" @onclick="() => OnBee.InvokeAsync(Line.Sequence)">B@(Line.Sequence + 1)</button> }<span class="lg-msg">@Line.Message</span>@if (!string.IsNullOrEmpty(Line.Exception)) { <pre class="lg-ex">@Line.Exception</pre> }</div>
 }
 
 @code {
     [Parameter, EditorRequired] public FakeLogEntry Line { get; set; } = default!;
     [Parameter] public string Scenario { get; set; } = "";
     [Parameter] public EventCallback<int> OnBee { get; set; }
+    /// <summary>The bee open in the side panel (its number is marked in the lines).</summary>
+    [Parameter] public int? OpenBee { get; set; }
     /// <summary>Time into the run or clock time (the toggle on the Logs page).</summary>
     [Parameter] public LogTimeMode TimeMode { get; set; }
 }

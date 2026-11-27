@@ -58,17 +58,17 @@
             }
             @Tabs(detail is not null)
         </header>
-        @if (fb.Error is not null && !(tab == Tab.Steps && fb.FailedStep >= 0)) { <p class="bee-error bad">@fb.Error</p> }
+        @if (fb.Error is not null && !(tab == BeeTab.Steps && fb.FailedStep >= 0)) { <p class="bee-error bad">@fb.Error</p> }
         <div class="bp-body" @ref="bodyEl" @key="@($"fin-{fb.Sequence}-{tab}")">
             @if (detail is null)
             {
                 <p class="muted">The calls and logs of this bee are no longer kept (details of older successful bees are dropped first).</p>
             }
-            else if (tab == Tab.Steps)
+            else if (tab == BeeTab.Steps)
             {
                 <StepList @key="fb.Sequence" Steps="StepLogic.ForBee(Steps, detail.Calls, fb.FailedStep, fb.FailedRep, fb.Error, detail.StepVisits)" Logs="detail.Logs" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + fb.Name)" OnCallClick="OpenEndpoint" />
             }
-            else if (tab == Tab.Logs)
+            else if (tab == BeeTab.Logs)
             {
                 @if (detail.Logs.Count == 0)
                 {
@@ -135,12 +135,12 @@
             @Tabs(true)
         </header>
         <div class="bp-body" @ref="bodyEl" @key="@($"run-{ra.Sequence}-{tab}")">
-            @if (tab == Tab.Steps)
+            @if (tab == BeeTab.Steps)
             {
                 var nowCall = ra.Calls.LastOrDefault(c => !c.Skipped && c.OffsetMs <= elapsedMs)?.Name;
                 <StepList @key="ra.Sequence" Steps="StepLogic.ForRunning(Steps, ra, elapsedMs)" NowCall="@nowCall" LiveLogs="@(DataMode.IsFakeMode ? null : runningLogs)" DefaultExpanded="stepsAllExpanded" ResetKey="stepsExpandVersion" AriaLabel="@("Steps of " + ra.Name)" OnCallClick="OpenEndpoint" />
             }
-            else if (tab == Tab.Logs)
+            else if (tab == BeeTab.Logs)
             {
                 @if (DataMode.IsFakeMode)
                 {
@@ -186,7 +186,6 @@
 </section>
 
 @code {
-    private enum Tab { Steps, Logs, Calls }
 
     [Parameter, EditorRequired] public RunSnapshot Snapshot { get; set; } = default!;
     [Parameter, EditorRequired] public int Index { get; set; }
@@ -207,7 +206,16 @@
     /// <summary>"failed at Step" was clicked: filter the list by that step.</summary>
     [Parameter] public EventCallback<int> OnStepFilter { get; set; }
 
-    private Tab? tab;
+    /// <summary>The shown tab, from the address (brain 0068: <c>beeTab=logs|calls</c>); the panel follows it when it changes from outside and reports the user's choice through <see cref="TabChanged"/>.</summary>
+    [Parameter] public BeeTab Tab { get; set; }
+    [Parameter] public EventCallback<BeeTab> TabChanged { get; set; }
+    /// <summary>Show ‹ › (where the host has a list to walk); the side panel of the Logs page has none.</summary>
+    [Parameter] public bool ShowNav { get; set; } = true;
+    /// <summary>Show the ⋯ menu ("Open in full log viewer"); off where the panel already sits next to the logs.</summary>
+    [Parameter] public bool ShowMore { get; set; } = true;
+
+    private BeeTab? tab;
+    private BeeTab lastTabParam;
     private bool showTypicals, beeLogWrap = true, beeMenuOpen, stepsAllExpanded;
     private int stepsExpandVersion;
     private ElementReference bodyEl;
@@ -216,15 +224,23 @@
     private long runningLogAfterId;
     private CancellationTokenSource? runningLogCts;
     private IJSObjectReference? logScrollMod, followHandle;
-    private (int Seq, Tab Tab, bool Live)? followKey, revealKey;
+    private (int Seq, BeeTab Tab, bool Live)? followKey, revealKey;
     private bool disposed;
     private int? lastSeq;
 
     /// <summary>Steps first when the scenario has them, otherwise Logs (brain 0059).</summary>
-    private Tab ShownTab() => tab is { } t && (t != Tab.Steps || Steps.Any) ? t : Steps.Any ? Tab.Steps : Tab.Logs;
+    private BeeTab ShownTab() => tab is { } t && (t != BeeTab.Steps || Steps.Any) ? t : Steps.Any ? BeeTab.Steps : BeeTab.Logs;
+
+    private void SetTab(BeeTab t)
+    {
+        tab = t;
+        lastTabParam = t;
+        _ = TabChanged.InvokeAsync(t);
+    }
 
     protected override void OnParametersSet()
     {
+        if (Tab != lastTabParam) { lastTabParam = Tab; tab = Tab; }
         var seq = Bee?.Sequence ?? Running?.Sequence;
         if (seq != lastSeq) { lastSeq = seq; beeMenuOpen = false; }
         if (Bee is { } lazy)
@@ -236,9 +252,12 @@
     }
 
     private RenderFragment Nav => @<div class="bp-btns">
-        <button type="button" class="icon-btn" @onclick="() => OnStep.InvokeAsync(-1)" disabled="@(!CanPrev)" aria-label="Previous bee in the list" title="Previous bee in the list">‹</button>
-        <button type="button" class="icon-btn" @onclick="() => OnStep.InvokeAsync(1)" disabled="@(!CanNext)" aria-label="Next bee in the list" title="Next bee in the list">›</button>
-        @if (!Selection || OpenLogs is not null)
+        @if (ShowNav)
+        {
+            <button type="button" class="icon-btn" @onclick="() => OnStep.InvokeAsync(-1)" disabled="@(!CanPrev)" aria-label="Previous bee in the list" title="Previous bee in the list">‹</button>
+            <button type="button" class="icon-btn" @onclick="() => OnStep.InvokeAsync(1)" disabled="@(!CanNext)" aria-label="Next bee in the list" title="Next bee in the list">›</button>
+        }
+        @if (ShowMore && (!Selection || OpenLogs is not null))
         {
             var open = Bee?.Sequence ?? Running?.Sequence;
             <div class="dd">
@@ -260,21 +279,21 @@
         <div class="bp-tabs" role="tablist" aria-label="Bee view">
             @if (Steps.Any)
             {
-                <button type="button" role="tab" class="bp-tab @(ShownTab() == Tab.Steps ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == Tab.Steps)" @onclick="() => tab = Tab.Steps">Steps<span class="n">@Steps.Count</span></button>
+                <button type="button" role="tab" class="bp-tab @(ShownTab() == BeeTab.Steps ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == BeeTab.Steps)" @onclick="() => SetTab(BeeTab.Steps)">Steps<span class="n">@Steps.Count</span></button>
             }
-            <button type="button" role="tab" class="bp-tab @(ShownTab() == Tab.Logs ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == Tab.Logs)" @onclick="() => tab = Tab.Logs"><text>Logs</text>@if (hasDetail) { <span class="n">@LogCount()</span> }</button>
-            <button type="button" role="tab" class="bp-tab @(ShownTab() == Tab.Calls ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == Tab.Calls)" @onclick="() => tab = Tab.Calls"><text>Calls</text>@if (hasDetail) { <span class="n">@CallCount()</span> }</button>
+            <button type="button" role="tab" class="bp-tab @(ShownTab() == BeeTab.Logs ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == BeeTab.Logs)" @onclick="() => SetTab(BeeTab.Logs)"><text>Logs</text>@if (hasDetail) { <span class="n">@LogCount()</span> }</button>
+            <button type="button" role="tab" class="bp-tab @(ShownTab() == BeeTab.Calls ? "on" : "")" aria-selected="@Aria.Bool(ShownTab() == BeeTab.Calls)" @onclick="() => SetTab(BeeTab.Calls)"><text>Calls</text>@if (hasDetail) { <span class="n">@CallCount()</span> }</button>
         </div>
         <span class="spacer"></span>
-        @if (hasDetail && ShownTab() == Tab.Steps)
+        @if (hasDetail && ShownTab() == BeeTab.Steps)
         {
             <button type="button" class="btn ghost small bee-toggle-all" @onclick="ToggleAllSteps" title="@(stepsAllExpanded ? "Collapse all step outputs" : "Expand all step outputs")">@(stepsAllExpanded ? "Collapse all" : "Expand all")</button>
         }
-        @if (hasDetail && ShownTab() != Tab.Calls)
+        @if (hasDetail && ShownTab() != BeeTab.Calls)
         {
             <CopyButton GetText="AllLogsText" Disabled="@(LogCount() == 0)" Title="Copy all logs of this bee to the clipboard" />
         }
-        @if (hasDetail && ShownTab() == Tab.Logs)
+        @if (hasDetail && ShownTab() == BeeTab.Logs)
         {
             <WrapToggleButton @bind-Wrapped="beeLogWrap" />
         }
@@ -387,7 +406,7 @@
         if (seq is null) { await DropFollowAsync(); return; }
         var live = Running is not null;
         var t = ShownTab();
-        if (live && t == Tab.Steps)
+        if (live && t == BeeTab.Steps)
         {
             var key = (seq.Value, t, true);
             if (followKey != key)
@@ -408,7 +427,7 @@
         else
         {
             await DropFollowAsync();
-            if (!live && t == Tab.Steps && Bee is { Failed: true } && Snapshot.Store.Detail(seq.Value) is not null && revealKey != (seq.Value, t, false))
+            if (!live && t == BeeTab.Steps && Bee is { Failed: true } && Snapshot.Store.Detail(seq.Value) is not null && revealKey != (seq.Value, t, false))
             {
                 revealKey = (seq.Value, t, false);
                 try { logScrollMod ??= await JS.InvokeAsync<IJSObjectReference>("import", "./log-scroll.js"); } catch { }

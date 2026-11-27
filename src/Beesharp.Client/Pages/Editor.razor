@@ -35,6 +35,7 @@
             {
                 <div class="dd-backdrop" @onclick="() => filesOpen = false"></div>
                 <div class="dd-menu script-files-menu" role="menu" aria-label="C# script files">
+                    <ScrollMemory Key="editor-files" Selector=".script-files-menu" />
                     <div class="dd-lbl">Scenarios (@scripts.Count)</div>
                     @if (scripts.Count == 0)
                     {

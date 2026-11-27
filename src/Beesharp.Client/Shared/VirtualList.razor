@@ -47,6 +47,9 @@
     [Parameter] public EventCallback<bool> AtEndChanged { get; set; }
     /// <summary>Raised after a render in which the rows in the DOM changed: the first and last row index (exclusive) of the window, for lazy-loading the rows in it.</summary>
     [Parameter] public EventCallback<(int First, int Last)> OnWindow { get; set; }
+    /// <summary>Scroll memory (brain 0068): the list remembers its first visible row under this key (page plus list plus whatever makes the rows a different list, e.g. the filter) and comes back to it
+    /// when it is shown again, e.g. after Back from a drill down. Null = no memory. A list that follows its end and was left at the end simply opens at the end again.</summary>
+    [Parameter] public string? MemoryKey { get; set; }
 
     private sealed class Box { public double H; }
 
@@ -60,12 +63,20 @@
     private bool atEnd = true, lastFollow;
     private (int, int) notifiedWindow = (-1, -1);
 
+    // scroll memory: the remembered row waits until the list has that many rows (paged lists learn their size later)
+    private (int Row, double Off)? pendingRestore;
+    private string? recalledKey;
+    private bool needRecall, recallFound;   // recallFound: the last recall found a place to go back to (also once the move is done)
+    private TaskCompletionSource recalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     // variable mode: pos[i] = top of row i, pos[n] = total height; valid for rows below validTo
     private double[] pos = [0];
     private int n, validTo;
     private ConditionalWeakTable<object, Box> heights = new();
     private object? builtFor;
     private double? pendingScrollTo;
+    /// <summary>After a width change (a side panel opens next to the list): the row that was first in view and how far it was scrolled off. Once the rendered rows are measured at their new heights it is brought back to the top, so the list does not drift.</summary>
+    private (int Row, double Within)? widthAnchor;
 
     private double Total => Variable ? pos[n] : Items.Count * (double)RowHeight;
 
@@ -73,7 +84,12 @@
 
     protected override void OnParametersSet()
     {
-        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; nearEndNotifiedAt = -1; }
+        if (!Equals(lastKey, ResetKey)) { lastKey = ResetKey; top = 0; reset = true; nearEndNotifiedAt = -1; if (module is not null) pendingRestore = null; }
+        if (MemoryKey != recalledKey)
+        {
+            needRecall = true;
+            if (recalled.Task.IsCompleted) recalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
         if (Variable) Rebuild();
         Window();
     }
@@ -131,20 +147,35 @@
                 await module.InvokeVoidAsync("attach", root, self);
             }
             if (module is null) return;
+            if (needRecall) await RecallAsync();
             if (Follow != lastFollow) { lastFollow = Follow; await module.InvokeVoidAsync("setFollow", root, Follow); }
+            var restoredNow = false;
+            if (pendingRestore is { } want && Items.Count > 0)
+            {
+                if (want.Row >= Items.Count) pendingRestore = null;
+                else
+                {
+                    // a list that is not shown yet (another tab of the phone page) cannot scroll: it keeps waiting until it has a size
+                    reset = false; pendingScrollTo = null;
+                    if (await module.InvokeAsync<bool>("restoreTo", root, Math.Max(0, Offset(want.Row) + want.Off))) { pendingRestore = null; restoredNow = true; }
+                }
+            }
             if (reset)
             {
                 reset = false; pendingScrollTo = null;
-                await module.InvokeVoidAsync("scrollToTop", root);
+                if (pendingRestore is null) await module.InvokeVoidAsync("scrollToTop", root);
             }
             else if (pendingScrollTo is { } to) { pendingScrollTo = null; await module.InvokeVoidAsync("scrollTo", root, to); }
             if (ScrollToIndex is not { } reveal) lastReveal = null;
             else if (reveal != lastReveal)
             {
                 lastReveal = reveal;
+                if (restoredNow || pendingRestore is not null) { /* the remembered place wins over "keep the picked row in view" */ }
+                else {
                 var y = Offset(reveal);
                 var rowH = Variable ? Offset(reveal + 1) - y : RowHeight;
                 if (y < top || y + rowH > top + height) await module.InvokeVoidAsync("scrollTo", root, Math.Max(0, y - height / 2 + rowH / 2));
+                }
             }
             if (Variable) await Measure();
         }
@@ -158,9 +189,46 @@
         }
     }
 
+    /// <summary>Reads the remembered row of <see cref="MemoryKey"/> (a row to come back to, unless the list was at its end and follows it) and starts remembering under the key.</summary>
+    private async Task RecallAsync()
+    {
+        needRecall = false;
+        recalledKey = MemoryKey;
+        pendingRestore = null;
+        recallFound = false;
+        if (MemoryKey is { } key)
+        {
+            double[]? saved = null;
+            try { saved = await module!.InvokeAsync<double[]?>("recall", key); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+            if (saved is { Length: 3 } && !(saved[2] == 1 && Follow) && !(saved[0] == 0 && saved[1] == 0))
+            {
+                pendingRestore = ((int)saved[0], saved[1]);
+                recallFound = true;
+                try { await module!.InvokeVoidAsync("unpin", root); }   // do not jump to the end of a following list before the remembered row is back
+                catch (JSException) { }
+                catch (InvalidOperationException) { }
+            }
+        }
+        try { await module!.InvokeVoidAsync("setMemoryKey", root, MemoryKey); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+        recalled.TrySetResult();
+    }
+
+    /// <summary>Scrolls to the last row, unless the list is about to go back to a remembered row (the page was left and is shown again, brain 0068).</summary>
+    public async Task ScrollToEndUnlessRestoringAsync()
+    {
+        if (MemoryKey is not null) await Task.WhenAny(recalled.Task, Task.Delay(1500));
+        if (!recallFound) await ScrollToEndAsync();
+    }
+
     /// <summary>Scrolls to the last row and follows the end again (when <see cref="Follow"/> is on).</summary>
     public async Task ScrollToEndAsync()
     {
+        pendingRestore = null;
+        recallFound = false;
         if (module is null) return;
         try { await module.InvokeVoidAsync("pinToEnd", root); }
         catch (JSDisconnectedException) { }
@@ -190,7 +258,9 @@
             changes.Add((i, h - old));
             lowest = Math.Min(lowest, i);
         }
-        if (changes.Count == 0) return;
+        // the anchor row is brought back once the rows around it are rendered and measured (not while the window is still elsewhere)
+        var anchorRendered = widthAnchor is { } w0 && m.Length >= 3 && m[1] <= w0.Row && w0.Row <= m[^2];
+        if (changes.Count == 0) { if (anchorRendered) widthAnchor = null; return; }
         // shift the offsets behind each changed row in one pass (no per-item lookups)
         double run = 0;
         var c = 0;
@@ -199,13 +269,21 @@
             while (c < changes.Count && changes[c].Index < j) run += changes[c++].Diff;
             pos[j] += run;
         }
+        if (anchorRendered && widthAnchor is { } wa)
+        {
+            widthAnchor = null;
+            scrollTop = pos[Math.Min(wa.Row, n)] + wa.Within;
+            try { await module!.InvokeVoidAsync("scrollTo", root, scrollTop); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
         top = scrollTop;
         Window();
         StateHasChanged();
     }
 
     [JSInvokable]
-    public void OnViewport(double scrollTop, double clientHeight, double clientWidth, bool atEndNow)
+    public void OnViewport(double scrollTop, double clientHeight, double clientWidth, bool atEndNow, int anchorRow = -1, double anchorOff = 0)
     {
         if (atEndNow != atEnd)
         {
@@ -218,13 +296,14 @@
         if (widthChanged && n > 0)
         {
             // Wrapping changes with the width: forget the measured heights, keep the first visible row where it is.
-            var a = IndexAt(scrollTop);
-            var within = scrollTop - pos[a];
+            var a = anchorRow >= 0 && anchorRow < n ? anchorRow : IndexAt(scrollTop);
+            var within = anchorRow >= 0 && anchorRow < n ? anchorOff : scrollTop - pos[a];
             heights = new();
             validTo = 0;
             Rebuild();
             scrollTop = pos[a] + within;
             pendingScrollTo = scrollTop;
+            widthAnchor = (a, within);
         }
         (top, height) = (scrollTop, clientHeight);
         Window();

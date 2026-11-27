@@ -1,0 +1,69 @@
+@* Remembers the scroll position of the page (no Selector) or of one scroll container (Selector, a CSS selector) under Key, and restores it when the component shows again
+   (brain 0068): drill down, go back, land at the same place. Renders nothing; put it inside the thing that scrolls or anywhere on the page. A list made of rows
+   (VirtualList) has its own MemoryKey instead. The work is wwwroot/scroll-memory.js. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@code {
+    /// <summary>Page plus list, e.g. <c>environment</c> or <c>logs-filters</c>; a different key re-binds (the position of the other key is restored).</summary>
+    [Parameter, EditorRequired] public string Key { get; set; } = "";
+    /// <summary>The scroll container (CSS selector); empty = the window.</summary>
+    [Parameter] public string? Selector { get; set; }
+
+    private IJSObjectReference? module, handle;
+    private string? bound;
+    private int version;
+    private bool disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var want = Key + "|" + Selector;
+        if (want == bound || disposed) return;
+        bound = want;
+        var mine = ++version;
+        await DropAsync();
+        if (module is null)
+        {
+            try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./scroll-memory.js"); }
+            catch (JSException) { return; }
+            catch (InvalidOperationException) { return; }
+        }
+        IJSObjectReference? made = null;
+        try { made = await module.InvokeAsync<IJSObjectReference>("bind", Key, string.IsNullOrEmpty(Selector) ? null : Selector); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+        if (made is null) return;
+        if (mine != version || disposed) { await DisposeHandleAsync(made); return; }
+        handle = made;
+    }
+
+    private async Task DropAsync()
+    {
+        var h = handle;
+        handle = null;
+        if (h is not null) await DisposeHandleAsync(h);
+    }
+
+    private static async Task DisposeHandleAsync(IJSObjectReference h)
+    {
+        try { await h.InvokeVoidAsync("dispose"); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+        try { await h.DisposeAsync(); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        version++;
+        await DropAsync();
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
+    }
+}

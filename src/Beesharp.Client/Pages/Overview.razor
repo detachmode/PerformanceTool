@@ -15,6 +15,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject PhoneState Phone
+@inject OverviewEditMemory EditMemory
 
 <PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
 
@@ -35,6 +36,9 @@
     var advancedInvalid = cfgErr is not null && scenario is not null
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
 }
+
+@* Coming back from a scenario page, the Logs, ...: the overview scrolls to where it was (brain 0059, 0068). *@
+<ScrollMemory Key="@(editMode ? "overview-edit" : "overview")" />
 
 <div class="page @(editMode ? "editor" : "") @(cfg is not null && !Phone.IsPhone ? "ed-side-open" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
@@ -621,18 +625,7 @@
 
     // Overview state
     /// <summary>Opens the scenario page (brain 0059); the overview's scroll position is remembered so the way back lands on the same card.</summary>
-    private async Task OpenScenario(int index, ScenarioFilter filter = default)
-    {
-        try
-        {
-            scrollMemory ??= await JS.InvokeAsync<IJSObjectReference>("import", "./scroll-memory.js");
-            await scrollMemory.InvokeVoidAsync("save", "overview");
-        }
-        catch (JSException) { }
-        catch (InvalidOperationException) { }
-        Nav.NavigateTo(ScenarioLink.Href(index, filter));
-    }
-    private IJSObjectReference? scrollMemory;
+    private void OpenScenario(int index, ScenarioFilter filter = default) => Nav.NavigateTo(ScenarioLink.Href(index, filter));
     private bool viewMenuOpen;
     private bool presetMenuOpen;
     private List<PreflightScriptSummary> preflights = [];
@@ -657,27 +650,41 @@
     private Dictionary<string, string>? planSnap;
     private CancellationTokenSource? debounce;
 
-    private string? handledEditUri;
+    private string? handledUri;
+    private bool addressApplied;
 
-    /// <summary>"?edit=..." opens the plan editor (the assistant's links lead here); each link carries a new value, so it works again after leaving edit mode.</summary>
+    /// <summary>
+    /// Edit mode and the open settings panel live in the address (<c>/?edit=1&amp;entry=3</c>, brain 0068), so a drill down and the way back land in the same state. A fresh visit by the tab (an
+    /// address with no word about it) picks up where the Overview was left (<see cref="OverviewEditMemory"/>). "?edit=..." links (the assistant's) open the editor; each carries a new value, so
+    /// they work again after leaving edit mode.
+    /// </summary>
     protected override void OnParametersSet()
     {
-        if (editMode || Sim.IsRunning || Nav.Uri == handledEditUri || !Nav.Uri.Contains("?edit=", StringComparison.Ordinal)) return;
-        handledEditUri = Nav.Uri;
-        EnterEditMode();
+        if (Nav.Uri == handledUri) return;
+        handledUri = Nav.Uri;
+        var fromAddress = OverviewLink.Parse(Nav.Uri);
+        var want = fromAddress ?? (addressApplied ? null : EditMemory.Last);
+        addressApplied = true;
+        if (want is not { Edit: true } v) return;
+        if (!editMode)
+        {
+            if (Sim.IsRunning || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory)) return;
+            EnterEditMode();
+        }
+        if (v.Entry is { } e && e < Sim.Plan.Scenarios.Count) { selected = e; addOpen = false; }
     }
 
-    /// <summary>Coming back from a scenario page: the overview scrolls to where it was (brain 0059).</summary>
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    /// <summary>Writes the edit state into the address (replace: edit mode is a state, not a place) and remembers it for the way back by the tab.</summary>
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (!firstRender) return;
-        try
-        {
-            scrollMemory ??= await JS.InvokeAsync<IJSObjectReference>("import", "./scroll-memory.js");
-            await scrollMemory.InvokeAsync<bool>("restore", "overview");
-        }
-        catch (JSException) { }
-        catch (InvalidOperationException) { }
+        var view = new OverviewView(editMode, editMode && selected >= 0 ? selected : null);
+        EditMemory.Last = view;
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        var cut = path.IndexOfAny(['?', '#']);
+        if (cut >= 0) path = path[..cut];
+        if (path is not ("" or "overview")) return;   // already on its way to another page
+        if ((OverviewLink.Parse(Nav.Uri) ?? OverviewView.Viewing) == view) return;
+        Nav.NavigateTo(OverviewLink.Href(view), new NavigationOptions { ReplaceHistoryEntry = true });
     }
 
     protected override void OnInitialized()
