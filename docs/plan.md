@@ -8,6 +8,16 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
+- **Now (W1, user approved 2026-11-27):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
+  Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
+  is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
+- **Next (W2, after V):** Calls page: the selected call in the address (`&call=`), endpoint list and call list keep their scroll on Back; "Open B…" opens the bee side panel
+  instead of navigating away; clicking a call in a bee's Calls tab shows where you came from ("‹ B4668 · Checkout") on the Calls page.
+- **Done (V, user feedback 2026-11-27, from a UI test pass; brain 0068):** one commit each:
+  V1 failed is red, not orange, on the overview card chart (`.sc-chart i.bad` blends coral at 62% opacity into brown-orange);
+  V2 long lists scale (100 presets, stored runs, environments, scripts, scenarios in a plan): menus scroll with their actions kept reachable, sensible button order;
+  V3 layout holds at every window size (side panels, settings panel, bee column, Try column, player bar, top bar);
+  V4 the Calls page's selected call reads well, the duration distribution is smaller.
 - **Done (user feedback):** scenario settings in a side panel / phone sheet, float parameters as slider + number input (0066).
 - Done: …, player bar (0027), stable clicking (0026).
 - **Done (A):** data side of 0028: retention priority (drop successful first), error dictionary, failed→slow→ok
