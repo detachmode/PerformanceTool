@@ -116,10 +116,10 @@
                     <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
                             aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
                             @onclick="ToggleViewMenu" aria-label="More actions" title="Run actions">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="5" cy="12" r="2" />
-                            <circle cx="12" cy="12" r="2" />
-                            <circle cx="19" cy="12" r="2" />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2.2" />
+                            <circle cx="12" cy="12" r="2.2" />
+                            <circle cx="19" cy="12" r="2.2" />
                         </svg>
                     </button>
                     @if (viewMenuOpen)
@@ -259,7 +259,7 @@
                         <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Change preflight script">
                             <span class="run-pf-text">
                                 <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
-                                <small class="muted">Preflight · tap to change</small>
+                                <small class="muted">Preflight · @(Phone.IsPhone ? "tap" : "click") to change</small>
                             </span>
                         </button>
                         <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
@@ -305,7 +305,7 @@
                         <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Change shutdown program">
                             <span class="run-pf-text">
                                 <b class="mono">@(activeSd?.FileName ?? $"{plan.ShutdownScriptId}.cs")</b>
-                                <small class="muted">Shutdown · always runs at the end · tap to change</small>
+                                <small class="muted">Shutdown · always runs at the end · @(Phone.IsPhone ? "tap" : "click") to change</small>
                             </span>
                         </button>
                         <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemoveShutdown" aria-label="Remove shutdown program" title="Remove shutdown program">✕</button>
