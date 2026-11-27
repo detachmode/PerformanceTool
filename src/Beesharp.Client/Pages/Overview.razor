@@ -191,7 +191,7 @@
             </div>
         </section>
     }
-    else if (!locked || editMode)   @* while a run is going the player bar at the bottom holds its controls (brain 0027) *@
+    else   @* the bar stays while a run goes (disabled, "Running…"), so the cards do not move when it starts or ends (brain 0071); the player bar at the bottom holds the run's controls (brain 0027) *@
     {
     <section class="run-launch-card" aria-label="Run and preflight controls">
         <div class="plan-ctrl @(planErr.ContainsKey("dur") ? "is-invalid" : "")">
@@ -597,8 +597,6 @@
     }
     else
     {
-        <PreflightStrip Run="s.Preflight" />
-        <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
         @if (s.Count == 0 && (DataMode.IsFakeMode || ApiRun.HasLoadedPlan || !ApiRun.IsServerReachable))
         {
             <section class="plan-empty" aria-label="Empty plan">
@@ -633,6 +631,9 @@
                 }
             </div>
         }
+        @* Below the cards, so a strip that appears or goes never pushes them (brain 0071). *@
+        <PreflightStrip Run="s.Preflight" />
+        <ShutdownStrip Run="s.Shutdown" ScriptId="@plan.ShutdownScriptId" />
     }
 </div>
 
