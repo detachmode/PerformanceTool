@@ -26,6 +26,7 @@ Bugs:
 - **B2** Bees/min shows nonsense at the very start of a run (e.g. "4512 / 100" in the first second).
 - **B3** Fake mode simulates a new run on every page load (finished count changes between visits).
 - **B4** Live mode: a full reload loses the loaded stored run, so `/logs?open=…` says the bee is not in the loaded run.
+- **B6** CI flake: `Beesharp.Tests.HostTraceEndpointsTests.A_run_that_fetched_traces_…` (line 92, `view.Found` false) failed once on CI after `WaitUntilFinishedAsync`: the run says Finished before the trace fetch's final pass is stored (see the U follow-up "Finished before the final values are stored").
 - **B5** `Beesharp.Tracing.E2E.Tests` fail about half the runs in a full `dotnet test` (404 on `/api/runs/{id}/bees`, or "tracing stack did not come up"); pass alone. Find the race.
 Coming back / scroll (brain 0069, 0070):
 - **S1** Phone: coming back to the Logs list lands far from the remembered row (row 245 became 81); the row is saved correctly, restore in `VirtualList.razor.js` misses.
