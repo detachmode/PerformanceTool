@@ -272,7 +272,7 @@ label { font-size: .74rem; color: var(--muted); }
 .mode-dd .dd-menu.mode-runs-menu { min-width: 270px; max-height: 68dvh; }   /* desktop: drops down right under the mode button */
 .mode-menu-mobile .dd-menu.mode-runs-menu.parts { overflow: hidden; }
 .mode-menu-mobile .dd-menu.mode-runs-menu { position: fixed; top: calc(var(--top-h) + 6px); bottom: auto; right: 1rem; left: auto; min-width: 270px; max-height: 68dvh; overflow-y: auto; z-index: 95; }
-@media (min-width: 1001px) { .mode-menu-mobile { display: none; } }
+@media (min-width: 1001px) { html:not(.phone) .mode-menu-mobile { display: none; } }
 .top:has(.mode-dd .dd-menu) { z-index: 130; }   /* while open, lift the bar so the backdrop and menu also cover the player bar */
 
 /* ----- popups ----- */

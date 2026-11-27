@@ -19,6 +19,8 @@ public sealed class PhoneState : IDisposable
             IsPhone = sync.Invoke<bool>("beesharpPhone.is");
             self = DotNetObjectReference.Create(this);
             sync.InvokeVoid("beesharpPhone.listen", self);
+            IsCompact = sync.Invoke<bool>("beesharpCompact.is");
+            sync.InvokeVoid("beesharpCompact.listen", self);
         }
         catch (JSException) { }
         catch (InvalidOperationException) { }
@@ -26,7 +28,18 @@ public sealed class PhoneState : IDisposable
 
     public bool IsPhone { get; private set; }
 
+    /// <summary>The top bar is in its compact form (up to 1000 px wide, <c>.top-mobile</c> in app.css): the desktop copy of the bar's parts is hidden.</summary>
+    public bool IsCompact { get; private set; }
+
     public event Action? Changed;
+
+    [JSInvokable]
+    public void OnCompactChanged(bool compact)
+    {
+        if (compact == IsCompact) return;
+        IsCompact = compact;
+        Changed?.Invoke();
+    }
 
     [JSInvokable]
     public void OnChanged(bool phone)
