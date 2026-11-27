@@ -40,7 +40,7 @@ Overview steps (brain 0071):
 Look and labels:
 - **L1** Red and amber dominate the charts: with the Slow filter or an all-slow scenario the chart is a solid wall of amber, and "100.0 % ok" next to all-amber bars reads contradictory. Idea: quiet normal bars, softer red/amber, full strength only for selected/hovered.
 - **L2** Low contrast: the "⋯" next to Edit, the disabled Preset/Edit while a run goes, the "Click to edit" hints.
-- **L3** Unclear labels: the play button is labelled with the preflight file ("check-readiness.cs · Preflight · tap to run", "tap" on desktop); the "+" next to Start run has no label; "‹ failed / failed ›" on the scenario page is unclear; clicking a step's name does nothing (only its counts).
+- **L3** (Now, user approved 2026-11-27, with L4 and L5) Unclear labels: the play button is labelled with the preflight file ("check-readiness.cs · Preflight · tap to run", "tap" on desktop); the "+" next to Start run has no label; "‹ failed / failed ›" on the scenario page is unclear; clicking a step's name does nothing (only its counts).
 - **L4** The bee's Calls tab cuts URLs to "GET /prod…", hiding the distinguishing part.
 - **L5** The mode menu is rendered twice (desktop and mobile copy).
 
