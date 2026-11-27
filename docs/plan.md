@@ -8,7 +8,42 @@ Until the user is happy with the UI/UX, we build **UI drafts only, with fake dat
 work). The drafts are now the main pages of the Blazor WebAssembly client (`/`, `/editor`), driven by `FakeRunSource`; they are published to GitHub Pages. Iterate draft → screenshot → user feedback.
 
 ## Agent queue
-- **Done (X, user approved 2026-11-27, brain 0071):** a calm overview while a run goes. X1: steps fold by position (groups keep their Now/Failed sums, never unfold by themselves), so the cards keep their height (measured 6 to 7 distinct heights per card before, 1 after); X2: the run bar stays in place while a run goes, preflight/shutdown strips sit below the cards (cards moved 82 px at the start before, 0 after). Screenshots `docs/screenshots/2026-11-27-calm-overview-run/`.
+- **Done (2026-11-27, user):** bluish dark theme in Grafana's tones (`--bg #181b1f`, `--panel #22252b`, `--panel2 #2c3038`, cool text and borders), preflight/shutdown strips back above the cards.
+
+### Open tasks (handover 2026-11-27, from a desktop UI test pass and the V/W/X agents)
+Not yet agreed with the user one by one: propose, let the user pick, then work one at a time (brain 0020). How to test: AGENTS.md; run the host with
+`Storage__Provider=Memory ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile --project src/Beesharp -- --Urls http://127.0.0.1:<port>` (appsettings forces https:7050),
+Fake mode via the top bar "Live ▾" (`.dd-menu:visible`), `?stepcount=8,14` for many steps; Live presets "Funny jokes"/"Funny two" run without external services; `tests/e2e/layout-sizes.mjs` after layout changes.
+Editing a scenario (user asked for these):
+- **E1 Make finishing an edit obvious.** Two "Done" buttons mean different things (the settings panel's closes the panel, the page's ends edit mode). Idea: sticky bar "Editing plan · unsaved changes to preset X · Discard / Save to preset / Done"; rename the panel's button "Close".
+- **E2 Show what changed** in edit mode (changed values, preset marked modified).
+- **E3 Parameters panel looks patchy (user dislikes it):** "Scenario & Spawning" is one box, every parameter its own box with other padding; sliders don't line up; "Item count" shows a bare number while others have inputs; the name shows three times. One flat list with section headings, label column, slider + input in fixed columns.
+- **E4 Units and range:** "Delay 500" has no unit; min/max of sliders are not shown.
+- **E5 "Steps (URLs)" list** shows every URL twice (input plus preview line).
+- **E6 Below 860 px** the settings panel overlays the page and covers the page's Done button.
+Bugs:
+- **B1** Loading another preset while a finished run is shown: the title shows the new preset but the cards still show the previous plan's run.
+- **B2** Bees/min shows nonsense at the very start of a run (e.g. "4512 / 100" in the first second).
+- **B3** Fake mode simulates a new run on every page load (finished count changes between visits).
+- **B4** Live mode: a full reload loses the loaded stored run, so `/logs?open=…` says the bee is not in the loaded run.
+- **B5** `Beesharp.Tracing.E2E.Tests` fail about half the runs in a full `dotnet test` (404 on `/api/runs/{id}/bees`, or "tracing stack did not come up"); pass alone. Find the race.
+Coming back / scroll (brain 0069, 0070):
+- **S1** Phone: coming back to the Logs list lands far from the remembered row (row 245 became 81); the row is saved correctly, restore in `VirtualList.razor.js` misses.
+- **S2** Desktop Logs: each extra open/close of the bee panel drifts the list by about one line.
+- **S3** Calls: a call beyond the 1000th of an endpoint can't be reached (`CallAnalytics` clamps at 1000, "Load more" deepens the same window); page by offset.
+- **S4** Calls: the endpoint-list scroll restore gives up after ~1 s if the list is not tall enough yet (seen once after a reload; likely in Live with a slow first load).
+Overview steps (brain 0071):
+- **O1** A folded group's counts open the group, not its bees; one click to the bees needs a step range in `StepFilter` and in `failedStep=`/`nowStep=`.
+- **O2** Live: a card whose steps are not known before the first run status grows once at run start (needs declared steps from the catalog).
+- **O3** Uneven groups (8 steps fold into 2, 2, 1, 1).
+Look and labels:
+- **L1** Red and amber dominate the charts: with the Slow filter or an all-slow scenario the chart is a solid wall of amber, and "100.0 % ok" next to all-amber bars reads contradictory. Idea: quiet normal bars, softer red/amber, full strength only for selected/hovered.
+- **L2** Low contrast: the "⋯" next to Edit, the disabled Preset/Edit while a run goes, the "Click to edit" hints.
+- **L3** Unclear labels: the play button is labelled with the preflight file ("check-readiness.cs · Preflight · tap to run", "tap" on desktop); the "+" next to Start run has no label; "‹ failed / failed ›" on the scenario page is unclear; clicking a step's name does nothing (only its counts).
+- **L4** The bee's Calls tab cuts URLs to "GET /prod…", hiding the distinguishing part.
+- **L5** The mode menu is rendered twice (desktop and mobile copy).
+
+- **Done (X, user approved 2026-11-27, brain 0071):** a calm overview while a run goes. X1: steps fold by position (groups keep their Now/Failed sums, never unfold by themselves), so the cards keep their height (measured 6 to 7 distinct heights per card before, 1 after); X2: the run bar stays in place while a run goes, preflight/shutdown strips sat below the cards (moved back above by the user, 0071 update; cards moved 82 px at the start before, 0 after). Screenshots `docs/screenshots/2026-11-27-calm-overview-run/`.
 - **Done (W1, user approved 2026-11-27, brain 0069):** a shared bee side panel (`Scenario/BeePanel` in a right panel on desktop, the bottom `Sheet` on the phone, Back or ✕ closes it).
   Logs page: clicking a bee in a log line opens the panel instead of changing the log filter (list, filters and scroll stay). The bee column's tab (Steps / Logs / Calls)
   is in the address so Back returns to it. Edit mode on the Overview survives leaving the page and coming back.
