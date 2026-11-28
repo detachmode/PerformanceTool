@@ -111,9 +111,13 @@ public class ContractsRoundTripTests
         var compile = RoundTrip(new ScriptCompileResult(true, summary, [new ScriptDiagnosticDto("CS1", "Error", 1, 2, "m")]));
         Assert.Equal(1, (int?)compile.Script!.Parameters["a"]);
         RoundTrip(new ScriptTestRunResult(true, "id", "n", 200, 1, 2, 3, 4, null, [new ScriptRecordedCall("GET", "u", 200, 1, 2)], ["log"]));
-        RoundTrip(new PreflightCompileResult(true, new PreflightScriptSummary("p", "p.cs", "P", "c", DateTimeOffset.UtcNow), []));
+        RoundTrip(new PreflightCompileResult(true, new PreflightScriptSummary("p", "p.cs", "P", "c", DateTimeOffset.UtcNow, IsCompiled: true), []));
         RoundTrip(new PreflightRunResult(true, 5, null, ["x"]));
         RoundTrip(new ScenarioInfoDto("id", "n", "d", true, "s", new JsonObject { ["type"] = "object" }));
+        var compiledSrc = RoundTrip(new CompiledScenarioSourceDto("http-get", "HTTP GET", "HttpGetScenario.cs", "class HttpGetScenario {}", "EmbeddedPdb", "Beesharp.Services.Scenarios.BuiltIn.HttpGetScenario", [new CompiledSourceFileDto("HttpGetScenario.cs", "class HttpGetScenario {}", "EmbeddedPdb")]));
+        Assert.Equal("EmbeddedPdb", compiledSrc.Origin);
+        var runSrc = RoundTrip(new RunSourceSnapshotDto("scenario", "http-get", "HTTP GET", "HttpGetScenario.cs", "class HttpGetScenario {}", "deadbeef", "EmbeddedPdb", IsCompiled: true, DiffersFromCurrent: false));
+        Assert.False(runSrc.DiffersFromCurrent);
         RoundTrip(new PlanWorkspaceState(new LoadPlan(), "p", new LoadPlan(), false, 3, "Staging"));
         RoundTrip(new Preset("p", DateTimeOffset.UtcNow, new LoadPlan()));
         RoundTrip(new StartRunRequest(new LoadPlan(), "Staging"));

@@ -159,7 +159,7 @@ public class TraceStorageTests
             }
             await using var reopened = new DuckDbRunStorage(path);
             await AssertStoredAsync(reopened);
-            Assert.Equal(6, DuckDbRunStorage.CurrentSchemaVersion);
+            Assert.True(DuckDbRunStorage.CurrentSchemaVersion >= 6);
         }
         finally { Delete(path); }
     }
@@ -209,7 +209,7 @@ public class TraceStorageTests
             check.Open();
             using var version = check.CreateCommand();
             version.CommandText = "SELECT value FROM schema_meta WHERE key = 'schema_version';";
-            Assert.Equal("6", version.ExecuteScalar());
+            Assert.Equal(DuckDbRunStorage.CurrentSchemaVersion.ToString(), version.ExecuteScalar());
         }
         finally { Delete(path); }
     }

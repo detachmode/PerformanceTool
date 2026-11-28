@@ -164,6 +164,7 @@ function loadMonaco() {
                     () => {
                         if (window.monaco && window.monaco.editor) {
                             registerThemeAndLanguage(window.monaco);
+                            registerCSharpOutlineProvider(window.monaco);
                             finish(window.monaco);
                         } else {
                             finish(null);
@@ -176,6 +177,108 @@ function loadMonaco() {
     });
 
     return monacoPromise;
+}
+
+// Lightweight C# brace/outline provider so Monaco sticky scroll shows the declaration or statement line
+// above Allman-style opening braces `{` instead of bare `{` lines.
+let csharpOutlineRegistered = false;
+function registerCSharpOutlineProvider(monaco) {
+    if (csharpOutlineRegistered || !monaco?.languages?.registerDocumentSymbolProvider) return;
+    csharpOutlineRegistered = true;
+
+    const findHeaderLine = (lines, braceIdx) => {
+        const trimmed = lines[braceIdx].trim();
+        if (trimmed !== '{' && !trimmed.startsWith('{ //') && !trimmed.startsWith('{/*')) {
+            return braceIdx;
+        }
+        for (let i = braceIdx - 1; i >= 0; i--) {
+            const t = lines[i].trim();
+            if (!t || t.startsWith('//') || t.startsWith('/*') || t.startsWith('*') || t.startsWith('[')) continue;
+            return i;
+        }
+        return braceIdx;
+    };
+
+    const guessKind = (text) => {
+        const k = monaco.languages.SymbolKind;
+        if (/\bnamespace\b/.test(text)) return k.Namespace;
+        if (/\b(class|record|struct|interface|enum|union)\b/.test(text)) return k.Class;
+        if (/\b(if|else|for|foreach|while|switch|try|catch|finally|using|lock)\b/.test(text)) return k.Namespace;
+        return k.Method;
+    };
+
+    monaco.languages.registerDocumentSymbolProvider('csharp', {
+        provideDocumentSymbols(model) {
+            const lines = model.getLinesContent();
+            const roots = [];
+            const stack = [];
+            let inBlockComment = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                let inString = false;
+                let stringChar = '';
+                let verbatim = false;
+
+                for (let c = 0; c < line.length; c++) {
+                    const ch = line[c];
+                    const next = line[c + 1];
+
+                    if (inBlockComment) {
+                        if (ch === '*' && next === '/') { inBlockComment = false; c++; }
+                        continue;
+                    }
+                    if (inString) {
+                        if (verbatim) {
+                            if (ch === '"' && next === '"') { c++; continue; }
+                            if (ch === '"') inString = false;
+                        } else {
+                            if (ch === '\\') { c++; continue; }
+                            if (ch === stringChar) inString = false;
+                        }
+                        continue;
+                    }
+                    if (ch === '/' && next === '/') break;
+                    if (ch === '/' && next === '*') { inBlockComment = true; c++; continue; }
+                    if (ch === '@' && next === '"') { inString = true; stringChar = '"'; verbatim = true; c++; continue; }
+                    if (ch === '"' || ch === '\'') { inString = true; stringChar = ch; verbatim = false; continue; }
+
+                    if (ch === '{') {
+                        const headerIdx = findHeaderLine(lines, i);
+                        const headerText = lines[headerIdx].trim() || '{';
+                        const node = {
+                            name: headerText.slice(0, 80),
+                            detail: '',
+                            kind: guessKind(headerText),
+                            tags: [],
+                            headerIdx,
+                            openIdx: i,
+                            children: []
+                        };
+                        stack.push(node);
+                    } else if (ch === '}' && stack.length > 0) {
+                        const node = stack.pop();
+                        if (i > node.headerIdx + 1) {
+                            const startLine = node.headerIdx + 1;
+                            const endLine = i + 1;
+                            const sym = {
+                                name: node.name,
+                                detail: node.detail,
+                                kind: node.kind,
+                                tags: node.tags,
+                                range: { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: line.length + 1 },
+                                selectionRange: { startLineNumber: startLine, startColumn: 1, endLineNumber: startLine, endColumn: lines[node.headerIdx].length + 1 },
+                                children: node.children
+                            };
+                            if (stack.length > 0) stack[stack.length - 1].children.push(sym);
+                            else roots.push(sym);
+                        }
+                    }
+                }
+            }
+            return roots;
+        }
+    });
 }
 
 // On a touch screen only a deliberate tap may raise the on-screen keyboard. Scrolling the editor, or touching it to stop a flick, must not:
@@ -241,10 +344,13 @@ export async function createCodeEditor(container, dotNetRef, initialValue, optio
         fontSize: opts.fontSize ?? 13,
         lineHeight: 20,
         minimap: { enabled: false },
+        stickyScroll: { enabled: true, defaultModel: 'outlineModel' },
         scrollBeyondLastLine: false,
         tabSize: 4,
         insertSpaces: true,
         wordWrap: opts.wordWrap === false ? 'off' : 'on',
+        readOnly: !!opts.readOnly,
+        domReadOnly: !!opts.readOnly,
         ariaLabel: opts.ariaLabel || 'C# scenario script',
         renderLineHighlight: 'line',
         overviewRulerLanes: 0,
@@ -285,6 +391,11 @@ export async function createCodeEditor(container, dotNetRef, initialValue, optio
         setWordWrap(w) {
             if (disposed) return;
             editor.updateOptions({ wordWrap: w ? 'on' : 'off' });
+        },
+        setReadOnly(r) {
+            if (disposed) return;
+            const ro = !!r;
+            editor.updateOptions({ readOnly: ro, domReadOnly: ro });
         },
         layout() {
             if (disposed) return;

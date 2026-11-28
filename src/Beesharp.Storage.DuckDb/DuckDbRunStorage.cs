@@ -19,7 +19,7 @@ public sealed class DuckDbRunStorage : IRunStorage
     /// <summary>
     /// Current schema version recorded in the <c>schema_meta</c> table of the DuckDB database.
     /// </summary>
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     private const int MaxBatchSize = 2000;
     private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromMilliseconds(100);
@@ -242,6 +242,24 @@ public sealed class DuckDbRunStorage : IRunStorage
                     attributes_json VARCHAR
                 );
                 CREATE INDEX IF NOT EXISTS idx_trace_spans_run_trace ON trace_spans(run_id, trace_id);
+
+                CREATE TABLE IF NOT EXISTS source_blobs (
+                    sha256 VARCHAR PRIMARY KEY,
+                    code VARCHAR NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS run_sources (
+                    run_id VARCHAR NOT NULL,
+                    kind VARCHAR NOT NULL,
+                    target_id VARCHAR NOT NULL,
+                    name VARCHAR NOT NULL,
+                    file_name VARCHAR NOT NULL,
+                    sha256 VARCHAR NOT NULL,
+                    origin VARCHAR NOT NULL,
+                    is_compiled BOOLEAN NOT NULL,
+                    PRIMARY KEY (run_id, kind, target_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_sources_run ON run_sources(run_id);
                 """;
             cmd.ExecuteNonQuery();
 
@@ -335,6 +353,81 @@ public sealed class DuckDbRunStorage : IRunStorage
             cmd.Parameters.Add(new DuckDBParameter(runId));
             return Task.FromResult(cmd.ExecuteScalar() as string);
         }
+    }
+
+    /// <inheritdoc />
+    public Task SaveRunSourcesAsync(string runId, IReadOnlyList<RunSourceSnapshotDto> sources, CancellationToken ct = default)
+    {
+        lock (dbLock)
+        {
+            using (var del = conn.CreateCommand())
+            {
+                del.CommandText = "DELETE FROM run_sources WHERE run_id = $1;";
+                del.Parameters.Add(new DuckDBParameter(runId));
+                del.ExecuteNonQuery();
+            }
+
+            foreach (var s in sources)
+            {
+                using (var blob = conn.CreateCommand())
+                {
+                    blob.CommandText = "INSERT INTO source_blobs(sha256, code) VALUES ($1, $2) ON CONFLICT (sha256) DO NOTHING;";
+                    blob.Parameters.Add(new DuckDBParameter(s.Sha256));
+                    blob.Parameters.Add(new DuckDBParameter(s.Code));
+                    blob.ExecuteNonQuery();
+                }
+
+                using (var ins = conn.CreateCommand())
+                {
+                    ins.CommandText = """
+                        INSERT INTO run_sources(run_id, kind, target_id, name, file_name, sha256, origin, is_compiled)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+                        """;
+                    ins.Parameters.Add(new DuckDBParameter(runId));
+                    ins.Parameters.Add(new DuckDBParameter(s.Kind));
+                    ins.Parameters.Add(new DuckDBParameter(s.TargetId));
+                    ins.Parameters.Add(new DuckDBParameter(s.Name));
+                    ins.Parameters.Add(new DuckDBParameter(s.FileName));
+                    ins.Parameters.Add(new DuckDBParameter(s.Sha256));
+                    ins.Parameters.Add(new DuckDBParameter(s.Origin));
+                    ins.Parameters.Add(new DuckDBParameter(s.IsCompiled));
+                    ins.ExecuteNonQuery();
+                }
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<RunSourceSnapshotDto>> GetRunSourcesAsync(string runId, CancellationToken ct = default)
+    {
+        var list = new List<RunSourceSnapshotDto>();
+        lock (dbLock)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT rs.kind, rs.target_id, rs.name, rs.file_name, sb.code, rs.sha256, rs.origin, rs.is_compiled
+                FROM run_sources rs
+                JOIN source_blobs sb ON sb.sha256 = rs.sha256
+                WHERE rs.run_id = $1
+                ORDER BY rs.kind, rs.name;
+                """;
+            cmd.Parameters.Add(new DuckDBParameter(runId));
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                list.Add(new RunSourceSnapshotDto(
+                    r.GetString(0),
+                    r.GetString(1),
+                    r.GetString(2),
+                    r.GetString(3),
+                    r.GetString(4),
+                    r.GetString(5),
+                    r.GetString(6),
+                    r.GetBoolean(7)));
+            }
+        }
+        return Task.FromResult<IReadOnlyList<RunSourceSnapshotDto>>(list);
     }
 
     /// <summary>

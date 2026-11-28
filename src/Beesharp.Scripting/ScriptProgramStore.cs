@@ -91,11 +91,12 @@ public abstract class ScriptProgramStore
                 if (string.IsNullOrWhiteSpace(program.Id))
                     throw new InvalidOperationException($"Compiled {label.ToLowerInvariant()} '{program.GetType().FullName}' must have a non-empty Id.");
                 var type = program.GetType();
+                var (resolvedFile, resolvedCode, _) = CompiledSourceResolver.ResolveType(type);
                 var stored = new StoredProgram(
                     program.Id,
-                    $"{type.Name}.cs",
+                    resolvedFile,
                     program.Name,
-                    $"// Compiled C# class: {type.FullName}",
+                    resolvedCode,
                     CompiledScript: null,
                     CompiledProgram: program,
                     loadedAt);
@@ -340,7 +341,7 @@ public abstract class ScriptProgramStore
     }
 
     private static PreflightScriptSummary ToSummary(StoredProgram s) =>
-        new(s.ScriptId, s.FileName, s.Name, s.Code, s.UpdatedUtc);
+        new(s.ScriptId, s.FileName, s.Name, s.Code, s.UpdatedUtc, IsCompiled: s.CompiledProgram is not null);
 
     private sealed class CallbackLogger(Action<string, string> emit) : ILogger
     {

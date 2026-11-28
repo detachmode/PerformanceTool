@@ -45,8 +45,9 @@ public class CompiledProgramStoreTests : IDisposable
         Assert.Equal(2, list.Count);
         var compiled = Assert.Single(list, p => p.ScriptId == "seed-database");
         Assert.Equal("Seed database", compiled.Name);
-        Assert.Equal("SeedDatabasePreflight.cs", compiled.FileName);
-        Assert.Contains("Compiled C# class", compiled.Code);
+        Assert.True(compiled.IsCompiled);
+        Assert.Equal("CompiledProgramStoreTests.cs", compiled.FileName);
+        Assert.Contains("class SeedDatabasePreflight", compiled.Code);
 
         // Execute compiled program
         var runData = new RunData(0);

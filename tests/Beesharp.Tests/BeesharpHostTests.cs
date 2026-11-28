@@ -352,12 +352,26 @@ public class BeesharpHostTests : IDisposable
             var preflights = await http.GetFromJsonAsync<List<PreflightScriptSummary>>("/api/preflights", Json);
             var seed = Assert.Single(preflights!, p => p.ScriptId == "seed-data");
             Assert.Equal("Seed data", seed.Name);
-            Assert.Equal("SeedDataPreflight.cs", seed.FileName);
+            Assert.True(seed.IsCompiled);
+            Assert.Equal("BeesharpHostTests.cs", seed.FileName);
+            Assert.Contains("class SeedDataPreflight", seed.Code);
 
             var shutdowns = await http.GetFromJsonAsync<List<PreflightScriptSummary>>("/api/shutdowns", Json);
             var cleanup = Assert.Single(shutdowns!, s => s.ScriptId == "cleanup-data");
             Assert.Equal("Cleanup data", cleanup.Name);
-            Assert.Equal("CleanupDataShutdown.cs", cleanup.FileName);
+            Assert.True(cleanup.IsCompiled);
+            Assert.Equal("BeesharpHostTests.cs", cleanup.FileName);
+            Assert.Contains("class CleanupDataShutdown", cleanup.Code);
+
+            // Compiled scenario source endpoint resolves C# source via Portable PDB
+            var scenarioSrc = await http.GetFromJsonAsync<CompiledScenarioSourceDto>("/api/scenarios/bag-reader/source", Json);
+            Assert.NotNull(scenarioSrc);
+            Assert.Equal("bag-reader", scenarioSrc!.ScenarioId);
+            Assert.Equal("BeesharpHostTests.cs", scenarioSrc.FileName);
+            Assert.Contains("class BagReadingScenario", scenarioSrc.Code);
+
+            var missingSrc = await http.GetAsync("/api/scenarios/does-not-exist/source");
+            Assert.Equal(HttpStatusCode.NotFound, missingSrc.StatusCode);
 
             // Compiled programs cannot be deleted via API
             var deleteResp = await http.DeleteAsync("/api/preflights/seed-data");

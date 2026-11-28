@@ -6,6 +6,8 @@
 @inject LogsLinks Logs
 @inject ViewSettings Settings
 @inject ScenarioCatalog Catalog
+@inject ApiRunSource ApiRun
+@inject DataModeState DataMode
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject PhoneState Phone
@@ -636,7 +638,8 @@
 
     private async Task EditScript(string scenarioId)
     {
-        Nav.NavigateTo($"editor?script={Uri.EscapeDataString(scenarioId)}");
+        var runQs = !DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId) ? $"&run={Uri.EscapeDataString(ApiRun.CurrentRunId)}" : "";
+        Nav.NavigateTo($"editor?script={Uri.EscapeDataString(scenarioId)}{runQs}");
         await Task.CompletedTask;
     }
 

@@ -12,6 +12,7 @@
 @inject ScriptApiClient Api
 @inject ScenarioCatalog Catalog
 @inject IRunSource Sim
+@inject ApiRunSource ApiRun
 @inject IEnvironmentSource Envs
 @inject DataModeState DataMode
 @inject IJSRuntime JS
@@ -24,9 +25,17 @@
         <div class="dd">
             <button type="button" class="btn ghost small script-file-btn" aria-haspopup="menu" aria-expanded="@Aria.Bool(filesOpen)"
                     @onclick="() => { filesOpen = !filesOpen; fileFilter = string.Empty; moreOpen = false; }" title="Switch, create, or upload .cs scripts">
-                @if (isPreflight)
+                @if (selectedRunSource is not null)
+                {
+                    <span class="pf-tag">RUN</span>
+                }
+                else if (isPreflight)
                 {
                     <span class="pf-tag">@(isShutdown ? "END" : "PRE")</span>
+                }
+                else if (selectedCompiled is not null)
+                {
+                    <span class="pf-tag">C#</span>
                 }
                 <span class="mono">@fileName</span>
                 <span class="caret">▾</span>
@@ -34,13 +43,33 @@
             @if (filesOpen)
             {
                 bool Match(string? t) => fileFilter.Length == 0 || (t?.Contains(fileFilter, StringComparison.OrdinalIgnoreCase) ?? false);
+                var shownRunSources = runSources.Where(x => Match(x.FileName) || Match(x.Name) || Match(x.TargetId)).ToList();
                 var shownScripts = scripts.Where(x => Match(x.FileName) || Match(x.ScenarioName)).ToList();
-                var shownPre = preflights.Where(x => Match(x.FileName)).ToList();
-                var shownEnd = shutdowns.Where(x => Match(x.FileName)).ToList();
-                <DropMenu Class="script-files-menu" Label="C# script files" OnClose="@(() => filesOpen = false)" Total="scripts.Count + preflights.Count + shutdowns.Count"
-                          @bind-Filter="fileFilter" FilterPlaceholder="Filter scripts…">
+                var shownCompiled = compiledScenarios.Where(x => Match(x.Name) || Match(x.Id) || Match(x.Description)).ToList();
+                var shownPre = preflights.Where(x => Match(x.FileName) || Match(x.Name)).ToList();
+                var shownEnd = shutdowns.Where(x => Match(x.FileName) || Match(x.Name)).ToList();
+                <DropMenu Class="script-files-menu" Label="C# script files" OnClose="@(() => filesOpen = false)" Total="runSources.Count + scripts.Count + compiledScenarios.Count + preflights.Count + shutdowns.Count"
+                          @bind-Filter="fileFilter" FilterPlaceholder="Filter scripts & scenarios…">
                     <ChildContent>
-                        <div class="dd-lbl">Scenarios (@scripts.Count)</div>
+                        @if (runSources.Count > 0)
+                        {
+                            <div class="dd-lbl">Run snapshot (@activeSnapshotRunId)</div>
+                            @foreach (var rs in shownRunSources)
+                            {
+                                var item = rs;
+                                var isCur = selectedRunSource is not null
+                                    && string.Equals(selectedRunSource.Kind, item.Kind, StringComparison.OrdinalIgnoreCase)
+                                    && string.Equals(selectedRunSource.TargetId, item.TargetId, StringComparison.OrdinalIgnoreCase);
+                                <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)"
+                                        title="@($"{item.FileName} · {item.Name} · {(item.DiffersFromCurrent == true ? "Differs from current code" : "Exact code from run " + activeSnapshotRunId)}")"
+                                        @onclick="() => PickRunSource(item)">
+                                    <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b> <span class="pf-tag">RUN</span></span>
+                                    <span class="muted file-sub">@item.Name@(item.DiffersFromCurrent == true ? " · changed since run" : "")</span>
+                                </button>
+                            }
+                            <div class="dd-sep" role="separator"></div>
+                        }
+                        <div class="dd-lbl">Scenario scripts (@scripts.Count)</div>
                         @if (scripts.Count == 0)
                         {
                             <div class="muted dd-empty">No scenario .cs files yet.</div>
@@ -48,11 +77,25 @@
                         @foreach (var s in shownScripts)
                         {
                             var item = s;
-                            var isCur = !isPreflight && selectedId == item.ScriptId;
+                            var isCur = selectedRunSource is null && !isPreflight && selectedCompiled is null && selectedId == item.ScriptId;
                             <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName · @item.ScenarioName" @onclick="() => PickScenarioFile(item)">
                                 <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
                                 <span class="muted file-sub">@item.ScenarioName</span>
                             </button>
+                        }
+                        @if (compiledScenarios.Count > 0)
+                        {
+                            <div class="dd-sep" role="separator"></div>
+                            <div class="dd-lbl">Compiled scenarios (@compiledScenarios.Count)</div>
+                            @foreach (var c in shownCompiled)
+                            {
+                                var item = c;
+                                var isCur = selectedRunSource is null && selectedCompiled is not null && string.Equals(selectedCompiled.Id, item.Id, StringComparison.OrdinalIgnoreCase);
+                                <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.Name (@item.Id) · read-only compiled C#" @onclick="() => PickCompiledScenarioAsync(item)">
+                                    <span class="file-line">@(isCur ? "✓ " : "")<b>@item.Name</b> <span class="pf-tag">C#</span></span>
+                                    <span class="muted file-sub">@item.Id</span>
+                                </button>
+                            }
                         }
                         <div class="dd-sep" role="separator"></div>
                         <div class="dd-lbl">Preflight scripts (@preflights.Count)</div>
@@ -63,9 +106,9 @@
                         @foreach (var pf in shownPre)
                         {
                             var item = pf;
-                            var isCur = isPreflight && !isShutdown && selectedId == item.ScriptId;
-                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName" @onclick="() => PickPreflightFile(item)">
-                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                            var isCur = selectedRunSource is null && isPreflight && !isShutdown && selectedId == item.ScriptId;
+                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@($"{item.FileName}{(item.IsCompiled ? " · read-only compiled C#" : "")}")" @onclick="() => PickPreflightFile(item)">
+                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b>@if (item.IsCompiled) { <text> </text><span class="pf-tag">C#</span> }</span>
                             </button>
                         }
                         <div class="dd-sep" role="separator"></div>
@@ -77,14 +120,14 @@
                         @foreach (var sd in shownEnd)
                         {
                             var item = sd;
-                            var isCur = isShutdown && selectedId == item.ScriptId;
-                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@item.FileName" @onclick="() => PickShutdownFile(item)">
-                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b></span>
+                            var isCur = selectedRunSource is null && isShutdown && selectedId == item.ScriptId;
+                            <button type="button" class="dd-item file-item @(isCur ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCur)" title="@($"{item.FileName}{(item.IsCompiled ? " · read-only compiled C#" : "")}")" @onclick="() => PickShutdownFile(item)">
+                                <span class="file-line">@(isCur ? "✓ " : "")<b>@item.FileName</b>@if (item.IsCompiled) { <text> </text><span class="pf-tag">C#</span> }</span>
                             </button>
                         }
-                        @if (fileFilter.Length > 0 && shownScripts.Count + shownPre.Count + shownEnd.Count == 0)
+                        @if (fileFilter.Length > 0 && shownRunSources.Count + shownScripts.Count + shownCompiled.Count + shownPre.Count + shownEnd.Count == 0)
                         {
-                            <div class="dd-none">No script matches “@fileFilter”.</div>
+                            <div class="dd-none">No script or scenario matches “@fileFilter”.</div>
                         }
                     </ChildContent>
                     <Foot>
@@ -108,6 +151,18 @@
         {
             <button type="button" class="chip" @onclick="SwitchToLive" title="Scripts are compiled and tried on the server">Switch to Live</button>
         }
+        else if (selectedRunSource is not null)
+        {
+            <span class="script-status @(selectedRunSource.DiffersFromCurrent == true ? "field-error" : "muted")" role="status">@RunSnapshotStatusLabel</span>
+            @if (selectedRunSource.DiffersFromCurrent is not null)
+            {
+                <button type="button" class="btn ghost small" @onclick="OpenCurrentForRunSourceAsync" title="Open the currently loaded version of this scenario or program">Open current</button>
+            }
+        }
+        else if (isCompiledView)
+        {
+            <span class="script-status muted" role="status">@CompiledStatusLabel</span>
+        }
         else if (canTry)
         {
             <span class="script-status muted" role="status">@(Dirty ? "Edited, not saved" : "Saved")</span>
@@ -117,8 +172,8 @@
 
         <WrapToggleButton @bind-Wrapped="wordWrap" />
 
-        <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || DataMode.IsFakeMode || string.IsNullOrWhiteSpace(scriptCode))"
-                title="@(DataMode.IsFakeMode ? "Scripts are compiled and saved on the server: switch to Live" : "Compile and save the script")">
+        <button type="button" class="btn primary small" @onclick="CompileAndSave" disabled="@(busy || DataMode.IsFakeMode || isCompiledView || string.IsNullOrWhiteSpace(scriptCode))"
+                title="@(DataMode.IsFakeMode ? "Scripts are compiled and saved on the server: switch to Live" : isCompiledView ? "Compiled C# classes are read-only in the editor" : "Compile and save the script")">
             @(compiling ? "Saving…" : "Save")
         </button>
 
@@ -136,17 +191,17 @@
             {
                 <div class="dd-backdrop" @onclick="() => moreOpen = false"></div>
                 <div class="dd-menu right" role="menu" aria-label="More script actions">
-                    <button type="button" class="dd-item" role="menuitem" @onclick="() => { moreOpen = false; renameOpen = true; }">Rename file…</button>
+                    <button type="button" class="dd-item" role="menuitem" disabled="@(busy || isCompiledView)" @onclick="() => { moreOpen = false; renameOpen = true; }">Rename file…</button>
                     @if (!isPreflight)
                     {
-                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedSummary is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; AddToPlan(); }">+ Add to plan</button>
+                        <button type="button" class="dd-item" role="menuitem" disabled="@(busy || (selectedSummary is null && selectedCompiled is null) || Sim.IsRunning)" @onclick="() => { moreOpen = false; AddToPlan(); }">+ Add to plan</button>
                     }
                     else
                     {
                         <button type="button" class="dd-item" role="menuitem" disabled="@(busy || selectedPreflight is null || Sim.IsRunning)" @onclick="() => { moreOpen = false; UseAsPreflight(); }">Use as plan @ProgramName</button>
                     }
                     <div class="dd-sep" role="separator"></div>
-                    <button type="button" class="dd-item bad" role="menuitem" disabled="@(busy || !canTry)" @onclick="() => { moreOpen = false; _ = DeleteCurrent(); }">Delete script</button>
+                    <button type="button" class="dd-item bad" role="menuitem" disabled="@(busy || !canTry || isCompiledView)" @onclick="() => { moreOpen = false; _ = DeleteCurrent(); }">Delete script</button>
                 </div>
             }
         </div>
@@ -174,7 +229,7 @@
     <div class="ed-body" data-tab="@(Phone.IsPhone ? edTab.ToString().ToLowerInvariant() : null)">
         <div class="ed-code">
             <div class="script-editor-fill">
-                <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => scriptCode = v" WordWrap="@wordWrap" AriaLabel="C# script" />
+                <CSharpCodeEditor Value="@scriptCode" ValueChanged="v => { if (!isCompiledView) scriptCode = v; }" WordWrap="@wordWrap" ReadOnly="@isCompiledView" AriaLabel="C# script" />
             </div>
 
             @if (diagnostics.Count > 0)
@@ -204,6 +259,12 @@
     [SupplyParameterFromQuery(Name = "script")]
     public string? RequestedScript { get; set; }
 
+    [SupplyParameterFromQuery(Name = "scenario")]
+    public string? RequestedScenario { get; set; }
+
+    [SupplyParameterFromQuery(Name = "run")]
+    public string? RequestedRunId { get; set; }
+
     [SupplyParameterFromQuery(Name = "preflight")]
     public string? RequestedPreflight { get; set; }
 
@@ -211,6 +272,10 @@
     public string? RequestedShutdown { get; set; }
 
     private List<ScriptScenarioSummary> scripts = [];
+    private List<ScenarioInfoDto> compiledScenarios = [];
+    private List<RunSourceSnapshotDto> runSources = [];
+    private string? activeSnapshotRunId;
+    private RunSourceSnapshotDto? selectedRunSource;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
     // isPreflight means "a program script" (preflight or shutdown, brain 0052); isShutdown says which of the two.
@@ -221,6 +286,8 @@
     private string ProgramKind => isShutdown ? ScriptApiClient.Shutdowns : ScriptApiClient.Preflights;
     private string? selectedId;
     private ScriptScenarioSummary? selectedSummary;
+    private ScenarioInfoDto? selectedCompiled;
+    private CompiledScenarioSourceDto? selectedCompiledSource;
     private PreflightScriptSummary? selectedPreflight;
     private ParameterSpec? compiledSpec;
     private JsonObject testParams = new();
@@ -243,8 +310,22 @@
     private bool compiling;
     private bool testing;
     private bool busy => compiling || testing;
-    private bool canTry => !DataMode.IsFakeMode && (isPreflight ? selectedPreflight is not null : selectedSummary is not null);
-    private bool Dirty => (selectedSummary?.Code ?? selectedPreflight?.Code) is { } saved && saved != scriptCode;
+    private bool isCompiledView => selectedCompiled is not null || selectedRunSource is not null || selectedPreflight?.IsCompiled == true;
+    private string CompiledStatusLabel => selectedCompiledSource?.Origin switch
+    {
+        "EmbeddedPdb" => "Compiled · read-only (PDB)",
+        "Disk" => "Compiled · read-only (disk)",
+        "Unavailable" => "Compiled · source unavailable",
+        _ => "Compiled · read-only",
+    };
+    private string RunSnapshotStatusLabel => selectedRunSource is null ? "" : selectedRunSource.DiffersFromCurrent switch
+    {
+        true => $"Run {activeSnapshotRunId} snapshot · differs from current",
+        false => $"Run {activeSnapshotRunId} snapshot · matches current",
+        null => $"Run {activeSnapshotRunId} snapshot · not in current build",
+    };
+    private bool canTry => !DataMode.IsFakeMode && selectedRunSource is null && (isPreflight ? selectedPreflight is not null : (selectedSummary is not null || selectedCompiled is not null));
+    private bool Dirty => !isCompiledView && (selectedSummary?.Code ?? selectedPreflight?.Code) is { } saved && saved != scriptCode;
     private string TryHint =>
         DataMode.IsFakeMode ? "Fake mode has no server: scripts are compiled, saved and tried on the server. Switch to Live to try this one."
         : !canTry ? "Save the script, then try it here: it runs once with the selected environment."
@@ -320,8 +401,37 @@
         try
         {
             scripts = await Api.ListScriptsAsync();
+            var allScenarios = await Api.ListScenariosAsync();
+            compiledScenarios = allScenarios.Where(s => !s.IsCustom).ToList();
             preflights = await Api.ListPreflightsAsync();
             shutdowns = await Api.ListPreflightsAsync(kind: ScriptApiClient.Shutdowns);
+
+            var targetRunId = !string.IsNullOrWhiteSpace(RequestedRunId) ? RequestedRunId : ApiRun.CurrentRunId;
+            if (!DataMode.IsFakeMode && !string.IsNullOrWhiteSpace(targetRunId))
+            {
+                activeSnapshotRunId = targetRunId;
+                runSources = await Api.GetRunSourcesAsync(targetRunId);
+            }
+            else
+            {
+                activeSnapshotRunId = null;
+                runSources = [];
+            }
+
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedRunId) && runSources.Count > 0)
+            {
+                var target = RequestedScenario ?? RequestedScript ?? RequestedPreflight ?? RequestedShutdown;
+                var match = !string.IsNullOrWhiteSpace(target)
+                    ? runSources.FirstOrDefault(r => string.Equals(r.TargetId, target, StringComparison.OrdinalIgnoreCase)
+                                                  || string.Equals(r.Name, target, StringComparison.OrdinalIgnoreCase)
+                                                  || string.Equals(r.FileName, target, StringComparison.OrdinalIgnoreCase))
+                    : runSources[0];
+                if (match is not null)
+                {
+                    SelectRunSource(match);
+                    return;
+                }
+            }
 
             if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedShutdown))
             {
@@ -353,24 +463,44 @@
                 }
             }
 
-            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedScript)
-                && scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, RequestedScript, StringComparison.OrdinalIgnoreCase)
-                                            || string.Equals(s.ScriptId, RequestedScript, StringComparison.OrdinalIgnoreCase)
-                                            || string.Equals(s.FileName, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } reqSc)
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedScenario)
+                && compiledScenarios.FirstOrDefault(s => string.Equals(s.Id, RequestedScenario, StringComparison.OrdinalIgnoreCase)
+                                                      || string.Equals(s.Name, RequestedScenario, StringComparison.OrdinalIgnoreCase)) is { } reqComp)
             {
-                SelectScenario(reqSc);
+                await SelectCompiledScenarioAsync(reqComp);
                 return;
+            }
+
+            if (selectedId is null && !string.IsNullOrWhiteSpace(RequestedScript))
+            {
+                if (scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, RequestedScript, StringComparison.OrdinalIgnoreCase)
+                                             || string.Equals(s.ScriptId, RequestedScript, StringComparison.OrdinalIgnoreCase)
+                                             || string.Equals(s.FileName, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } reqSc)
+                {
+                    SelectScenario(reqSc);
+                    return;
+                }
+                if (compiledScenarios.FirstOrDefault(s => string.Equals(s.Id, RequestedScript, StringComparison.OrdinalIgnoreCase)
+                                                       || string.Equals(s.Name, RequestedScript, StringComparison.OrdinalIgnoreCase)) is { } reqCompFromScript)
+                {
+                    await SelectCompiledScenarioAsync(reqCompFromScript);
+                    return;
+                }
             }
 
             if (isShutdown && selectedId is not null && shutdowns.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundSd)
                 SelectShutdown(foundSd);
             else if (isPreflight && !isShutdown && selectedId is not null && preflights.FirstOrDefault(p => p.ScriptId == selectedId) is { } foundPf)
                 SelectPreflight(foundPf);
+            else if (selectedCompiled is not null && compiledScenarios.FirstOrDefault(s => string.Equals(s.Id, selectedCompiled.Id, StringComparison.OrdinalIgnoreCase)) is { } foundComp)
+                await SelectCompiledScenarioAsync(foundComp);
             else if (!isPreflight && selectedId is not null && scripts.FirstOrDefault(s => s.ScriptId == selectedId) is { } foundSc)
                 SelectScenario(foundSc);
-            else if (scripts.Count > 0 && selectedSummary is null && selectedPreflight is null)
+            else if (scripts.Count > 0 && selectedSummary is null && selectedCompiled is null && selectedPreflight is null)
                 SelectScenario(scripts[0]);
-            else if (preflights.Count > 0 && selectedSummary is null && selectedPreflight is null)
+            else if (compiledScenarios.Count > 0 && selectedSummary is null && selectedCompiled is null && selectedPreflight is null)
+                await SelectCompiledScenarioAsync(compiledScenarios[0]);
+            else if (preflights.Count > 0 && selectedSummary is null && selectedCompiled is null && selectedPreflight is null)
                 SelectPreflight(preflights[0]);
         }
         catch (Exception ex)
@@ -383,8 +513,58 @@
     }
 
     private void PickScenarioFile(ScriptScenarioSummary s) { filesOpen = false; renameOpen = false; SelectScenario(s); }
+    private Task PickCompiledScenarioAsync(ScenarioInfoDto s) { filesOpen = false; renameOpen = false; return SelectCompiledScenarioAsync(s); }
+    private void PickRunSource(RunSourceSnapshotDto rs) { filesOpen = false; renameOpen = false; SelectRunSource(rs); }
     private void PickPreflightFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectPreflight(p); }
     private void PickShutdownFile(PreflightScriptSummary p) { filesOpen = false; renameOpen = false; SelectShutdown(p); }
+
+    private void SelectRunSource(RunSourceSnapshotDto rs)
+    {
+        isPreflight = string.Equals(rs.Kind, "preflight", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(rs.Kind, "shutdown", StringComparison.OrdinalIgnoreCase);
+        isShutdown = string.Equals(rs.Kind, "shutdown", StringComparison.OrdinalIgnoreCase);
+        selectedId = $"run:{activeSnapshotRunId}:{rs.Kind}:{rs.TargetId}";
+        selectedSummary = null;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
+        selectedPreflight = null;
+        selectedRunSource = rs;
+        fileName = rs.FileName;
+        scriptCode = rs.Code;
+        diagnostics = [];
+        liveTest = null;
+        preflightResult = null;
+        compiledSpec = null;
+        statusMessage = null;
+        statusIsError = false;
+    }
+
+    private async Task OpenCurrentForRunSourceAsync()
+    {
+        if (selectedRunSource is not { } rs) return;
+        if (string.Equals(rs.Kind, "preflight", StringComparison.OrdinalIgnoreCase)
+            && preflights.FirstOrDefault(p => string.Equals(p.ScriptId, rs.TargetId, StringComparison.OrdinalIgnoreCase)) is { } pf)
+        {
+            SelectPreflight(pf);
+            return;
+        }
+        if (string.Equals(rs.Kind, "shutdown", StringComparison.OrdinalIgnoreCase)
+            && shutdowns.FirstOrDefault(p => string.Equals(p.ScriptId, rs.TargetId, StringComparison.OrdinalIgnoreCase)) is { } sd)
+        {
+            SelectShutdown(sd);
+            return;
+        }
+        if (scripts.FirstOrDefault(s => string.Equals(s.ScenarioId, rs.TargetId, StringComparison.OrdinalIgnoreCase)) is { } sc)
+        {
+            SelectScenario(sc);
+            return;
+        }
+        if (compiledScenarios.FirstOrDefault(c => string.Equals(c.Id, rs.TargetId, StringComparison.OrdinalIgnoreCase)) is { } comp)
+        {
+            await SelectCompiledScenarioAsync(comp);
+        }
+    }
 
     private void SelectScenario(ScriptScenarioSummary s)
     {
@@ -392,6 +572,9 @@
         isShutdown = false;
         selectedId = s.ScriptId;
         selectedSummary = s;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
         selectedPreflight = null;
         fileName = s.FileName;
         scriptCode = s.Code;
@@ -402,6 +585,50 @@
         testParams = compiledSpec.DefaultJson();
         statusMessage = null;
         statusIsError = false;
+    }
+
+    private async Task SelectCompiledScenarioAsync(ScenarioInfoDto s)
+    {
+        isPreflight = false;
+        isShutdown = false;
+        selectedId = s.Id;
+        selectedSummary = null;
+        selectedCompiled = s;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
+        selectedPreflight = null;
+        fileName = $"{s.Name}.cs";
+        scriptCode = $"// Loading source for {s.Name}…";
+        diagnostics = [];
+        liveTest = null;
+        preflightResult = null;
+        compiledSpec = ParameterSpec.FromJsonSchema(s.Parameters);
+        testParams = compiledSpec.DefaultJson();
+        statusMessage = null;
+        statusIsError = false;
+
+        try
+        {
+            var src = await Api.GetScenarioSourceAsync(s.Id);
+            if (!ReferenceEquals(selectedCompiled, s)) return;
+            selectedCompiledSource = src;
+            if (src is not null)
+            {
+                fileName = src.FileName;
+                scriptCode = src.Code;
+            }
+            else
+            {
+                scriptCode = $"// Source for compiled scenario '{s.Name}' ({s.Id}) was not returned by the server.";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!ReferenceEquals(selectedCompiled, s)) return;
+            statusMessage = $"Source load error: {ex.Message}";
+            statusIsError = true;
+            scriptCode = $"// Could not load source for '{s.Name}': {ex.Message}";
+        }
     }
 
     private void SelectShutdown(PreflightScriptSummary p)
@@ -416,6 +643,9 @@
         isShutdown = false;
         selectedId = p.ScriptId;
         selectedSummary = null;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
         selectedPreflight = p;
         fileName = p.FileName;
         scriptCode = p.Code;
@@ -434,6 +664,9 @@
         isShutdown = false;
         selectedId = null;
         selectedSummary = null;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
         selectedPreflight = null;
         compiledSpec = null;
         testParams = new JsonObject();
@@ -462,6 +695,9 @@
         isShutdown = false;
         selectedId = null;
         selectedSummary = null;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
         selectedPreflight = null;
         compiledSpec = null;
         fileName = "preflight-check.cs";
@@ -485,6 +721,9 @@
         fileName = file.Name;
         selectedId = null;
         selectedSummary = null;
+        selectedCompiled = null;
+        selectedCompiledSource = null;
+        selectedRunSource = null;
         selectedPreflight = null;
         compiledSpec = null;
         liveTest = null;
@@ -568,7 +807,8 @@
             }
             else
             {
-                liveTest = await Api.StartLiveTestRunAsync(selectedSummary!.ScriptId, testParams, Envs.ActiveName);
+                var targetId = selectedSummary?.ScriptId ?? selectedCompiled!.Id;
+                liveTest = await Api.StartLiveTestRunAsync(targetId, testParams, Envs.ActiveName);
                 if (liveTest.Running)
                 {
                     StartLiveTestPolling(liveTest.TestRunId);
@@ -635,8 +875,9 @@
 
     private void AddToPlan()
     {
-        if (selectedSummary is null) return;
-        var scenario = Catalog.Find(selectedSummary.ScenarioId);
+        var scenarioId = selectedSummary?.ScenarioId ?? selectedCompiled?.Id;
+        if (scenarioId is null) return;
+        var scenario = Catalog.Find(scenarioId);
         if (scenario is null) return;
         Sim.AddEntry(scenario);
         statusMessage = "Added to plan ✓";

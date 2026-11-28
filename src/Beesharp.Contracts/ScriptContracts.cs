@@ -149,18 +149,64 @@ public sealed record LiveTestRunStatusDto(
     int FailedRep = -1,
     IReadOnlyList<RecordedStepVisit>? StepVisits = null);
 
+/// <summary>One resolved C# source file for a compiled scenario or program.</summary>
+/// <param name="FileName">File name (basename) of the C# source file.</param>
+/// <param name="Code">Full C# source text of the file.</param>
+/// <param name="Origin">Where the source was read from: <c>EmbeddedPdb</c>, <c>Disk</c>, or <c>Unavailable</c>.</param>
+public sealed record CompiledSourceFileDto(string FileName, string Code, string Origin);
+
+/// <summary>Resolved C# source code for a compiled scenario (from Portable PDB embedded sources or local disk).</summary>
+/// <param name="ScenarioId">Unique scenario identifier.</param>
+/// <param name="ScenarioName">Human-readable scenario display name.</param>
+/// <param name="FileName">Primary C# file name of the scenario type.</param>
+/// <param name="Code">Combined or primary C# source text (or a fallback comment when unavailable).</param>
+/// <param name="Origin">Where the primary source was read from: <c>EmbeddedPdb</c>, <c>Disk</c>, or <c>Unavailable</c>.</param>
+/// <param name="TypeFullName">Full CLR type name of the compiled scenario class.</param>
+/// <param name="Files">Optional list of individual source files when the scenario or its parameters span multiple files.</param>
+public sealed record CompiledScenarioSourceDto(
+    string ScenarioId,
+    string ScenarioName,
+    string FileName,
+    string Code,
+    string Origin,
+    string TypeFullName,
+    IReadOnlyList<CompiledSourceFileDto>? Files = null);
+
+/// <summary>Snapshot of the C# source code of a scenario, preflight, or shutdown program captured when a run started.</summary>
+/// <param name="Kind">Source kind: <c>scenario</c>, <c>preflight</c>, or <c>shutdown</c>.</param>
+/// <param name="TargetId">Scenario ID (for <c>scenario</c>) or script/program ID (for <c>preflight</c>/<c>shutdown</c>).</param>
+/// <param name="Name">Human-readable display name of the scenario or program.</param>
+/// <param name="FileName">Primary C# file name.</param>
+/// <param name="Code">Full C# source text captured at run start.</param>
+/// <param name="Sha256">Lowercase hex SHA-256 digest of <paramref name="Code"/> (UTF-8), used for deduplication and drift detection.</param>
+/// <param name="Origin">Where the source came from: <c>Script</c>, <c>EmbeddedPdb</c>, <c>Disk</c>, or <c>Unavailable</c>.</param>
+/// <param name="IsCompiled"><see langword="true"/> when backed by a compiled C# class rather than a mutable script file.</param>
+/// <param name="DiffersFromCurrent">Optional flag populated when reading a stored run: <see langword="true"/> if the currently loaded code differs from this snapshot, <see langword="false"/> if identical, or <see langword="null"/> if not currently loaded.</param>
+public sealed record RunSourceSnapshotDto(
+    string Kind,
+    string TargetId,
+    string Name,
+    string FileName,
+    string Code,
+    string Sha256,
+    string Origin,
+    bool IsCompiled,
+    bool? DiffersFromCurrent = null);
+
 /// <summary>Metadata and source code for a preflight or shutdown program script.</summary>
 /// <param name="ScriptId">Unique program script identifier.</param>
 /// <param name="FileName">Script file name on disk.</param>
 /// <param name="Name">Human-readable program name.</param>
 /// <param name="Code">Full C# source code of the program script.</param>
 /// <param name="UpdatedUtc">UTC timestamp when the script was last saved or compiled.</param>
+/// <param name="IsCompiled"><see langword="true"/> when backed by a compiled C# class rather than a mutable script file.</param>
 public sealed record PreflightScriptSummary(
     string ScriptId,
     string FileName,
     string Name,
     string Code,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    bool IsCompiled = false);
 
 /// <summary>Result of compiling and registering a preflight or shutdown program script.</summary>
 /// <param name="Success"><see langword="true"/> when compilation succeeded without errors.</param>

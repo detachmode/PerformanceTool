@@ -39,6 +39,12 @@ public static class ScenarioEndpoints
             scripts.FindScriptIdForScenario(s.Id),
             s.Spec.ToJsonSchema(),
             s.Steps.Count > 0 ? s.Steps : null)));
+
+        // GET /api/scenarios/{id}/source -> 200 OK (CompiledScenarioSourceDto) | 404 Not Found
+        app.MapGet("/api/scenarios/{id}/source", (string id, ScenarioCatalog catalog) =>
+            catalog.Find(id) is { } scenario
+                ? Results.Ok(CompiledSourceResolver.ResolveScenario(scenario))
+                : Results.NotFound());
         return app;
     }
 }

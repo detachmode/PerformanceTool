@@ -1,4 +1,11 @@
 <Project>
+  <!-- Embed C# sources in the consumer's Portable PDB by default so the Beesharp editor can display
+       compiled scenarios and preflights even in published/Docker deployments. Consumers can opt out
+       with <EmbedAllSources>false</EmbedAllSources>. -->
+  <PropertyGroup>
+    <EmbedAllSources Condition="'$(EmbedAllSources)' == ''">true</EmbedAllSources>
+  </PropertyGroup>
+
   <!-- Copies the embedded Blazor WebAssembly UI assets shipped inside Beesharp.Host.nupkg
        into the consumer project's output and publish directories under beesharp-ui/.
        Uses Copy targets (rather than <None> items) so Microsoft.NET.Sdk.Web's Razor SDK

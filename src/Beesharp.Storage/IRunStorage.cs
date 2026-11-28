@@ -208,6 +208,20 @@ public interface IRunStorage : IAsyncDisposable
     Task<string?> GetRuntimeDataAsync(string runId, CancellationToken ct = default);
 
     /// <summary>
+    /// Stores content-addressed source code snapshots captured when a run started (both script scenarios and compiled C# scenarios/programs).
+    /// </summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="sources">Captured source snapshots for the run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task SaveRunSourcesAsync(string runId, IReadOnlyList<RunSourceSnapshotDto> sources, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>Returns the source code snapshots captured when <paramref name="runId"/> started, or empty when none were stored.</summary>
+    /// <param name="runId">Unique run identifier.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The stored source snapshots for the run.</returns>
+    Task<IReadOnlyList<RunSourceSnapshotDto>> GetRunSourcesAsync(string runId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RunSourceSnapshotDto>>([]);
+
+    /// <summary>
     /// Stores a run-level program's result and log lines (<paramref name="kind"/> is <c>"preflight"</c> or <c>"shutdown"</c>)
     /// and writes its log lines into the run's log stream so they are queryable on the Logs page.
     /// </summary>

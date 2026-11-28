@@ -21,9 +21,11 @@ namespace Beesharp.Services;
 /// <param name="shutdowns">Optional store of shutdown scripts executed at the end of a run.</param>
 /// <param name="traces">Optional background trace fetching (brain 0065): when the run's environment names a trace store, the traces of selected bees are fetched into the run. Without it nothing is fetched.</param>
 /// <param name="loggerFactory">Optional: the fetch's lines (category <c>Beesharp.Traces</c>) are also written to this factory's loggers (console), besides the run's host logs.</param>
+/// <param name="scripts">Optional store of custom C# scenario scripts used to snapshot scenario source code at run start.</param>
+/// <param name="catalog">Optional scenario catalog used to snapshot compiled scenario source code at run start.</param>
 public sealed class RunManager(
     LoadRunner runner, EnvironmentStore environments, IRunStorage storage, PreflightStore? preflights = null, ShutdownStore? shutdowns = null,
-    TraceFetching? traces = null, ILoggerFactory? loggerFactory = null)
+    TraceFetching? traces = null, ILoggerFactory? loggerFactory = null, ScriptScenarioStore? scripts = null, ScenarioCatalog? catalog = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private const int ShutdownTimeoutSeconds = 120;
@@ -557,6 +559,14 @@ public sealed class RunManager(
             {
                 storage.EnqueueRunStarted(currentRunId, currentStartedUtc, cloned, runSteps);
                 runPersisted = true;
+
+                try
+                {
+                    var snapshots = CompiledSourceResolver.CaptureForPlan(cloned, catalog, scripts, preflights, shutdowns);
+                    if (snapshots.Count > 0)
+                        await storage.SaveRunSourcesAsync(currentRunId, snapshots);
+                }
+                catch (Exception) { }
 
                 // Background trace fetch (brain 0065): only when the environment names a trace store; it never fails or slows the run (own task, bounded work per bee).
                 if (traces is not null)

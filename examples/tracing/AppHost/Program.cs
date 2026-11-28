@@ -3,8 +3,6 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Aspire.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -35,7 +33,6 @@ static string ResolveLanIp()
 }
 
 var dataDirectory = Path.Combine(builder.AppHostDirectory, ".data");
-var exampleDirectory = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "beesharp"));
 var scripts = Path.Combine(dataDirectory, "scripts");
 var presets = Path.Combine(dataDirectory, "presets");
 var environments = Path.Combine(dataDirectory, "environments");
@@ -43,35 +40,9 @@ Directory.CreateDirectory(scripts);
 Directory.CreateDirectory(presets);
 Directory.CreateDirectory(environments);
 
-// Copy all example scenarios and presets into .data/ with baseUrl pointed at local shop-api (http://localhost:5292)
+// Point the compiled Beesharp.Host scenarios at local shop-api (http://localhost:5292)
 // so pressing Play in Beesharp works immediately out of the box.
 const string shopApiLocalUrl = "http://localhost:5292";
-foreach (var scriptFile in Directory.EnumerateFiles(exampleDirectory, "*.cs"))
-{
-    var scriptSource = File.ReadAllText(scriptFile);
-    File.WriteAllText(
-        Path.Combine(scripts, Path.GetFileName(scriptFile)),
-        scriptSource.Replace("http://shop-api:8080", shopApiLocalUrl, StringComparison.Ordinal));
-}
-
-var jsonWriteOptions = new JsonSerializerOptions { WriteIndented = true };
-foreach (var presetFile in Directory.EnumerateFiles(exampleDirectory, "*.json"))
-{
-    var presetNode = JsonNode.Parse(File.ReadAllText(presetFile))!.AsObject();
-    if (presetNode["plan"]?["scenarios"] is JsonArray scenarios)
-    {
-        foreach (var node in scenarios)
-        {
-            if (node is not JsonObject entry) continue;
-            var parameters = entry["parameters"]?.AsObject() ?? new JsonObject();
-            entry["parameters"] = parameters;
-            parameters["baseUrl"] = shopApiLocalUrl;
-        }
-    }
-    File.WriteAllText(
-        Path.Combine(presets, Path.GetFileName(presetFile)),
-        presetNode.ToJsonString(jsonWriteOptions));
-}
 
 // Jaeger v2 in default all-in-one memory mode (0.0.0.0:16687 for LAN UI, 4319 for OTLP HTTP).
 var jaeger = builder.AddContainer("jaeger", "jaegertracing/jaeger", "2.23.0")
@@ -99,7 +70,7 @@ var jaeger = builder.AddContainer("jaeger", "jaegertracing/jaeger", "2.23.0")
 var otlpHttp = jaeger.GetEndpoint("otlp-http");
 
 var shopApiProject = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "shop-api", "ShopApi.csproj"));
-var beesharpProject = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "..", "src", "Beesharp", "Beesharp.csproj"));
+var beesharpProject = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "beesharp-host", "Beesharp.Tracing.Host.csproj"));
 
 var payment = builder.AddDotnetProject("payment-api", shopApiProject)
     .WithHttpEndpoint(port: 5293, targetPort: 5293, name: "http", isProxied: false)
@@ -145,7 +116,7 @@ builder.AddDotnetProject("beesharp", beesharpProject)
     .WithEnvironment("Presets__Directory", presets)
     .WithEnvironment("Environments__Directory", environments)
     .WithEnvironment("Storage__DuckDbPath", Path.Combine(dataDirectory, "beesharp.duckdb"))
-    .WithEnvironment("Plan__DefaultPreset", "Shop full mix")
+    .WithEnvironment("ShopApiUrl", shopApiLocalUrl)
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WithEnvironment("URLS", "https://0.0.0.0:7050")
     .WithEnvironment("OTEL_SERVICE_NAME", "beesharp")

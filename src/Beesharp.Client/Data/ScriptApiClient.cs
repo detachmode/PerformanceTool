@@ -32,6 +32,26 @@ public sealed class ScriptApiClient(HttpClient http, ScenarioCatalog catalog)
     public async Task<List<ScriptScenarioSummary>> ListScriptsAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<ScriptScenarioSummary>>("api/scripts", JsonOpts, ct) ?? [];
 
+    public async Task<List<ScenarioInfoDto>> ListScenariosAsync(CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<ScenarioInfoDto>>("api/scenarios", JsonOpts, ct) ?? []; }
+        catch { return []; }
+    }
+
+    public async Task<CompiledScenarioSourceDto?> GetScenarioSourceAsync(string scenarioId, CancellationToken ct = default)
+    {
+        var resp = await http.GetAsync($"api/scenarios/{Uri.EscapeDataString(scenarioId)}/source", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<CompiledScenarioSourceDto>(JsonOpts, ct);
+    }
+
+    public async Task<List<RunSourceSnapshotDto>> GetRunSourcesAsync(string runId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId)) return [];
+        try { return await http.GetFromJsonAsync<List<RunSourceSnapshotDto>>($"api/runs/{Uri.EscapeDataString(runId)}/sources", JsonOpts, ct) ?? []; }
+        catch { return []; }
+    }
+
     public async Task<ScriptCompileResult> CompileAndSaveAsync(string? id, string fileName, string code, CancellationToken ct = default)
     {
         var resp = await http.PostAsJsonAsync("api/scripts", new { id, fileName, code }, JsonOpts, ct);

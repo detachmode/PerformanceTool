@@ -7,6 +7,7 @@
     {
         <textarea class="cs-fallback-ta" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
                   wrap="@(WordWrap ? "soft" : "off")"
+                  readonly="@ReadOnly"
                   aria-label="@AriaLabel"
                   value="@Value"
                   @oninput="OnFallbackInput"></textarea>
@@ -21,6 +22,7 @@
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public bool WordWrap { get; set; } = true;
+    [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public string AriaLabel { get; set; } = "C# scenario script";
 
     private ElementReference hostEl;
@@ -29,6 +31,7 @@
     private IJSObjectReference? handle;
     private string lastAppliedValue = "";
     private bool lastWordWrap = true;
+    private bool lastReadOnly;
     private bool useFallback;
     private bool disposed;
 
@@ -41,6 +44,7 @@
             var initial = Value ?? "";
             lastAppliedValue = initial;
             lastWordWrap = WordWrap;
+            lastReadOnly = ReadOnly;
             selfRef = DotNetObjectReference.Create(this);
 
             try
@@ -58,7 +62,7 @@
                         hostEl,
                         selfRef,
                         initial,
-                        new { wordWrap = WordWrap, ariaLabel = AriaLabel });
+                        new { wordWrap = WordWrap, readOnly = ReadOnly, ariaLabel = AriaLabel });
                 }
                 catch { }
             }
@@ -76,7 +80,7 @@
                 return;
             }
 
-            // Re-sync if Value or WordWrap changed while Monaco was loading from CDN.
+            // Re-sync if Value, WordWrap, or ReadOnly changed while Monaco was loading from CDN.
             var current = Value ?? "";
             if (!string.Equals(current, lastAppliedValue, StringComparison.Ordinal))
             {
@@ -87,6 +91,11 @@
             {
                 lastWordWrap = WordWrap;
                 try { await handle.InvokeVoidAsync("setWordWrap", lastWordWrap); } catch { }
+            }
+            if (ReadOnly != lastReadOnly)
+            {
+                lastReadOnly = ReadOnly;
+                try { await handle.InvokeVoidAsync("setReadOnly", lastReadOnly); } catch { }
             }
             return;
         }
@@ -103,6 +112,11 @@
             {
                 lastWordWrap = WordWrap;
                 try { await handle.InvokeVoidAsync("setWordWrap", lastWordWrap); } catch { }
+            }
+            if (ReadOnly != lastReadOnly)
+            {
+                lastReadOnly = ReadOnly;
+                try { await handle.InvokeVoidAsync("setReadOnly", lastReadOnly); } catch { }
             }
         }
     }

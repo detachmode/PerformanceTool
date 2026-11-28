@@ -1,4 +1,5 @@
 using Beesharp.Services;
+using Beesharp.Services.Scenarios;
 using Beesharp.Services.Storage;
 
 namespace Beesharp.Api;
@@ -52,6 +53,24 @@ public static class RunEndpoints
             runs.GetCurrentRuntime() is { } rt ? Results.Ok(rt) : Results.NoContent());
         app.MapGet("/api/runs/{runId}/runtime", async (string runId, RunManager runs, CancellationToken ct) =>
             await runs.GetRuntimeAsync(runId, ct) is { } rt ? Results.Ok(rt) : Results.NotFound());
+        app.MapGet("/api/runs/{runId}/sources", async (
+            string runId,
+            IRunStorage storage,
+            ScenarioCatalog catalog,
+            ScriptScenarioStore scripts,
+            PreflightStore preflights,
+            ShutdownStore shutdowns,
+            CancellationToken ct) =>
+        {
+            var stored = await storage.GetRunSourcesAsync(runId, ct);
+            var annotated = stored.Select(s =>
+            {
+                var currentSha = CompiledSourceResolver.ResolveCurrentSha256(s.Kind, s.TargetId, catalog, scripts, preflights, shutdowns);
+                bool? differs = currentSha is null ? null : !string.Equals(currentSha, s.Sha256, StringComparison.OrdinalIgnoreCase);
+                return s with { DiffersFromCurrent = differs };
+            }).ToList();
+            return Results.Ok(annotated);
+        });
         app.MapGet("/api/runs/live-logs", (long? afterId, int? limit, int? sequence, int? entry, RunManager runs) =>
             runs.GetLiveLogs(afterId ?? 0, limit ?? 500, sequence, entry));
         app.MapPost("/api/runs/start", async (StartRunRequest? body, RunManager runs, PlanWorkspace workspace, CancellationToken ct) =>

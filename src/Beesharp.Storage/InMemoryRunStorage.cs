@@ -33,6 +33,7 @@ public sealed class InMemoryRunStorage : IRunStorage
         public Dictionary<int, StoredBeeDetail> Bees { get; } = [];
         public List<StoredLogRow> Logs { get; } = [];
         public Dictionary<string, StoredTrace> Traces { get; } = new(StringComparer.Ordinal);
+        public List<RunSourceSnapshotDto> Sources { get; } = [];
     }
 
     /// <inheritdoc />
@@ -101,6 +102,31 @@ public sealed class InMemoryRunStorage : IRunStorage
     {
         lock (sync)
             return Task.FromResult(runs.FirstOrDefault(x => x.RunId == runId)?.RuntimeJson);
+    }
+
+    /// <inheritdoc />
+    public Task SaveRunSourcesAsync(string runId, IReadOnlyList<RunSourceSnapshotDto> sources, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            if (runs.FirstOrDefault(x => x.RunId == runId) is { } bucket)
+            {
+                bucket.Sources.Clear();
+                bucket.Sources.AddRange(sources);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<RunSourceSnapshotDto>> GetRunSourcesAsync(string runId, CancellationToken ct = default)
+    {
+        lock (sync)
+        {
+            var bucket = runs.FirstOrDefault(x => x.RunId == runId);
+            IReadOnlyList<RunSourceSnapshotDto> result = bucket is null ? [] : bucket.Sources.ToList();
+            return Task.FromResult(result);
+        }
     }
 
     /// <inheritdoc />

@@ -8,6 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Beesharp</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Embed C# sources in the Portable PDB (not the DLL) so the editor can show built-in scenario code even in Docker/published builds. -->
+    <EmbedAllSources>true</EmbedAllSources>
     <PackageId>Beesharp.Core</PackageId>
     <Authors>detachmode</Authors>
     <Description>Core scenario, parameter, step-machine and runtime APIs for Beesharp load tests.</Description>
