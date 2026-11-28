@@ -2,7 +2,6 @@
    - View mode (default): shows live/finished run cards, run summary, Run History picker (DuckDB), and opens the scenario page (/scenario/n) on click.
    - Edit mode (toggled via "Edit"): shows plan settings, presets, scripts, and switches each scenario box into the inline editor card + "Add scenario" tile.
    - Starting a run automatically exits Edit mode so live results are immediately visible. *@
-@page "/"
 @page "/overview"
 @layout MainLayout
 @implements IDisposable
@@ -15,38 +14,46 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject PhoneState Phone
-@inject OverviewEditMemory EditMemory
 
-<PageTitle>@(editMode ? "Edit Scenarios" : "Overview") · Beesharp</PageTitle>
+<PageTitle>@(Sim.Current.IsIdlePlan ? Sim.Current.DisplayTitle : "Overview") · Beesharp</PageTitle>
 
 @{
     var s = Sim.Current;
     var plan = Sim.Plan;
     var locked = Sim.IsRunning;
-    var dirty = Sim.HasUnsavedChanges;
+    var isIdlePlan = s.IsIdlePlan;
     var state = s.Paused ? "Paused" : s.Running ? "Running" : s.State == FakeRunState.Finished ? "Finished" : "Idle";
 
     if (selected >= plan.Scenarios.Count) selected = plan.Scenarios.Count - 1;
-    if (selected < -1) selected = -1;
-    var cfg = editMode && selected >= 0 ? plan.Scenarios[selected] : null;
+    if (selected < PlanSelected) selected = -1;
+    var isPlanSelected = isIdlePlan && selected == PlanSelected;
+    var cfg = isIdlePlan && selected >= 0 ? plan.Scenarios[selected] : null;
     var scenario = cfg is null ? null : Catalog.Find(cfg.ScenarioId);
     var planErr = planSnap ??= PlanErrors(plan);
     var cfgErr = cfg is null ? null : ShownErrors(cfg);
     var hasAdvanced = scenario?.Spec.Fields.Any(f => f.Advanced) ?? false;
     var advancedInvalid = cfgErr is not null && scenario is not null
         && scenario.Spec.Fields.Where(f => f.Advanced).Any(f => cfgErr.Fields.Keys.Any(k => k.StartsWith(f.JsonName, StringComparison.Ordinal)));
+    var totalPlanRate = plan.Scenarios.Sum(x => x.EffectiveRatePerMinute());
+    var estTotalBees = (long)Math.Round(totalPlanRate * (plan.DurationSeconds / 60.0));
+    var viewingHistory = s.IsHistorical;
+    var planTitle = s.DisplayTitle;
+    var hasSideSelection = isIdlePlan && (isPlanSelected || cfg is not null);
+    var sideOpen = hasSideSelection && !Phone.IsPhone;
 }
 
 @* Coming back from a scenario page, the Logs, ...: the overview scrolls to where it was (brain 0059, 0069). *@
-<ScrollMemory Key="@(editMode ? "overview-edit" : "overview")" />
+<ScrollMemory Key="@(isIdlePlan ? "overview-edit" : "overview")" />
 
-<div class="page @(editMode ? "editor" : "") @(editMode && !Phone.IsPhone ? "ed-side-open" : "")">
+<div class="page @(isIdlePlan ? "editor" : "") @(sideOpen ? "ed-side-open" : "")">
     <section class="preset-bar" aria-label="Scenarios header">
         <div class="preset-title">
-            <h1 title="@Sim.PresetName">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Scenarios" : Sim.PresetName)</h1>
-            @if (dirty) { <span class="unsaved" role="status"><i></i>Unsaved</span> }
-            else if (savedNote) { <span class="saved" role="status">Saved ✓</span> }
-            @if (!editMode)
+            <h1>@planTitle</h1>
+            @if (isIdlePlan)
+            {
+                <span class="pe-plan-summary mono">@plan.Scenarios.Count @(plan.Scenarios.Count == 1 ? "scenario" : "scenarios") · @Format.Rate(totalPlanRate) bees/min · ~@(estTotalBees >= 1000 ? (estTotalBees / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "k" : estTotalBees.ToString(System.Globalization.CultureInfo.InvariantCulture)) bees</span>
+            }
+            else
             {
                 <span class="muted">@state · @Format.Num(s.Scenarios.Sum(x => x.Finished)) finished</span>
             }
@@ -56,23 +63,21 @@
                 <button type="button" class="preset-pick-btn @(presetMenuOpen ? "on" : "")"
                         aria-haspopup="menu" aria-expanded="@Aria.Bool(presetMenuOpen)"
                         disabled="@locked"
-                        title="@(locked ? "Stop the running test to switch or save presets" : $"Preset: {Sim.PresetName}")"
+                        title="@(locked ? "Stop the running test to load a preset" : "Load a preset into the current plan")"
                         @onclick="TogglePresetMenu">
-                    <span class="preset-pick-label">Preset</span>
-                    <span class="preset-pick-name">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "Default" : Sim.PresetName)</span>
-                    @if (dirty) { <i class="edit-dot" title="Unsaved changes"></i> }
+                    <span class="preset-pick-name">Load preset</span>
                     <span class="caret" aria-hidden="true">▾</span>
                 </button>
                 @if (presetMenuOpen)
                 {
                     var shownPresets = Sim.PresetNames.Where(n => presetFilter.Length == 0 || n.Contains(presetFilter, StringComparison.OrdinalIgnoreCase)).ToList();
-                    <DropMenu Class="right preset-menu" Label="Presets" OnClose="@(() => presetMenuOpen = false)" Total="Sim.PresetNames.Count"
+                    <DropMenu Class="right preset-menu" Label="Load preset" OnClose="@(() => presetMenuOpen = false)" Total="Sim.PresetNames.Count"
                               @bind-Filter="presetFilter" FilterPlaceholder="Filter presets…">
-                        <Head><div class="dd-lbl">Switch preset</div></Head>
+                        <Head><div class="dd-lbl">Load preset into plan</div></Head>
                         <ChildContent>
                             @if (Sim.PresetNames.Count == 0)
                             {
-                                <div class="muted dd-empty">No saved presets yet.</div>
+                                <div class="muted dd-empty">No presets available.</div>
                             }
                             else if (shownPresets.Count == 0)
                             {
@@ -81,37 +86,49 @@
                             @foreach (var p in shownPresets)
                             {
                                 var preset = p;
-                                var isCurrent = string.Equals(preset, Sim.PresetName, StringComparison.OrdinalIgnoreCase);
-                                <button type="button" class="dd-item @(isCurrent ? "on" : "")" role="menuitemradio" aria-checked="@Aria.Bool(isCurrent)" title="@preset"
-                                        disabled="@locked" @onclick="() => { presetMenuOpen = false; PickPreset(preset); }">
-                                    <span class="dd-check" aria-hidden="true">@(isCurrent ? "✓" : "")</span>
+                                <button type="button" class="dd-item" role="menuitem" title="@preset"
+                                        disabled="@locked" @onclick="() => { presetMenuOpen = false; DoLoad(preset); }">
                                     <span class="dd-text">@preset</span>
                                 </button>
                             }
                         </ChildContent>
-                        <Foot>
-                            <button type="button" class="dd-item" role="menuitem" disabled="@(locked || !dirty)" title="Save “@Sim.PresetName”" @onclick="() => { presetMenuOpen = false; Save(); }">
-                                <span class="dd-check" aria-hidden="true"></span>
-                                <span class="dd-text">Save “@Sim.PresetName”</span>
-                            </button>
-                            <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { presetMenuOpen = false; OpenSaveAs(); }">
-                                <span class="dd-check" aria-hidden="true"></span>
-                                <span class="dd-text">Save as new preset…</span>
-                            </button>
-                        </Foot>
                     </DropMenu>
                 }
             </div>
-            @if (editMode)
+            @if (isIdlePlan)
             {
-                <button type="button" class="btn @(dirty ? "primary" : "ghost") small" @onclick="ExitEditMode" title="Finish editing and return to Overview">Done</button>
+                <div class="dd">
+                    <button type="button" class="btn ghost small more-menu-btn @(editMenuOpen ? "on" : "")"
+                            aria-haspopup="menu" aria-expanded="@Aria.Bool(editMenuOpen)"
+                            @onclick="ToggleEditMenu" aria-label="Plan actions" title="Plan actions">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2.2" />
+                            <circle cx="12" cy="12" r="2.2" />
+                            <circle cx="19" cy="12" r="2.2" />
+                        </svg>
+                    </button>
+                    @if (editMenuOpen)
+                    {
+                        <div class="dd-backdrop" @onclick="() => editMenuOpen = false"></div>
+                        <div class="dd-menu right" role="menu" aria-label="Plan actions">
+                            <div class="dd-lbl">Plan</div>
+                            <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { editMenuOpen = false; ToggleAdd(); }">+ Add scenario</button>
+                            <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { editMenuOpen = false; SelectPlan(); }">Plan settings</button>
+                            <div class="dd-sep" role="separator"></div>
+                            <button type="button" class="dd-item" role="menuitem" disabled="@locked" @onclick="() => { editMenuOpen = false; ClearPlan(); }">New Plan</button>
+                        </div>
+                    }
+                </div>
             }
             else
             {
-                <button type="button" class="btn ghost small" @onclick="EnterEditMode" disabled="@(locked || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory))"
-                        title="@(locked ? "Stop the running test to edit scenarios" : (!DataMode.IsFakeMode && ApiRun.IsViewingHistory) ? "Return to Live mode to edit scenarios" : "Edit scenarios, spawning and parameters")">
-                    Edit
-                </button>
+                @if (s.CanEditPlan)
+                {
+                    <button type="button" class="btn secondary small" @onclick="EnterEditMode"
+                            title="Edit scenarios, spawning and parameters">
+                        Edit
+                    </button>
+                }
                 <div class="dd">
                     <button type="button" class="btn ghost small more-menu-btn @(viewMenuOpen ? "on" : "")"
                             aria-haspopup="menu" aria-expanded="@Aria.Bool(viewMenuOpen)"
@@ -125,7 +142,13 @@
                     @if (viewMenuOpen)
                     {
                         <div class="dd-backdrop" @onclick="() => viewMenuOpen = false"></div>
-                        <div class="dd-menu right" role="menu" aria-label="Run actions">
+                        <div class="dd-menu right" role="menu" aria-label="Plan and run actions">
+                            @if (s.CanEditPlan)
+                            {
+                                <div class="dd-lbl">Plan</div>
+                                <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; StartNewPlan(); }">New Plan</button>
+                                <div class="dd-sep" role="separator"></div>
+                            }
                             <div class="dd-lbl">Run</div>
                             <button type="button" class="dd-item" role="menuitem" @onclick="() => { viewMenuOpen = false; Logs.Show(); }">Logs</button>
                             @if (!DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId))
@@ -139,26 +162,16 @@
         </div>
     </section>
 
-    @if (pendingLoad is not null)
+    @if (undoEntries is not null)
     {
-        <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
-            <span>Load preset “<b>@pendingLoad</b>” into the scenarios? It replaces the loaded scenarios; your unsaved changes will be lost.</span>
-            <button class="btn ghost" @onclick="() => pendingLoad = null">Cancel</button>
-            <button class="btn primary" @onclick="ConfirmLoad">Load preset</button>
+        <div class="pe-undo-toast" role="status">
+            <span>@undoMessage</span>
+            <button type="button" class="btn secondary small pe-undo-btn" @onclick="UndoPlanChange">Undo</button>
+            <button type="button" class="icon-btn" @onclick="DismissUndo" aria-label="Dismiss">✕</button>
         </div>
-    }
-    @if (saveAsOpen)
-    {
-        <form class="notice" @onsubmit="SaveAs" @onsubmit:preventDefault="true">
-            <label for="save-as">Save the scenarios as preset</label>
-            <input id="save-as" @bind="saveAsName" @bind:event="oninput" autocomplete="off" />
-            <button class="btn ghost" type="button" @onclick="() => saveAsOpen = false">Cancel</button>
-            <button class="btn primary" type="submit" disabled="@(saveAsName.Trim().Length == 0)">Save</button>
-        </form>
     }
 
     @{
-        var viewingHistory = !DataMode.IsFakeMode && ApiRun.IsViewingHistory;
         var hasPreflight = !DataMode.IsFakeMode && !string.IsNullOrWhiteSpace(plan.PreflightScriptId);
         var activePf = hasPreflight
             ? preflights.FirstOrDefault(p => string.Equals(p.ScriptId, plan.PreflightScriptId, StringComparison.OrdinalIgnoreCase))
@@ -180,7 +193,7 @@
                     <span class="history-tag">HISTORY</span>
                     <b class="mono">@(ApiRun.ActiveStartedUtc?.ToLocalTime().ToString("dd MMM yyyy · HH:mm:ss") ?? "Stored run")</b>
                 </div>
-                <button type="button" class="btn ghost small" @onclick="ApiRun.ReturnToLive" title="Switch back to Live mode to start a new run">Back to live</button>
+                <button type="button" class="btn primary small" @onclick="ApiRun.ReturnToLive" title="Switch back to Live mode to start a new run">Back to live</button>
             </div>
             <div class="history-info-stats">
                 <span class="hi-stat"><small>duration</small> <b>@Format.Time(s.Elapsed)</b></span>
@@ -245,74 +258,58 @@
         else
         {
             <div class="run-pf-row">
-                @if (editMode)
+                @if (locked)
                 {
-                    @if (hasPreflight)
-                    {
-                        <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Change preflight script">
-                            <span class="run-pf-text">
-                                <b class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</b>
-                                <small class="muted">Preflight · @(Phone.IsPhone ? "tap" : "click") to change</small>
-                            </span>
-                        </button>
-                        <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemovePreflight" aria-label="Remove preflight" title="Remove preflight">✕</button>
-                    }
-                    else if (!DataMode.IsFakeMode)
-                    {
-                        <button type="button" class="run-pf-trigger muted-trigger" disabled="@locked" @onclick="OpenPreflightPickerAsync" title="Attach a preflight script">
-                            <span class="run-pf-plus-inline">+</span>
-                            <span class="run-pf-text">
-                                <span>Add preflight</span>
-                                <small class="muted">Optional script before scenarios start</small>
-                            </span>
-                        </button>
-                    }
+                    <button type="button" class="run-pf-trigger is-stop"
+                            @onclick="Sim.Stop"
+                            title="Stop the running load test">
+                        <span class="run-pf-play" aria-hidden="true">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2.5"/></svg>
+                        </span>
+                        <span class="run-pf-text"><b>Stop run</b></span>
+                    </button>
                 }
                 else
                 {
-                    @* The main button always says what it does (brain 0071: it stays and reads "Running…"). The preflight is shown quietly next to it. *@
                     <button type="button" class="run-pf-trigger"
-                            disabled="@(locked || plan.Scenarios.Count == 0)"
+                            disabled="@(plan.Scenarios.Count == 0)"
                             @onclick="StartRun"
-                            title="@(locked ? "Run is in progress" : hasPreflight ? "Run the preflight, then start the scenarios" : "Start load test run")">
+                            title="@(hasPreflight ? "Run the preflight, then start the scenarios" : "Start load test run")">
                         <span class="run-pf-play" aria-hidden="true">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>
                         </span>
-                        <span class="run-pf-text"><b>@(locked ? "Running…" : "Start run")</b></span>
+                        <span class="run-pf-text"><b>Start run</b></span>
                     </button>
-                    @if (hasPreflight)
-                    {
-                        <span class="run-pf-note" title="Runs once before the scenarios start. Change it with Edit.">Preflight: <span class="mono">@(activePf?.FileName ?? $"{plan.PreflightScriptId}.cs")</span></span>
-                    }
-                    else if (!DataMode.IsFakeMode)
-                    {
-                        <button type="button" class="run-pf-add" disabled="@locked" @onclick="OpenPreflightPickerAsync" aria-label="Add preflight program" title="Add a preflight program: a script that runs once before the scenarios start">+ Preflight</button>
-                    }
+                }
+                @if (!isIdlePlan)
+                {
+                    <button type="button" class="pe-plan-pill run-plan-btn" disabled="@s.IsPlanReadOnly" @onclick="OpenPlanSettings"
+                            title="Configure plan limits, preflight and shutdown">
+                        <span>Plan settings</span>
+                    </button>
                 }
             </div>
-            @if (editMode && (hasShutdown || !DataMode.IsFakeMode))
+            @if (isIdlePlan)
             {
-                <div class="run-pf-row">
-                    @if (hasShutdown)
+                <div class="pe-plan-chips">
+                    <button type="button" class="pe-plan-pill @(isPlanSelected ? "active" : "")" disabled="@locked" @onclick="SelectPlan" title="Configure plan-wide max in-flight limit">
+                        <span>Max in-flight</span>
+                        <b>@(plan.MaxConcurrency > 0 ? plan.MaxConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) : "Unlimited")</b>
+                    </button>
+                    @if (!DataMode.IsFakeMode)
                     {
-                        <button type="button" class="run-pf-trigger has-pf" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Change shutdown program">
-                            <span class="run-pf-text">
-                                <b class="mono">@(activeSd?.FileName ?? $"{plan.ShutdownScriptId}.cs")</b>
-                                <small class="muted">Shutdown · always runs at the end · @(Phone.IsPhone ? "tap" : "click") to change</small>
-                            </span>
+                        <button type="button" class="pe-plan-pill @(isPlanSelected ? "active" : "")" disabled="@locked" @onclick="SelectPlan" title="Configure preflight script">
+                            <span>Preflight</span>
+                            <b>@(hasPreflight ? (activePf?.FileName ?? $"{plan.PreflightScriptId}.cs") : "none")</b>
                         </button>
-                        <button type="button" class="run-pf-plus danger" disabled="@locked" @onclick="RemoveShutdown" aria-label="Remove shutdown program" title="Remove shutdown program">✕</button>
-                    }
-                    else
-                    {
-                        <button type="button" class="run-pf-trigger muted-trigger" disabled="@locked" @onclick="OpenShutdownPickerAsync" title="Attach a shutdown program">
-                            <span class="run-pf-plus-inline">+</span>
-                            <span class="run-pf-text">
-                                <span>Add shutdown</span>
-                                <small class="muted">Optional program that always runs at the end</small>
-                            </span>
+                        <button type="button" class="pe-plan-pill @(isPlanSelected ? "active" : "")" disabled="@locked" @onclick="SelectPlan" title="Configure shutdown program">
+                            <span>Shutdown</span>
+                            <b>@(hasShutdown ? (activeSd?.FileName ?? $"{plan.ShutdownScriptId}.cs") : "none")</b>
                         </button>
                     }
+                    <button type="button" class="pe-plan-pill @(isPlanSelected ? "active" : "")" disabled="@locked" @onclick="SelectPlan" title="Edit plan limits and lifecycle scripts">
+                        <span>Plan settings</span>
+                    </button>
                 </div>
             }
         }
@@ -320,28 +317,112 @@
     }
 
     @{
+        RenderFragment planSettingsPanel = @<div class="ed-panel-in">
+            <div class="pe-insp-head">
+                <div class="pe-insp-titles">
+                    <div class="pe-kicker">PLAN CONFIGURATION</div>
+                    <h2>Plan &amp; Lifecycle</h2>
+                    <div class="pe-sub">Duration, concurrency cap &amp; lifecycle hooks</div>
+                </div>
+                <button type="button" class="icon-btn" @onclick="() => selected = -1" aria-label="Close panel" title="Close panel">✕</button>
+            </div>
+            <div class="detail-body pe-insp-body">
+                <div class="pe-sec-head"><span>Run Limits</span></div>
+                <div class="pe-param-list">
+                    <div class="pe-row">
+                        <label class="pe-lbl" for="plan-dur-side">Duration</label>
+                        <div class="pe-ctl">
+                            <DurationSlider Id="plan-dur-side" Seconds="plan.DurationSeconds" Disabled="locked" Invalid='planErr.ContainsKey("dur")'
+                                            SecondsChanged="v => { plan.DurationSeconds = v; Edited(); }" OnCommit="Committed" />
+                        </div>
+                    </div>
+                    <div class="pe-row">
+                        <label class="pe-lbl" for="plan-cap-toggle">Max in-flight</label>
+                        <div class="pe-ctl">
+                            <button id="plan-cap-toggle" type="button" role="switch" aria-checked="@Aria.Bool(plan.MaxConcurrency > 0)"
+                                    class="toggle @(plan.MaxConcurrency > 0 ? "on" : "")" disabled="@locked" @onclick="TogglePlanMaxInFlight">
+                                <span class="knob"></span>
+                            </button>
+                            <span class="muted mono pe-toggle-lbl">@(plan.MaxConcurrency > 0 ? $"Limit: {plan.MaxConcurrency}" : "No restriction")</span>
+                        </div>
+                    </div>
+                    @if (plan.MaxConcurrency > 0)
+                    {
+                        <div class="pe-row">
+                            <label class="pe-lbl" for="plan-cap-num">Max bees</label>
+                            <div class="pe-ctl">
+                                <div class="slider with-input pe-slider">
+                                    <input id="plan-cap-range" type="range" min="1" max="1000" step="1" value="@Math.Clamp(plan.MaxConcurrency, 1, 1000)"
+                                           aria-label="Plan max in-flight slider" disabled="@locked"
+                                           @oninput="e => { SetPlanMaxInFlight(e); Committed(); }" />
+                                    <input id="plan-cap-num" class="slider-num" type="number" inputmode="numeric" min="1" max="1000" step="1" value="@plan.MaxConcurrency"
+                                           aria-label="Plan max in-flight" @oninput="SetPlanMaxInFlight" @onchange="Committed" disabled="@locked" />
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (!DataMode.IsFakeMode)
+                {
+                    <div class="pe-sec-head"><span>Lifecycle Programs</span></div>
+                    <div class="pe-param-list">
+                        <div class="pe-row">
+                            <label class="pe-lbl" for="plan-pf-sel">Preflight (.cs)</label>
+                            <div class="pe-ctl">
+                                <select id="plan-pf-sel" value="@(plan.PreflightScriptId ?? "")" disabled="@locked"
+                                        @onchange="e => { plan.PreflightScriptId = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value.ToString(); Committed(); Edited(); }">
+                                    <option value="">none</option>
+                                    @foreach (var pf in preflights)
+                                    {
+                                        <option value="@pf.ScriptId">@pf.FileName</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="pe-row">
+                            <label class="pe-lbl" for="plan-sd-sel">Shutdown (.cs)</label>
+                            <div class="pe-ctl">
+                                <select id="plan-sd-sel" value="@(plan.ShutdownScriptId ?? "")" disabled="@locked"
+                                        @onchange="e => { plan.ShutdownScriptId = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value.ToString(); Committed(); Edited(); }">
+                                    <option value="">none</option>
+                                    @foreach (var sd in shutdowns)
+                                    {
+                                        <option value="@sd.ScriptId">@sd.FileName</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>;
+
         RenderFragment editorPanel = @<div class="ed-panel-in">
-            @{ var c = cfg!; }
-                        <div class="detail-head">
-                            <span class="card-title">
-                                @if (Sim.IsEntryChanged(c)) { <i class="edit-dot" title="Unsaved changes"></i> }
-                                <b>@LabelOf(c)</b>
-                            </span>
-                            @{ var scName = scenario?.Name ?? c.ScenarioId; }
-                            @if (!string.Equals(LabelOf(c), scName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                <span class="muted" title="@scenario?.Description">@scName</span>
-                            }
-                            <span class="spacer"></span>
+            @{ var c = cfg!; var scName = scenario?.Name ?? c.ScenarioId; }
+                        <div class="pe-insp-head">
+                            <div class="pe-insp-titles">
+                                <div class="pe-kicker">@c.ScenarioId</div>
+                                <h2 title="@LabelOf(c)">@LabelOf(c)</h2>
+                                @if (!string.Equals(LabelOf(c), scName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="pe-sub" title="@scName">@scName</div>
+                                }
+                            </div>
                             @if (scenario is RemoteSchemaScenario { ScriptId: not null })
                             {
-                                <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?script={Uri.EscapeDataString(c.ScenarioId)}")' title="View and edit this scenario's .cs file in the Script Editor">Edit .cs</button>
+                                var runQs = !DataMode.IsFakeMode && !string.IsNullOrEmpty(ApiRun.CurrentRunId) ? $"&run={Uri.EscapeDataString(ApiRun.CurrentRunId)}" : "";
+                                <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?script={Uri.EscapeDataString(c.ScenarioId)}{runQs}")' title="View and edit this scenario's .cs file in the Script Editor">Edit .cs</button>
                             }
-                            @if (dirty)
+                            else if (scenario is not null && !DataMode.IsFakeMode)
                             {
-                                <button type="button" class="btn primary small" @onclick="Save" disabled="@locked" title="Save to preset “@Sim.PresetName”">Save</button>
+                                var runQs = !string.IsNullOrEmpty(ApiRun.CurrentRunId) ? $"&run={Uri.EscapeDataString(ApiRun.CurrentRunId)}" : "";
+                                <button type="button" class="btn ghost small" @onclick='() => Nav.NavigateTo($"editor?scenario={Uri.EscapeDataString(c.ScenarioId)}{runQs}")' title="Inspect this compiled scenario's C# code in the Editor">View C#</button>
                             }
-                            <button type="button" class="icon-btn" @onclick="() => selected = -1" aria-label="Collapse settings" title="Done">✕</button>
+                            <button type="button" class="icon-btn danger" @onclick="Remove" disabled="@locked" aria-label="Remove scenario" title="Remove scenario">
+                                <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>
+                            </button>
+                            <button type="button" class="icon-btn" @onclick="() => selected = -1" aria-label="Close panel" title="Close panel">✕</button>
                         </div>
                         @if (scenario is null)
                         {
@@ -349,189 +430,255 @@
                         }
                         else
                         {
-                            <div class="detail-body">
-                                <div class="ed-section ed-schedule" @key="c">
-                                    <div class="ed-sec-head">
-                                        <span class="ed-sec-title">Scenario &amp; Spawning</span>
-                                        <span class="ed-rate-badge" title="Effective spawn rate">@Format.Rate(c.EffectiveRatePerMinute()) @Terms.PerMinuteShort</span>
-                                    </div>
-                                    <div class="ed-sched-grid">
-                                        <div class="field wide">
-                                            <label for="entry-label">Label</label>
-                                            <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; }" disabled="@locked" />
+                            <div class="detail-body pe-insp-body" @key="c">
+                                @if (!string.IsNullOrWhiteSpace(scenario.Description))
+                                {
+                                    <p class="pe-insp-desc" title="@scenario.Description">@scenario.Description</p>
+                                }
+                                <div class="pe-sec-head">
+                                    <span>Identity &amp; Spawning</span>
+                                    <span class="mono pe-sec-rate">@Format.Rate(c.EffectiveRatePerMinute()) @Terms.PerMinuteShort</span>
+                                </div>
+                                <div class="pe-param-list">
+                                    <div class="pe-row">
+                                        <label class="pe-lbl" for="entry-label">Entry label</label>
+                                        <div class="pe-ctl">
+                                            <input id="entry-label" class="entry-label" value="@c.Label" @oninput="e => { c.Label = e.Value?.ToString() ?? string.Empty; Edited(); }" disabled="@locked" />
                                         </div>
-                                        <div class="ed-spawn-sliders">
-                                            <div class="field pattern">
-                                                <label id="pattern-label">Spawning</label>
-                                                <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: bees start evenly. Bursts: several bees start at once, now and then.">
-                                                    <button type="button" class="@(c.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
-                                                    <button type="button" class="@(c.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
+                                    </div>
+                                    <div class="pe-row">
+                                        <label class="pe-lbl" id="pattern-label">Pattern</label>
+                                        <div class="pe-ctl">
+                                            <div class="seg" role="group" aria-labelledby="pattern-label" title="Linear: bees start evenly. Bursts: several bees start at once, now and then.">
+                                                <button type="button" class="@(c.Pattern == SpawningPattern.Linear ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Linear)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Linear)">Linear</button>
+                                                <button type="button" class="@(c.Pattern == SpawningPattern.Bursts ? "on" : "")" aria-pressed="@Aria.Bool(c.Pattern == SpawningPattern.Bursts)" disabled="@locked" @onclick="() => SetPattern(SpawningPattern.Bursts)">Bursts</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    @if (c.Pattern == SpawningPattern.Bursts)
+                                    {
+                                        <div class="pe-row @(cfgErr!.Burst is null ? "" : "is-invalid")">
+                                            <label class="pe-lbl" for="entry-burst-size">Bees / burst</label>
+                                            <div class="pe-ctl">
+                                                <div class="slider with-input pe-slider">
+                                                    <input id="entry-burst-size-range" type="range" min="1" max="100" step="1" value="@Math.Clamp(c.BeesPerBurst, 1, 100)"
+                                                           aria-label="Bees per burst slider" disabled="@locked"
+                                                           @oninput="e => { SetBurstSize(e); Committed(); }" />
+                                                    <input id="entry-burst-size" class="slider-num" type="number" inputmode="numeric" min="1" step="1" value="@c.BeesPerBurst"
+                                                           aria-label="Bees per burst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
                                                 </div>
                                             </div>
-                                            @if (c.Pattern == SpawningPattern.Bursts)
-                                            {
-                                                <div class="field wide compact-slider @(cfgErr!.Burst is null ? "" : "is-invalid")">
-                                                    <label for="entry-burst-size-range">Bees / burst</label>
-                                                    <div class="slider with-input">
-                                                        <input id="entry-burst-size-range" type="range" min="1" max="100" step="1" value="@Math.Clamp(c.BeesPerBurst, 1, 100)"
-                                                               aria-label="Bees per burst slider" disabled="@locked"
-                                                               @oninput="e => { SetBurstSize(e); Committed(); }" />
-                                                        <input id="entry-burst-size" class="slider-num" type="number" inputmode="numeric" min="1" step="1" value="@c.BeesPerBurst"
-                                                               aria-label="Bees per burst" @oninput="SetBurstSize" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Burst is not null)" />
-                                                    </div>
+                                        </div>
+                                        <div class="pe-row @(cfgErr.BurstRate is null ? "" : "is-invalid")">
+                                            <label class="pe-lbl" for="entry-burst-rate">Bursts / min</label>
+                                            <div class="pe-ctl">
+                                                <div class="slider with-input pe-slider">
+                                                    <input id="entry-burst-rate-range" type="range" min="1" max="60" step="1" value="@Math.Clamp(c.BurstsPerMinute, 1, 60).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                           aria-label="Bursts per minute slider" disabled="@locked"
+                                                           @oninput="e => { SetBurstRate(e); Committed(); }" />
+                                                    <input id="entry-burst-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.BurstsPerMinute"
+                                                           aria-label="Bursts per minute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
                                                 </div>
-                                                <div class="field wide compact-slider @(cfgErr.BurstRate is null ? "" : "is-invalid")">
-                                                    <label for="entry-burst-rate-range">Bursts / min</label>
-                                                    <div class="slider with-input">
-                                                        <input id="entry-burst-rate-range" type="range" min="1" max="60" step="1" value="@Math.Clamp(c.BurstsPerMinute, 1, 60).ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                                                               aria-label="Bursts per minute slider" disabled="@locked"
-                                                               @oninput="e => { SetBurstRate(e); Committed(); }" />
-                                                        <input id="entry-burst-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.BurstsPerMinute"
-                                                               aria-label="Bursts per minute" @oninput="SetBurstRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.BurstRate is not null)" />
-                                                    </div>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="pe-row @(cfgErr!.Rate is null ? "" : "is-invalid")">
+                                            <label class="pe-lbl" for="entry-rate">Bees / min</label>
+                                            <div class="pe-ctl">
+                                                <div class="slider with-input pe-slider">
+                                                    <input id="entry-rate-range" type="range" min="1" max="300" step="1" value="@Math.Clamp(c.RatePerMinute, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                           aria-label="Bees per minute slider" disabled="@locked"
+                                                           @oninput="e => { SetRate(e); Committed(); }" />
+                                                    <input id="entry-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.RatePerMinute"
+                                                           aria-label="Bees per minute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
                                                 </div>
-                                            }
-                                            else
-                                            {
-                                                <div class="field wide compact-slider @(cfgErr!.Rate is null ? "" : "is-invalid")">
-                                                    <label for="entry-rate-range">Bees / min</label>
-                                                    <div class="slider with-input">
-                                                        <input id="entry-rate-range" type="range" min="1" max="300" step="1" value="@Math.Clamp(c.RatePerMinute, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                                                               aria-label="Bees per minute slider" disabled="@locked"
-                                                               @oninput="e => { SetRate(e); Committed(); }" />
-                                                        <input id="entry-rate" class="slider-num" type="number" inputmode="decimal" min="0.1" step="any" value="@c.RatePerMinute"
-                                                               aria-label="Bees per minute" @oninput="SetRate" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.Rate is not null)" />
-                                                    </div>
-                                                </div>
-                                            }
-                                            @{ var maxInf = c.MaxInFlight ?? plan.MaxConcurrency; }
-                                            <div class="field wide compact-slider @(cfgErr!.MaxInFlight is null ? "" : "is-invalid")">
-                                                <label for="entry-max-inflight-range">Max in-flight</label>
-                                                <div class="slider with-input">
-                                                    <input id="entry-max-inflight-range" type="range" min="1" max="200" step="1" value="@Math.Clamp(maxInf, 1, 200)"
+                                            </div>
+                                        </div>
+                                    }
+                                    <div class="pe-row">
+                                        <label class="pe-lbl" for="entry-cap-toggle">Max in-flight</label>
+                                        <div class="pe-ctl">
+                                            <button id="entry-cap-toggle" type="button" role="switch" aria-checked="@Aria.Bool(c.MaxInFlight is > 0)"
+                                                    class="toggle @(c.MaxInFlight is > 0 ? "on" : "")" disabled="@locked" @onclick="ToggleEntryMaxInFlight">
+                                                <span class="knob"></span>
+                                            </button>
+                                            <span class="muted mono pe-toggle-lbl">@(c.MaxInFlight is > 0 ? $"Limit: {c.MaxInFlight}" : (plan.MaxConcurrency > 0 ? $"Plan cap ({plan.MaxConcurrency})" : "No restriction"))</span>
+                                        </div>
+                                    </div>
+                                    @if (c.MaxInFlight is > 0)
+                                    {
+                                        <div class="pe-row @(cfgErr!.MaxInFlight is null ? "" : "is-invalid")">
+                                            <label class="pe-lbl" for="entry-max-inflight">Max bees</label>
+                                            <div class="pe-ctl">
+                                                <div class="slider with-input pe-slider">
+                                                    <input id="entry-max-inflight-range" type="range" min="1" max="500" step="1" value="@Math.Clamp(c.MaxInFlight.Value, 1, 500)"
                                                            aria-label="Max in-flight slider" disabled="@locked"
                                                            @oninput="e => { SetMaxInFlight(e); Committed(); }" />
-                                                    <input id="entry-max-inflight" class="slider-num" type="number" inputmode="numeric" min="1" max="1000" step="1" value="@maxInf"
+                                                    <input id="entry-max-inflight" class="slider-num" type="number" inputmode="numeric" min="1" max="1000" step="1" value="@c.MaxInFlight.Value"
                                                            aria-label="Max in-flight" @oninput="SetMaxInFlight" @onchange="Committed" disabled="@locked" aria-invalid="@Aria.Bool(cfgErr.MaxInFlight is not null)" />
                                                 </div>
                                             </div>
                                         </div>
-                                        @if (c.Pattern == SpawningPattern.Bursts && (cfgErr!.Burst is not null || cfgErr.BurstRate is not null))
-                                        {
-                                            <div class="ed-sched-errors">
-                                                @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
-                                                @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
-                                            </div>
-                                        }
-                                        else if (c.Pattern != SpawningPattern.Bursts && cfgErr!.Rate is not null)
-                                        {
-                                            <div class="ed-sched-errors">
-                                                <small class="field-error" role="alert">@cfgErr.Rate</small>
-                                            </div>
-                                        }
-                                        @if (cfgErr!.MaxInFlight is not null)
-                                        {
-                                            <div class="ed-sched-errors">
-                                                <small class="field-error" role="alert">@cfgErr.MaxInFlight</small>
-                                            </div>
-                                        }
-                                    </div>
+                                    }
                                 </div>
+                                @if (c.Pattern == SpawningPattern.Bursts && (cfgErr!.Burst is not null || cfgErr.BurstRate is not null))
+                                {
+                                    <div class="ed-sched-errors">
+                                        @if (cfgErr.Burst is not null) { <small class="field-error" role="alert">@cfgErr.Burst</small> }
+                                        @if (cfgErr.BurstRate is not null) { <small class="field-error" role="alert">@cfgErr.BurstRate</small> }
+                                    </div>
+                                }
+                                else if (c.Pattern != SpawningPattern.Bursts && cfgErr!.Rate is not null)
+                                {
+                                    <div class="ed-sched-errors">
+                                        <small class="field-error" role="alert">@cfgErr.Rate</small>
+                                    </div>
+                                }
+                                @if (cfgErr!.MaxInFlight is not null)
+                                {
+                                    <div class="ed-sched-errors">
+                                        <small class="field-error" role="alert">@cfgErr.MaxInFlight</small>
+                                    </div>
+                                }
 
                                 @if (scenario.Spec.Fields.Any(f => !f.Advanced))
                                 {
-                                    <div class="ed-section ed-params" @key="@((c, "params"))">
-                                        <div class="ed-sec-head">
-                                            <span class="ed-sec-title">Scenario Parameters</span>
-                                            <span class="ed-sec-meta">@scenario.Name</span>
-                                        </div>
-                                        <div class="form param-grid">
-                                            <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
-                                        </div>
+                                    <div class="pe-sec-head" @key="@((c, "params"))">
+                                        <span>Scenario Parameters</span>
+                                        <span class="mono">@scenario.Name</span>
+                                    </div>
+                                    <div class="form param-grid pe-flat-params">
+                                        <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Essential" Edited="Edited" Committed="Committed" />
                                     </div>
                                 }
                                 @if (hasAdvanced)
                                 {
                                     <details class="more" open="@advancedInvalid" @key="@((c, "more"))">
                                         <summary>More options</summary>
-                                        <div class="form param-grid">
+                                        <div class="form param-grid pe-flat-params">
                                             <ParameterEditor Spec="scenario.Spec" Values="c.Parameters" Disabled="locked" IdPrefix="@($"p{selected}")" Errors="cfgErr!.Fields" Show="FieldFilter.Advanced" Edited="Edited" Committed="Committed" />
                                         </div>
                                     </details>
                                 }
                             </div>
                         }
-                        <div class="detail-foot">
-                            <button type="button" class="btn ghost danger small" @onclick="Remove" disabled="@locked">Remove scenario</button>
-                            <span class="spacer"></span>
-                            <button type="button" class="btn @(dirty ? "ghost" : "primary") small" @onclick="() => selected = -1">Done</button>
-                        </div>
         </div>;
     }
 
-    @if (editMode)
+    @if (isIdlePlan)
     {
-        @if (locked) { <div class="notice">A run is in progress. Stop it to edit the plan.</div> }
+        @if (plan.Scenarios.Count == 0)
+        {
+            <section class="plan-empty" aria-label="Empty plan">
+                <h2>Current plan is empty</h2>
+                <p class="muted">Add a scenario from the catalog or load a preset to begin configuring your load mix.</p>
+                <div class="plan-empty-actions">
+                    @if (!locked && Sim.PresetNames.Count > 0)
+                    {
+                        <button type="button" class="btn ghost" @onclick="TogglePresetMenu">Load preset…</button>
+                    }
+                    <button type="button" class="btn primary" @onclick="ToggleAdd" disabled="@locked">+ Add scenario</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <div class="pe-grid" aria-label="Edit scenarios">
+                @for (var i = 0; i < plan.Scenarios.Count; i++)
+                {
+                    var idx = i;
+                    var c = plan.Scenarios[idx];
+                    <PlanEntryCard @key="c" Index="idx" Config="c" Scenario="@Catalog.Find(c.ScenarioId)"
+                                   TotalPlanRate="totalPlanRate"
+                                   Selected="idx == selected" Disabled="locked"
+                                   OnSelect="Select" OnDuplicate="DuplicateAt" OnDelete="RemoveAt" />
+                }
 
-        <div class="grid ed-grid" aria-label="Edit scenarios">
-            @for (var i = 0; i < plan.Scenarios.Count; i++)
-            {
-                var idx = i;
-                var c = plan.Scenarios[idx];
-                <ScenarioCard @key="c" Index="idx" Label="@LabelOf(c)" View="Empty" Bees="NoBees" Target="c.EffectiveRatePerMinute()" Shape="@Format.Shape(c)"
-                                  Idle="true" Subtitle="@(Catalog.Find(c.ScenarioId)?.Name ?? c.ScenarioId)" Selectable="true" Selected="idx == selected"
-                                  Edited="Sim.IsEntryChanged(c)" OnOpen="Select" OnDelete="RemoveAt" ActionsDisabled="locked" />
-            }
+                <button type="button" class="pe-card-add" @onclick="ToggleAdd" disabled="@locked" aria-haspopup="dialog" aria-expanded="@Aria.Bool(addOpen)">
+                    <span class="pe-plus-ring">+</span>
+                    <b>Add scenario</b>
+                    <span class="mono">Append to load mix</span>
+                </button>
+            </div>
+        }
 
-            @if (addOpen)
-            {
-                <section class="card card-add-open" aria-label="Add scenario">
-                    <div class="detail-head">
-                        <b>Add scenario</b>
-                        <span class="muted">@plan.Scenarios.Count</span>
-                        <span class="spacer"></span>
+        @if (addOpen)
+        {
+            var filteredScenarios = Catalog.All
+                .Where(x => addFilter.Length == 0
+                    || x.Name.Contains(addFilter, StringComparison.OrdinalIgnoreCase)
+                    || x.Description.Contains(addFilter, StringComparison.OrdinalIgnoreCase)
+                    || x.Id.Contains(addFilter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            <div class="overlay pe-add-overlay" role="dialog" aria-modal="true" aria-label="Add scenario"
+                 @onclick="() => addOpen = false" @onkeydown="OnAddKey" tabindex="-1">
+                <section class="pe-add-modal" @onclick:stopPropagation="true">
+                    <div class="pe-add-head">
+                        <div class="pe-insp-titles">
+                            <div class="pe-kicker">SCENARIO CATALOG</div>
+                            <h2>Add scenario</h2>
+                        </div>
+                        <span class="pe-add-count mono">@filteredScenarios.Count</span>
                         <button type="button" class="icon-btn" @onclick="() => addOpen = false" aria-label="Close">✕</button>
                     </div>
-                    @if (Catalog.All.Count >= DropMenu.FilterFrom)
-                    {
-                        <div class="pick-filter"><input type="text" placeholder="Filter scenario types…" aria-label="Filter scenario types" autocomplete="off" spellcheck="false" @bind="addFilter" @bind:event="oninput" /></div>
-                    }
-                    <ul class="add-menu inline scroll" aria-label="Scenario types">
-                        @foreach (var sc in Catalog.All.Where(x => addFilter.Length == 0 || x.Name.Contains(addFilter, StringComparison.OrdinalIgnoreCase) || x.Description.Contains(addFilter, StringComparison.OrdinalIgnoreCase)))
+                    <div class="pe-add-search">
+                        <input type="text" placeholder="Filter scenarios…" aria-label="Filter scenario types"
+                               autocomplete="off" spellcheck="false" @bind="addFilter" @bind:event="oninput" />
+                    </div>
+                    <ul class="pe-add-list" aria-label="Scenario types">
+                        @if (filteredScenarios.Count == 0)
+                        {
+                            <li class="pe-add-empty muted">No scenarios match “@addFilter”.</li>
+                        }
+                        @foreach (var sc in filteredScenarios)
                         {
                             var chosen = sc;
-                            <li><button type="button" title="@chosen.Name" @onclick="() => Add(chosen)"><b>@chosen.Name</b><span>@chosen.Description</span></button></li>
+                            <li>
+                                <button type="button" class="pe-add-item" title="@chosen.Name" @onclick="() => Add(chosen)">
+                                    <span class="pe-add-item-top">
+                                        <b>@chosen.Name</b>
+                                        <span class="mono pe-add-id">@chosen.Id</span>
+                                    </span>
+                                    @if (!string.IsNullOrWhiteSpace(chosen.Description))
+                                    {
+                                        <span class="pe-add-desc">@chosen.Description</span>
+                                    }
+                                </button>
+                            </li>
                         }
                     </ul>
                 </section>
-            }
-            else
-            {
-                <button class="card card-add" @onclick="ToggleAdd" disabled="@locked" aria-haspopup="true" aria-expanded="false">
-                    <span class="plus">+</span><span>Add scenario</span>
-                </button>
-            }
-        </div>
+            </div>
+        }
 
-        @if (cfg is not null)
+        @if (Phone.IsPhone)
         {
-            @* The scenario's settings and parameters in a side panel (right on desktop like the assistant, a bottom sheet on the phone like the bee on the scenario page). *@
-            @if (Phone.IsPhone)
+            @if (hasSideSelection)
             {
-                <Sheet Open="true" Resizable="true" Full="editSheetFull" FullChanged="v => editSheetFull = v" OnClose="() => selected = -1" Label="@("Edit " + LabelOf(cfg))" Class="ed-sheet">
-                    <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
+                var sheetLabel = isPlanSelected ? "Plan settings" : "Edit " + LabelOf(cfg!);
+                var activePanel = isPlanSelected ? planSettingsPanel : editorPanel;
+                <Sheet Open="true" Resizable="true" Full="editSheetFull" FullChanged="v => editSheetFull = v" OnClose="CloseSidePanel" Label="@sheetLabel" Class="ed-sheet">
+                    <aside class="ed-side open" aria-label="@sheetLabel">@activePanel</aside>
                 </Sheet>
             }
-            else
-            {
-                <aside class="ed-side" aria-label="Edit @LabelOf(cfg)">@editorPanel</aside>
-            }
         }
-        else if (!Phone.IsPhone)
+        else
         {
-            @* Brain 0068: the column of the settings panel is kept in edit mode, also while no scenario is selected, so the cards never reflow when it fills. *@
-            <aside class="ed-side ed-side-idle" aria-label="Scenario settings">
-                <p class="ed-side-hint">Select a scenario to edit its settings.</p>
+            var sheetLabel = isPlanSelected ? "Plan settings" : cfg is not null ? "Edit " + LabelOf(cfg) : "Configuration";
+            <aside class="ed-side @(sideOpen ? "open" : "")"
+                   aria-label="@sheetLabel"
+                   aria-hidden="@Aria.Bool(!sideOpen)"
+                   @onkeydown="OnSideKey">
+                @if (isPlanSelected)
+                {
+                    @planSettingsPanel
+                }
+                else if (cfg is not null)
+                {
+                    @editorPanel
+                }
             </aside>
         }
     }
@@ -555,7 +702,7 @@
                 }
                 else
                 {
-                    <button type="button" class="btn ghost danger small" @onclick="Sim.Stop">Cancel</button>
+                    <button type="button" class="btn danger small" @onclick="Sim.Stop">Cancel</button>
                 }
             </div>
             @if (pfFailed)
@@ -598,7 +745,7 @@
                     {
                         <button type="button" class="btn ghost" @onclick="TogglePresetMenu">Load preset</button>
                     }
-                    <button type="button" class="btn primary" @onclick="EnterEditMode" disabled="@(locked || viewingHistory)">Edit plan</button>
+                    <button type="button" class="btn secondary" @onclick="EnterEditMode" disabled="@(locked || viewingHistory)">Edit plan</button>
                 </div>
             </section>
         }
@@ -614,7 +761,7 @@
                                   OnOpen="i => OpenScenario(i)"
                                   OnOpenFiltered="t => OpenScenario(t.Index, new(t.Filter))"
                                   OnOpenLogs="i => Logs.Show(entry: i)"
-                                  OnEdit="EditEntry" ActionsDisabled="@(locked || viewingHistory)"
+                                  OnEdit="EditEntry" OnInspect="InspectEntry" ActionsDisabled="@s.IsPlanReadOnly"
                                   Steps="s.StepsOf(idx)" FailedPerStep="s.Store.FailedPerStep(idx)"
                                   InFlightPerStep="@(s.StepsOf(idx).Any && s.BeesInFlight is { } bif && idx < bif.Length ? StepLogic.InFlightCounts(s.StepsOf(idx), bif[idx], s.Elapsed) : null)"
                                   OnOpenStep="t => OpenScenario(t.Index, new(FailedStep: t.Step))"
@@ -623,6 +770,26 @@
                 }
             </div>
         }
+    }
+
+    @if (!isIdlePlan && inspectEntry is { } ie && ie >= 0 && ie < s.Plan.Scenarios.Count)
+    {
+        var ic = s.Plan.Scenarios[ie];
+        var isc = Catalog.Find(ic.ScenarioId);
+        var iLabel = LabelOf(ic);
+        var iTotalRate = s.Plan.Scenarios.Sum(c => c.EffectiveRatePerMinute());
+
+        <div class="overlay pe-add-overlay" role="dialog" aria-modal="true" aria-label="@($"Parameters for {iLabel}")"
+             @onclick="() => inspectEntry = null" @onkeydown="OnInspectKey" tabindex="-1">
+            <PlanEntryCard Index="ie"
+                           Config="ic"
+                           Scenario="isc"
+                           TotalPlanRate="iTotalRate"
+                           PlanMaxConcurrency="s.Plan.MaxConcurrency"
+                           InspectMode="true"
+                           ShowActions="false"
+                           OnClose="() => inspectEntry = null" />
+        </div>
     }
 </div>
 
@@ -639,22 +806,26 @@
     /// <summary>Opens the scenario page (brain 0059); the overview's scroll position is remembered so the way back lands on the same card.</summary>
     private void OpenScenario(int index, ScenarioFilter filter = default) => Nav.NavigateTo(ScenarioLink.Href(index, filter));
     private bool viewMenuOpen;
+    private bool editMenuOpen;
     private bool presetMenuOpen;
     private string presetFilter = string.Empty, addFilter = string.Empty, pickFilter = string.Empty;
     private List<PreflightScriptSummary> preflights = [];
     private List<PreflightScriptSummary> shutdowns = [];
     private bool pickerIsShutdown;
 
-    // Edit mode state
-    private bool editMode;
+    // Editor drawer state (active whenever Sim.Current.IsIdlePlan)
+    private const int PlanSelected = -2;
     private bool preflightPickerOpen;
     private bool preflightWrap = true;
     private bool wasRunning;
     private int selected = -1;
+    private int lastPlanMaxInFlight = 50;
+    private int lastEntryMaxInFlight = 50;
     private bool editSheetFull;
-    private bool addOpen, saveAsOpen, savedNote;
-    private string saveAsName = "";
-    private string? pendingLoad;
+    private bool addOpen;
+    private int? inspectEntry;
+    private List<ScenarioRunConfig>? undoEntries;
+    private string undoMessage = "";
     private bool disposed;
 
     // Debounced validation
@@ -664,40 +835,33 @@
     private CancellationTokenSource? debounce;
 
     private string? handledUri;
-    private bool addressApplied;
 
     /// <summary>
-    /// Edit mode and the open settings panel live in the address (<c>/?edit=1&amp;entry=3</c>, brain 0069), so a drill down and the way back land in the same state. A fresh visit by the tab (an
-    /// address with no word about it) picks up where the Overview was left (<see cref="OverviewEditMemory"/>). "?edit=..." links (the assistant's) open the editor; each carries a new value, so
-    /// they work again after leaving edit mode.
+    /// Loading the page always opens in Overview (view mode). Only an explicit assistant link (<c>?edit=&lt;ticks&gt;</c>)
+    /// enters edit mode; any stale <c>?edit=1</c> query is stripped so reloads stay in Overview.
     /// </summary>
     protected override void OnParametersSet()
     {
         if (Nav.Uri == handledUri) return;
         handledUri = Nav.Uri;
         var fromAddress = OverviewLink.Parse(Nav.Uri);
-        var want = fromAddress ?? (addressApplied ? null : EditMemory.Last);
-        addressApplied = true;
-        if (want is not { Edit: true } v) return;
-        if (!editMode)
+        if (fromAddress is not { Edit: true } v) return;
+
+        // Strip ?edit=1 on page load/reload so the page always lands in Overview.
+        var isAssistantLink = Nav.Uri.Contains("edit=", StringComparison.OrdinalIgnoreCase)
+            && !Nav.Uri.Contains("edit=1", StringComparison.OrdinalIgnoreCase);
+        if (!isAssistantLink)
         {
-            if (Sim.IsRunning || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory)) return;
+            Nav.NavigateTo("overview", new NavigationOptions { ReplaceHistoryEntry = true });
+            return;
+        }
+
+        if (!Sim.Current.IsIdlePlan)
+        {
+            if (Sim.IsRunning || Sim.Current.IsHistorical) return;
             EnterEditMode();
         }
         if (v.Entry is { } e && e < Sim.Plan.Scenarios.Count) { selected = e; addOpen = false; }
-    }
-
-    /// <summary>Writes the edit state into the address (replace: edit mode is a state, not a place) and remembers it for the way back by the tab.</summary>
-    protected override void OnAfterRender(bool firstRender)
-    {
-        var view = new OverviewView(editMode, editMode && selected >= 0 ? selected : null);
-        EditMemory.Last = view;
-        var path = Nav.ToBaseRelativePath(Nav.Uri);
-        var cut = path.IndexOfAny(['?', '#']);
-        if (cut >= 0) path = path[..cut];
-        if (path is not ("" or "overview")) return;   // already on its way to another page
-        if ((OverviewLink.Parse(Nav.Uri) ?? OverviewView.Viewing) == view) return;
-        Nav.NavigateTo(OverviewLink.Href(view), new NavigationOptions { ReplaceHistoryEntry = true });
     }
 
     protected override void OnInitialized()
@@ -763,13 +927,14 @@
     private void StartRun()
     {
         if (Sim.IsRunning || Sim.Plan.Scenarios.Count == 0) return;
-        if (editMode) ExitEditMode();
+        ClearDrawerState();
         Sim.Start();
     }
 
     private void TogglePresetMenu()
     {
         viewMenuOpen = false;
+        editMenuOpen = false;
         presetMenuOpen = !presetMenuOpen;
         presetFilter = string.Empty;
     }
@@ -780,38 +945,119 @@
         viewMenuOpen = !viewMenuOpen;
     }
 
+    private void ToggleEditMenu()
+    {
+        presetMenuOpen = false;
+        editMenuOpen = !editMenuOpen;
+    }
+
     private void OnPresetKey(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") presetMenuOpen = false;
     }
 
+    private void OnAddKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") addOpen = false;
+    }
+
+    private void InspectEntry(int idx) => inspectEntry = idx;
+
+    private void OnInspectKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") inspectEntry = null;
+    }
+
     private void EnterEditMode()
     {
-        if (Sim.IsRunning) return;
+        if (Sim.IsRunning || Sim.Current.IsHistorical) return;
         viewMenuOpen = false;
+        editMenuOpen = false;
         presetMenuOpen = false;
-        editMode = true;
+        Sim.EditPlan();
         selected = -1;
+        inspectEntry = null;
         addOpen = false;
         ResetErrors();
         _ = ScriptApi.SyncCatalogAsync();
     }
 
-    private void ExitEditMode()
+    private void ClearDrawerState()
     {
-        editMode = false;
+        editMenuOpen = false;
         presetMenuOpen = false;
         selected = -1;
         addOpen = false;
         preflightPickerOpen = false;
-        saveAsOpen = false;
-        pendingLoad = null;
+        undoEntries = null;
         ResetErrors();
     }
 
     // ---------- Editor selection & validation ----------
 
-    private void Select(int i) { selected = i; addOpen = false; ResetErrors(); }
+    private void CloseSidePanel() { selected = -1; ResetErrors(); }
+
+    private void OnSideKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && selected != -1) CloseSidePanel();
+    }
+
+    private void Select(int i)
+    {
+        selected = selected == i ? -1 : i;
+        addOpen = false;
+        ResetErrors();
+    }
+
+    private void SelectPlan()
+    {
+        selected = selected == PlanSelected ? -1 : PlanSelected;
+        addOpen = false;
+        ResetErrors();
+        if (selected == PlanSelected && !DataMode.IsFakeMode) _ = LoadPreflightsAsync();
+    }
+
+    private void TogglePlanMaxInFlight()
+    {
+        if (Sim.Plan.MaxConcurrency > 0)
+        {
+            lastPlanMaxInFlight = Sim.Plan.MaxConcurrency;
+            Sim.Plan.MaxConcurrency = 0;
+        }
+        else
+        {
+            Sim.Plan.MaxConcurrency = Math.Clamp(lastPlanMaxInFlight, 1, 1000);
+        }
+        Committed();
+        Edited();
+    }
+
+    private void SetPlanMaxInFlight(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v) && v >= 1)
+        {
+            Sim.Plan.MaxConcurrency = Math.Clamp(v, 1, 1000);
+            lastPlanMaxInFlight = Sim.Plan.MaxConcurrency;
+        }
+        Edited();
+    }
+
+    private void ToggleEntryMaxInFlight()
+    {
+        if (selected < 0 || selected >= Sim.Plan.Scenarios.Count) return;
+        var entry = Sim.Plan.Scenarios[selected];
+        if (entry.MaxInFlight is > 0)
+        {
+            lastEntryMaxInFlight = entry.MaxInFlight.Value;
+            entry.MaxInFlight = null;
+        }
+        else
+        {
+            entry.MaxInFlight = Math.Clamp(lastEntryMaxInFlight, 1, 1000);
+        }
+        Committed();
+        Edited();
+    }
 
     private void ResetErrors() { snapFor = null; snap = null; planSnap = null; debounce?.Cancel(); }
 
@@ -823,6 +1069,7 @@
 
     private void Edited()
     {
+        Sim.MarkPlanEdited();
         debounce?.Cancel();
         debounce = new CancellationTokenSource();
         _ = SnapshotLater(debounce.Token);
@@ -872,7 +1119,11 @@
     private void SetMaxInFlight(ChangeEventArgs e)
     {
         if (selected < 0) return;
-        if (int.TryParse(e.Value?.ToString(), out var v)) Sim.Plan.Scenarios[selected].MaxInFlight = v;
+        if (int.TryParse(e.Value?.ToString(), out var v) && v >= 1)
+        {
+            Sim.Plan.Scenarios[selected].MaxInFlight = v;
+            lastEntryMaxInFlight = Math.Clamp(v, 1, 1000);
+        }
         Edited();
     }
 
@@ -930,64 +1181,84 @@
         if (idx >= 0 && idx < Sim.Plan.Scenarios.Count) Select(idx);
     }
 
+    private void OpenPlanSettings()
+    {
+        if (Sim.IsRunning || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory)) return;
+        EnterEditMode();
+        SelectPlan();
+    }
+
+    private void DuplicateAt(int idx)
+    {
+        if (Sim.IsRunning || idx < 0 || idx >= Sim.Plan.Scenarios.Count) return;
+        Sim.DuplicateEntry(idx);
+        selected = idx + 1;
+        addOpen = false;
+        ResetErrors();
+    }
+
     private void Remove() => RemoveAt(selected);
 
     private void RemoveAt(int idx)
     {
         if (Sim.IsRunning || idx < 0 || idx >= Sim.Plan.Scenarios.Count) return;
+        undoEntries = Sim.Plan.Scenarios.Select(x => x.Clone()).ToList();
+        undoMessage = $"Removed “{LabelOf(Sim.Plan.Scenarios[idx])}”.";
         Sim.RemoveEntry(idx);
         if (selected == idx) selected = -1;
         else if (selected > idx) selected--;
         ResetErrors();
     }
 
-    private void PickPreset(string name)
+    private void StartNewPlan()
     {
-        if (Sim.HasUnsavedChanges) pendingLoad = name;
-        else DoLoad(name);
+        if (Sim.IsRunning || (!DataMode.IsFakeMode && ApiRun.IsViewingHistory)) return;
+        EnterEditMode();
+        ClearPlan();
     }
 
-    private void ConfirmLoad()
+    private void ClearPlan()
     {
-        var name = pendingLoad;
-        pendingLoad = null;
-        if (name is not null) DoLoad(name);
+        if (Sim.IsRunning) return;
+        var count = Sim.Plan.Scenarios.Count;
+        if (count > 0)
+        {
+            undoEntries = Sim.Plan.Scenarios.Select(x => x.Clone()).ToList();
+            undoMessage = $"Started a new plan (cleared {count} {(count == 1 ? "scenario" : "scenarios")}).";
+        }
+        Sim.ClearEntries();
+        selected = -1;
+        addOpen = false;
+        ResetErrors();
     }
+
+    private void UndoPlanChange()
+    {
+        if (undoEntries is null || Sim.IsRunning) return;
+        Sim.RestoreEntries(undoEntries);
+        undoEntries = null;
+        selected = Sim.Plan.Scenarios.Count > 0 ? 0 : -1;
+        ResetErrors();
+    }
+
+    private void DismissUndo() => undoEntries = null;
 
     private void DoLoad(string name)
     {
+        if (Sim.Plan.Scenarios.Count > 0)
+        {
+            undoEntries = Sim.Plan.Scenarios.Select(x => x.Clone()).ToList();
+            undoMessage = $"Loaded preset “{name}” into plan.";
+        }
         Sim.LoadPreset(name);
         selected = -1;
         ResetErrors();
-        saveAsOpen = false;
-    }
-
-    private void Save() { Sim.SavePreset(Sim.PresetName); FlashSaved(); }
-
-    private void OpenSaveAs() { saveAsName = Sim.PresetName; saveAsOpen = true; pendingLoad = null; }
-
-    private void SaveAs()
-    {
-        if (saveAsName.Trim().Length == 0) return;
-        Sim.SavePreset(saveAsName);
-        saveAsOpen = false;
-        FlashSaved();
-    }
-
-    private async void FlashSaved()
-    {
-        savedNote = true;
-        StateHasChanged();
-        await Task.Delay(2500);
-        if (disposed) return;
-        savedNote = false;
-        StateHasChanged();
     }
 
     private void OnChanged()
     {
-        if (!wasRunning && Sim.IsRunning && editMode)
-            ExitEditMode();
+        if (!wasRunning && Sim.IsRunning)
+            ClearDrawerState();
         wasRunning = Sim.IsRunning;
 
         try { _ = InvokeAsync(StateHasChanged); }

@@ -9,6 +9,15 @@ namespace Beesharp.Client.Runs;
 
 public enum FakeRunState { Idle, Running, Paused, Finished }
 
+/// <summary>
+/// Mutually exclusive workspace view context carried by every <see cref="RunSnapshot"/>:
+/// <see cref="IdlePlan"/> (editing/configuring the draft plan, no run data),
+/// <see cref="LiveRun"/> (active run in progress, read-only plan snapshot),
+/// <see cref="FinishedRun"/> (completed live run; editing detaches cleanly to <see cref="IdlePlan"/>),
+/// <see cref="HistoricalRun"/> (stored run from History; read-only, leaves draft plan untouched).
+/// </summary>
+public enum RunViewMode { IdlePlan, LiveRun, FinishedRun, HistoricalRun }
+
 /// <summary>How a bee ended. Drives the only colours of the run views: failed = red, slow = amber (brain 0018).</summary>
 public enum BeeOutcome : byte { Ok = 0, Slow = 1, Failed = 2 }
 
@@ -166,7 +175,9 @@ public sealed record RunSnapshot(
     RuntimeDataSnapshot? Runtime = null,
     ProgramRun? Shutdown = null,
     ProgramRun? Preflight = null,
-    IReadOnlyList<ScenarioSteps>? Steps = null)
+    IReadOnlyList<ScenarioSteps>? Steps = null,
+    RunViewMode ViewMode = RunViewMode.IdlePlan,
+    string Title = "")
 {
     /// <summary>The declared steps of a scenario entry (brain 0056); <see cref="ScenarioSteps.None"/> when it has none.</summary>
     public ScenarioSteps StepsOf(int entry) => Steps is not null && entry >= 0 && entry < Steps.Count ? Steps[entry] : ScenarioSteps.None;
@@ -175,4 +186,12 @@ public sealed record RunSnapshot(
     public bool Running => State is FakeRunState.Running or FakeRunState.Paused;
     public bool Paused => State == FakeRunState.Paused;
     public int Count => Plan.Scenarios.Count;
+
+    public bool IsHistorical => ViewMode == RunViewMode.HistoricalRun;
+    public bool IsLiveRun => ViewMode == RunViewMode.LiveRun;
+    public bool IsIdlePlan => ViewMode == RunViewMode.IdlePlan;
+    /// <summary>True when the user may edit the plan (IdlePlan or FinishedRun); false during LiveRun or HistoricalRun.</summary>
+    public bool CanEditPlan => ViewMode is RunViewMode.IdlePlan or RunViewMode.FinishedRun;
+    public bool IsPlanReadOnly => !CanEditPlan;
+    public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "New Plan" : Title;
 }

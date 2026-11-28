@@ -3,498 +3,2674 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Beesharp · editing the current plan (draft)</title>
+<title>Beesharp · Plan Editing (Draft)</title>
 <style>
+  /* ==========================================================================
+     Beesharp Design System (Grafana cool slate dark + Brain 0016, 0018, 0066, 0068)
+     Colour carries meaning ONLY:
+       --good (#34d399)    = healthy / ok
+       --slow (#fbbf24)    = slow / schema drift warning
+       --failed (#f05252)  = failed / error / destructive
+       --running (#5b9bf0) = active bees in flight / history mode
+     Selection, focus & primary actions are crisp neutral light.
+     ========================================================================== */
   :root {
-    --bg:#181b1f; --panel:#22252b; --panel2:#2c3038; --line:#363b45; --text:#d8dee9; --muted:#8b93a3;
-    --accent:#6e9fff; --ok:#5fbf77; --slow:#e0a83a; --bad:#e5534b; --changed:#c9a2ff; --r:6px;
+    color-scheme: dark;
+    --bg: #181b1f;
+    --panel: #22252b;
+    --panel2: #2c3038;
+    --panel3: #353a44;
+    --input: #1b1e23;
+    --card-bg: #1e2128;
+    --card-hover: #232730;
+    --selected: #282d37;
+    --border: rgba(204, 204, 220, 0.13);
+    --border-subtle: rgba(204, 204, 220, 0.075);
+    --border-strong: rgba(227, 228, 236, 0.30);
+
+    --text: #e3e4ec;
+    --title: #ffffff;
+    --muted: #9da2b3;
+    --faint: #72788a;
+    --accent: #e6e7ef;
+    --accent2: #cdd0db;
+
+    --good: #34d399;
+    --slow: #fbbf24;
+    --failed: #f05252;
+    --running: #5b9bf0;
+
+    --failed-bar: color-mix(in srgb, var(--failed) 86%, var(--card-bg));
+    --slow-bar: color-mix(in srgb, var(--slow) 86%, var(--card-bg));
+
+    --radius: 12px;
+    --radius-sm: 9px;
+    --radius-xs: 6px;
+
+    --sans: "Inter", "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+    --proto-h: 38px;
+    --top-h: 54px;
+    --drawer-w: 416px;
   }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
-  button, select, input { font:inherit; color:inherit; }
-  button { background:var(--panel2); border:1px solid var(--line); border-radius:var(--r); padding:5px 11px; cursor:pointer; }
-  button:hover { border-color:#4a5160; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#0d1420; font-weight:600; }
-  button.danger { border-color:var(--bad); color:#ffb4ae; }
-  button.link { background:none; border:none; padding:2px 4px; color:var(--accent); }
-  button:disabled { opacity:.45; cursor:default; }
-  input, select { background:var(--bg); border:1px solid var(--line); border-radius:var(--r); padding:4px 7px; }
-  input[type=range] { padding:0; accent-color:var(--accent); }
-  .muted { color:var(--muted); } .small { font-size:12px; }
-  .chip { display:inline-block; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--muted); vertical-align:1px; }
-  .chip.code { border-color:#4b6aa8; color:#9db9ff; } .chip.over { border-color:var(--slow); color:var(--slow); }
-  .chip.chg { border-color:var(--changed); color:var(--changed); } .chip.bad { border-color:var(--bad); color:#ffb4ae; }
-  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--changed); margin-right:5px; }
 
-  /* draft switcher */
-  .draft { background:#11161d; border-bottom:1px dashed #3a4a66; padding:6px 14px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px; color:var(--muted); }
-  .draft b { color:#9db9ff; }
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
-  .seg button { border:none; border-radius:0; padding:3px 10px; background:transparent; font-size:12px; }
-  .seg button.on { background:var(--panel2); color:#fff; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.42;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .mono { font-family: var(--mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  .spacer { flex: 1 1 auto; }
 
-  /* top bar */
-  .top { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .logo { font-weight:700; letter-spacing:.3px; margin-right:6px; }
-  .grow { flex:1; }
-  .menu { position:relative; }
-  .pop { position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:330px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); box-shadow:0 8px 30px #0008; padding:6px; }
-  .pop h4 { margin:6px 8px 4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
-  .pop .row { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--r); }
-  .pop .row:hover { background:var(--panel2); }
-  .pop .row .name { flex:1; cursor:pointer; }
-  .pop .foot { border-top:1px solid var(--line); margin-top:6px; padding:6px 4px 2px; display:flex; gap:6px; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* plan state bar */
-  .state { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--line); background:#1d2026; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
-  .state.dirty { background:#231f2b; border-bottom-color:#4c3f63; }
-  .state .title { font-weight:600; }
+  /* ---------- Prototype Studio Bar ---------- */
+  .proto-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    min-height: var(--proto-h);
+    background: #111317;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 4px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .proto-tag {
+    font-weight: 700;
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--title);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+  .proto-group { display: inline-flex; align-items: center; gap: 6px; }
+  .proto-lbl { color: var(--faint); font-weight: 500; }
+  .proto-pills {
+    display: inline-flex;
+    background: #1a1d23;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .proto-pills button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.14s, color 0.14s;
+  }
+  .proto-pills button:hover { color: var(--title); }
+  .proto-pills button.on {
+    background: var(--text);
+    color: #14161a;
+    font-weight: 600;
+  }
+  .proto-jump {
+    border: 1px solid var(--border);
+    background: #1a1d23;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.14s, color 0.14s, background-color 0.14s;
+  }
+  .proto-jump:hover {
+    color: var(--title);
+    border-color: var(--border-strong);
+    background: var(--panel);
+  }
 
-  main { display:flex; gap:0; min-height:calc(100vh - 120px); }
-  .page { flex:1; padding:14px; min-width:0; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:12px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px; }
-  .card.changed { border-color:#5a4a78; }
-  .card.sel { outline:2px solid var(--accent); outline-offset:-1px; }
-  .card .head { display:flex; align-items:center; gap:6px; }
-  .card .head .t { font-weight:600; flex:1; }
-  .card .sum { font-size:12px; color:var(--muted); }
-  .bars { display:flex; align-items:flex-end; gap:2px; height:38px; }
-  .bars i { flex:1; background:#3d6b4a; border-radius:1px; }
-  .bars i.bs { background:#7a6230; } .bars i.bf { background:#8a3b36; }
-  .card .acts { display:flex; gap:6px; }
-  .section-title { margin:22px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  /* Phone viewport simulator frame */
+  .viewport-wrap.is-phone {
+    background: #0d0f12;
+    min-height: calc(100vh - var(--proto-h));
+    display: flex;
+    justify-content: center;
+    padding: 20px 12px;
+  }
+  .viewport-wrap.is-phone .app-frame {
+    width: 390px;
+    height: 820px;
+    border-radius: 34px;
+    border: 6px solid #2a2e37;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.75);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    transform: translateZ(0);
+  }
 
-  /* side panel */
-  .side { width:420px; flex:none; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; max-height:calc(100vh - 40px); position:sticky; top:40px; }
-  .side header { padding:12px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
-  .side header .t { font-weight:600; flex:1; }
-  .side .body { padding:6px 14px 14px; overflow:auto; flex:1; }
-  .side footer { padding:10px 14px; border-top:1px solid var(--line); display:flex; gap:8px; }
+  /* ---------- Core Controls ---------- */
+  .btn {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--panel2);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.38rem;
+    white-space: nowrap;
+    transition: background-color 0.14s, border-color 0.14s, color 0.14s, transform 0.08s;
+  }
+  .btn:hover:not(:disabled) { background: var(--panel3); color: var(--title); }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.38; cursor: default; }
+  .btn.primary {
+    background: var(--text);
+    color: #16181d;
+    font-weight: 650;
+  }
+  .btn.primary:hover:not(:disabled) { background: #ffffff; color: #111317; }
+  .btn.ghost {
+    background: var(--panel2);
+    border-color: var(--border);
+    font-weight: 500;
+  }
+  .btn.ghost:hover:not(:disabled) {
+    background: var(--panel3);
+    border-color: var(--border-strong);
+  }
+  .btn.ghost.danger-hover:hover:not(:disabled) {
+    background: rgba(240, 82, 82, 0.14);
+    border-color: rgba(240, 82, 82, 0.38);
+    color: #fca5a5;
+  }
+  .btn.sm { padding: 0.3rem 0.74rem; font-size: 0.77rem; }
+  .btn.xs { padding: 0.18rem 0.56rem; font-size: 0.72rem; }
 
-  /* flat parameter list (E3/E4) */
-  .form h5 { margin:16px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:600; }
-  .f { display:grid; grid-template-columns:130px 1fr 26px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #2a2e35; }
-  .f label { color:var(--muted); font-size:13px; }
-  .f.changed label { color:var(--changed); }
-  .f .ctl { display:flex; gap:8px; align-items:center; min-width:0; }
-  .f .ctl input[type=range] { flex:1; min-width:60px; }
-  .f .ctl input[type=number] { width:78px; text-align:right; }
-  .f .ctl input[type=text] { width:100%; }
-  .f .unit { color:var(--muted); font-size:12px; min-width:22px; }
-  .f .range { grid-column:2; font-size:11px; color:#646c7b; margin-top:-4px; }
-  .f .rev { visibility:hidden; padding:0 4px; color:var(--changed); background:none; border:none; }
-  .f.changed .rev { visibility:visible; }
-  .f .was { grid-column:2; font-size:11px; color:var(--changed); margin-top:-3px; }
-  .f.ro .ctl { color:var(--text); }
-  .f.gone label { text-decoration:line-through; } .f.gone .ctl { color:var(--muted); }
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: none;
+    transition: background-color 0.14s, color 0.14s;
+  }
+  .icon-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--title);
+  }
+  .icon-btn.danger:hover:not(:disabled) {
+    background: rgba(240, 82, 82, 0.16);
+    color: var(--failed);
+  }
+  .icon-btn.xs { width: 24px; height: 24px; }
+  .icon-btn:disabled { opacity: 0.35; cursor: default; }
 
-  /* plan table (layout B) */
-  table.plan { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  table.plan th, table.plan td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  table.plan th { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:600; background:#1f2228; }
-  table.plan tr.entry { cursor:pointer; } table.plan tr.entry:hover td { background:#262a31; }
-  table.plan tr.open td { background:#262a31; }
-  table.plan td.exp { background:#1d2026; padding:4px 18px 14px; }
-  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:0 28px; }
+  .ico {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: none;
+    display: block;
+  }
+  .ico.sm { width: 13.5px; height: 13.5px; }
+  .ico.xs { width: 12.5px; height: 12.5px; }
 
-  /* dialog */
-  .shade { position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
-  .dlg { background:var(--panel); border:1px solid var(--line); border-radius:10px; width:min(640px,100%); max-height:90vh; display:flex; flex-direction:column; }
-  .dlg header { padding:14px 16px 6px; font-weight:600; font-size:16px; display:flex; align-items:center; gap:8px; }
-  .dlg .body { padding:6px 16px 12px; overflow:auto; }
-  .dlg footer { padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
-  .opt { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; display:flex; gap:10px; align-items:flex-start; cursor:pointer; }
-  .opt.on { border-color:var(--accent); background:#1f2633; }
-  .warn { border-left:3px solid var(--slow); background:#2a2519; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
-  .info { border-left:3px solid var(--accent); background:#1c2331; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
-  .badline { border-left:3px solid var(--bad); background:#2b1c1c; padding:8px 10px; border-radius:4px; margin:8px 0; font-size:13px; }
-  ul.changes { list-style:none; margin:6px 0; padding:0; }
-  ul.changes li { display:flex; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #2a2e35; font-size:13px; }
-  ul.changes li span.what { flex:1; }
-  .old { color:var(--muted); text-decoration:line-through; } .new { color:var(--changed); }
+  .seg {
+    display: inline-flex;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.77rem;
+    font-weight: 500;
+    padding: 0.24rem 0.7rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color 0.14s, color 0.14s;
+  }
+  .seg button:hover:not(:disabled) { color: var(--text); }
+  .seg button.on {
+    background: var(--text);
+    color: #16181d;
+    font-weight: 600;
+  }
 
-  .runs { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
-  .runs .r { display:flex; gap:10px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); }
-  .runs .r:last-child { border-bottom:none; }
-  .runs .r .n { width:44px; color:var(--muted); }
-  .runs .r .p { flex:1; }
-  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#2f3542; border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:60; }
+  .meta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: var(--mono);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+  }
 
-  @media (max-width:860px) {
-    main { flex-direction:column; }
-    .side { width:auto; position:fixed; inset:auto 0 0 0; max-height:75vh; border-left:none; border-top:1px solid var(--line); border-radius:12px 12px 0 0; z-index:30; box-shadow:0 -10px 30px #0009; }
-    .f { grid-template-columns:110px 1fr 22px; }
-    .twocol { grid-template-columns:1fr; }
+  /* ---------- App Top Bar ---------- */
+  .topbar {
+    position: sticky;
+    top: var(--proto-h);
+    z-index: 80;
+    height: var(--top-h);
+    background: rgba(24, 27, 31, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .viewport-wrap.is-phone .topbar {
+    top: 0;
+    padding: 0 12px;
+    height: 50px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--title);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.015em;
+    text-decoration: none;
+    flex: none;
+  }
+  .nav {
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    gap: 2px;
+  }
+  .nav-item {
+    border: 0;
+    background: none;
+    padding: 0 12px;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 13.5px;
+    border-bottom: 2.5px solid transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    transition: color 0.14s;
+  }
+  .nav-item:hover { color: var(--text); }
+  .nav-item.active {
+    color: var(--title);
+    font-weight: 600;
+    border-bottom-color: var(--text);
+  }
+  .top-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .top-pill {
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.77rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.14s, border-color 0.14s;
+  }
+  .top-pill:hover, .top-pill.on {
+    background: var(--panel2);
+    border-color: var(--border-strong);
+  }
+  .top-pill.history {
+    background: rgba(91, 155, 240, 0.12);
+    border-color: rgba(91, 155, 240, 0.42);
+    color: #bfdbfe;
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--good);
+    flex: none;
+  }
+  .status-dot.run {
+    background: var(--running);
+    box-shadow: 0 0 8px var(--running);
+  }
+  .caret { color: var(--muted); font-size: 0.68rem; }
+
+  /* ---------- DropMenu ---------- */
+  .dd { position: relative; }
+  .dd-backdrop { position: fixed; inset: 0; z-index: 88; }
+  .dd-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 95;
+    min-width: 280px;
+    max-width: min(360px, 92vw);
+    background: #242830;
+    border: 1px solid rgba(227, 228, 236, 0.14);
+    border-radius: 14px;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.72);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .dd-head { padding: 8px 8px 6px; border-bottom: 1px solid var(--border-subtle); }
+  .dd-filter { padding: 6px 6px 2px; }
+  .dd-filter input {
+    width: 100%;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.79rem;
+    outline: none;
+  }
+  .dd-filter input:focus { border-color: var(--border-strong); }
+  .dd-scroll {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .dd-lbl {
+    font-size: 0.65rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+    padding: 6px 10px 3px;
+  }
+  .dd-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    border: 0;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.12s;
+  }
+  .dd-row:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+  .dd-row.on { background: rgba(255, 255, 255, 0.06); font-weight: 600; color: var(--title); }
+  .dd-row:disabled { opacity: 0.4; cursor: default; }
+  .dd-check { width: 14px; text-align: center; color: var(--title); font-size: 0.8rem; flex: none; }
+  .dd-main { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-sub { display: block; font-size: 0.72rem; color: var(--muted); font-weight: 400; margin-top: 1px; }
+  .dd-inline-act {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 0.7rem;
+    font-weight: 550;
+    padding: 2px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    flex: none;
+  }
+  .dd-inline-act:hover { background: var(--panel3); border-color: var(--border-strong); color: var(--title); }
+
+  /* ---------- Main Workspace Shell ---------- */
+  .workspace {
+    display: flex;
+    align-items: stretch;
+    min-height: calc(100vh - var(--proto-h) - var(--top-h));
+    position: relative;
+  }
+  .viewport-wrap.is-phone .workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 64px;
+  }
+  .page-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 16px 22px 44px;
+    width: 100%;
+  }
+  .workspace.has-drawer .page-wrap {
+    max-width: none;
+    padding-right: 18px;
+  }
+  .viewport-wrap.is-phone .page-wrap {
+    padding: 12px 12px 24px;
+  }
+
+  /* ---------- Plan Header ---------- */
+  .plan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .plan-identity {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .plan-identity h1 {
+    margin: 0;
+    font-size: 1.18rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--title);
+  }
+  .plan-sub-state {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .plan-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  /* ---------- Unified Run & Plan Bar ---------- */
+  .launch-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+    padding: 8px 11px 8px 9px;
+    margin-bottom: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .start-pill {
+    border: 0;
+    border-radius: 999px;
+    padding: 5px 14px 5px 6px;
+    background: var(--text);
+    color: #16181d;
+    font-weight: 650;
+    font-size: 0.83rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    flex: none;
+    transition: background-color 0.14s, transform 0.08s;
+  }
+  .start-pill:hover:not(:disabled) { background: #ffffff; }
+  .start-pill:disabled { opacity: 0.4; cursor: default; }
+  .start-pill.running {
+    background: rgba(91, 155, 240, 0.16);
+    border: 1px solid rgba(91, 155, 240, 0.45);
+    color: #bfdbfe;
+  }
+  .start-disc {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #16181d;
+    color: var(--text);
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .start-pill.running .start-disc {
+    background: var(--running);
+    color: #0e1726;
+  }
+  .launch-dur {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 200px;
+    min-width: 180px;
+    max-width: 310px;
+  }
+  .launch-dur label {
+    font-size: 0.74rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .launch-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .plan-pill {
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--muted);
+    border-radius: 7px;
+    padding: 4px 9px;
+    font-size: 0.73rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: background-color 0.14s, border-color 0.14s, color 0.14s;
+  }
+  .plan-pill:hover {
+    background: var(--panel2);
+    border-color: var(--border-strong);
+    color: var(--title);
+  }
+  .plan-pill b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 0.72rem; }
+  .plan-pill.active {
+    border-color: var(--accent2);
+    background: var(--selected);
+    color: var(--title);
+  }
+
+  /* Stored Run History Banner */
+  .history-banner {
+    background: var(--panel);
+    border: 1px solid rgba(91, 155, 240, 0.35);
+    border-radius: var(--radius);
+    padding: 11px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .history-banner-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .history-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(91, 155, 240, 0.18);
+    color: var(--running);
+  }
+  .history-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 7px 11px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .history-stats b { color: var(--title); }
+  .history-stats .good b { color: var(--good); }
+  .history-stats .bad b { color: var(--failed); }
+  .history-stats .warn b { color: var(--slow); }
+
+  /* Empty Plan State */
+  .empty-plan {
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 44px 24px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+  }
+  .empty-plan h2 { margin: 0; font-size: 1.02rem; color: var(--title); }
+  .empty-plan p { margin: 0; color: var(--muted); max-width: 360px; font-size: 0.83rem; }
+
+  /* ==========================================================================
+     Compact Technical Scenario Boxes (High Information Density, Sharp Geometry)
+     ========================================================================== */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+  .viewport-wrap.is-phone .cards-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .sc-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-left: 2.5px solid rgba(204, 204, 220, 0.22);
+    border-radius: 9px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s;
+  }
+  .sc-card:hover {
+    background: var(--card-hover);
+    border-color: rgba(227, 228, 236, 0.24);
+    border-left-color: var(--muted);
+  }
+  .sc-card.selected {
+    background: var(--selected);
+    border-color: var(--accent2);
+    border-left-color: var(--title);
+    box-shadow: 0 0 0 1px rgba(227, 228, 236, 0.22), 0 8px 22px -12px rgba(0, 0, 0, 0.7);
+  }
+
+  /* Box Header Strip */
+  .sc-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 9px 7px 10px;
+    background: rgba(24, 27, 31, 0.42);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .sc-idx {
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    font-weight: 700;
+    color: var(--faint);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 1px 5px;
+    flex: none;
+  }
+  .sc-card.selected .sc-idx {
+    background: var(--text);
+    color: #16181d;
+    border-color: transparent;
+  }
+  .sc-title-wrap { flex: 1 1 auto; min-width: 0; }
+  .sc-name {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 650;
+    color: var(--title);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sc-type {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sc-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    flex: none;
+    opacity: 0.55;
+    transition: opacity 0.12s;
+  }
+  .sc-card:hover .sc-actions, .sc-card.selected .sc-actions { opacity: 1; }
+
+  /* Telemetry / Spawning Spec Strip */
+  .sc-telemetry {
+    padding: 8px 10px 7px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sc-rate-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .sc-rate-val {
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--title);
+    font-variant-numeric: tabular-nums;
+  }
+  .sc-rate-val.run { color: var(--running); font-size: 1.05rem; }
+  .sc-rate-val small {
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--muted);
+    margin-left: 3px;
+  }
+  .sc-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .sc-kpi {
+    background: rgba(24, 27, 31, 0.55);
+    border: 1px solid var(--border-subtle);
+    border-radius: 5px;
+    padding: 3px 6px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    font-family: var(--mono);
+    font-size: 0.67rem;
+  }
+  .sc-kpi span { color: var(--faint); font-size: 0.61rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .sc-kpi b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .share-track {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+  }
+  .share-track i {
+    display: block;
+    height: 100%;
+    background: var(--accent2);
+    transition: width 0.14s ease;
+  }
+
+  /* Technical Key-Value Parameter Spec Grid */
+  .spec-grid {
+    padding: 6px 10px 7px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 10px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    line-height: 1.38;
+  }
+  .spec-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+    padding: 2px 0;
+    border-bottom: 1px dotted rgba(204, 204, 220, 0.08);
+  }
+  .spec-item.wide { grid-column: 1 / -1; }
+  .spec-k {
+    color: var(--faint);
+    flex: none;
+    font-size: 0.66rem;
+  }
+  .spec-v {
+    color: var(--text);
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  /* Compact Step Pipeline Footer */
+  .step-pipe {
+    margin-top: auto;
+    padding: 6px 10px 7px;
+    background: rgba(24, 27, 31, 0.35);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px 5px;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    color: var(--muted);
+  }
+  .step-node {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .step-node i {
+    font-style: normal;
+    color: var(--faint);
+    font-weight: 700;
+  }
+  .step-sep { color: rgba(204, 204, 220, 0.25); }
+
+  /* Stored-run-only result badges & bars */
+  .sc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .sc-badge.bad { color: var(--failed); background: rgba(240, 82, 82, 0.11); }
+  .sc-badge.warn { color: var(--slow); background: rgba(251, 191, 36, 0.1); }
+  .sc-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 36px;
+    padding: 0 10px 10px;
+  }
+  .sc-chart i {
+    flex: 1 1 0;
+    min-width: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--good);
+    opacity: 0.55;
+  }
+  .sc-chart i.warn { background: var(--slow-bar); opacity: 1; }
+  .sc-chart i.bad { background: var(--failed-bar); opacity: 1; }
+
+  .card-add {
+    background: rgba(30, 33, 40, 0.45);
+    border: 1px dashed var(--border);
+    border-radius: 9px;
+    min-height: 148px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.14s, background-color 0.14s, color 0.14s;
+  }
+  .card-add:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--panel);
+    color: var(--title);
+  }
+  .card-add .plus-ring {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    color: var(--title);
+  }
+
+  /* ---------- Right Inspector Drawer (No Top Tabs — Cards Switch It Directly) ---------- */
+  .inspector-drawer {
+    width: var(--drawer-w);
+    flex: none;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--proto-h) - var(--top-h));
+    position: sticky;
+    top: calc(var(--proto-h) + var(--top-h));
+  }
+  .insp-head {
+    padding: 12px 12px 11px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(24, 27, 31, 0.35);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .insp-head-titles { flex: 1 1 auto; min-width: 0; }
+  .insp-head-titles .kicker {
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--faint);
+    margin-bottom: 1px;
+  }
+  .insp-head-titles h2 {
+    margin: 0;
+    font-size: 0.96rem;
+    font-weight: 650;
+    color: var(--title);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .insp-head-titles .sub {
+    font-size: 0.73rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .insp-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 16px 22px;
+  }
+  .insp-idle {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 28px;
+    color: var(--faint);
+    font-size: 0.82rem;
+    gap: 6px;
+  }
+
+  /* ---------- Parameter Editor Form ---------- */
+  .param-sec-head {
+    margin: 15px 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+  }
+  .param-list {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .p-row {
+    display: grid;
+    grid-template-columns: 122px minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .p-row.ro {
+    grid-template-columns: 136px minmax(0, 1fr);
+    padding: 6px 0;
+  }
+  .viewport-wrap.is-phone .p-row {
+    grid-template-columns: 104px minmax(0, 1fr);
+    column-gap: 8px;
+  }
+  .p-lbl {
+    font-size: 0.79rem;
+    color: var(--muted);
+    font-weight: 500;
+    min-width: 0;
+  }
+  .p-row.gone .p-lbl {
+    text-decoration: line-through;
+    color: var(--faint);
+  }
+  .p-ctl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .p-meta {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.69rem;
+    color: var(--faint);
+  }
+  .p-bounds {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--faint);
+    font-size: 0.66rem;
+  }
+  .p-env-preview {
+    grid-column: 2;
+    font-family: var(--mono);
+    font-size: 0.69rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .viewport-wrap.is-phone .p-env-preview {
+    grid-column: 1 / -1;
+    padding-left: 112px;
+  }
+
+  /* Custom Range Slider + Unified Number-With-Unit Pill */
+  .slider-group {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-width: 0;
+  }
+  input[type="range"].bs-range {
+    flex: 1 1 auto;
+    min-width: 56px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 18px;
+    background: transparent;
+    margin: 0;
+    cursor: pointer;
+  }
+  input[type="range"].bs-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--accent2) 0%, var(--accent2) var(--pct, 50%), #323742 var(--pct, 50%), #323742 100%);
+  }
+  input[type="range"].bs-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin-top: -4.5px;
+    border-radius: 50%;
+    background: var(--title);
+    border: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+    transition: transform 0.12s ease;
+  }
+  input[type="range"].bs-range::-webkit-slider-thumb:hover,
+  input[type="range"].bs-range:active::-webkit-slider-thumb {
+    transform: scale(1.18);
+  }
+  .num-unit-box {
+    width: 92px;
+    flex: 0 0 92px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0 7px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: border-color 0.14s;
+  }
+  .num-unit-box:focus-within { border-color: var(--border-strong); }
+  input[type="number"].bs-num {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.79rem;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  input[type="number"].bs-num::-webkit-outer-spin-button,
+  input[type="number"].bs-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .bs-unit {
+    flex: none;
+    font-size: 0.7rem;
+    color: var(--faint);
+    font-family: var(--mono);
+  }
+  input[type="text"].bs-text {
+    width: 100%;
+    height: 28px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0 8px;
+    font-size: 0.8rem;
+    outline: none;
+  }
+  input[type="text"].bs-text.mono { font-family: var(--mono); font-size: 0.77rem; }
+  select.bs-select {
+    width: 100%;
+    height: 28px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 0 8px;
+    font-size: 0.8rem;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="text"].bs-text:focus,
+  select.bs-select:focus {
+    border-color: var(--border-strong);
+  }
+
+  /* Custom Pill Toggle Switch */
+  .bs-toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--input);
+    padding: 0;
+    cursor: pointer;
+    flex: none;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .bs-toggle i {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: transform 0.15s ease, background-color 0.15s;
+  }
+  .bs-toggle.on {
+    background: rgba(227, 228, 236, 0.28);
+    border-color: var(--accent2);
+  }
+  .bs-toggle.on i {
+    transform: translateX(16px);
+    background: var(--title);
+  }
+
+  /* URL List Editor */
+  .url-list {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 2px;
+  }
+  .url-row { display: flex; align-items: center; gap: 6px; }
+  .url-idx {
+    width: 18px;
+    font-size: 0.7rem;
+    color: var(--faint);
+    text-align: right;
+    font-family: var(--mono);
+    flex: none;
+  }
+
+  /* ---------- Modals ---------- */
+  .modal-shade {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    background: rgba(12, 14, 18, 0.72);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal {
+    width: min(600px, 100%);
+    max-height: 86vh;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .modal-head h3 {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 650;
+    color: var(--title);
+    flex: 1;
+  }
+  .modal-body {
+    padding: 15px 18px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+  }
+  .modal-foot {
+    padding: 11px 18px;
+    border-top: 1px solid var(--border);
+    background: rgba(24, 27, 31, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .pick-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 13px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.02);
+    width: 100%;
+    text-align: left;
+    transition: border-color 0.14s, background-color 0.14s;
+  }
+  .pick-card:hover {
+    border-color: var(--border-strong);
+    background: var(--selected);
+  }
+  .callout {
+    border-radius: 9px;
+    padding: 8px 11px;
+    font-size: 0.79rem;
+    margin: 8px 0;
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+  }
+  .callout.neutral {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .callout.warn {
+    background: rgba(251, 191, 36, 0.09);
+    border: 1px solid rgba(251, 191, 36, 0.32);
+    color: #fde68a;
+  }
+  .callout.bad {
+    background: rgba(240, 82, 82, 0.1);
+    border: 1px solid rgba(240, 82, 82, 0.35);
+    color: #fecaca;
+  }
+  .drift-chip {
+    font-size: 0.67rem;
+    font-weight: 650;
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .drift-chip.warn {
+    background: rgba(251, 191, 36, 0.14);
+    color: var(--slow);
+    border: 1px solid rgba(251, 191, 36, 0.35);
+  }
+  .drift-chip.bad {
+    background: rgba(240, 82, 82, 0.15);
+    color: var(--failed);
+    border: 1px solid rgba(240, 82, 82, 0.35);
+  }
+
+  /* Bottom Sheet for Phone / Narrow Screens */
+  .phone-sheet-shade {
+    position: fixed;
+    inset: 0;
+    z-index: 130;
+    background: rgba(8, 10, 14, 0.65);
+  }
+  .phone-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 135;
+    max-height: 82%;
+    background: var(--panel);
+    border-top: 1px solid var(--border-strong);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -14px 42px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sheet-grab { height: 18px; display: grid; place-items: center; flex: none; }
+  .sheet-grab i { width: 36px; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.22); }
+  .phone-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 54px;
+    z-index: 100;
+    background: rgba(24, 27, 31, 0.96);
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .phone-tabbar button {
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .phone-tabbar button.on { color: var(--title); font-weight: 650; }
+
+  .toast {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    background: #2b303b;
+    border: 1px solid var(--border-strong);
+    color: var(--title);
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+  }
+  .toast-undo {
+    border: 0;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--title);
+    font-weight: 600;
+    font-size: 0.74rem;
+    padding: 2px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .toast-undo:hover { background: rgba(255, 255, 255, 0.22); }
+
+  @media (max-width: 860px) {
+    .nav { display: none; }
+    .inspector-drawer { display: none; }
   }
 </style>
 </head>
 <body>
-<div id="app"></div>
-<script>
-// ---------------------------------------------------------------- fake catalog (current scenario definitions)
-const CATALOG = {
-  checkout: { name:'Checkout', params:[
-    { k:'baseUrl', l:'Base URL', t:'text', d:'{{ShopUrl}}', g:'Target' },
-    { k:'items', l:'Items in cart', t:'int', min:1, max:10, d:2, g:'Story' },
-    { k:'payWith', l:'Pay with', t:'enum', opts:['Card','PayPal','Invoice'], d:'Card', g:'Story' },
-    { k:'think', l:'Think time', t:'int', min:0, max:5000, step:50, unit:'ms', d:500, g:'Story' },
-    { k:'stopOnFail', l:'Stop on failure', t:'bool', d:true, g:'Story' },
-  ]},
-  search: { name:'Search products', params:[
-    { k:'baseUrl', l:'Base URL', t:'text', d:'{{ShopUrl}}', g:'Target' },
-    { k:'query', l:'Query', t:'text', d:'red shoes', g:'Story' },
-    { k:'open', l:'Results to open', t:'int', min:1, max:10, d:5, g:'Story' },
-    { k:'delay', l:'Delay', t:'float', min:0, max:5, step:.1, unit:'s', d:.5, g:'Story' },
-  ]},
-  jokes: { name:'Funny jokes', params:[
-    { k:'category', l:'Category', t:'enum', opts:['Programming','Pun','Misc'], d:'Programming', g:'Story' },
-    { k:'count', l:'Jokes per bee', t:'int', min:1, max:20, d:3, g:'Story' },
-  ]},
-};
-const SPAWN = [
-  { k:'rate', l:'Bees / minute', t:'int', min:1, max:600, unit:'/min', g:'Spawning' },
-  { k:'maxInFlight', l:'Max in-flight', t:'int', min:1, max:1000, g:'Spawning' },
-];
-const PLANF = [
-  { k:'duration', l:'Duration', t:'int', min:10, max:3600, step:10, unit:'s', g:'Run' },
-  { k:'maxConc', l:'Max in-flight', t:'int', min:1, max:1000, g:'Run' },
-  { k:'timeout', l:'Timeout', t:'int', min:1, max:300, unit:'s', g:'Run' },
-  { k:'preflight', l:'Preflight', t:'enum', opts:['none','check-readiness.cs','seed-users.cs'], g:'Programs' },
-  { k:'shutdown', l:'Shutdown', t:'enum', opts:['none','cleanup.cs'], g:'Programs' },
-];
-const ALLF = [...SPAWN, ...PLANF, ...Object.values(CATALOG).flatMap(s=>s.params)];
-const fieldOf = k => ALLF.find(f=>f.k===k) || { k, l:k, t:'text' };
+<div id="root"></div>
 
-function entry(sc, label, rate, over={}) {
-  const p = {}; CATALOG[sc].params.forEach(x=>p[x.k]=x.d);
-  return { sc, label, rate, maxInFlight:50, params:{...p, ...over} };
-}
+<script>
+// =============================================================================
+// 1. Domain Catalog, Environments, Load-Only Presets & Stored Runs
+// =============================================================================
+const ENVS = {
+  'Staging': { ShopUrl: 'https://staging.shop.internal', PaymentUrl: 'https://pay-stg.shop.internal' },
+  'Production EU': { ShopUrl: 'https://eu.shop.example.com', PaymentUrl: 'https://pay.shop.example.com' },
+  'Local dev': { ShopUrl: 'http://localhost:5180', PaymentUrl: 'http://localhost:5190' },
+  'No environment': {}
+};
+
+const CATALOG = {
+  checkout: {
+    name: 'User checkout journey',
+    codeId: 'CheckoutJourney',
+    desc: 'Log in, search catalog, add items to cart and complete payment',
+    steps: [
+      { n: 1, name: 'Log in' },
+      { n: 2, name: 'Search' },
+      { n: 3, name: 'Open ×4' },
+      { n: 4, name: 'Cart' },
+      { n: 5, name: 'Pay' }
+    ],
+    stats: { okPct: 91.4, finished: 1204, failed: 27, slow: 64 },
+    params: [
+      { k: 'baseUrl', l: 'Base URL', sk: 'baseUrl', t: 'text', mono: true, wide: true, d: '{{ShopUrl}}', g: 'Target' },
+      { k: 'items', l: 'Items in cart', sk: 'items', t: 'int', min: 1, max: 12, d: 2, g: 'Story' },
+      { k: 'payWith', l: 'Pay method', sk: 'payWith', t: 'enum', opts: ['Card', 'PayPal', 'Invoice', 'Apple Pay'], d: 'Card', g: 'Story' },
+      { k: 'think', l: 'Think time', sk: 'think', t: 'int', min: 0, max: 5000, step: 50, unit: 'ms', d: 500, g: 'Story' },
+      { k: 'stopOnFail', l: 'Stop on failure', sk: 'stopOnFail', t: 'bool', d: true, g: 'Story' }
+    ]
+  },
+  search: {
+    name: 'Search & browse',
+    codeId: 'SearchBrowse',
+    desc: 'Query full-text search and open top product detail pages',
+    steps: [
+      { n: 1, name: 'Autocomplete' },
+      { n: 2, name: 'Results' },
+      { n: 3, name: 'Detail ×3' }
+    ],
+    stats: { okPct: 100.0, finished: 2410, failed: 0, slow: 82 },
+    params: [
+      { k: 'baseUrl', l: 'Base URL', sk: 'baseUrl', t: 'text', mono: true, wide: true, d: '{{ShopUrl}}', g: 'Target' },
+      { k: 'query', l: 'Search query', sk: 'query', t: 'text', wide: true, d: 'running shoes', g: 'Story' },
+      { k: 'open', l: 'Results to open', sk: 'open', t: 'int', min: 1, max: 10, d: 5, g: 'Story' },
+      { k: 'delay', l: 'Step pause', sk: 'delay', t: 'float', min: 0, max: 5, step: 0.1, unit: 's', d: 0.5, g: 'Story' }
+    ]
+  },
+  apiWalk: {
+    name: 'HTTP step walk',
+    codeId: 'HttpStepWalk',
+    desc: 'Sequential GET requests across configured endpoints',
+    steps: [
+      { n: 1, name: '/healthz' },
+      { n: 2, name: '/api/catalog' },
+      { n: 3, name: '/api/featured' }
+    ],
+    stats: { okPct: 100.0, finished: 890, failed: 0, slow: 0 },
+    params: [
+      { k: 'baseUrl', l: 'Base URL', sk: 'baseUrl', t: 'text', mono: true, wide: true, d: '{{ShopUrl}}', g: 'Target' },
+      { k: 'urls', l: 'Step URLs', sk: 'urls', t: 'list', d: ['/healthz', '/api/catalog?limit=20', '/api/featured'], g: 'Endpoints' },
+      { k: 'timeoutSec', l: 'Call timeout', sk: 'timeout', t: 'int', min: 1, max: 60, unit: 's', d: 10, g: 'Story' }
+    ]
+  },
+  jokes: {
+    name: 'Funny jokes',
+    codeId: 'FunnyJokes',
+    desc: 'Lightweight self-contained scenario without external services',
+    steps: [
+      { n: 1, name: 'Fetch setup' },
+      { n: 2, name: 'Punchline' }
+    ],
+    stats: { okPct: 100.0, finished: 420, failed: 0, slow: 0 },
+    params: [
+      { k: 'category', l: 'Category', sk: 'category', t: 'enum', opts: ['Programming', 'Pun', 'Misc'], d: 'Programming', g: 'Story' },
+      { k: 'count', l: 'Jokes / bee', sk: 'count', t: 'int', min: 1, max: 20, d: 3, g: 'Story' }
+    ]
+  }
+};
+
+const SPAWN_FIELDS = [
+  { k: 'rate', l: 'Bees / min', t: 'int', min: 1, max: 600, unit: '/min', g: 'Spawning' },
+  { k: 'burstSize', l: 'Bees / burst', t: 'int', min: 1, max: 100, g: 'Spawning' },
+  { k: 'burstRate', l: 'Bursts / min', t: 'int', min: 1, max: 60, unit: '/min', g: 'Spawning' },
+  { k: 'maxInFlight', l: 'Max in-flight', t: 'int', min: 1, max: 500, g: 'Spawning' }
+];
+
+const PLAN_FIELDS = [
+  { k: 'duration', l: 'Duration', t: 'int', min: 10, max: 3600, step: 10, unit: 's', g: 'Run Limits' },
+  { k: 'maxConc', l: 'Max in-flight', t: 'cap', min: 1, max: 1000, g: 'Run Limits' },
+  { k: 'preflight', l: 'Preflight (.cs)', t: 'enum', opts: ['none', 'check-readiness.cs', 'seed-users.cs'], g: 'Lifecycle Programs' },
+  { k: 'shutdown', l: 'Shutdown (.cs)', t: 'enum', opts: ['none', 'cleanup.cs', 'collect-metrics.cs'], g: 'Lifecycle Programs' }
+];
+
+const ALL_FIELDS = [...SPAWN_FIELDS, ...PLAN_FIELDS, ...Object.values(CATALOG).flatMap(s => s.params)];
+const fieldOf = k => ALL_FIELDS.find(f => f.k === k) || { k, l: k, t: 'text' };
 const clone = o => JSON.parse(JSON.stringify(o));
 
-// ---------------------------------------------------------------- presets
-const CODE_PRESETS = {
-  'Smoke': { duration:60, maxConc:20, timeout:30, preflight:'check-readiness.cs', shutdown:'none', entries:[ entry('checkout','Checkout',10), entry('search','Search',20) ] },
-  'Black Friday': { duration:900, maxConc:400, timeout:30, preflight:'check-readiness.cs', shutdown:'cleanup.cs', entries:[ entry('checkout','Checkout',240,{items:4,think:300}), entry('search','Search',480,{open:3}), entry('checkout','Checkout · PayPal',60,{payWith:'PayPal'}) ] },
-};
-let state = {
-  layout: 'A', editMode: 'always',
-  presets: {
-    'Smoke': { code:true, override:null },
-    'Black Friday': { code:true, override: (()=>{ const p=clone(CODE_PRESETS['Black Friday']); p.entries[0].rate=300; return p; })() },
-    'Funny jokes': { code:false, plan:{ duration:120, maxConc:50, timeout:30, preflight:'none', shutdown:'none', entries:[ entry('jokes','Jokes',30) ] } },
-    'Nightly': { code:false, plan:{ duration:1800, maxConc:100, timeout:60, preflight:'seed-users.cs', shutdown:'cleanup.cs', entries:[ entry('checkout','Checkout',60), entry('search','Search',120) ] } },
-  },
-  current: null, base: null, origin: null,   // current plan, the preset it came from (snapshot), the preset name
-  selected: 0, open: null, menu: null, dialog: null, editing: false, showChanges: false, toast: null,
-};
-const presetPlan = name => { const p=state.presets[name]; return clone(p.code ? (p.override || CODE_PRESETS[name]) : p.plan); };
-function loadPreset(name) { state.current = presetPlan(name); state.base = presetPlan(name); state.origin = name; state.selected = 0; state.open = 0; }
-loadPreset('Black Friday');
+function makeEntry(sc, label, rate, over = {}, pattern = 'linear', burstSize = 15, burstRate = 6) {
+  const params = {};
+  CATALOG[sc].params.forEach(p => { params[p.k] = clone(p.d); });
+  return { sc, label, pattern, rate, burstSize, burstRate, maxInFlight: 80, params: { ...params, ...over } };
+}
 
-// ---------------------------------------------------------------- runs (history)
+function effectiveRate(en) {
+  return en.pattern === 'bursts' ? en.burstSize * en.burstRate : en.rate;
+}
+
+// Load-only starter templates
+const PRESETS = {
+  'Black Friday': {
+    duration: 900, maxConc: 400, timeout: 30, preflight: 'check-readiness.cs', shutdown: 'cleanup.cs',
+    entries: [
+      makeEntry('checkout', 'Checkout · Card', 240, { items: 3, think: 300 }),
+      makeEntry('search', 'Search & browse', 360, { open: 3 }, 'bursts', 20, 18),
+      makeEntry('checkout', 'Checkout · PayPal', 90, { payWith: 'PayPal', items: 4, think: 450 }),
+      makeEntry('apiWalk', 'Catalog health walk', 60, {})
+    ]
+  },
+  'Smoke check': {
+    duration: 60, maxConc: 30, timeout: 20, preflight: 'check-readiness.cs', shutdown: 'none',
+    entries: [
+      makeEntry('checkout', 'Checkout', 15),
+      makeEntry('search', 'Search', 30)
+    ]
+  },
+  'PayPal checkout mix': {
+    duration: 600, maxConc: 250, timeout: 30, preflight: 'seed-users.cs', shutdown: 'cleanup.cs',
+    entries: [
+      makeEntry('checkout', 'Checkout · PayPal', 180, { payWith: 'PayPal', items: 4 }),
+      makeEntry('search', 'Search & browse', 200)
+    ]
+  },
+  'Funny jokes': {
+    duration: 120, maxConc: 40, timeout: 15, preflight: 'none', shutdown: 'none',
+    entries: [makeEntry('jokes', 'Jokes warmup', 40)]
+  }
+};
+
 const RUNS = [
-  { id:41, when:'today 14:12', preset:'Black Friday', ok:98.7, plan: presetPlan('Black Friday'), note:'' },
-  { id:38, when:'yesterday 02:00', preset:'Nightly', ok:100, note:'Checkout changed since',
-    plan:{ duration:1800, maxConc:100, timeout:60, preflight:'seed-users.cs', shutdown:'cleanup.cs', entries:[
-      { sc:'checkout', label:'Checkout', rate:60, maxInFlight:50, params:{ baseUrl:'{{ShopUrl}}', items:2, think:800, stopOnFail:true, coupon:'BF-2026' } },
-      entry('search','Search',120) ] } },
-  { id:35, when:'Nov 24 18:40', preset:'(current plan)', ok:91.2, note:'scenario unknown',
-    plan:{ duration:300, maxConc:50, timeout:30, preflight:'none', shutdown:'none', entries:[
-      { sc:'legacyLogin', label:'Legacy login', rate:30, maxInFlight:50, params:{ user:'demo', retries:2 } },
-      entry('search','Search',60) ] } },
+  {
+    id: 41, when: 'Today · 14:12', dur: '15:00', env: 'Staging',
+    okPct: 97.8, finished: 4504, failed: 27, slow: 146, drift: null,
+    plan: clone(PRESETS['Black Friday'])
+  },
+  {
+    id: 38, when: 'Yesterday · 02:00', dur: '30:00', env: 'Staging',
+    okPct: 100.0, finished: 5400, failed: 0, slow: 38, drift: 'Checkout schema changed',
+    plan: {
+      duration: 1800, maxConc: 120, timeout: 60, preflight: 'seed-users.cs', shutdown: 'cleanup.cs',
+      entries: [
+        {
+          sc: 'checkout', label: 'Checkout', pattern: 'linear', rate: 60, burstSize: 10, burstRate: 6, maxInFlight: 50,
+          params: { baseUrl: '{{ShopUrl}}', items: 2, think: 800, stopOnFail: true, couponCode: 'WINTER-26' }
+        },
+        makeEntry('search', 'Search & browse', 120)
+      ]
+    }
+  },
+  {
+    id: 35, when: '24 Nov · 18:40', dur: '05:00', env: 'Local dev',
+    okPct: 88.4, finished: 450, failed: 52, slow: 19, drift: '1 scenario removed',
+    plan: {
+      duration: 300, maxConc: 50, timeout: 30, preflight: 'none', shutdown: 'none',
+      entries: [
+        {
+          sc: 'legacyAuth', label: 'Legacy SOAP login', pattern: 'linear', rate: 30, burstSize: 5, burstRate: 6, maxInFlight: 25,
+          params: { endpoint: '{{ShopUrl}}/soap/v1', retries: 2 }
+        },
+        makeEntry('search', 'Search & browse', 60)
+      ]
+    }
+  }
 ];
 
-// ---------------------------------------------------------------- diffing
-function diff(a, b) {   // changes from plan a to plan b
-  const out = [];
-  PLANF.forEach(f => { if (a[f.k] !== b[f.k]) out.push({ where:'Plan', e:-1, k:f.k, from:a[f.k], to:b[f.k] }); });
-  const n = Math.max(a.entries.length, b.entries.length);
-  for (let i=0;i<n;i++) {
-    const x=a.entries[i], y=b.entries[i];
-    if (!x) { out.push({ where:y.label, e:i, k:'(added)', from:null, to:CATALOG[y.sc]?.name }); continue; }
-    if (!y) { out.push({ where:x.label, e:i, k:'(removed)', from:x.label, to:null }); continue; }
-    SPAWN.forEach(f => { if (x[f.k] !== y[f.k]) out.push({ where:y.label, e:i, k:f.k, from:x[f.k], to:y[f.k] }); });
-    const keys = new Set([...Object.keys(x.params), ...Object.keys(y.params)]);
-    keys.forEach(k => { if (x.params[k] !== y.params[k]) out.push({ where:y.label, e:i, k, from:x.params[k], to:y.params[k] }); });
-  }
-  return out;
-}
-const changes = () => diff(state.base, state.current);
-const isChanged = (e, k) => changes().some(c => c.e===e && c.k===k);
-const baseVal = (e, k) => e<0 ? state.base[k] : state.base.entries[e]?.[k] ?? state.base.entries[e]?.params[k];
-function fmt(v, f) { if (v===null || v===undefined) return '—'; if (typeof v==='boolean') return v?'on':'off'; return v + (f?.unit ? ' '+f.unit : ''); }
+const state = {
+  viewport: 'desktop',  // 'desktop' | 'phone'
+  env: 'Staging',
+  isRunning: false,
+  viewingRunId: null,
+  presetFilter: '',
+  current: clone(PRESETS['Black Friday']),
+  undoPlan: null,
+  openTarget: 0,        // null (idle/closed) | -1 (Plan settings) | 0..N-1 (entry index)
+  menu: null,           // null | 'presets' | 'runs' | 'env'
+  dialog: null,         // null | { type: 'inspect' | 'add', ... }
+  toast: null
+};
 
-// ---------------------------------------------------------------- mutations
-function setVal(e, k, v) {
-  if (e < 0) state.current[k] = v;
-  else { const en = state.current.entries[e]; if (k in en && k!=='params') en[k]=v; else en.params[k]=v; }
+// =============================================================================
+// 2. Formatting Helpers
+// =============================================================================
+function fmtVal(v, f) {
+  if (v === null || v === undefined) return '—';
+  if (Array.isArray(v)) return `${v.length} paths`;
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return v + (f?.unit ? ' ' + f.unit : '');
+}
+
+function fmtCompactNum(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(n);
+}
+
+function fmtDurationHuman(sec) {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+function planSummaryText(p) {
+  const totalRate = p.entries.reduce((s, e) => s + effectiveRate(e), 0);
+  const est = Math.round(totalRate * (p.duration / 60));
+  return `${p.entries.length} ${p.entries.length === 1 ? 'scenario' : 'scenarios'} · ${totalRate} bees/min · ~${fmtCompactNum(est)} bees`;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function resolvePlaceholders(str) {
+  if (typeof str !== 'string' || !str.includes('{{')) return null;
+  const map = ENVS[state.env] || {};
+  let hasUnknown = false;
+  const resolved = str.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    if (key in map) return map[key];
+    hasUnknown = true;
+    return `{{${key}}}`;
+  });
+  return { resolved, hasUnknown };
+}
+
+function showToast(msg, withUndo = false) {
+  state.toast = { msg, withUndo };
   render();
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { state.toast = null; render(); }, 4000);
 }
-function revert(e, k) { setVal(e, k, baseVal(e, k)); }
-function revertAll() { state.current = clone(state.base); state.dialog=null; toast('Current plan is back to “'+state.origin+'”'); }
-function toast(t) { state.toast=t; render(); clearTimeout(toast.h); toast.h=setTimeout(()=>{state.toast=null;render();},2600); }
 
-function savePreset(name, overwrite) {
-  const p = state.presets[name];
-  if (p && p.code) p.override = clone(state.current);
-  else state.presets[name] = { code:false, plan:clone(state.current) };
-  state.base = clone(state.current); state.origin = name; state.dialog = null;
-  toast(overwrite ? '“'+name+'” overwritten' + (p?.code ? ' (Reset to code brings the original back)' : '') : 'Saved as new preset “'+name+'”');
+// =============================================================================
+// 3. SVG Icons & Hex Badges
+// =============================================================================
+const ICONS = {
+  beeMark: `<svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <polygon points="16,2.5 27.5,9.2 27.5,22.8 16,29.5 4.5,22.8 4.5,9.2" fill="rgba(227,228,236,0.09)" stroke="#e3e4ec" stroke-width="1.8"/>
+    <path d="M11 13.5h10M10.5 17.5h11M13 21.2h6" stroke="#e3e4ec" stroke-width="1.8" stroke-linecap="round"/>
+    <circle cx="16" cy="9.5" r="1.7" fill="#34d399"/>
+  </svg>`,
+  copy: `<svg class="ico xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  trash: `<svg class="ico xs" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`,
+  clear: `<svg class="ico sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg>`,
+  close: `<svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  sliders: `<svg class="ico sm" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></svg>`,
+  folder: `<svg class="ico sm" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`,
+  play: `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z"/></svg>`,
+  stop: `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`,
+  gear: `<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`
+};
+
+function hexIcon(kind) {
+  const hex = `M50 6 L88 28 L88 72 L50 94 L12 72 L12 28 Z`;
+  if (kind === 'bad') return `<svg width="13" height="13" viewBox="0 0 100 100" fill="none"><path d="${hex}" fill="rgba(240,82,82,0.16)" stroke="#f05252" stroke-width="7"/><path d="M36 36L64 64M64 36L36 64" stroke="#f05252" stroke-width="9" stroke-linecap="round"/></svg>`;
+  if (kind === 'warn') return `<svg width="13" height="13" viewBox="0 0 100 100" fill="none"><path d="${hex}" fill="rgba(251,191,36,0.16)" stroke="#fbbf24" stroke-width="7"/><circle cx="50" cy="50" r="21" stroke="#fbbf24" stroke-width="7"/><path d="M50 38v13l9 5" stroke="#fbbf24" stroke-width="7" stroke-linecap="round"/></svg>`;
+  return `<svg width="13" height="13" viewBox="0 0 100 100" fill="none"><path d="${hex}" fill="rgba(52,211,153,0.16)" stroke="#34d399" stroke-width="7"/><path d="M32 52l13 13 24-28" stroke="#34d399" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
-function resetCode(name) { state.presets[name].override = null; if (state.origin===name) { state.base = presetPlan(name); } toast('“'+name+'” is back to its code version'); }
 
-// ---------------------------------------------------------------- rendering helpers
-const h = (s) => s;
-function ctl(f, v, e, ro) {
+function renderMiniBars(seed, hasFailed, hasSlow, count = 30) {
+  let out = '';
+  for (let i = 0; i < count; i++) {
+    const x = Math.sin(seed * 91.3 + i * 17.7) * 10000;
+    const r = x - Math.floor(x);
+    let cls = '';
+    if (hasFailed && (i === 9 || i === 21)) cls = 'bad';
+    else if (hasSlow && (i === 5 || i === 15 || i === 25)) cls = 'warn';
+    const h = cls === 'bad' ? 88 : cls === 'warn' ? 76 : Math.round(28 + r * 42);
+    out += `<i class="${cls}" style="height:${h}%"></i>`;
+  }
+  return `<div class="sc-chart" aria-hidden="true">${out}</div>`;
+}
+
+// =============================================================================
+// 4. Parameter Controls & Clean Flat Form
+// =============================================================================
+function sliderPct(v, min, max) {
+  if (max <= min) return 0;
+  return Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100)).toFixed(1);
+}
+
+function renderControl(f, v, e, ro) {
   const id = `${e}:${f.k}`;
-  if (ro) return `<span>${fmt(v, f)}</span>`;
-  if (f.t==='bool') return `<input type="checkbox" data-id="${id}" ${v?'checked':''}> <span class="muted small">${v?'on':'off'}</span>`;
-  if (f.t==='enum') return `<select data-id="${id}">${f.opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
-  if (f.t==='text') return `<input type="text" data-id="${id}" value="${String(v??'').replace(/"/g,'&quot;')}">`;
-  const step = f.step || (f.t==='float'?.1:1);
-  return `<input type="range" data-id="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}">
-          <input type="number" data-id="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}"><span class="unit">${f.unit||''}</span>`;
-}
-function fieldRow(f, v, e, ro, extra={}) {
-  const ch = !ro && isChanged(e, f.k);
-  const cls = ['f', ch?'changed':'', ro?'ro':'', extra.gone?'gone':''].join(' ');
-  const range = !ro && f.min!==undefined ? `<div class="range">${f.min} – ${f.max}${f.unit?' '+f.unit:''}</div>` : '';
-  const was = ch ? `<div class="was">was ${fmt(baseVal(e,f.k), f)} in “${state.origin}”</div>` : '';
-  const note = extra.note ? `<div class="was" style="color:${extra.noteColor||'var(--muted)'}">${extra.note}</div>` : '';
-  return `<div class="${cls}"><label title="${f.k}">${f.l}</label><div class="ctl">${ctl(f, v, e, ro)}</div>
-    <button class="rev" title="Back to the preset's value" data-rev="${e}:${f.k}">↺</button>${range}${was}${note}</div>`;
-}
-function groupForm(fields, valOf, e, ro) {
-  let out='', g=null;
-  fields.forEach(f => { if (f.g!==g) { g=f.g; out+=`<h5>${g}</h5>`; } out += fieldRow(f, valOf(f), e, ro); });
-  return `<div class="form">${out}</div>`;
-}
-function entryForm(e, ro, plan=state.current) {
-  const en = plan.entries[e]; const sc = CATALOG[en.sc];
-  return groupForm([...SPAWN, ...sc.params], f => f.k in en && f.k!=='params' ? en[f.k] : en.params[f.k], e, ro);
-}
-function bars(seed) { let o=''; for (let i=0;i<34;i++){ const x=Math.sin(seed*97+i*13.7)*10000; const r=x-Math.floor(x); const c=r>.95?'bf':r>.85?'bs':''; o+=`<i class="${c}" style="height:${25+r*75}%"></i>`;} return `<div class="bars">${o}</div>`; }
-function entrySummary(en) {
-  const sc = CATALOG[en.sc]; const p = en.params;
-  const bits = sc.params.filter(f=>f.g==='Story').slice(0,3).map(f=>`${f.l.toLowerCase()} ${fmt(p[f.k],f)}`);
-  return `${en.rate} bees/min · ${bits.join(' · ')}`;
-}
-function presetChip(name) {
-  const p = state.presets[name]; if (!p) return '';
-  return p.code ? (p.override ? `<span class="chip over" title="Saved over the code version">code · changed</span>` : `<span class="chip code">code</span>`) : `<span class="chip">saved</span>`;
-}
-
-// ---------------------------------------------------------------- views
-function draftBar() {
-  const L = (id, t) => `<button class="${state.layout===id?'on':''}" data-layout="${id}">${t}</button>`;
-  const M = (id, t) => `<button class="${state.editMode===id?'on':''}" data-mode="${id}">${t}</button>`;
-  return `<div class="draft"><b>DRAFT</b> placeholder data, nothing is saved
-    <span>Layout <span class="seg">${L('A','A · cards + side panel')}${L('B','B · plan table')}${L('C','C · split: list | editor')}</span></span>
-    <span>Editing <span class="seg">${M('always','always editable')}${M('explicit','Edit button')}</span></span></div>`;
-}
-function topBar() {
-  return `<div class="top"><span class="logo">🐝 Beesharp</span>
-    <div class="menu"><button data-menu="presets">Presets ▾</button>${state.menu==='presets'?presetMenu():''}</div>
-    <div class="menu"><button data-menu="runs">Runs ▾</button>${state.menu==='runs'?runMenu():''}</div>
-    <span class="grow"></span><span class="muted small">Environment: Staging ▾</span>
-    <button class="primary">▶ Start run</button></div>`;
-}
-function presetMenu() {
-  const names = Object.keys(state.presets);
-  const row = n => { const p=state.presets[n];
-    return `<div class="row"><span class="name" data-load="${n}">${n===state.origin?'● ':''}${n}</span>${presetChip(n)}
-      ${p.code && p.override ? `<button class="link small" data-reset="${n}">Reset to code</button>`:''}</div>`; };
-  return `<div class="pop">
-    <h4>From code</h4>${names.filter(n=>state.presets[n].code).map(row).join('')}
-    <h4>Saved</h4>${names.filter(n=>!state.presets[n].code).map(row).join('')}
-    <div class="foot"><span class="muted small" style="flex:1;padding:4px">Loading a preset copies it into the current plan. Edits never touch the preset.</span></div></div>`;
-}
-function runMenu() {
-  return `<div class="pop" style="min-width:380px"><h4>Stored runs</h4>${RUNS.map(r=>`<div class="row"><span class="muted">#${r.id}</span><span class="name" data-inspect="${r.id}">${r.preset} <span class="muted small">${r.when}</span></span>
-    ${r.note?`<span class="chip ${r.note.includes('unknown')?'bad':'over'}">${r.note}</span>`:''}<button class="link small" data-inspect="${r.id}">Setup</button></div>`).join('')}</div>`;
-}
-function stateBar() {
-  const c = changes(); const dirty = c.length>0;
-  const canEdit = state.editMode==='always' || state.editing;
-  return `<div class="state ${dirty?'dirty':''}">
-    <span class="title">Current plan</span>
-    <span class="muted">from</span> <b>${state.origin}</b> ${presetChip(state.origin)}
-    ${dirty ? `<button class="link" data-show-changes><span class="dot"></span>${c.length} change${c.length>1?'s':''}</button>` : `<span class="muted small">same as preset</span>`}
-    <span class="grow"></span>
-    ${state.editMode==='explicit' ? `<button data-toggle-edit>${state.editing?'Done editing':'✎ Edit plan'}</button>`:''}
-    <button data-plan-setup>Plan setup</button>
-    <button ${dirty?'':'disabled'} data-revert-all>Discard changes</button>
-    <button ${canEdit||dirty?'':''} data-save>Save as preset…</button>
+  if (ro) {
+    if (Array.isArray(v)) return `<span class="mono" style="font-size:0.76rem">${v.map(esc).join(', ')}</span>`;
+    return `<span class="${f.mono || f.t === 'int' || f.t === 'float' ? 'mono' : ''}">${esc(fmtVal(v, f))}</span>`;
+  }
+  if (f.t === 'bool') {
+    return `<button type="button" class="bs-toggle ${v ? 'on' : ''}" data-toggle="${id}" role="switch" aria-checked="${!!v}"><i></i></button>
+            <span class="muted mono" style="font-size:0.75rem">${v ? 'true' : 'false'}</span>`;
+  }
+  if (f.t === 'enum') {
+    return `<select class="bs-select" data-input="${id}">${f.opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  }
+  if (f.t === 'text') {
+    return `<input type="text" class="bs-text ${f.mono ? 'mono' : ''}" data-input="${id}" value="${esc(v ?? '')}" autocomplete="off" spellcheck="false">`;
+  }
+  const step = f.step || (f.t === 'float' ? 0.1 : 1);
+  const pct = sliderPct(v, f.min, f.max);
+  return `<div class="slider-group">
+    <input type="range" class="bs-range" style="--pct:${pct}%" data-range="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}">
+    <div class="num-unit-box">
+      <input type="number" class="bs-num" data-num="${id}" min="${f.min}" max="${f.max}" step="${step}" value="${v}">
+      ${f.unit ? `<span class="bs-unit">${esc(f.unit)}</span>` : ''}
+    </div>
   </div>`;
 }
-function cardsView() {
-  const canEdit = state.editMode==='always' || state.editing;
-  const cards = state.current.entries.map((en,i)=> {
-    const ch = changes().filter(c=>c.e===i).length;
-    return `<div class="card ${ch?'changed':''} ${state.open===i?'sel':''}">
-      <div class="head"><span class="t">${en.label}</span>${ch?`<span class="chip chg">${ch} changed</span>`:''}</div>
-      <div class="sum">${CATALOG[en.sc].name} · ${entrySummary(en)}</div>${bars(i+3)}
-      <div class="acts"><button data-open="${i}">${canEdit?'✎ Edit':'Setup'}</button><span class="grow"></span><span class="muted small">98.9 % ok</span></div></div>`;
-  }).join('');
-  return `<div class="cards">${cards}</div>`;
-}
-function sidePanel() {
-  if (state.open===null) return '';
-  const canEdit = state.editMode==='always' || state.editing;
-  const isPlan = state.open===-1;
-  const title = isPlan ? 'Plan setup' : state.current.entries[state.open].label;
-  const sub = isPlan ? 'duration, limits, programs' : CATALOG[state.current.entries[state.open].sc].name;
-  const body = isPlan ? groupForm(PLANF, f=>state.current[f.k], -1, !canEdit) : entryForm(state.open, !canEdit);
-  return `<aside class="side"><header><span class="t">${title} <span class="muted small">${sub}</span></span><button data-close>Close</button></header>
-    <div class="body">${canEdit?'':`<div class="info">Read only. ${state.editMode==='explicit'?'Press “Edit plan” to change it.':''}</div>`}${body}</div>
-    <footer class="small muted">Changes go to the current plan right away. “${state.origin}” stays as it is.</footer></aside>`;
-}
-function tableView() {
-  const canEdit = state.editMode==='always' || state.editing;
-  const rows = state.current.entries.map((en,i)=>{
-    const ch = changes().filter(c=>c.e===i).length; const open = state.open===i;
-    return `<tr class="entry ${open?'open':''}" data-open="${i}"><td>${open?'▾':'▸'} <b>${en.label}</b> ${ch?`<span class="chip chg">${ch} changed</span>`:''}</td>
-      <td>${CATALOG[en.sc].name}</td><td>${en.rate} /min</td><td class="muted small">${entrySummary(en)}</td></tr>
-      ${open?`<tr><td colspan="4" class="exp"><div class="twocol">${entryForm(i, !canEdit)}</div></td></tr>`:''}`;
-  }).join('');
-  const planOpen = state.open===-1;
-  return `<table class="plan"><thead><tr><th>Scenario entry</th><th>Scenario</th><th>Rate</th><th>Settings</th></tr></thead><tbody>
-    <tr class="entry ${planOpen?'open':''}" data-open="-1"><td>${planOpen?'▾':'▸'} <b>Plan</b> ${changes().some(c=>c.e===-1)?'<span class="chip chg">changed</span>':''}</td><td class="muted">—</td><td class="muted">—</td>
-      <td class="muted small">${state.current.duration}s · max in-flight ${state.current.maxConc} · preflight ${state.current.preflight}</td></tr>
-    ${planOpen?`<tr><td colspan="4" class="exp"><div class="twocol">${groupForm(PLANF, f=>state.current[f.k], -1, !canEdit)}</div></td></tr>`:''}
-    ${rows}</tbody></table>
-    <p class="muted small">Tip: click a row to fold it open. All edits stay in the current plan.</p>`;
-}
-function splitView() {
-  const canEdit = state.editMode==='always' || state.editing;
-  const sel = state.open ?? 0;
-  const item = (i, label, sub) => { const ch = changes().filter(c=>c.e===i).length;
-    return `<div class="r" style="cursor:pointer;${sel===i?'background:#262a31':''}" data-open="${i}"><span class="p"><b>${label}</b><br><span class="muted small">${sub}</span></span>${ch?`<span class="chip chg">${ch}</span>`:''}</div>`; };
-  const list = item(-1,'Plan', `${state.current.duration}s · ${state.current.entries.length} entries`) + state.current.entries.map((en,i)=>item(i, en.label, CATALOG[en.sc].name+' · '+en.rate+'/min')).join('');
-  const body = sel===-1 ? groupForm(PLANF, f=>state.current[f.k], -1, !canEdit) : entryForm(sel, !canEdit);
-  const c = changes();
-  return `<div style="display:grid;grid-template-columns:minmax(200px,260px) 1fr minmax(220px,280px);gap:14px;align-items:start" class="splitgrid">
-    <div class="runs">${list}</div>
-    <div class="runs" style="padding:4px 16px 16px">${body}</div>
-    <div class="runs" style="padding:10px 12px"><div class="muted small" style="margin-bottom:6px">CHANGES TO “${state.origin}”</div>${c.length?changeList(c):'<span class="muted small">None. The current plan equals the preset.</span>'}</div></div>`;
-}
-function changeList(c) {
-  return `<ul class="changes">${c.map(x=>{ const f=fieldOf(x.k);
-    return `<li><span class="what"><span class="muted">${x.where} ·</span> ${f.l}<br><span class="old">${fmt(x.from,f)}</span> → <span class="new">${fmt(x.to,f)}</span></span>
-      ${x.e!==undefined && !x.k.startsWith('(')?`<button class="link" data-rev="${x.e}:${x.k}" title="Undo this change">↺</button>`:''}</li>`; }).join('')}</ul>`;
-}
-function historySection() {
-  return `<div class="section-title">Stored runs · inspect what ran</div><div class="runs">${RUNS.map(r=>`<div class="r"><span class="n">#${r.id}</span>
-    <span class="p">${r.preset} <span class="muted small">${r.when} · ${r.plan.entries.length} entries · ${r.ok}% ok</span></span>
-    ${r.note?`<span class="chip ${r.note.includes('unknown')?'bad':'over'}">${r.note}</span>`:''}
-    <button data-inspect="${r.id}">Setup</button></div>`).join('')}</div>`;
+
+function renderFieldRow(f, v, e, ro, extra = {}) {
+  if (f.t === 'list' && !ro) {
+    const arr = Array.isArray(v) ? v : [];
+    return `<div class="p-row" data-row="${e}:${f.k}">
+      <div class="p-lbl"><span>${esc(f.l)}</span></div>
+      <div class="p-ctl"><span class="muted mono" style="font-size:0.74rem">${arr.length} path${arr.length === 1 ? '' : 's'}</span></div>
+      <div class="url-list">
+        ${arr.map((u, idx) => `<div class="url-row">
+          <span class="url-idx">${idx + 1}</span>
+          <input type="text" class="bs-text mono" data-list-input="${e}:${f.k}:${idx}" value="${esc(u)}" spellcheck="false">
+          <button type="button" class="icon-btn xs danger" data-list-del="${e}:${f.k}:${idx}" title="Remove URL" ${arr.length <= 1 ? 'disabled' : ''}>${ICONS.close}</button>
+        </div>`).join('')}
+        <div><button type="button" class="btn ghost xs" data-list-add="${e}:${f.k}">+ Add step URL</button></div>
+      </div>
+    </div>`;
+  }
+
+  const cls = ['p-row', ro ? 'ro' : '', extra.gone ? 'gone' : ''].filter(Boolean).join(' ');
+  const hasRange = !ro && f.min !== undefined;
+  const resolvedInfo = !ro && f.t === 'text' ? resolvePlaceholders(v) : null;
+
+  let metaHtml = '';
+  if (hasRange || extra.note) {
+    metaHtml = `<div class="p-meta">
+      <span>${extra.note || ''}</span>
+      ${hasRange ? `<span class="p-bounds">${f.min}–${f.max}${f.unit ? ' ' + f.unit : ''}</span>` : ''}
+    </div>`;
+  }
+
+  const envHtml = resolvedInfo
+    ? `<div class="p-env-preview" data-envprev="${e}:${f.k}">
+        <span class="faint">→</span>
+        <span class="${resolvedInfo.hasUnknown ? 'warn' : ''}">${esc(resolvedInfo.resolved)}</span>
+        <span class="faint">(${esc(state.env)})</span>
+      </div>`
+    : '';
+
+  return `<div class="${cls}" data-row="${e}:${f.k}">
+    <div class="p-lbl" title="${esc(f.k)}"><span>${esc(f.l)}</span></div>
+    <div class="p-ctl">${renderControl(f, v, e, ro)}</div>
+    ${envHtml}${metaHtml}
+  </div>`;
 }
 
-// ---------------------------------------------------------------- dialogs
-function dialog() {
-  const d = state.dialog; if (!d) return '';
-  if (d.type==='changes') return shell('Changes in the current plan', `<p class="muted small">Compared to the preset “${state.origin}”. The preset itself is unchanged.</p>${changeList(changes())}`,
-    `<button data-revert-all class="danger">Discard all</button><span class="grow"></span><button data-close-dlg>Close</button><button class="primary" data-save>Save as preset…</button>`);
-  if (d.type==='load') return shell(`Load “${d.name}”?`, `<div class="warn">The current plan has ${changes().length} change(s) that are not in any preset. Loading “${d.name}” replaces them.</div>${changeList(changes())}`,
-    `<button data-close-dlg>Cancel</button><button data-save>Save them as preset first…</button><button class="primary" data-force-load="${d.name}">Load and drop changes</button>`);
-  if (d.type==='save') return saveDialog(d);
-  if (d.type==='inspect') return inspectDialog(d);
+function renderEntryForm(idx, ro = false) {
+  const en = state.current.entries[idx];
+  const sc = CATALOG[en.sc];
+  const lock = ro || state.isRunning;
+
+  let html = `<div class="param-sec-head"><span>Identity &amp; Spawning</span><span class="mono tnum" style="color:var(--text)" data-effrate="${idx}">${effectiveRate(en)} bees/min</span></div>`;
+  html += `<div class="param-list">`;
+  html += renderFieldRow({ k: 'label', l: 'Entry label', t: 'text' }, en.label, idx, lock);
+
+  html += `<div class="p-row">
+    <div class="p-lbl"><span>Pattern</span></div>
+    <div class="p-ctl">
+      <div class="seg">
+        <button type="button" class="${en.pattern === 'linear' ? 'on' : ''}" data-pattern="${idx}:linear" ${lock ? 'disabled' : ''}>Linear</button>
+        <button type="button" class="${en.pattern === 'bursts' ? 'on' : ''}" data-pattern="${idx}:bursts" ${lock ? 'disabled' : ''}>Bursts</button>
+      </div>
+    </div>
+  </div>`;
+
+  if (en.pattern === 'bursts') {
+    html += renderFieldRow(SPAWN_FIELDS[1], en.burstSize, idx, lock);
+    html += renderFieldRow(SPAWN_FIELDS[2], en.burstRate, idx, lock);
+  } else {
+    html += renderFieldRow(SPAWN_FIELDS[0], en.rate, idx, lock);
+  }
+  html += renderFieldRow(SPAWN_FIELDS[3], en.maxInFlight, idx, lock);
+  html += `</div>`;
+
+  let curGroup = null;
+  sc.params.forEach(f => {
+    if (f.g !== curGroup) {
+      if (curGroup !== null) html += `</div>`;
+      curGroup = f.g;
+      html += `<div class="param-sec-head"><span>${esc(curGroup)}</span></div><div class="param-list">`;
+    }
+    html += renderFieldRow(f, en.params[f.k], idx, lock);
+  });
+  if (curGroup !== null) html += `</div>`;
+  return html;
+}
+
+function renderPlanForm(ro = false) {
+  const lock = ro || state.isRunning;
+  let html = '';
+  let curGroup = null;
+  PLAN_FIELDS.forEach(f => {
+    if (f.g !== curGroup) {
+      if (curGroup !== null) html += `</div>`;
+      curGroup = f.g;
+      html += `<div class="param-sec-head"><span>${esc(curGroup)}</span></div><div class="param-list">`;
+    }
+    html += renderFieldRow(f, state.current[f.k], -1, lock);
+  });
+  if (curGroup !== null) html += `</div>`;
+  return html;
+}
+
+// =============================================================================
+// 5. Chrome: Prototype Bar, Top Bar, Menus, Plan Header & Launch Strip
+// =============================================================================
+function renderProtoBar() {
+  const V = (id, label) => `<button type="button" class="${state.viewport === id ? 'on' : ''}" data-set-vp="${id}">${label}</button>`;
+  return `<div class="proto-bar">
+    <span class="proto-tag">Plan Draft</span>
+    <div class="proto-group">
+      <div class="proto-pills">
+        ${V('desktop', 'Desktop')}
+        ${V('phone', 'Phone 390px')}
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <div class="proto-group">
+      <span class="proto-lbl">Try:</span>
+      <button type="button" class="proto-jump" data-demo="default">4-entry mix</button>
+      <button type="button" class="proto-jump" data-demo="empty">Empty plan</button>
+      <button type="button" class="proto-jump" data-demo="drift">Run #38 drift</button>
+      <button type="button" class="proto-jump" data-demo="unknown">Run #35 removed</button>
+    </div>
+  </div>`;
+}
+
+function renderTopBar() {
+  const isPhone = state.viewport === 'phone';
+  const histRun = state.viewingRunId ? RUNS.find(r => r.id === state.viewingRunId) : null;
+  return `<header class="topbar">
+    <a class="brand" href="#overview" onclick="return false">
+      ${ICONS.beeMark}
+      <span>Beesharp</span>
+    </a>
+    ${isPhone ? '' : `<nav class="nav" aria-label="Main">
+      <button type="button" class="nav-item active">Overview</button>
+      <button type="button" class="nav-item" data-nav-toast="Calls">Calls</button>
+      <button type="button" class="nav-item" data-nav-toast="Editor (.cs)">Editor</button>
+      <button type="button" class="nav-item" data-nav-toast="Logs">Logs</button>
+      <button type="button" class="nav-item" data-nav-toast="Environment">Environment</button>
+      <button type="button" class="nav-item" data-nav-toast="3D Views">3D Views</button>
+    </nav>`}
+    <div class="top-right">
+      <div class="dd">
+        <button type="button" class="top-pill ${histRun ? 'history' : ''} ${state.menu === 'runs' ? 'on' : ''}" data-menu="runs">
+          <i class="status-dot ${histRun || state.isRunning ? 'run' : ''}"></i>
+          <span>${histRun ? `Run #${histRun.id}` : 'Live · Runs'}</span>
+          <span class="caret">▾</span>
+        </button>
+        ${state.menu === 'runs' ? renderRunsMenu() : ''}
+      </div>
+      ${isPhone ? '' : `<div class="dd">
+        <button type="button" class="top-pill ${state.menu === 'env' ? 'on' : ''}" data-menu="env">
+          <span class="faint">Env</span>
+          <b>${esc(state.env)}</b>
+          <span class="caret">▾</span>
+        </button>
+        ${state.menu === 'env' ? renderEnvMenu() : ''}
+      </div>
+      <button type="button" class="icon-btn" title="Settings" data-nav-toast="Settings">${ICONS.gear}</button>`}
+    </div>
+  </header>`;
+}
+
+function renderRunsMenu() {
+  return `<div class="dd-backdrop" data-close-menu></div>
+  <div class="dd-menu" role="menu">
+    <div class="dd-head">
+      <div class="dd-lbl">Workspace</div>
+      <button type="button" class="dd-row ${!state.viewingRunId ? 'on' : ''}" data-exit-history>
+        <span class="dd-check">${!state.viewingRunId ? '✓' : ''}</span>
+        <span class="dd-main"><b>Live workspace</b><span class="dd-sub">Current editable load plan</span></span>
+      </button>
+    </div>
+    <div class="dd-scroll">
+      <div class="dd-lbl">Stored runs (DuckDB) · inspect what ran</div>
+      ${RUNS.map(r => `<div class="dd-row ${state.viewingRunId === r.id ? 'on' : ''}" style="cursor:default">
+        <span style="flex:none">${r.failed > 0 ? hexIcon('bad') : r.slow > 0 ? hexIcon('warn') : hexIcon('ok')}</span>
+        <span class="dd-main" style="cursor:pointer" data-view-run="${r.id}">
+          <b>Run #${r.id}</b> <span class="muted">· ${esc(r.when)}</span>
+          <span class="dd-sub">${r.plan.entries.length} scenarios · ${r.okPct}% ok${r.drift ? ` · <span style="color:var(--slow)">${esc(r.drift)}</span>` : ''}</span>
+        </span>
+        <button type="button" class="dd-inline-act" data-inspect-run="${r.id}">Setup</button>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderEnvMenu() {
+  return `<div class="dd-backdrop" data-close-menu></div>
+  <div class="dd-menu" role="menu" style="min-width:250px">
+    <div class="dd-head"><div class="dd-lbl">Active environment</div></div>
+    <div class="dd-scroll">
+      ${Object.keys(ENVS).map(name => `<button type="button" class="dd-row ${state.env === name ? 'on' : ''}" data-pick-env="${esc(name)}">
+        <span class="dd-check">${state.env === name ? '✓' : ''}</span>
+        <span class="dd-main"><b>${esc(name)}</b>
+          ${ENVS[name].ShopUrl ? `<span class="dd-sub mono">${esc(ENVS[name].ShopUrl)}</span>` : `<span class="dd-sub">Placeholders stay unresolved</span>`}
+        </span>
+      </button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderLoadPresetMenu() {
+  const names = Object.keys(PRESETS).filter(n => !state.presetFilter || n.toLowerCase().includes(state.presetFilter.toLowerCase()));
+  return `<div class="dd-backdrop" data-close-menu></div>
+  <div class="dd-menu" role="menu" style="min-width:295px">
+    <div class="dd-head">
+      <div class="dd-lbl">Load preset into plan</div>
+      <div class="dd-filter"><input type="text" id="preset-filter-in" placeholder="Filter presets…" value="${esc(state.presetFilter)}" autocomplete="off"></div>
+    </div>
+    <div class="dd-scroll">
+      ${names.length ? names.map(name => {
+        const p = PRESETS[name];
+        return `<button type="button" class="dd-row" data-load-preset="${esc(name)}">
+          <span class="dd-main">
+            <b>${esc(name)}</b>
+            <span class="dd-sub mono">${esc(planSummaryText(p))}</span>
+          </span>
+        </button>`;
+      }).join('') : `<div class="muted" style="padding:10px;font-size:0.79rem">No matching presets.</div>`}
+    </div>
+  </div>`;
+}
+
+function renderPlanHeader() {
+  if (state.viewingRunId) return '';
+  const hasEntries = state.current.entries.length > 0;
+  return `<section class="plan-header" aria-label="Plan header">
+    <div class="plan-identity">
+      <h1>Current plan</h1>
+      <span class="plan-sub-state" data-plan-summary>${esc(planSummaryText(state.current))}</span>
+    </div>
+
+    <div class="plan-toolbar">
+      <button type="button" class="btn ghost danger-hover sm" ${!hasEntries || state.isRunning ? 'disabled' : ''} data-clear-plan title="Remove all scenarios from the current plan">
+        ${ICONS.clear}
+        <span>Clear plan</span>
+      </button>
+      <div class="dd">
+        <button type="button" class="btn ghost sm ${state.menu === 'presets' ? 'on' : ''}" ${state.isRunning ? 'disabled' : ''} data-menu="presets">
+          ${ICONS.folder}
+          <span>Load preset</span>
+          <span class="caret">▾</span>
+        </button>
+        ${state.menu === 'presets' ? renderLoadPresetMenu() : ''}
+      </div>
+      <button type="button" class="btn primary sm" ${state.isRunning ? 'disabled' : ''} data-open-add>+ Add scenario</button>
+    </div>
+  </section>`;
+}
+
+function renderLaunchOrHistoryBar() {
+  if (state.viewingRunId) {
+    const r = RUNS.find(x => x.id === state.viewingRunId);
+    return `<section class="history-banner" aria-label="Stored run">
+      <div class="history-banner-top">
+        <span class="history-tag">Stored Run #${r.id}</span>
+        <b>${esc(r.when)}</b>
+        <span class="muted">Environment: ${esc(r.env)}</span>
+        ${r.drift ? `<span class="drift-chip warn">${esc(r.drift)}</span>` : ''}
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost sm" data-inspect-run="${r.id}">Inspect run setup…</button>
+        <button type="button" class="btn primary sm" data-exit-history>Back to current plan</button>
+      </div>
+      <div class="history-stats tnum">
+        <span>duration <b>${r.dur}</b></span>
+        <span class="good">${hexIcon('ok')} <b>${r.okPct}%</b> ok (${r.finished.toLocaleString()} bees)</span>
+        <span class="${r.failed > 0 ? 'bad' : ''}">${hexIcon('bad')} <b>${r.failed}</b> failed</span>
+        <span class="${r.slow > 0 ? 'warn' : ''}">${hexIcon('warn')} <b>${r.slow}</b> slow</span>
+      </div>
+    </section>`;
+  }
+
+  const p = state.current;
+  const pct = sliderPct(Math.min(p.duration, 1800), 10, 1800);
+
+  return `<section class="launch-bar" aria-label="Run and plan controls">
+    <button type="button" class="start-pill ${state.isRunning ? 'running' : ''}" ${p.entries.length === 0 ? 'disabled' : ''} data-toggle-run>
+      <span class="start-disc">${state.isRunning ? ICONS.stop : ICONS.play}</span>
+      <span>${state.isRunning ? 'Stop run (00:14)' : 'Start run'}</span>
+    </button>
+
+    <div class="launch-dur">
+      <label>Duration</label>
+      <input type="range" class="bs-range" style="--pct:${pct}%" data-range="-1:duration" min="10" max="1800" step="10" value="${Math.min(p.duration, 1800)}" ${state.isRunning ? 'disabled' : ''}>
+      <div class="num-unit-box" style="width:82px;flex-basis:82px">
+        <input type="number" class="bs-num" data-num="-1:duration" min="10" max="3600" step="10" value="${p.duration}" ${state.isRunning ? 'disabled' : ''}>
+        <span class="bs-unit">s</span>
+      </div>
+      <span class="muted mono" style="font-size:0.72rem;min-width:30px" data-dur-human>${fmtDurationHuman(p.duration)}</span>
+    </div>
+
+    <div class="launch-chips">
+      <button type="button" class="plan-pill ${state.openTarget === -1 ? 'active' : ''}" data-select-target="-1" title="Configure plan limits and lifecycle scripts">
+        <span>Max in-flight</span> <b>${p.maxConc}</b>
+      </button>
+      <button type="button" class="plan-pill ${state.openTarget === -1 ? 'active' : ''}" data-select-target="-1" title="Preflight script">
+        <span>Preflight</span> <b>${esc(p.preflight)}</b>
+      </button>
+      <button type="button" class="plan-pill ${state.openTarget === -1 ? 'active' : ''}" data-select-target="-1" title="Shutdown script">
+        <span>Shutdown</span> <b>${esc(p.shutdown)}</b>
+      </button>
+      <button type="button" class="plan-pill ${state.openTarget === -1 ? 'active' : ''}" data-select-target="-1">
+        ${ICONS.sliders}
+        <span>Plan settings</span>
+      </button>
+    </div>
+  </section>`;
+}
+
+// =============================================================================
+// 6. Compact Technical Scenario Cards + Right Inspector Drawer (No Top Tabs)
+// =============================================================================
+function renderEmptyPlan() {
+  return `<section class="empty-plan">
+    <h2>Current plan is empty</h2>
+    <p>Add a scenario from the catalog or load a starter preset to begin configuring your load mix.</p>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button type="button" class="btn ghost sm" data-menu="presets">${ICONS.folder} Load preset…</button>
+      <button type="button" class="btn primary sm" data-open-add>+ Add scenario</button>
+    </div>
+  </section>`;
+}
+
+function renderCardsGrid() {
+  const plan = state.viewingRunId ? RUNS.find(r => r.id === state.viewingRunId).plan : state.current;
+  const ro = !!state.viewingRunId;
+  if (!ro && plan.entries.length === 0) return renderEmptyPlan();
+
+  const totalRate = plan.entries.reduce((s, e) => s + effectiveRate(e), 0);
+
+  const cards = plan.entries.map((en, idx) => {
+    const sc = CATALOG[en.sc];
+    const numTag = String(idx + 1).padStart(2, '0');
+
+    if (!sc) {
+      return `<article class="sc-card" style="border-left-color:var(--failed)">
+        <div class="sc-head">
+          <span class="sc-idx">#${numTag}</span>
+          <div class="sc-title-wrap"><span class="sc-name">${esc(en.label)}</span><span class="sc-type">${esc(en.sc)}</span></div>
+          <span class="drift-chip bad">unknown</span>
+        </div>
+        <div style="padding:10px"><div class="callout bad" style="margin:0"><div>Scenario “${esc(en.sc)}” is no longer registered. Click “Inspect run setup” above to view stored parameters.</div></div></div>
+      </article>`;
+    }
+
+    if (ro) {
+      const st = sc.stats;
+      return `<article class="sc-card" style="cursor:default">
+        <div class="sc-head">
+          <span class="sc-idx">#${numTag}</span>
+          <div class="sc-title-wrap"><span class="sc-name">${esc(en.label)}</span><span class="sc-type">${esc(sc.codeId)} · ${effectiveRate(en)}/min</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:9px 10px 4px">
+          <span class="sc-rate-val" style="${st.failed === 0 && st.slow === 0 ? 'color:var(--good)' : ''}">${st.okPct.toFixed(1)}<small>% ok</small></span>
+          <span class="spacer"></span>
+          ${st.failed > 0 ? `<span class="sc-badge bad">${hexIcon('bad')} ${st.failed}</span>` : ''}
+          ${st.slow > 0 ? `<span class="sc-badge warn">${hexIcon('warn')} ${st.slow}</span>` : ''}
+        </div>
+        ${renderMiniBars(idx + 2, st.failed > 0, st.slow > 0)}
+      </article>`;
+    }
+
+    const rate = effectiveRate(en);
+    const sharePct = totalRate > 0 ? Math.round((rate / totalRate) * 100) : 0;
+    const estBees = Math.round(rate * (plan.duration / 60));
+    const patLabel = en.pattern === 'bursts' ? `BURST ${en.burstSize}×${en.burstRate}` : 'LINEAR';
+    const isSel = state.openTarget === idx;
+
+    const specItems = sc.params.map(f => {
+      const valStr = fmtVal(en.params[f.k], f);
+      return `<div class="spec-item ${f.wide ? 'wide' : ''}">
+        <span class="spec-k">${esc(f.sk || f.k)}</span>
+        <span class="spec-v" data-card-kv="${idx}:${f.k}" title="${esc(f.l)}: ${esc(valStr)}">${esc(valStr)}</span>
+      </div>`;
+    }).join('');
+
+    const stepNodes = sc.steps.map((step, sIdx) =>
+      `${sIdx > 0 ? '<span class="step-sep">›</span>' : ''}<span class="step-node"><i>${String(step.n).padStart(2, '0')}</i>${esc(step.name)}</span>`
+    ).join('');
+
+    return `<article class="sc-card ${isSel ? 'selected' : ''}" data-select-target="${idx}">
+      <div class="sc-head">
+        <span class="sc-idx">#${numTag}</span>
+        <div class="sc-title-wrap">
+          <span class="sc-name" data-card-label="${idx}">${esc(en.label)}</span>
+          <span class="sc-type">${esc(sc.codeId)}</span>
+        </div>
+        <div class="sc-actions" onclick="event.stopPropagation()">
+          <button type="button" class="icon-btn xs" ${state.isRunning ? 'disabled' : ''} data-dup-entry="${idx}" title="Duplicate">${ICONS.copy}</button>
+          <button type="button" class="icon-btn xs danger" ${state.isRunning ? 'disabled' : ''} data-delete-entry="${idx}" title="Remove">${ICONS.trash}</button>
+        </div>
+      </div>
+
+      <div class="sc-telemetry">
+        <div class="sc-rate-row">
+          ${state.isRunning
+            ? `<span class="sc-rate-val run">${12 + idx * 7}<small>active</small></span>`
+            : `<span class="sc-rate-val"><span data-card-rate="${idx}">${rate}</span><small>bees/min</small></span>`}
+          <span class="meta-badge" data-card-pat="${idx}">${esc(patLabel)}</span>
+        </div>
+        <div class="share-track" title="${sharePct}% of total plan rate">
+          <i data-card-sharebar="${idx}" style="width:${sharePct}%"></i>
+        </div>
+        <div class="sc-kpis">
+          <div class="sc-kpi"><span>mix</span><b data-card-share="${idx}">${sharePct}%</b></div>
+          <div class="sc-kpi"><span>est</span><b data-card-est="${idx}">~${fmtCompactNum(estBees)}</b></div>
+          <div class="sc-kpi"><span>cap</span><b data-card-maxinf="${idx}">${en.maxInFlight}</b></div>
+        </div>
+      </div>
+
+      <div class="spec-grid">${specItems}</div>
+
+      <div class="step-pipe" title="Declared scenario pipeline">${stepNodes}</div>
+    </article>`;
+  }).join('');
+
+  const addTile = ro ? '' : `<button type="button" class="card-add" ${state.isRunning ? 'disabled' : ''} data-open-add>
+    <span class="plus-ring">+</span>
+    <b style="font-size:0.8rem">Add scenario</b>
+    <span class="mono" style="font-size:0.68rem;color:var(--faint)">Append to load mix</span>
+  </button>`;
+
+  return `<div class="cards-grid">${cards}${addTile}</div>`;
+}
+
+function renderInspectorDrawer(inSheet = false) {
+  if (state.viewingRunId) return '';
+  if (inSheet && state.openTarget === null) return '';
+
+  const t = state.openTarget;
+  const isPlan = t === -1;
+  const en = (t !== null && !isPlan) ? state.current.entries[t] : null;
+  const sc = en ? CATALOG[en.sc] : null;
+
+  let inner;
+  if (t === null || (!isPlan && !en)) {
+    inner = `<div class="insp-idle">
+      <div>Select a scenario box or <b>Plan settings</b> to configure parameters.</div>
+    </div>`;
+  } else {
+    const kicker = isPlan ? 'PLAN CONFIGURATION' : `ENTRY #${String(t + 1).padStart(2, '0')} · ${sc.codeId}`;
+    const subTitle = isPlan
+      ? 'Duration, concurrency ceiling & lifecycle hooks'
+      : (sc.name.toLowerCase() === en.label.toLowerCase() ? sc.desc : sc.name);
+
+    inner = `<div class="insp-head">
+      <div class="insp-head-titles">
+        <div class="kicker">${esc(kicker)}</div>
+        <h2>${isPlan ? 'Plan &amp; Lifecycle' : esc(en.label)}</h2>
+        <div class="sub">${esc(subTitle)}</div>
+      </div>
+      ${!isPlan ? `<button type="button" class="icon-btn danger" ${state.isRunning ? 'disabled' : ''} data-delete-entry="${t}" title="Remove entry from plan">${ICONS.trash}</button>` : ''}
+      <button type="button" class="icon-btn" data-close-inspector title="Close panel">${ICONS.close}</button>
+    </div>
+    <div class="insp-body">
+      ${state.isRunning ? `<div class="callout neutral"><div>Run in progress — stop the run to edit parameters.</div></div>` : ''}
+      ${isPlan ? renderPlanForm() : renderEntryForm(t)}
+    </div>`;
+  }
+
+  if (inSheet) {
+    return `<div class="phone-sheet-shade" data-close-inspector></div>
+      <aside class="phone-sheet" aria-label="Inspector"><div class="sheet-grab"><i></i></div>${inner}</aside>`;
+  }
+  return `<aside class="inspector-drawer" aria-label="Scenario and plan inspector">${inner}</aside>`;
+}
+
+// =============================================================================
+// 7. Modals: Add Scenario & Stored Run Setup Inspector
+// =============================================================================
+function renderModal() {
+  const d = state.dialog;
+  if (!d) return '';
+
+  if (d.type === 'add') {
+    return modalShell(
+      `Add scenario to current plan`,
+      `<div style="display:flex;flex-direction:column;gap:8px">
+        ${Object.entries(CATALOG).map(([id, sc]) => `<button type="button" class="pick-card" data-add-sc="${id}">
+          <div style="flex:1">
+            <b style="color:var(--title)">${esc(sc.name)}</b> <span class="mono faint" style="font-size:0.72rem;margin-left:5px">${esc(sc.codeId)}</span>
+            <div class="muted" style="font-size:0.76rem;margin-top:2px">${esc(sc.desc)}</div>
+          </div>
+          <span class="meta-badge">${sc.params.length}p · ${sc.steps.length}s</span>
+        </button>`).join('')}
+      </div>`,
+      `<button type="button" class="btn ghost sm" data-close-dlg>Cancel</button>`
+    );
+  }
+
+  if (d.type === 'inspect') {
+    return renderInspectRunModal(d.id);
+  }
   return '';
 }
-function shell(title, body, foot) { return `<div class="shade" data-shade><div class="dlg"><header>${title}</header><div class="body">${body}</div><footer>${foot}</footer></div></div>`; }
-function saveDialog(d) {
-  const names = Object.keys(state.presets);
-  const target = d.mode==='over' ? d.target : null; const tp = target ? state.presets[target] : null;
-  const exists = d.mode==='new' && names.some(n=>n.toLowerCase()===d.name.trim().toLowerCase());
-  const overDiff = target ? diff(presetPlan(target), state.current) : [];
-  const body = `
-    <div class="opt ${d.mode==='new'?'on':''}" data-savemode="new"><input type="radio" ${d.mode==='new'?'checked':''}><div style="flex:1">
-      <b>New preset</b><br><input type="text" id="newname" value="${d.name}" placeholder="Name" style="width:100%;margin-top:6px">
-      ${exists?`<div class="small" style="color:var(--slow);margin-top:4px">A preset with this name exists. Pick “Overwrite” below to replace it.</div>`:''}</div></div>
-    <div class="opt ${d.mode==='over'?'on':''}" data-savemode="over"><input type="radio" ${d.mode==='over'?'checked':''}><div style="flex:1">
-      <b>Overwrite a preset</b><br><select id="overname" style="margin-top:6px">${names.map(n=>`<option ${n===target?'selected':''}>${n}</option>`).join('')}</select>
-      ${target ? `<div class="small muted" style="margin-top:6px">${overDiff.length} difference(s) to what “${target}” holds now:</div>${changeList(overDiff).replace(/<button[^>]*>↺<\/button>/g,'')}
-        ${tp.code?`<div class="info">“${target}” comes from code. Overwriting saves your version next to it; <b>Reset to code</b> in the Presets menu brings the original back.</div>`
-          :`<div class="warn">“${target}” is replaced for everyone using this server. This cannot be undone.</div>`}`:''}</div></div>`;
-  const ok = d.mode==='new' ? (d.name.trim() && !exists) : !!target;
-  const btn = d.mode==='new' ? `<button class="primary" ${ok?'':'disabled'} data-do-save>Save new preset</button>`
-                             : `<button class="primary ${tp&&!tp.code?'danger':''}" ${ok?'':'disabled'} data-do-save>Overwrite “${target}”</button>`;
-  return shell('Save current plan as preset', body, `<button data-close-dlg>Cancel</button>${btn}`);
-}
-function inspectDialog(d) {
-  const r = RUNS.find(x=>x.id===d.id); const p = r.plan;
-  const parts = [];
-  parts.push(`<p class="muted small">What run #${r.id} (${r.when}, from “${r.preset}”) ran with. Stored with the run, so it shows even if the preset or the scenario code changed since.</p>`);
-  parts.push(`<h5 style="margin:12px 0 4px" class="muted small">PLAN</h5>` + PLANF.map(f=>fieldRow(f, p[f.k], -1, true)).join(''));
-  p.entries.forEach((en,i)=>{
+
+function renderInspectRunModal(runId) {
+  const r = RUNS.find(x => x.id === runId);
+  const p = r.plan;
+  let addedCount = 0, goneCount = 0, unknownScCount = 0;
+
+  p.entries.forEach(en => {
     const sc = CATALOG[en.sc];
-    parts.push(`<h5 style="margin:16px 0 4px">${en.label} <span class="muted small">${sc?sc.name:en.sc}</span></h5>`);
-    if (!sc) { parts.push(`<div class="badline">Scenario “${en.sc}” is not known to this server any more. Values are shown as stored; this entry cannot be loaded.</div>`);
-      Object.entries(en.params).forEach(([k,v])=>parts.push(fieldRow({k,l:k,t:'text'}, v, i, true))); return; }
-    SPAWN.forEach(f=>parts.push(fieldRow(f, en[f.k], i, true)));
-    const known = new Set(sc.params.map(f=>f.k));
-    sc.params.forEach(f=>{ const has = f.k in en.params;
-      parts.push(fieldRow(f, has?en.params[f.k]:f.d, i, true, has?{}:{ note:`new since this run · would use default ${fmt(f.d,f)}`, noteColor:'var(--slow)' })); });
-    Object.keys(en.params).filter(k=>!known.has(k)).forEach(k=>parts.push(fieldRow({k,l:k,t:'text'}, en.params[k], i, true, { gone:true, note:'no longer a parameter of this scenario · dropped when loaded', noteColor:'var(--slow)' })));
+    if (!sc) { unknownScCount++; return; }
+    const known = new Set(sc.params.map(f => f.k));
+    sc.params.forEach(f => { if (!(f.k in en.params)) addedCount++; });
+    Object.keys(en.params).forEach(k => { if (!known.has(k)) goneCount++; });
   });
-  const unknown = p.entries.some(en=>!CATALOG[en.sc]);
-  return shell(`Setup of run #${r.id}`, parts.join(''), `<button data-close-dlg>Close</button>
-    <button class="primary" data-use-run="${r.id}">Load into current plan${unknown?' (known entries)':''}</button>`);
+
+  const sections = [];
+  sections.push(`<div class="param-sec-head" style="margin-top:6px"><span>Plan Limits &amp; Programs</span></div><div class="param-list">
+    ${PLAN_FIELDS.map(f => renderFieldRow(f, p[f.k], -1, true)).join('')}
+  </div>`);
+
+  p.entries.forEach((en, i) => {
+    const sc = CATALOG[en.sc];
+    sections.push(`<div class="param-sec-head"><span>Entry #${String(i + 1).padStart(2, '0')} · ${esc(en.label)}</span><span class="mono">${sc ? esc(sc.codeId) : esc(en.sc)}</span></div>`);
+    if (!sc) {
+      sections.push(`<div class="callout bad"><div>Scenario <b>“${esc(en.sc)}”</b> is no longer registered on this server. Stored values are shown below; loading this run skips this entry.</div></div>
+        <div class="param-list">${Object.entries(en.params).map(([k, v]) => renderFieldRow({ k, l: k, t: 'text', mono: true }, v, i, true)).join('')}</div>`);
+      return;
+    }
+    const rows = [];
+    rows.push(renderFieldRow(SPAWN_FIELDS[0], effectiveRate(en), i, true));
+    rows.push(renderFieldRow(SPAWN_FIELDS[3], en.maxInFlight, i, true));
+    const known = new Set(sc.params.map(f => f.k));
+    sc.params.forEach(f => {
+      const has = f.k in en.params;
+      rows.push(renderFieldRow(
+        f,
+        has ? en.params[f.k] : f.d,
+        i,
+        true,
+        has ? {} : { note: `<span class="drift-chip warn">Added since run · uses default ${esc(fmtVal(f.d, f))}</span>` }
+      ));
+    });
+    Object.keys(en.params).filter(k => !known.has(k)).forEach(k => {
+      rows.push(renderFieldRow(
+        { k, l: k, t: 'text', mono: true },
+        en.params[k],
+        i,
+        true,
+        { gone: true, note: `<span class="drift-chip warn">Removed from code · dropped when loaded</span>` }
+      ));
+    });
+    sections.push(`<div class="param-list">${rows.join('')}</div>`);
+  });
+
+  const hasDrift = addedCount || goneCount || unknownScCount;
+  return modalShell(
+    `Run #${r.id} Setup Snapshot`,
+    `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:0.79rem" class="muted">
+      <span>${esc(r.when)}</span><span>·</span>
+      <span>Environment: <b style="color:var(--text)">${esc(r.env)}</b></span><span>·</span>
+      <span style="color:${r.failed > 0 ? 'var(--failed)' : 'var(--good)'};font-weight:600">${r.okPct}% ok</span>
+    </div>
+    ${hasDrift ? `<div class="callout warn">
+      <div><b>Code evolved since Run #${r.id}:</b>
+        ${[
+          unknownScCount ? `${unknownScCount} scenario no longer registered` : '',
+          addedCount ? `${addedCount} new parameter (uses default)` : '',
+          goneCount ? `${goneCount} retired parameter (ignored on load)` : ''
+        ].filter(Boolean).join(' · ')}.
+      </div>
+    </div>` : `<div class="callout neutral"><div>Stored snapshot is 100% compatible with current scenario definitions.</div></div>`}
+    ${sections.join('')}`,
+    `<button type="button" class="btn ghost sm" data-close-dlg>Close</button>
+     <button type="button" class="btn primary sm" data-load-from-run="${r.id}">
+       Load into current plan${unknownScCount ? ' (compatible entries)' : ''}
+     </button>`
+  );
 }
 
-// ---------------------------------------------------------------- main render
+function modalShell(title, body, foot) {
+  return `<div class="modal-shade" data-shade-close>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3>${title}</h3>
+        <button type="button" class="icon-btn xs" data-close-dlg aria-label="Close">${ICONS.close}</button>
+      </div>
+      <div class="modal-body">${body}</div>
+      <div class="modal-foot">${foot}</div>
+    </div>
+  </div>`;
+}
+
+// =============================================================================
+// 8. Root Render + Smooth 60fps Live Updates
+// =============================================================================
 function render() {
-  const page = state.layout==='A' ? cardsView() : state.layout==='B' ? tableView() : splitView();
-  document.getElementById('app').innerHTML = draftBar() + topBar() + stateBar() +
-    `<main><div class="page">${page}${historySection()}</div>${state.layout==='A'?sidePanel():''}</main>` + dialog() +
-    (state.toast?`<div class="toast">${state.toast}</div>`:'');
+  const isPhone = state.viewport === 'phone';
+  const showDesktopDrawer = !isPhone && !state.viewingRunId;
+  const showPhoneSheet = (isPhone || window.innerWidth <= 860) && !state.viewingRunId && state.openTarget !== null;
+
+  const phoneTabBar = isPhone ? `<nav class="phone-tabbar" aria-label="Mobile tabs">
+    <button type="button" class="on">Overview</button>
+    <button type="button" data-nav-toast="Calls">Calls</button>
+    <button type="button" data-nav-toast="Editor">Editor</button>
+    <button type="button" data-nav-toast="Logs">Logs</button>
+    <button type="button" data-nav-toast="Environment">Env</button>
+  </nav>` : '';
+
+  document.getElementById('root').innerHTML = `
+    ${renderProtoBar()}
+    <div class="viewport-wrap ${isPhone ? 'is-phone' : ''}">
+      <div class="app-frame">
+        ${renderTopBar()}
+        <div class="workspace ${showDesktopDrawer ? 'has-drawer' : ''}">
+          <main class="page-wrap">
+            ${renderPlanHeader()}
+            ${renderLaunchOrHistoryBar()}
+            ${renderCardsGrid()}
+          </main>
+          ${showDesktopDrawer ? renderInspectorDrawer(false) : ''}
+        </div>
+        ${showPhoneSheet ? renderInspectorDrawer(true) : ''}
+        ${phoneTabBar}
+      </div>
+    </div>
+    ${renderModal()}
+    ${state.toast ? `<div class="toast"><span>${esc(state.toast.msg)}</span>${state.toast.withUndo ? `<button type="button" class="toast-undo" data-undo-plan>Undo</button>` : ''}</div>` : ''}
+  `;
 }
 
-// ---------------------------------------------------------------- events
-const app = document.getElementById('app');
-app.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-layout],[data-mode],[data-menu],[data-load],[data-reset],[data-inspect],[data-open],[data-close],[data-rev],[data-revert-all],[data-save],[data-show-changes],[data-close-dlg],[data-force-load],[data-savemode],[data-do-save],[data-use-run],[data-toggle-edit],[data-plan-setup],[data-shade]');
-  if (!t) { if (state.menu) { state.menu=null; render(); } return; }
+function mutateField(e, k, val, skipFullRender = false) {
+  if (e < 0) {
+    state.current[k] = val;
+  } else {
+    const en = state.current.entries[e];
+    if (k in en && k !== 'params') en[k] = val;
+    else en.params[k] = val;
+  }
+  if (!skipFullRender) {
+    render();
+    return;
+  }
+  const id = `${e}:${k}`;
+  document.querySelectorAll(`[data-range="${id}"]`).forEach(r => {
+    if (r !== document.activeElement) r.value = val;
+    r.style.setProperty('--pct', sliderPct(val, +r.min, +r.max) + '%');
+  });
+  document.querySelectorAll(`[data-num="${id}"]`).forEach(n => {
+    if (n !== document.activeElement) n.value = val;
+  });
+  if (e === -1 && k === 'duration') {
+    document.querySelectorAll('[data-dur-human]').forEach(el => { el.textContent = fmtDurationHuman(val); });
+  }
+  if (e >= 0) {
+    document.querySelectorAll(`[data-effrate="${e}"]`).forEach(el => {
+      el.textContent = effectiveRate(state.current.entries[e]) + ' bees/min';
+    });
+  }
+  const summaryEl = document.querySelector('[data-plan-summary]');
+  if (summaryEl) summaryEl.textContent = planSummaryText(state.current);
+
+  const totalRate = state.current.entries.reduce((s, item) => s + effectiveRate(item), 0);
+  state.current.entries.forEach((item, idx) => {
+    const r = effectiveRate(item);
+    const share = totalRate > 0 ? Math.round((r / totalRate) * 100) : 0;
+    const est = Math.round(r * (state.current.duration / 60));
+    const rateEl = document.querySelector(`[data-card-rate="${idx}"]`);
+    if (rateEl) rateEl.textContent = r;
+    const barEl = document.querySelector(`[data-card-sharebar="${idx}"]`);
+    if (barEl) barEl.style.width = `${share}%`;
+    const shareEl = document.querySelector(`[data-card-share="${idx}"]`);
+    if (shareEl) shareEl.textContent = `${share}%`;
+    const estEl = document.querySelector(`[data-card-est="${idx}"]`);
+    if (estEl) estEl.textContent = `~${fmtCompactNum(est)}`;
+    const maxEl = document.querySelector(`[data-card-maxinf="${idx}"]`);
+    if (maxEl) maxEl.textContent = item.maxInFlight;
+    const lblEl = document.querySelector(`[data-card-label="${idx}"]`);
+    if (lblEl) lblEl.textContent = item.label;
+    const patEl = document.querySelector(`[data-card-pat="${idx}"]`);
+    if (patEl) patEl.textContent = item.pattern === 'bursts' ? `BURST ${item.burstSize}×${item.burstRate}` : 'LINEAR';
+  });
+  if (e >= 0) {
+    const f = fieldOf(k);
+    const kvEl = document.querySelector(`[data-card-kv="${e}:${k}"]`);
+    if (kvEl) kvEl.textContent = fmtVal(val, f);
+  }
+
+  const envPrev = document.querySelector(`[data-envprev="${id}"]`);
+  if (envPrev && typeof val === 'string') {
+    const res = resolvePlaceholders(val);
+    if (res) envPrev.innerHTML = `<span class="faint">→</span> <span class="${res.hasUnknown ? 'warn' : ''}">${esc(res.resolved)}</span> <span class="faint">(${esc(state.env)})</span>`;
+  }
+}
+
+// =============================================================================
+// 9. Event Delegation
+// =============================================================================
+const root = document.getElementById('root');
+
+root.addEventListener('click', ev => {
+  const t = ev.target.closest(
+    '[data-set-vp],[data-demo],[data-menu],[data-close-menu],[data-pick-env],' +
+    '[data-load-preset],[data-clear-plan],[data-undo-plan],[data-select-target],[data-close-inspector],' +
+    '[data-toggle],[data-pattern],[data-open-add],[data-add-sc],' +
+    '[data-delete-entry],[data-dup-entry],[data-list-add],[data-list-del],[data-toggle-run],' +
+    '[data-view-run],[data-exit-history],[data-inspect-run],[data-load-from-run],[data-close-dlg],[data-shade-close],[data-nav-toast]'
+  );
+  if (!t) return;
   const ds = t.dataset;
-  if ('shade' in ds && ev.target!==t) return;
-  if (ds.layout) { state.layout=ds.layout; state.open = ds.layout==='A'?null:(state.open??0); }
-  else if (ds.mode) { state.editMode=ds.mode; state.editing=false; }
-  else if (ds.menu) { state.menu = state.menu===ds.menu?null:ds.menu; render(); return; }
-  else if (ds.load) { state.menu=null; if (changes().length) state.dialog={type:'load',name:ds.load}; else { loadPreset(ds.load); toast('Loaded “'+ds.load+'” into the current plan'); return; } }
-  else if (ds.forceLoad) { loadPreset(ds.forceLoad); state.dialog=null; toast('Loaded “'+ds.forceLoad+'”'); return; }
-  else if (ds.reset) { state.menu=null; resetCode(ds.reset); return; }
-  else if (ds.inspect) { state.menu=null; state.dialog={type:'inspect', id:+ds.inspect}; }
-  else if ('planSetup' in ds) { state.open = -1; }
-  else if (ds.open!==undefined) { const i=+ds.open; state.open = (state.layout==='B' && state.open===i) ? null : i; }
-  else if ('close' in ds) { state.open=null; }
-  else if (ds.rev) { const [e,k]=ds.rev.split(':'); revert(+e,k); return; }
-  else if ('revertAll' in ds) { revertAll(); return; }
-  else if ('save' in ds) { state.dialog={type:'save', mode:'new', name: state.origin+' (copy)', target:null}; }
-  else if ('showChanges' in ds) { state.dialog={type:'changes'}; }
-  else if ('closeDlg' in ds || 'shade' in ds) { state.dialog=null; }
-  else if (ds.savemode) { const d=state.dialog; d.mode=ds.savemode; if (d.mode==='over' && !d.target) d.target=state.origin; }
-  else if ('doSave' in ds) { const d=state.dialog; savePreset(d.mode==='new'?d.name.trim():d.target, d.mode==='over'); return; }
-  else if (ds.useRun) { const r=RUNS.find(x=>x.id===+ds.useRun); const p=clone(r.plan);
-    p.entries = p.entries.filter(en=>CATALOG[en.sc]).map(en=>{ const sc=CATALOG[en.sc]; const params={}; sc.params.forEach(f=>params[f.k]= f.k in en.params?en.params[f.k]:f.d); return {...en, params}; });
-    state.current=p; state.base=clone(p); state.origin='run #'+r.id; state.dialog=null; toast('Run #'+r.id+'’s setup is now the current plan'); return; }
-  else if ('toggleEdit' in ds) { state.editing=!state.editing; }
-  render();
+
+  if ('shadeClose' in ds && ev.target !== t) return;
+  if ('closeMenu' in ds) { state.menu = null; render(); return; }
+  if ('closeDlg' in ds || 'shadeClose' in ds) { state.dialog = null; render(); return; }
+  if (ds.navToast) { showToast(`${ds.navToast} — draft focuses on Plan Editing`); return; }
+
+  if (ds.setVp) { state.viewport = ds.setVp; render(); return; }
+  if (ds.demo) {
+    state.dialog = null; state.menu = null; state.isRunning = false; state.viewingRunId = null;
+    if (ds.demo === 'default') { state.current = clone(PRESETS['Black Friday']); state.openTarget = 0; }
+    else if (ds.demo === 'empty') { state.current = { ...clone(PRESETS['Black Friday']), entries: [] }; state.openTarget = null; }
+    else if (ds.demo === 'drift') { state.dialog = { type: 'inspect', id: 38 }; }
+    else if (ds.demo === 'unknown') { state.dialog = { type: 'inspect', id: 35 }; }
+    render();
+    return;
+  }
+  if (ds.menu) { state.menu = state.menu === ds.menu ? null : ds.menu; render(); return; }
+  if (ds.pickEnv) { state.env = ds.pickEnv; state.menu = null; showToast(`Environment switched to ${state.env}`); return; }
+  if (ds.loadPreset) {
+    state.undoPlan = clone(state.current);
+    state.current = clone(PRESETS[ds.loadPreset]);
+    state.viewingRunId = null;
+    state.menu = null;
+    state.openTarget = state.current.entries.length ? 0 : null;
+    showToast(`Loaded preset “${ds.loadPreset}”`, true);
+    return;
+  }
+  if ('clearPlan' in ds) {
+    if (state.current.entries.length === 0) return;
+    state.undoPlan = clone(state.current);
+    const count = state.current.entries.length;
+    state.current.entries = [];
+    state.openTarget = null;
+    showToast(`Cleared ${count} scenario${count === 1 ? '' : 's'} from plan`, true);
+    return;
+  }
+  if ('undoPlan' in ds) {
+    if (state.undoPlan) {
+      state.current = state.undoPlan;
+      state.undoPlan = null;
+      state.toast = null;
+      state.openTarget = state.current.entries.length ? 0 : null;
+      render();
+    }
+    return;
+  }
+  if (ds.selectTarget !== undefined) {
+    if (state.viewingRunId) return;
+    state.openTarget = +ds.selectTarget;
+    render();
+    return;
+  }
+  if ('closeInspector' in ds) { state.openTarget = null; render(); return; }
+  if (ds.toggle) {
+    const [e, k] = ds.toggle.split(':');
+    const cur = +e < 0 ? state.current[k] : state.current.entries[+e].params[k];
+    mutateField(+e, k, !cur);
+    return;
+  }
+  if (ds.pattern) {
+    const [e, pat] = ds.pattern.split(':');
+    mutateField(+e, 'pattern', pat);
+    return;
+  }
+  if ('openAdd' in ds) { state.dialog = { type: 'add' }; render(); return; }
+  if (ds.addSc) {
+    const sc = CATALOG[ds.addSc];
+    state.current.entries.push(makeEntry(ds.addSc, sc.name, 60));
+    state.openTarget = state.current.entries.length - 1;
+    state.dialog = null;
+    showToast(`Added “${sc.name}”`);
+    return;
+  }
+  if (ds.dupEntry !== undefined) {
+    const idx = +ds.dupEntry;
+    const orig = state.current.entries[idx];
+    const copy = clone(orig);
+    copy.label = `${orig.label} (copy)`;
+    state.current.entries.splice(idx + 1, 0, copy);
+    state.openTarget = idx + 1;
+    showToast(`Duplicated “${orig.label}”`);
+    return;
+  }
+  if (ds.deleteEntry !== undefined) {
+    const idx = +ds.deleteEntry;
+    state.undoPlan = clone(state.current);
+    const removed = state.current.entries.splice(idx, 1)[0];
+    state.openTarget = state.current.entries.length ? Math.min(idx, state.current.entries.length - 1) : null;
+    showToast(`Removed “${removed.label}”`, true);
+    return;
+  }
+  if (ds.listAdd) {
+    const [e, k] = ds.listAdd.split(':');
+    state.current.entries[+e].params[k].push('/api/new-step');
+    render();
+    return;
+  }
+  if (ds.listDel) {
+    const [e, k, idx] = ds.listDel.split(':');
+    state.current.entries[+e].params[k].splice(+idx, 1);
+    render();
+    return;
+  }
+  if ('toggleRun' in ds) {
+    state.isRunning = !state.isRunning;
+    render();
+    return;
+  }
+  if (ds.viewRun) {
+    state.viewingRunId = +ds.viewRun;
+    state.menu = null;
+    render();
+    return;
+  }
+  if ('exitHistory' in ds) {
+    state.viewingRunId = null;
+    state.menu = null;
+    render();
+    return;
+  }
+  if (ds.inspectRun) {
+    state.menu = null;
+    state.dialog = { type: 'inspect', id: +ds.inspectRun };
+    render();
+    return;
+  }
+  if (ds.loadFromRun) {
+    const r = RUNS.find(x => x.id === +ds.loadFromRun);
+    state.undoPlan = clone(state.current);
+    const p = clone(r.plan);
+    p.entries = p.entries.filter(en => CATALOG[en.sc]).map(en => {
+      const sc = CATALOG[en.sc];
+      const cleanParams = {};
+      sc.params.forEach(f => { cleanParams[f.k] = (f.k in en.params) ? clone(en.params[f.k]) : clone(f.d); });
+      return { ...en, pattern: en.pattern || 'linear', burstSize: en.burstSize || 15, burstRate: en.burstRate || 6, params: cleanParams };
+    });
+    state.current = p;
+    state.viewingRunId = null;
+    state.dialog = null;
+    state.openTarget = p.entries.length ? 0 : null;
+    showToast(`Loaded Run #${r.id} setup into current plan`, true);
+  }
 });
-app.addEventListener('input', ev => {
+
+root.addEventListener('input', ev => {
   const el = ev.target;
-  if (el.id==='newname') { state.dialog.name = el.value; const pos=el.selectionStart; render(); const n=document.getElementById('newname'); n.focus(); n.setSelectionRange(pos,pos); return; }
-  if (!el.dataset.id) return;
-  const [e,k] = el.dataset.id.split(':'); const f = fieldOf(k);
-  let v = el.type==='checkbox' ? el.checked : el.value;
-  if (f.t==='int') v = parseInt(v,10); if (f.t==='float') v = Math.round(parseFloat(v)*10)/10;
-  if ((f.t==='int'||f.t==='float') && isNaN(v)) return;
-  const pos = el.selectionStart; const tag = el.type;
-  setVal(+e, k, v);
-  const again = app.querySelector(`[data-id="${el.dataset.id}"][type="${tag}"]`) || app.querySelector(`[data-id="${el.dataset.id}"]`);
-  if (again && tag!=='checkbox') { again.focus(); try { if (pos!=null) again.setSelectionRange(pos,pos); } catch {} }
+  if (el.id === 'preset-filter-in') {
+    state.presetFilter = el.value;
+    const pos = el.selectionStart;
+    render();
+    const again = document.getElementById('preset-filter-in');
+    if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+    return;
+  }
+  const key = el.dataset.range || el.dataset.num || el.dataset.input;
+  if (key) {
+    const [e, k] = key.split(':');
+    const f = fieldOf(k);
+    let v = el.value;
+    if (f.t === 'int') { v = parseInt(v, 10); if (isNaN(v)) return; }
+    else if (f.t === 'float') { v = Math.round(parseFloat(v) * 100) / 100; if (isNaN(v)) return; }
+    mutateField(+e, k, v, true);
+    return;
+  }
+  if (el.dataset.listInput) {
+    const [e, k, idx] = el.dataset.listInput.split(':');
+    state.current.entries[+e].params[k][+idx] = el.value;
+    mutateField(+e, k, state.current.entries[+e].params[k], true);
+  }
 });
-app.addEventListener('change', ev => { if (ev.target.id==='overname') { state.dialog.target = ev.target.value; render(); } });
+
+root.addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.range || el.dataset.num || el.dataset.input || el.dataset.listInput) {
+    render();
+  }
+});
+
+window.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') {
+    if (state.menu) { state.menu = null; render(); }
+    else if (state.dialog) { state.dialog = null; render(); }
+    else if (state.openTarget !== null) { state.openTarget = null; render(); }
+  }
+});
+
 render();
 </script>
 </body>

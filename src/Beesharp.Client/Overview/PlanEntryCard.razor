@@ -1,0 +1,162 @@
+@* Compact technical scenario box for Plan Editing (Overview edit mode):
+   pure plan configuration (no stale run charts), high density, live-updating telemetry & parameter spec grid. *@
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using Beesharp.Services
+@using Beesharp.Services.Scenarios
+@using Beesharp.Services.Scenarios.Spec
+
+@{
+    var rate = Config.EffectiveRatePerMinute();
+    var sharePct = TotalPlanRate > 0 ? (int)Math.Round(rate / TotalPlanRate * 100.0) : 0;
+    var patLabel = Config.Pattern == SpawningPattern.Bursts
+        ? $"burst {Config.BeesPerBurst}×{Format.Rate(Config.BurstsPerMinute)}"
+        : "linear";
+    var capLabel = !InspectMode ? null
+        : Config.MaxInFlight is > 0 ? $"cap {Config.MaxInFlight.Value}"
+        : PlanMaxConcurrency is > 0 ? $"plan cap {PlanMaxConcurrency.Value}"
+        : "no cap";
+    var label = string.IsNullOrWhiteSpace(Config.Label) ? Config.ScenarioId : Config.Label;
+    var allSpecFields = Scenario is null ? [] : Scenario.Spec.Fields;
+    var fields = InspectMode
+        ? allSpecFields.ToList()
+        : allSpecFields.Where(f => !f.Advanced).Take(6).ToList();
+    var extraParams = InspectMode
+        ? Config.Parameters
+            .Where(kv => !allSpecFields.Any(f => string.Equals(f.JsonName, kv.Key, StringComparison.OrdinalIgnoreCase)))
+            .ToList()
+        : [];
+    var steps = Scenario?.Steps;
+}
+
+<article class="pe-card @(Selected ? "selected" : "") @(InspectMode ? "pe-card-inspect" : "")"
+         role="@(InspectMode ? "region" : "button")"
+         tabindex="@(InspectMode ? null : 0)"
+         aria-pressed="@(InspectMode ? null : Aria.Bool(Selected))"
+         aria-label="@(InspectMode ? $"Parameters for {label}" : $"{label}: {Format.Rate(rate)} bees per minute. Click to configure.")"
+         @onclick="OnCardClick"
+         @onclick:stopPropagation="@InspectMode"
+         @onkeydown="OnKey">
+
+    <div class="pe-head">
+        <div class="pe-title-wrap">
+            <span class="pe-name" title="@label">@label</span>
+            <span class="pe-type" title="@(Scenario?.Name ?? Config.ScenarioId)">@(Scenario?.Id ?? Config.ScenarioId)</span>
+        </div>
+        @if (InspectMode && OnClose.HasDelegate)
+        {
+            <button type="button" class="icon-btn pe-act" @onclick="() => OnClose.InvokeAsync()" aria-label="Close">✕</button>
+        }
+        else if (ShowActions)
+        {
+            <div class="pe-actions" @onclick:stopPropagation="true">
+                <button type="button" class="icon-btn pe-act" disabled="@Disabled" title="Duplicate @label" aria-label="Duplicate @label"
+                        @onclick="() => OnDuplicate.InvokeAsync(Index)">
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+                <button type="button" class="icon-btn pe-act danger" disabled="@Disabled" title="Remove @label" aria-label="Remove @label"
+                        @onclick="() => OnDelete.InvokeAsync(Index)">
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (InspectMode && !string.IsNullOrWhiteSpace(Scenario?.Description))
+    {
+        <p class="pe-card-desc" title="@Scenario.Description">@Scenario.Description</p>
+    }
+
+    <div class="pe-telemetry">
+        <div class="pe-rate-row">
+            <span class="pe-rate-val tnum">@Format.Rate(rate)<small>bees/min</small><span class="pe-pat-meta">· @patLabel@(capLabel is not null ? $" · {capLabel}" : "")</span></span>
+        </div>
+        @{
+            var clampedShare = Math.Clamp(sharePct, 0, 100);
+            var barPct = Math.Clamp(sharePct, 1, 100);
+            var shareFrac = (clampedShare / 100.0).ToString("0.##", CultureInfo.InvariantCulture);
+            var shareLabel = rate > 0 && sharePct == 0 ? "<1%" : $"{sharePct}%";
+        }
+        <div class="pe-share-track" title="@shareLabel of total plan rate">
+            <i style="width:@(barPct)%;--share:@(clampedShare)%;--p:@shareFrac"></i>
+        </div>
+    </div>
+
+    @if (fields.Count > 0 || extraParams.Count > 0)
+    {
+        <div class="pe-spec-grid">
+            @foreach (var f in fields)
+            {
+                var val = FormatParam(f.Kind, Config.Parameters[f.JsonName]);
+                var wide = f.Wide || f.Kind is FieldKind.Url or FieldKind.Multiline or FieldKind.List or FieldKind.KeyValue;
+                <div class="pe-spec-item @(wide ? "wide" : "")">
+                    <span class="pe-spec-k" title="@f.Label">@f.JsonName</span>
+                    <span class="pe-spec-v" title="@f.Label: @val">@val</span>
+                </div>
+            }
+            @foreach (var kv in extraParams)
+            {
+                var val = FormatParam(FieldKind.Text, kv.Value);
+                <div class="pe-spec-item wide">
+                    <span class="pe-spec-k" title="@kv.Key">@kv.Key</span>
+                    <span class="pe-spec-v" title="@kv.Key: @val">@val</span>
+                </div>
+            }
+        </div>
+    }
+
+    @if (steps is { Count: > 0 })
+    {
+        <div class="pe-step-pipe" title="Declared scenario steps">
+            @for (var i = 0; i < steps.Count; i++)
+            {
+                var st = steps[i];
+                if (i > 0)
+                {
+                    <svg class="pe-step-sep" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h10.5M9.5 4.5 13 8l-3.5 3.5" /></svg>
+                }
+                <span class="pe-step-node">@st.Name@(st.Times is { } times and > 1 ? $" ×{times}" : "")</span>
+            }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired] public int Index { get; set; }
+    [Parameter, EditorRequired] public ScenarioRunConfig Config { get; set; } = default!;
+    [Parameter] public IScenario? Scenario { get; set; }
+    [Parameter] public double TotalPlanRate { get; set; }
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ShowActions { get; set; } = true;
+    [Parameter] public bool InspectMode { get; set; }
+    [Parameter] public int? PlanMaxConcurrency { get; set; }
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+    [Parameter] public EventCallback<int> OnDuplicate { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private Task OnCardClick() => InspectMode ? Task.CompletedTask : OnSelect.InvokeAsync(Index);
+
+    private Task OnKey(KeyboardEventArgs e) => !InspectMode && e.Key is "Enter" or " " ? OnSelect.InvokeAsync(Index) : Task.CompletedTask;
+
+    private static string FormatParam(FieldKind kind, JsonNode? node)
+    {
+        if (node is null) return "—";
+        if (node is JsonArray arr) return $"{arr.Count} {(arr.Count == 1 ? "item" : "items")}";
+        if (node is JsonObject obj) return $"{obj.Count} {(obj.Count == 1 ? "key" : "keys")}";
+        if (node is JsonValue v)
+        {
+            if (v.GetValueKind() == JsonValueKind.True) return "true";
+            if (v.GetValueKind() == JsonValueKind.False) return "false";
+            if (v.GetValueKind() == JsonValueKind.Number) return v.ToJsonString();
+            if (v.TryGetValue<string>(out var s))
+            {
+                if (kind == FieldKind.Secret) return s.Length > 0 ? "••••" : "—";
+                return string.IsNullOrEmpty(s) ? "—" : s;
+            }
+        }
+        return node.ToJsonString();
+    }
+}

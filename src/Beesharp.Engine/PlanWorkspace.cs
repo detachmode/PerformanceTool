@@ -101,8 +101,11 @@ public sealed class PlanWorkspace
         return Mutate(() =>
         {
             var next = newPlan.Clone();
-            if (Fingerprint(next) == Fingerprint(plan)) return false;
+            var clearingToNew = next.Scenarios.Count == 0 && (plan.Scenarios.Count > 0 || !string.Equals(presetName, "New Plan", StringComparison.Ordinal));
+            if (!clearingToNew && Fingerprint(next) == Fingerprint(plan)) return false;
             plan = next;
+            presetName = "New Plan";
+            if (clearingToNew) saved = next.Clone();
             return true;
         });
     }
@@ -221,7 +224,7 @@ public sealed class PlanWorkspace
         var built = new LoadPlan
         {
             DurationSeconds = options.DurationSeconds ?? 30,
-            MaxConcurrency = options.MaxConcurrency ?? 50,
+            MaxConcurrency = options.MaxConcurrency ?? 0,
             TimeoutSeconds = options.TimeoutSeconds ?? 15,
             PreflightScriptId = options.PreflightScriptId,
             ShutdownScriptId = options.ShutdownScriptId,
@@ -356,7 +359,7 @@ public sealed class PlanWorkspace
     private PlanWorkspaceState Snapshot() =>
         new(plan.Clone(), presetName, saved.Clone(), Fingerprint(plan) != Fingerprint(saved), version, defaultEnvironment);
 
-    private static LoadPlan NewPlan() => new() { DurationSeconds = 30, MaxConcurrency = 50, TimeoutSeconds = 15 };
+    private static LoadPlan NewPlan() => new() { DurationSeconds = 30, MaxConcurrency = 0, TimeoutSeconds = 15 };
 
     private static string Fingerprint(LoadPlan p) => JsonSerializer.Serialize(p, Json);
 }

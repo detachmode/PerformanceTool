@@ -28,7 +28,14 @@ public interface IRunSource : IDisposable
     /// <summary>True when this scenario entry differs from the loaded or last saved preset (new or edited).</summary>
     bool IsEntryChanged(ScenarioRunConfig entry);
     void AddEntry(IScenario scenario);
+    void DuplicateEntry(int index);
     void RemoveEntry(int index);
+    void ClearEntries();
+    void RestoreEntries(IReadOnlyList<ScenarioRunConfig> entries);
+    /// <summary>Transitions from a finished run back into the idle plan editor without renaming the loaded preset.</summary>
+    void EditPlan();
+    /// <summary>Marks the current plan as edited (detaches from any loaded preset into "New Plan" and clears any previous run view).</summary>
+    void MarkPlanEdited();
     /// <summary>Saves the plan under <paramref name="name"/> and makes it the current preset.</summary>
     void SavePreset(string name);
     void LoadPreset(string name);

@@ -59,8 +59,9 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             throw new InvalidOperationException(
                 $"{(env.Name.Length == 0 ? "No environment is active" : $"Environment '{env.Name}' has no value")} for: {string.Join(", ", unknown.Select(k => "{{" + k + "}}"))}.");
 
-        var entryLimits = plan.Scenarios.Select(e => Math.Max(1, e.MaxInFlight ?? plan.MaxConcurrency)).ToArray();
-        var maxConnections = Math.Clamp(Math.Max(plan.MaxConcurrency, entryLimits.Sum()), 1, 2000);
+        var entryLimits = plan.Scenarios.Select(e => e.MaxInFlight is > 0 ? e.MaxInFlight : (plan.MaxConcurrency > 0 ? plan.MaxConcurrency : (int?)null)).ToArray();
+        var boundedSum = entryLimits.Where(l => l.HasValue).Sum(l => l!.Value);
+        var maxConnections = boundedSum > 0 ? Math.Clamp(Math.Max(plan.MaxConcurrency, boundedSum), 64, 2000) : 200;
         using var handler = new SocketsHttpHandler
         {
             MaxConnectionsPerServer = maxConnections,
@@ -77,7 +78,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
         clock ??= new RunClock();
         var runClock = clock;
         data ??= new RunData(plan.Scenarios.Count, () => runClock.Elapsed.TotalSeconds);
-        var entryGates = entryLimits.Select(limit => new SemaphoreSlim(limit, limit)).ToArray();
+        var entryGates = entryLimits.Select(limit => limit is { } lim ? new SemaphoreSlim(lim, lim) : null).ToArray();
         var inFlight = new List<Task>();
         var inFlightByEntry = new int[plan.Scenarios.Count]; // executions running right now, per entry (brain 0008)
         var inFlightTotal = 0;
@@ -137,7 +138,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                     var gate = entryGates[entry];
                     for (var k = 0; k < perTick; k++)
                     {
-                        if (!gate.Wait(0))
+                        if (gate is not null && !gate.Wait(0))
                         {
                             await onDropped(entry);
                             continue;
@@ -162,7 +163,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
                             }
                             finally
                             {
-                                gate.Release();
+                                gate?.Release();
                                 await activityLock.WaitAsync();
                                 try
                                 {
@@ -298,7 +299,7 @@ public sealed class LoadRunner(ScenarioCatalog catalog)
             for (var i = 0; i < backgrounds.Length; i++)
                 if (backgrounds[i] is { } bg && !startedEntries.Contains(i))
                     await bg.DisposeAsync();
-            foreach (var g in entryGates) g.Dispose();
+            foreach (var g in entryGates) g?.Dispose();
         }
     }
 }

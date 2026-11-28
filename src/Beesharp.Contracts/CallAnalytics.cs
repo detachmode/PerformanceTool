@@ -666,6 +666,7 @@ public static class CallAnalytics
         baseline.Sort();
         var typicalMs = baseline[(baseline.Count - 1) / 2];
         var p95Ms = baseline[Math.Max(0, (int)Math.Ceiling(0.95 * baseline.Count) - 1)];
+        var p99Ms = baseline[Math.Max(0, (int)Math.Ceiling(0.99 * baseline.Count) - 1)];
         var avgMs = okDurations.Count > 0 ? sumOk / okDurations.Count : sumAll / Math.Max(1, list.Count);
         if (minMs == double.MaxValue) minMs = 0;
 
@@ -697,7 +698,8 @@ public static class CallAnalytics
             custom is > 0,
             entries.ToArray(),
             step,
-            stepName);
+            stepName,
+            p99Ms);
     }
 
     private static List<CallHistogramBucketDto> BuildHistogram(List<(CallFact Call, bool IsSlow, double? EffectiveThresholdMs)> items)

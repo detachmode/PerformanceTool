@@ -84,7 +84,7 @@
     </div>
 
     <div class="inst clock" role="group" aria-label="Run time">
-        <span class="lbl" title="@Sim.PresetName">@Sim.PresetName</span>
+        <span class="lbl" title="@s.DisplayTitle">@s.DisplayTitle</span>
         <span class="val" role="timer" aria-live="off"><b>@Format.Time(s.Elapsed)</b><em> / @Format.Time(duration)</em></span>
         <div class="gauge" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)pct)"><i style="width:@pct.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></i></div>
     </div>

@@ -177,7 +177,7 @@
             @(compiling ? "Saving…" : "Save")
         </button>
 
-        <button type="button" class="btn ghost small" @onclick="RunTest" disabled="@(busy || !canTry)"
+        <button type="button" class="btn secondary small" @onclick="RunTest" disabled="@(busy || !canTry)"
                 title="@(DataMode.IsFakeMode ? "Scripts are tried on the server: switch to Live" : !canTry ? "Save the script first to try it out" : isPreflight ? $"Run this {ProgramName} once and see its output" : "Run the scenario once with one bee")">
             ▶ Try
         </button>

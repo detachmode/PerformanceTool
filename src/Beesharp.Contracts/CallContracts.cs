@@ -17,6 +17,7 @@ namespace Beesharp.Contracts;
 /// <param name="Entries">Distinct zero-based scenario entry indices that invoked this endpoint.</param>
 /// <param name="Step">Optional zero-based step index when summaries are grouped by step.</param>
 /// <param name="StepName">Optional human-readable step name when grouped by step.</param>
+/// <param name="P99Ms">99th-percentile call duration in milliseconds.</param>
 public sealed record CallEndpointSummaryDto(
     string Endpoint,
     string? Method,
@@ -33,7 +34,8 @@ public sealed record CallEndpointSummaryDto(
     bool HasCustomThreshold,
     IReadOnlyList<int> Entries,
     int? Step = null,
-    string? StepName = null);
+    string? StepName = null,
+    double P99Ms = 0);
 
 /// <summary>Aggregated call latency and slow/failure counts for one (entry, step) pair.</summary>
 /// <param name="Entry">Zero-based scenario entry index.</param>

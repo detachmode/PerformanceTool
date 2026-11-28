@@ -1,6 +1,8 @@
 @* Calls overview chart (brain 0067): horizontal p50 (solid) vs. p95 (translucent) comparison across all visible endpoints,
    autoscaled linear X-axis, scenario/default 50 ms target line, latency-only green-to-amber gradient, and independent red failure pills. *@
 @using System.Globalization
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 @{
     var effectiveTarget = liveTargetMs ?? TargetMs;
@@ -9,7 +11,11 @@
     {
         if (Endpoints[i].P95Ms > maxP95) maxP95 = Endpoints[i].P95Ms;
     }
-    var axis = CallsOverviewScale.ComputeAxis(maxP95, effectiveTarget, compact: IsPhone);
+    var computedAxis = CallsOverviewScale.ComputeAxis(maxP95, dragAxisMaxMs ?? effectiveTarget, compact: IsPhone);
+    var axis = dragAxisMaxMs is { } lockedMax && lockedMax > 0
+        ? CallsOverviewScale.ComputeAxis(lockedMax, 0, compact: IsPhone)
+        : computedAxis;
+    currentAxisMaxMs = axis.AxisMaxMs;
     var targetPct = axis.AxisMaxMs > 0 ? Math.Clamp(effectiveTarget / axis.AxisMaxMs * 100.0, 0, 100) : 0;
 }
 
@@ -73,17 +79,6 @@
                 has failures
             </span>
         </div>
-
-        <span class="cl-hover-info cl-ov-hover @(hovered is not null ? "active" : "")" aria-live="polite">
-            @if (hovered is { } h)
-            {
-                <text>@h.Endpoint · @Format.Plural(h.TotalCount, "call", "calls") · p50 @Format.Ms(h.TypicalMs) · p95 @Format.Ms(h.P95Ms) · max @Format.Ms(h.MaxMs)@(h.SlowCount > 0 ? $" · {Format.Num(h.SlowCount)} slow" : "")@(h.FailedCount > 0 ? $" · {Format.Num(h.FailedCount)} failed" : "")@(h.HasCustomThreshold && h.SlowThresholdMs is { } cl ? $" · limit {Format.Ms(cl)}" : "")</text>
-            }
-            else
-            {
-                <text>Click a row to inspect endpoint · Click a red failure pill for failed calls</text>
-            }
-        </span>
     </div>
 
     @if (Endpoints.Count == 0)
@@ -92,12 +87,26 @@
     }
     else
     {
-        <div class="cl-ov-target-row" aria-hidden="true">
-            <div class="cl-ov-axis-spacer"></div>
-            <div class="cl-ov-target-track">
-                <span class="cl-ov-target-tag" style="@TargetTagStyle(targetPct)">@CallsOverviewScale.FormatMsValue(effectiveTarget) ms target</span>
+        <div class="cl-ov-target-row">
+            <div class="cl-ov-axis-spacer" aria-hidden="true"></div>
+            <div class="cl-ov-target-track" @ref="targetTrackRef">
+                <span class="cl-ov-target-tag"
+                      @ref="targetHandleRef"
+                      role="slider"
+                      tabindex="0"
+                      aria-label="Target latency threshold (drag to adjust)"
+                      aria-valuemin="1"
+                      aria-valuemax="@Math.Round(axis.AxisMaxMs)"
+                      aria-valuenow="@Math.Round(effectiveTarget)"
+                      aria-valuetext="@($"{CallsOverviewScale.FormatMsValue(effectiveTarget)} ms")"
+                      title="Drag left or right to adjust target latency"
+                      style="@TargetTagStyle(targetPct)"
+                      @onkeydown="OnTargetHandleKeyDown">
+                    <span class="cl-ov-grip" aria-hidden="true">⋮</span>
+                    @CallsOverviewScale.FormatMsValue(effectiveTarget) ms target
+                </span>
             </div>
-            <div class="cl-ov-axis-spacer"></div>
+            <div class="cl-ov-axis-spacer" aria-hidden="true"></div>
         </div>
 
         <div class="cl-ov-chart" role="list" aria-label="Endpoint p50 and p95 latency bars">
@@ -195,7 +204,98 @@
     private CallEndpointSummaryDto? hovered;
     private string targetInput = "50";
     private double? liveTargetMs;
+    private double? dragAxisMaxMs;
+    private double currentAxisMaxMs = 200;
     private bool editingTarget;
+    private ElementReference targetTrackRef;
+    private ElementReference targetHandleRef;
+    private bool dragAttached;
+    private IJSObjectReference? jsModule;
+    private IJSObjectReference? dragHandle;
+    private DotNetObjectReference<CallsOverviewChart>? selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Endpoints.Count == 0)
+        {
+            if (dragAttached)
+            {
+                dragAttached = false;
+                if (dragHandle is not null)
+                {
+                    try { await dragHandle.InvokeVoidAsync("dispose"); } catch (Exception) { }
+                    try { await dragHandle.DisposeAsync(); } catch (Exception) { }
+                    dragHandle = null;
+                }
+            }
+            return;
+        }
+        if (dragAttached) return;
+        dragAttached = true;
+        try
+        {
+            jsModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./call-chart.js");
+            selfRef ??= DotNetObjectReference.Create(this);
+            dragHandle = await jsModule.InvokeAsync<IJSObjectReference?>("attachTargetDrag", targetTrackRef, targetHandleRef, selfRef);
+        }
+        catch (Exception)
+        {
+            dragAttached = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnTargetDrag(double fraction, bool done)
+    {
+        dragAxisMaxMs ??= Math.Max(currentAxisMaxMs, 10);
+        var raw = Math.Clamp(fraction, 0, 1) * dragAxisMaxMs.Value;
+        var snapped = raw >= 100
+            ? Math.Round(raw / 5.0) * 5.0
+            : Math.Round(raw);
+        var ms = Math.Clamp(Math.Max(1, snapped), 1, 60000);
+        liveTargetMs = ms;
+        targetInput = FormatInput(ms);
+        if (done) dragAxisMaxMs = null;
+        await OnTargetOverrideChanged.InvokeAsync(ms);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnTargetDragCancel()
+    {
+        dragAxisMaxMs = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnTargetHandleKeyDown(KeyboardEventArgs e)
+    {
+        var step = e.ShiftKey ? 25.0 : 5.0;
+        var cur = liveTargetMs ?? TargetMs;
+        double? next = e.Key switch
+        {
+            "ArrowLeft" or "ArrowDown" => Math.Max(1, cur - step),
+            "ArrowRight" or "ArrowUp" => Math.Min(60000, cur + step),
+            _ => null
+        };
+        if (next is null) return Task.CompletedTask;
+        liveTargetMs = next.Value;
+        targetInput = FormatInput(next.Value);
+        return OnTargetOverrideChanged.InvokeAsync(next.Value);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (dragHandle is not null)
+        {
+            try { await dragHandle.InvokeVoidAsync("dispose"); } catch (Exception) { }
+            try { await dragHandle.DisposeAsync(); } catch (Exception) { }
+        }
+        if (jsModule is not null)
+        {
+            try { await jsModule.DisposeAsync(); } catch (Exception) { }
+        }
+        selfRef?.Dispose();
+    }
 
     protected override void OnParametersSet()
     {
@@ -265,10 +365,13 @@
     private static string Pct(double v) =>
         Math.Clamp(v, 0, 100).ToString("0.##", CultureInfo.InvariantCulture);
 
-    private static string TargetTagStyle(double pct)
+    private string TargetTagStyle(double pct)
     {
-        if (pct <= 8) return $"left:{Pct(pct)}%;transform:translateX(0)";
-        if (pct >= 92) return $"left:{Pct(pct)}%;transform:translateX(-100%)";
+        if (IsPhone)
+        {
+            if (pct <= 12) return $"left:{Pct(pct)}%;transform:translateX(0)";
+            if (pct >= 88) return $"left:{Pct(pct)}%;transform:translateX(-100%)";
+        }
         return $"left:{Pct(pct)}%;transform:translateX(-50%)";
     }
 

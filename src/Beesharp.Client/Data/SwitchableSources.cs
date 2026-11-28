@@ -64,7 +64,12 @@ public sealed class SwitchableRunSource : IRunSource
     public bool HasUnsavedChanges => Active.HasUnsavedChanges;
     public bool IsEntryChanged(ScenarioRunConfig entry) => Active.IsEntryChanged(entry);
     public void AddEntry(IScenario scenario) => Active.AddEntry(scenario);
+    public void DuplicateEntry(int index) => Active.DuplicateEntry(index);
     public void RemoveEntry(int index) => Active.RemoveEntry(index);
+    public void ClearEntries() => Active.ClearEntries();
+    public void RestoreEntries(IReadOnlyList<ScenarioRunConfig> entries) => Active.RestoreEntries(entries);
+    public void EditPlan() => Active.EditPlan();
+    public void MarkPlanEdited() => Active.MarkPlanEdited();
     public void SavePreset(string name) => Active.SavePreset(name);
     public void LoadPreset(string name) => Active.LoadPreset(name);
     public void Start() => Active.Start();

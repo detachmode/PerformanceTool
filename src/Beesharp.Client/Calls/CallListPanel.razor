@@ -66,7 +66,13 @@
                 var rawTarget = !string.IsNullOrWhiteSpace(sel.Url) ? sel.Url : sel.RawName;
                 var hasStep = stepsDecl.Any && sel.Step >= 0 && sel.Step < stepsDecl.Count;
 
-                <div class="cl-detail-title">Selected call</div>
+                <div class="cl-detail-head">
+                    <div class="cl-detail-title">Selected call</div>
+                    <div class="cl-detail-actions">
+                        <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
+                        <button type="button" class="btn secondary small" @onclick="() => OnOpenBee.InvokeAsync(sel.Sequence)">Open @sel.BeeName</button>
+                    </div>
+                </div>
                 <div class="cl-detail-main">
                     <span class="cl-status @(sel.Error is not null ? "bad" : "")" title="Status">@StatusText(sel)</span>
                     <b class="cl-insp-dur @selCls tnum">@Format.Ms(sel.DurationMs)</b>
@@ -75,6 +81,21 @@
                         <span class="cl-insp-ratio @selCls tnum">@Format.Times(selRatio) typical</span>
                     }
                 </div>
+                @if (!string.IsNullOrWhiteSpace(sel.Error))
+                {
+                    <p class="cl-insp-err bad">@sel.Error</p>
+                }
+                @if (!string.IsNullOrEmpty(sel.TraceId))
+                {
+                    @* The distributed trace of the bee (brain 0063): small and quiet; reveals a copy button and (when configured) a direct link to the tracing UI. *@
+                    var traceTip = string.IsNullOrEmpty(sel.SpanId) ? $"Trace ID {sel.TraceId}" : $"Trace ID {sel.TraceId} · call span {sel.SpanId}";
+                    <div class="cl-detail-block">
+                        <span class="cl-detail-lbl">Trace</span>
+                        <div class="trace-id" aria-label="Distributed trace of this call">
+                            <TraceIdView TraceId="@sel.TraceId" SpanId="@sel.SpanId" Title="@traceTip" />
+                        </div>
+                    </div>
+                }
                 <dl class="cl-facts">
                     <div>
                         <dt>Bee</dt>
@@ -88,9 +109,9 @@
                     <div class="wide">
                         <dt>Scenario</dt>
                         <dd>
-                            @if (OnFilterScenario.HasDelegate && sel.Entry >= 0)
+                            @if (sel.Entry >= 0)
                             {
-                                <button type="button" class="cl-fact-link" title="Show only the calls of this scenario" @onclick="() => OnFilterScenario.InvokeAsync(sel.Entry)">@scenarioLabel</button>
+                                <a class="cl-fact-link" href="@ScenarioLink.Href(sel.Entry)" title="Open scenario view">@scenarioLabel</a>
                             }
                             else
                             {
@@ -121,25 +142,6 @@
                         <code title="@rawTarget">@rawTarget</code>
                         <CopyButton GetText="() => rawTarget" Title="Copy exact call URL / target" />
                     </div>
-                </div>
-                @if (!string.IsNullOrEmpty(sel.TraceId))
-                {
-                    @* The distributed trace of the bee (brain 0063): small and quiet; reveals a copy button and (when configured) a direct link to the tracing UI. *@
-                    var traceTip = string.IsNullOrEmpty(sel.SpanId) ? $"Trace ID {sel.TraceId}" : $"Trace ID {sel.TraceId} · call span {sel.SpanId}";
-                    <div class="cl-detail-block">
-                        <span class="cl-detail-lbl">Trace</span>
-                        <div class="trace-id" aria-label="Distributed trace of this call">
-                            <TraceIdView TraceId="@sel.TraceId" SpanId="@sel.SpanId" Title="@traceTip" />
-                        </div>
-                    </div>
-                }
-                @if (!string.IsNullOrWhiteSpace(sel.Error))
-                {
-                    <p class="cl-insp-err bad">@sel.Error</p>
-                }
-                <div class="cl-detail-actions">
-                    <button type="button" class="btn ghost small" @onclick="() => OpenLogs(sel)">Logs</button>
-                    <button type="button" class="btn ghost small" @onclick="() => OnOpenBee.InvokeAsync(sel.Sequence)">Open @sel.BeeName</button>
                 </div>
             }
             else

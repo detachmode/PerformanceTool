@@ -19,8 +19,8 @@ public sealed class LoadPlan
     public List<ScenarioRunConfig> Scenarios { get; set; } = [];
     /// <summary>Total run duration in seconds.</summary>
     public int DurationSeconds { get; set; } = 30;
-    /// <summary>Plan-wide default maximum number of concurrent bees in flight.</summary>
-    public int MaxConcurrency { get; set; } = 50;
+    /// <summary>Plan-wide default maximum number of concurrent bees in flight (0 = no restriction).</summary>
+    public int MaxConcurrency { get; set; } = 0;
     /// <summary>Per-call/per-execution timeout in seconds.</summary>
     public int TimeoutSeconds { get; set; } = 30;
     /// <summary>Default request/response header allowlist captured on slow or failed HTTP calls when <see cref="CaptureHeaders"/> is null.</summary>
@@ -62,7 +62,7 @@ public sealed class LoadPlan
         var errors = new List<string>();
         if (Scenarios.Count == 0) errors.Add("Add at least one scenario.");
         if (DurationSeconds is < 1 or > 24 * 3600) errors.Add("Duration must be between 1 second and 24 hours.");
-        if (MaxConcurrency is < 1 or > 1000) errors.Add("Max in-flight must be between 1 and 1000.");
+        if (MaxConcurrency is < 0 or > 1000) errors.Add("Max in-flight must be 0 (unlimited) or between 1 and 1000.");
         if (TimeoutSeconds is < 1 or > 300) errors.Add("Timeout must be between 1 and 300 seconds.");
 
         foreach (var entry in Scenarios)

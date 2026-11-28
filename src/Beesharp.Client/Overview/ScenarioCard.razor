@@ -35,44 +35,54 @@
     var successRatePct = View.Finished > 0 ? Math.Max(0, (View.Finished - View.Failed) * 100.0 / View.Finished) : 100.0;
 }
 
-<div class="card sc-card @cls @(Idle ? "is-idle" : "") @(Selected ? "selected" : "") @(Edited ? "edited" : "")"
+<div class="card sc-card pe-surface @cls @(isActive ? "is-live" : "") @(Idle ? "is-idle" : "") @(Selected ? "selected" : "") @(Edited ? "edited" : "")"
      role="button" tabindex="0" aria-pressed="@(Selectable ? Aria.Bool(Selected) : null)"
      aria-label="@aria"
      @onclick="() => OnOpen.InvokeAsync(Index)"
      @onkeydown="OnCardKey">
 
-    <div class="sc-head">
-        <div class="sc-title">
-            <span class="sc-name" title="@titleMain">@titleMain</span>
-            @if (!string.IsNullOrEmpty(titleSub)) { <span class="sc-sub" title="@titleSub">@titleSub</span> }
-            @if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }
+    <div class="pe-head sc-head">
+        <div class="pe-title-wrap">
+            <div class="sc-title">
+                <span class="pe-name" title="@titleMain">@titleMain</span>
+                @if (!string.IsNullOrEmpty(titleSub)) { <span class="sc-sub" title="@titleSub">@titleSub</span> }
+                @if (Edited) { <i class="edit-dot" title="Changed since the preset was loaded"></i> }
+            </div>
+            <span class="pe-type" title="@handleText">@handleText</span>
         </div>
-        <div class="sc-actions">
+        <div class="pe-actions">
             @if (!Idle && OnOpenLogs.HasDelegate)
             {
-                <button type="button" class="icon-btn sm" @onclick="() => OnOpenLogs.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                <button type="button" class="icon-btn pe-act" @onclick="() => OnOpenLogs.InvokeAsync(Index)" @onclick:stopPropagation="true"
                         title="Logs of @Label" aria-label="Open logs for @Label">
-                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9" /><path d="M7.5 13h6" /><path d="M7.5 16h3.5" /></svg>
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M7.5 9.5h9" /><path d="M7.5 13h6" /><path d="M7.5 16h3.5" /></svg>
+                </button>
+            }
+            @if (OnInspect.HasDelegate)
+            {
+                <button type="button" class="icon-btn pe-act" @onclick="() => OnInspect.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                        title="Inspect parameters of @Label" aria-label="Inspect parameters of @Label">
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
                 </button>
             }
             @if (!ActionsDisabled && OnEdit.HasDelegate)
             {
-                <button type="button" class="icon-btn sm" @onclick="() => OnEdit.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                <button type="button" class="icon-btn pe-act" @onclick="() => OnEdit.InvokeAsync(Index)" @onclick:stopPropagation="true"
                         title="Edit @Label" aria-label="Edit @Label">
-                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8.5" /><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8.5" /><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" /></svg>
                 </button>
             }
             @if (!ActionsDisabled && OnDelete.HasDelegate)
             {
-                <button type="button" class="icon-btn sm danger" @onclick="() => OnDelete.InvokeAsync(Index)" @onclick:stopPropagation="true"
+                <button type="button" class="icon-btn pe-act danger" @onclick="() => OnDelete.InvokeAsync(Index)" @onclick:stopPropagation="true"
                         title="Remove @Label" aria-label="Remove @Label">
-                    <svg class="yt-ico sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" /><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" /><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>
                 </button>
             }
         </div>
     </div>
-    <div class="sc-meta" title="@handleText">@handleText</div>
 
+    <div class="sc-body">
     @if (Idle)
     {
         <div class="sc-figs">
@@ -149,6 +159,7 @@
                        OnFailed="st => OnOpenStep.InvokeAsync((Index, st))" OnInFlight="st => OnOpenStepInFlight.InvokeAsync((Index, st))" OnLogs="st => OnOpenStepLogs.InvokeAsync((Index, st))" AriaLabel="@("Steps of " + Label)" />
         }
     }
+    </div>
 </div>
 
 @code {
@@ -180,6 +191,8 @@
     [Parameter] public EventCallback<int> OnOpenLogs { get; set; }
     /// <summary>Direct jump from the overview card into edit mode for this scenario.</summary>
     [Parameter] public EventCallback<int> OnEdit { get; set; }
+    /// <summary>Read-only parameter inspection popup for running or historical runs.</summary>
+    [Parameter] public EventCallback<int> OnInspect { get; set; }
     /// <summary>Quick delete button on the card in edit mode.</summary>
     [Parameter] public EventCallback<int> OnDelete { get; set; }
     [Parameter] public bool ActionsDisabled { get; set; }

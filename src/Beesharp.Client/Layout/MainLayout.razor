@@ -21,7 +21,7 @@
         <header class="top top-phone">
             @if (scnIndex is not null)
             {
-                <a class="top-back" href="" aria-label="Back to the overview"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+                <a class="top-back" href="overview" aria-label="Back to the overview"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
                 <h1 class="top-title" title="@phoneTitle">@phoneTitle</h1>
             }
             else
@@ -78,7 +78,8 @@
             <span class="brand-name">Bee<b>sharp</b></span>
         </a>
         <nav class="nav" aria-label="Main">
-            <NavLink class="@(scnIndex is not null ? "nav-item active" : "nav-item")" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Overview</NavLink>
+            <NavLink class="nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseNavAsync">Home</NavLink>
+            <NavLink class="@(scnIndex is not null ? "nav-item active" : "nav-item")" href="overview" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Overview</NavLink>
             <NavLink class="nav-item" href="calls" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Calls</NavLink>
             <NavLink class="nav-item" href="editor" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Editor</NavLink>
             <NavLink class="nav-item" href="logs" Match="NavLinkMatch.Prefix" @onclick="CloseNavAsync">Logs</NavLink>

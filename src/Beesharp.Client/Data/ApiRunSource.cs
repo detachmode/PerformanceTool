@@ -21,6 +21,7 @@ public sealed class ApiRunSource : IRunSource
     private readonly ScenarioCatalog catalog;
     private readonly ApiEnvironmentSource environments;
     private CancellationTokenSource? pollCts;
+    private bool polling;
     private string savedFingerprint = "";
     private HashSet<string> savedEntries = [];
     private readonly Dictionary<string, LoadPlan> presets = new(StringComparer.OrdinalIgnoreCase);
@@ -32,6 +33,7 @@ public sealed class ApiRunSource : IRunSource
     private string syncedFingerprint = "";
 
     private string activeRunId = "";
+    private string? dismissedRunId;
     private DateTimeOffset activeStartedUtc = DateTimeOffset.UtcNow;
     private RunStore activeStore = new(0);
     private int lastSequence = -1;
@@ -44,7 +46,7 @@ public sealed class ApiRunSource : IRunSource
     private readonly Dictionary<string, RemoteRunSummary> runSummaryCache = new(StringComparer.Ordinal);
     private readonly Dictionary<(string RunId, int Entry, int Limit), RemoteBeePage> runBeesCache = [];
 
-    public LoadPlan Plan { get; private set; } = new() { DurationSeconds = 30, MaxConcurrency = 50, TimeoutSeconds = 15 };
+    public LoadPlan Plan { get; private set; } = new() { DurationSeconds = 30, MaxConcurrency = 0, TimeoutSeconds = 15 };
     public string PresetName { get; private set; } = "Live plan";
     /// <summary>True while the working copy differs from what the server has (an edit is waiting to be pushed).</summary>
     public bool HasUnpushedEdits => syncedFingerprint.Length > 0 && Fingerprint(Plan) != syncedFingerprint;
@@ -57,6 +59,8 @@ public sealed class ApiRunSource : IRunSource
     public DateTimeOffset CurrentStartedUtc => activeStartedUtc;
     public DateTimeOffset? ActiveStartedUtc => string.IsNullOrEmpty(activeRunId) ? null : activeStartedUtc;
     public bool IsViewingHistory { get; private set; }
+    /// <summary>Display title for the currently inspected historical run (matching preset name if any, otherwise timestamped run label).</summary>
+    public string? HistoryTitle { get; private set; }
     public bool IsServerReachable { get; private set; } = true;
     public long TotalServerLogs { get; private set; }
 
@@ -109,15 +113,54 @@ public sealed class ApiRunSource : IRunSource
         config.Label = same == 0 ? scenario.Name : $"{scenario.Name} #{same + 1}";
         config.RatePerMinute = 30;
         Plan.Scenarios.Add(config);
-        if (!IsRunning) Current = EmptySnapshot(Plan);
-        Changed?.Invoke();
+        MarkPlanEdited();
+    }
+
+    public void DuplicateEntry(int index)
+    {
+        if (index < 0 || index >= Plan.Scenarios.Count) return;
+        var copy = Plan.Scenarios[index].Clone();
+        copy.Label = string.IsNullOrWhiteSpace(copy.Label) ? $"{copy.ScenarioId} (copy)" : $"{copy.Label} (copy)";
+        Plan.Scenarios.Insert(index + 1, copy);
+        MarkPlanEdited();
     }
 
     public void RemoveEntry(int index)
     {
         if (index < 0 || index >= Plan.Scenarios.Count) return;
         Plan.Scenarios.RemoveAt(index);
-        if (!IsRunning) Current = EmptySnapshot(Plan);
+        MarkPlanEdited();
+    }
+
+    public void ClearEntries()
+    {
+        if (Plan.Scenarios.Count == 0 && string.Equals(PresetName, "New Plan", StringComparison.Ordinal)) return;
+        Plan.Scenarios.Clear();
+        MarkPlanEdited();
+    }
+
+    public void RestoreEntries(IReadOnlyList<ScenarioRunConfig> entries)
+    {
+        Plan.Scenarios = entries.Select(e => e.Clone()).ToList();
+        MarkPlanEdited();
+    }
+
+    public void EditPlan()
+    {
+        if (IsRunning || IsViewingHistory || Current.IsIdlePlan) return;
+        if (!string.IsNullOrEmpty(activeRunId)) dismissedRunId = activeRunId;
+        ResetToIdlePlanSnapshot(unloadHistory: false);
+        Changed?.Invoke();
+    }
+
+    public void MarkPlanEdited()
+    {
+        PresetName = "New Plan";
+        if (!IsRunning)
+        {
+            if (!string.IsNullOrEmpty(activeRunId)) dismissedRunId = activeRunId;
+            ResetToIdlePlanSnapshot(IsViewingHistory);
+        }
         Changed?.Invoke();
     }
 
@@ -143,7 +186,11 @@ public sealed class ApiRunSource : IRunSource
             syncedFingerprint = Fingerprint(Plan);
             savedFingerprint = Fingerprint(Plan);
             savedEntries = Plan.Scenarios.Select(EntryFingerprint).ToHashSet();
-            if (!IsRunning) ResetToIdlePlanSnapshot(IsViewingHistory);
+            if (!IsRunning)
+            {
+                if (!string.IsNullOrEmpty(activeRunId)) dismissedRunId = activeRunId;
+                ResetToIdlePlanSnapshot(IsViewingHistory);
+            }
             Changed?.Invoke();
         }
         _ = LoadPresetRemoteAsync(name);
@@ -229,6 +276,7 @@ public sealed class ApiRunSource : IRunSource
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(400, ct);
+                tick++;
                 try
                 {
                     var fingerprint = Fingerprint(Plan);
@@ -238,11 +286,14 @@ public sealed class ApiRunSource : IRunSource
                         if (fingerprint == pending) { await PushPlanAsync(ct); pending = null; }
                         else pending = fingerprint;
                     }
-                    else if (++tick % 3 == 0)
+                    else if (tick % 3 == 0)
                     {
                         pending = null;
                         await PullPlanAsync(ct);
                     }
+
+                    if (tick % 3 == 0 && !polling && !IsViewingHistory)
+                        await CheckRemoteRunAsync(ct);
                 }
                 catch (OperationCanceledException) { return; }
                 catch { SetReachable(false); /* offline or restarting: try again on the next tick */ }
@@ -287,13 +338,15 @@ public sealed class ApiRunSource : IRunSource
     /// <summary>Takes the server's state as the truth. With <paramref name="replacePlan"/> false only the bookkeeping (version, preset, saved plan) is taken.</summary>
     private void AdoptState(PlanWorkspaceState state, bool replacePlan, LoadPlan? syncedWith = null, bool refreshOverview = false)
     {
-        var presetChanged = !string.Equals(PresetName, state.PresetName, StringComparison.OrdinalIgnoreCase);
+        var isInitialLoad = serverVersion == 0;
+        var presetChanged = !isInitialLoad && !string.Equals(PresetName, state.PresetName, StringComparison.OrdinalIgnoreCase);
         serverVersion = state.Version;
+        PresetName = state.PresetName;
         if (replacePlan)
         {
             Plan = state.Plan.Clone();
             syncedFingerprint = Fingerprint(Plan);
-            if (!IsRunning && (refreshOverview || presetChanged || string.IsNullOrEmpty(activeRunId)))
+            if (!IsRunning && (refreshOverview || presetChanged || (string.IsNullOrEmpty(activeRunId) && !IsViewingHistory)))
                 ResetToIdlePlanSnapshot(IsViewingHistory);
         }
         else if (syncedWith is not null) syncedFingerprint = Fingerprint(syncedWith);
@@ -303,6 +356,7 @@ public sealed class ApiRunSource : IRunSource
     private void ResetToIdlePlanSnapshot(bool unloadHistory)
     {
         IsViewingHistory = false;
+        HistoryTitle = null;
         activeRunId = "";
         activeStore = new RunStore(Plan.Scenarios.Count);
         lastSequence = -1;
@@ -332,6 +386,12 @@ public sealed class ApiRunSource : IRunSource
         PresetName = state.PresetName;
         savedFingerprint = Fingerprint(state.SavedPlan);
         savedEntries = state.SavedPlan.Scenarios.Select(EntryFingerprint).ToHashSet();
+        if (Current.IsIdlePlan)
+        {
+            var nextTitle = string.IsNullOrWhiteSpace(PresetName) ? "New Plan" : PresetName;
+            if (!string.Equals(Current.Title, nextTitle, StringComparison.Ordinal))
+                Current = Current with { Title = nextTitle };
+        }
         if (!string.IsNullOrWhiteSpace(state.DefaultEnvironment))
             environments.ApplyDefault(state.DefaultEnvironment);
         Changed?.Invoke();
@@ -447,6 +507,7 @@ public sealed class ApiRunSource : IRunSource
                 if (dto is not null)
                 {
                     IsViewingHistory = true;
+                    HistoryTitle = ResolveHistoryTitle(dto);
                     ApplyStatus(dto);
                 }
             }
@@ -454,11 +515,25 @@ public sealed class ApiRunSource : IRunSource
         catch { }
     }
 
+    private string ResolveHistoryTitle(LiveRunStatusDto dto)
+    {
+        var fp = Fingerprint(dto.Plan);
+        foreach (var kv in presets)
+        {
+            if (Fingerprint(kv.Value) == fp)
+                return kv.Key;
+        }
+        return dto.StartedUtc != default
+            ? $"Run · {dto.StartedUtc.ToLocalTime():dd MMM, HH:mm:ss}"
+            : "Stored run";
+    }
+
     /// <summary>Exits history inspection mode back to the live plan view so a new run can be configured and started.</summary>
     public void ReturnToLive()
     {
         if (!IsViewingHistory) return;
         IsViewingHistory = false;
+        HistoryTitle = null;
         activeRunId = "";
         activeStore = new RunStore(Plan.Scenarios.Count);
         lastSequence = -1;
@@ -481,8 +556,25 @@ public sealed class ApiRunSource : IRunSource
 
     private async Task UnloadAndResumeAsync()
     {
-        try { await http.PostAsync("api/runs/unload", null); } catch { }
-        StartPolling();
+        try
+        {
+            await http.PostAsync("api/runs/unload", null);
+            var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts);
+            if (dto is not null && !IsViewingHistory)
+            {
+                if (IsActiveState(dto.State))
+                {
+                    dismissedRunId = null;
+                    ApplyStatus(dto);
+                    StartPolling();
+                }
+                else if (!string.IsNullOrEmpty(dto.RunId))
+                {
+                    dismissedRunId = dto.RunId;
+                }
+            }
+        }
+        catch { }
     }
 
     /// <summary>Lazily fetches one bee's full calls and logs from run storage on demand.</summary>
@@ -641,33 +733,61 @@ public sealed class ApiRunSource : IRunSource
         catch { }
     }
 
+    private async Task CheckRemoteRunAsync(CancellationToken ct)
+    {
+        var resp = await http.GetAsync(StatusUrl(), ct);
+        SetReachable(true);
+        if (!resp.IsSuccessStatusCode) return;
+        var dto = await resp.Content.ReadFromJsonAsync<LiveRunStatusDto>(JsonOpts, ct);
+        if (dto is null || IsViewingHistory) return;
+        var runChanged = !string.IsNullOrEmpty(dto.RunId)
+            && !string.Equals(dto.RunId, activeRunId, StringComparison.Ordinal)
+            && !string.Equals(dto.RunId, dismissedRunId, StringComparison.Ordinal);
+        if (IsActiveState(dto.State) || runChanged)
+        {
+            dismissedRunId = null;
+            ApplyStatus(dto);
+            if (IsActiveState(dto.State)) StartPolling();
+        }
+    }
+
     private void StartPolling()
     {
         StopPolling();
-        pollCts = new CancellationTokenSource();
-        var ct = pollCts.Token;
+        var cts = new CancellationTokenSource();
+        pollCts = cts;
+        polling = true;
+        var ct = cts.Token;
         _ = Task.Run(async () =>
         {
-            while (!ct.IsCancellationRequested)
+            try
             {
-                try
+                while (!ct.IsCancellationRequested)
                 {
-                    await Task.Delay(PreflightState == "Running" ? 250 : 300, ct);
-                    var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts, ct);
-                    if (dto is not null)
+                    try
                     {
-                        ApplyStatus(dto);
-                        if (!IsActiveState(dto.State)) break;
+                        await Task.Delay(PreflightState == "Running" ? 250 : 300, ct);
+                        var dto = await http.GetFromJsonAsync<LiveRunStatusDto>(StatusUrl(), JsonOpts, ct);
+                        if (dto is not null)
+                        {
+                            ApplyStatus(dto);
+                            if (!IsActiveState(dto.State)) break;
+                        }
                     }
+                    catch (OperationCanceledException) { break; }
+                    catch { await Task.Delay(1000, ct); }
                 }
-                catch (OperationCanceledException) { break; }
-                catch { await Task.Delay(1000, ct); }
+            }
+            finally
+            {
+                if (ReferenceEquals(pollCts, cts)) polling = false;
             }
         }, CancellationToken.None);
     }
 
     private void StopPolling()
     {
+        polling = false;
         pollCts?.Cancel();
         pollCts?.Dispose();
         pollCts = null;
@@ -778,6 +898,17 @@ public sealed class ApiRunSource : IRunSource
             if (anySteps) steps = mapped;
         }
 
+        var viewMode = IsViewingHistory
+            ? RunViewMode.HistoricalRun
+            : state is FakeRunState.Running or FakeRunState.Paused
+                ? RunViewMode.LiveRun
+                : state == FakeRunState.Finished
+                    ? RunViewMode.FinishedRun
+                    : RunViewMode.IdlePlan;
+        var title = viewMode == RunViewMode.HistoricalRun
+            ? (HistoryTitle ?? ResolveHistoryTitle(dto))
+            : (string.IsNullOrWhiteSpace(PresetName) ? "New Plan" : PresetName);
+
         Current = new RunSnapshot(
             state,
             dto.ElapsedSeconds,
@@ -789,7 +920,9 @@ public sealed class ApiRunSource : IRunSource
             runtime,
             dto.ShutdownState is null ? null : new ProgramRun(dto.ShutdownState, dto.ShutdownScriptName ?? "shutdown.cs", dto.ShutdownError, dto.ShutdownLogs ?? []),
             dto.PreflightState is null ? null : new ProgramRun(dto.PreflightState, dto.PreflightScriptName ?? "preflight.cs", dto.PreflightError, dto.PreflightLogs ?? []),
-            steps);
+            steps,
+            viewMode,
+            title);
         Changed?.Invoke();
         if (dto.RunId.Length > 0 && dto.RuntimeVersion != runtimeVersion && !runtimeFetching) _ = FetchRuntimeAsync(dto.RunId, dto.RuntimeVersion, count);
     }
@@ -843,7 +976,8 @@ public sealed class ApiRunSource : IRunSource
             }
             if (anySteps) steps = mapped;
         }
-        return new RunSnapshot(FakeRunState.Idle, 0, plan.Clone(), labels, views, new RunStore(count), Steps: steps);
+        var title = string.IsNullOrWhiteSpace(PresetName) ? "New Plan" : PresetName;
+        return new RunSnapshot(FakeRunState.Idle, 0, plan.Clone(), labels, views, new RunStore(count), Steps: steps, ViewMode: RunViewMode.IdlePlan, Title: title);
     }
 
     private static string Fingerprint(LoadPlan plan) => JsonSerializer.Serialize(plan, JsonOpts);

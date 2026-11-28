@@ -22,7 +22,7 @@
             <div class="notice" role="alertdialog" aria-label="Discard unsaved changes?">
                 <span>Discard the unsaved changes in @drafts.Count(Dirty) environment(s)?</span>
                 <button class="btn ghost" @onclick="() => confirmClose = false">Keep editing</button>
-                <button class="btn primary" @onclick="Popup.Close">Discard and close</button>
+                <button class="btn danger" @onclick="Popup.Close">Discard and close</button>
             </div>
         }
 
@@ -62,7 +62,7 @@
                         <span class="spacer"></span>
                         @if (current.Original is not null && current.Original != Envs.ActiveName)
                         {
-                            <button class="btn ghost small" @onclick="() => Envs.SetActive(current.Original)" title="Use this environment for scenarios">Use this environment</button>
+                            <button class="btn secondary small" @onclick="() => Envs.SetActive(current.Original)" title="Use this environment for scenarios">Use this environment</button>
                         }
                     </div>
                     @if (confirmDelete)
@@ -70,7 +70,7 @@
                         <div class="notice" role="alertdialog" aria-label="Delete environment?">
                             <span>Delete “<b>@current.Env.Name</b>”? Its keys are gone.</span>
                             <button class="btn ghost" @onclick="() => confirmDelete = false">Cancel</button>
-                            <button class="btn primary" @onclick="DeleteCurrent">Delete</button>
+                            <button class="btn danger" @onclick="DeleteCurrent">Delete</button>
                         </div>
                     }
 

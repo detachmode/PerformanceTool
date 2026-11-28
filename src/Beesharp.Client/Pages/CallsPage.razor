@@ -165,7 +165,7 @@
         @if (!hasRun)
         {
             <div class="cl-right-empty muted">
-                <p>No run loaded yet. <a href="">Open Overview</a> to start a run.</p>
+                <p>No run loaded yet. <a href="overview">Open Overview</a> to start a run.</p>
             </div>
         }
         else if (detail is null)
@@ -221,38 +221,40 @@
                             @(sum.HasCustomThreshold ? $"Threshold > {Format.Ms(th)}" : $"Slow > {Format.Ms(th)} (2× typical)")
                         </span>
                     }
-                </div>
-
-                <div class="cl-kpis">
-                    <button type="button" class="cl-kpi @(filter.Outcome == BeeShow.All ? "on" : "")" @onclick="() => ApplyFilter(filter.WithOutcome(BeeShow.All))">
-                        <span class="lbl">Calls</span>
-                        <b class="tnum">@Format.Num(sum.TotalCount)</b>
-                    </button>
-                    <div class="cl-kpi static">
-                        <span class="lbl">Typical</span>
-                        <b class="tnum">@Format.Ms(sum.TypicalMs)</b>
+                    <div class="cl-stat-strip mono tnum" aria-label="Endpoint latency percentiles">
+                        <span class="cl-stat" title="Median (50th percentile)"><i>p50</i><b>@Format.Ms(sum.TypicalMs)</b></span>
+                        <span class="cl-stat-sep" aria-hidden="true">/</span>
+                        <span class="cl-stat" title="95th percentile"><i>p95</i><b>@Format.Ms(sum.P95Ms)</b></span>
+                        <span class="cl-stat-sep" aria-hidden="true">/</span>
+                        <span class="cl-stat" title="99th percentile"><i>p99</i><b>@Format.Ms(sum.P99Ms > 0 ? sum.P99Ms : sum.MaxMs)</b></span>
+                        <span class="cl-stat-sep" aria-hidden="true">/</span>
+                        <button type="button" class="cl-stat cl-stat-link" disabled="@(sum.TotalCount == 0)" @onclick="SelectMaxCall" title="Jump to slowest call">
+                            <i>max</i><b>@Format.Ms(sum.MaxMs)</b>
+                        </button>
                     </div>
-                    <div class="cl-kpi static">
-                        <span class="lbl">Slowest 5%</span>
-                        <b class="tnum">@Format.Ms(sum.P95Ms)</b>
-                    </div>
-                    <button type="button" class="cl-kpi" disabled="@(sum.TotalCount == 0)" @onclick="SelectMaxCall" title="Select the slowest call">
-                        <span class="lbl">Max</span>
-                        <b class="tnum">@Format.Ms(sum.MaxMs)</b>
-                    </button>
-                    <button type="button" class="cl-kpi warn @(sum.SlowCount == 0 ? "zero" : "") @(filter.Outcome == BeeShow.Slow ? "on" : "")"
-                            disabled="@(sum.SlowCount == 0)" @onclick="() => ToggleOutcome(BeeShow.Slow)">
-                        <span class="lbl">Slow</span>
-                        <b class="tnum">@Format.Num(sum.SlowCount)</b>
-                    </button>
-                    <button type="button" class="cl-kpi bad @(sum.FailedCount == 0 ? "zero" : "") @(filter.Outcome == BeeShow.Failed ? "on" : "")"
-                            disabled="@(sum.FailedCount == 0)" @onclick="() => ToggleOutcome(BeeShow.Failed)">
-                        <span class="lbl">Failed</span>
-                        <b class="tnum">@Format.Num(sum.FailedCount)</b>
-                    </button>
                 </div>
 
                 <div class="cl-filterbar">
+                    <div class="seg cl-outcome-seg" role="group" aria-label="Filter calls by outcome">
+                        <button type="button" class="@(filter.Outcome == BeeShow.All ? "on" : "")"
+                                aria-pressed="@Aria.Bool(filter.Outcome == BeeShow.All)"
+                                @onclick="() => ApplyFilter(filter.WithOutcome(BeeShow.All))">
+                            All <span class="n">@Format.Num(sum.TotalCount)</span>
+                        </button>
+                        <button type="button" class="warn @(filter.Outcome == BeeShow.Slow ? "on" : "")"
+                                disabled="@(sum.SlowCount == 0)"
+                                aria-pressed="@Aria.Bool(filter.Outcome == BeeShow.Slow)"
+                                @onclick="() => ToggleOutcome(BeeShow.Slow)">
+                            Slow <span class="n">@Format.Num(sum.SlowCount)</span>
+                        </button>
+                        <button type="button" class="bad @(filter.Outcome == BeeShow.Failed ? "on" : "")"
+                                disabled="@(sum.FailedCount == 0)"
+                                aria-pressed="@Aria.Bool(filter.Outcome == BeeShow.Failed)"
+                                @onclick="() => ToggleOutcome(BeeShow.Failed)">
+                            Failed <span class="n">@Format.Num(sum.FailedCount)</span>
+                        </button>
+                    </div>
+
                     <div class="cl-adhoc">
                         <label for="cl-minms-range">Over</label>
                         @{

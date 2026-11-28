@@ -9,7 +9,7 @@
         <span class="spacer"></span>
         @if (Live is { Running: true })
         {
-            <button type="button" class="btn ghost danger small" @onclick="OnStop">Stop</button>
+            <button type="button" class="btn danger small" @onclick="OnStop">Stop</button>
         }
         else if (Live is not null || Program is not null)
         {
@@ -126,7 +126,7 @@
         <p class="muted ed-hint">@Hint</p>
         @if (CanTry)
         {
-            <button type="button" class="btn ghost small ed-hint-btn" @onclick="OnRun" disabled="@Busy">▶ Try</button>
+            <button type="button" class="btn secondary small ed-hint-btn" @onclick="OnRun" disabled="@Busy">▶ Try</button>
         }
     }
 </aside>

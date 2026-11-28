@@ -1,0 +1,476 @@
+@* Calm, uncluttered Home screen: active run spotlight, last completed run, quick New Plan / Presets actions, and full historical run list. *@
+@page "/"
+@page "/home"
+@layout MainLayout
+@implements IDisposable
+@inject IRunSource Sim
+@inject ApiRunSource ApiRun
+@inject DataModeState DataMode
+@inject IEnvironmentSource Envs
+@inject NavigationManager Nav
+
+<PageTitle>Home · Beesharp</PageTitle>
+
+@{
+    var s = Sim.Current;
+    var isRunning = Sim.IsRunning;
+    var isFake = DataMode.IsFakeMode;
+    var plan = Sim.Plan;
+    var totalPlanRate = plan.Scenarios.Sum(x => x.EffectiveRatePerMinute());
+    var liveFinished = s.Scenarios.Sum(x => x.Finished);
+    var liveFailed = s.Scenarios.Sum(x => x.Failed);
+    var liveSlow = s.Scenarios.Sum(x => x.SlowBees);
+    var liveInFlight = s.BeesInFlight?.Sum(b => b.Count) ?? 0;
+    var liveProgress = plan.DurationSeconds > 0 ? Math.Clamp(s.Elapsed / plan.DurationSeconds * 100.0, 0, 100) : 0;
+
+    var latestCompleted = isFake
+        ? null
+        : runs.FirstOrDefault(r => !IsActiveRunState(r.State));
+
+    var filteredRuns = historyFilter switch
+    {
+        "clean" => runs.Where(r => r.FailedBees == 0 && string.IsNullOrEmpty(r.Error)).ToList(),
+        "failed" => runs.Where(r => r.FailedBees > 0 || !string.IsNullOrEmpty(r.Error)).ToList(),
+        _ => runs
+    };
+    if (!string.IsNullOrWhiteSpace(historyQuery))
+    {
+        var q = historyQuery.Trim();
+        filteredRuns = filteredRuns
+            .Where(r => r.RunId.Contains(q, StringComparison.OrdinalIgnoreCase)
+                     || r.State.Contains(q, StringComparison.OrdinalIgnoreCase)
+                     || FormatLocalDate(r.StartedUtc).Contains(q, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+}
+
+<div class="page home-page">
+    <section class="home-hero" aria-label="Workspace overview">
+        <div class="home-hero-text">
+            <div class="home-eyebrow @(isRunning ? "is-live" : isFake ? "is-demo" : "")">
+                <i aria-hidden="true"></i>
+                @if (isRunning)
+                {
+                    <span>@(s.Paused ? "Run paused" : "Run in progress")</span>
+                }
+                else if (isFake)
+                {
+                    <span>Demo mode</span>
+                }
+                else
+                {
+                    <span>Workspace ready</span>
+                }
+            </div>
+            <h1>Beesharp</h1>
+            <p class="home-sub mono">
+                @if (!isFake)
+                {
+                    <span>@runs.Count @(runs.Count == 1 ? "stored run" : "stored runs")</span>
+                    <span class="home-dot" aria-hidden="true">·</span>
+                }
+                <span>@Sim.PresetNames.Count @(Sim.PresetNames.Count == 1 ? "preset" : "presets")</span>
+                <span class="home-dot" aria-hidden="true">·</span>
+                <span>@(string.IsNullOrWhiteSpace(Envs.ActiveName) ? "No environment" : $"Env: {Envs.ActiveName}")</span>
+            </p>
+        </div>
+        <div class="home-hero-actions">
+            @if (isRunning)
+            {
+                <button type="button" class="btn btn-secondary" @onclick="OpenOverview">Watch live run</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-secondary" @onclick="OpenCurrentPlan">Open current plan</button>
+                <button type="button" class="btn primary" @onclick="CreateNewPlan">
+                    <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                    <span>New plan</span>
+                </button>
+            }
+        </div>
+    </section>
+
+    <section class="home-spotlight" aria-label="Current status and last run">
+        @* Left spotlight: Active run if running, otherwise ready plan *@
+        @if (isRunning)
+        {
+            <article class="home-card home-card-live" role="button" tabindex="0" @onclick="OpenOverview" @onkeydown="e => OnCardKey(e, OpenOverview)">
+                <div class="home-card-head">
+                    <span class="home-kicker is-live"><i aria-hidden="true"></i>Active run</span>
+                    <span class="home-badge is-live">@(s.Paused ? "Paused" : "Running")</span>
+                </div>
+                <div class="home-card-title">@s.DisplayTitle</div>
+                <div class="home-live-progress">
+                    <div class="home-progress-track"><i style="width:@(liveProgress.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></i></div>
+                    <div class="home-progress-meta mono">
+                        <span>@Format.Time(s.Elapsed) / @Format.Time(plan.DurationSeconds)</span>
+                        <span>@liveInFlight in flight</span>
+                    </div>
+                </div>
+                <div class="home-kpi-row mono">
+                    <div><b>@Format.Num(liveFinished)</b><span>finished</span></div>
+                    <div class="@(liveFailed > 0 ? "bad" : "")"><b>@Format.Num(liveFailed)</b><span>failed</span></div>
+                    <div class="@(liveSlow > 0 ? "slow" : "")"><b>@Format.Num(liveSlow)</b><span>slow</span></div>
+                    <div><b>@plan.Scenarios.Count</b><span>scenarios</span></div>
+                </div>
+                <div class="home-card-foot">
+                    <span class="home-link">Inspect live run →</span>
+                    <button type="button" class="btn btn-sm danger" @onclick="StopRun" @onclick:stopPropagation="true">Stop</button>
+                </div>
+            </article>
+        }
+        else
+        {
+            <article class="home-card" role="button" tabindex="0" @onclick="OpenCurrentPlan" @onkeydown="e => OnCardKey(e, OpenCurrentPlan)">
+                <div class="home-card-head">
+                    <span class="home-kicker">Current status</span>
+                    <span class="home-badge">Idle</span>
+                </div>
+                <div class="home-card-title">@(string.IsNullOrWhiteSpace(Sim.PresetName) ? "New Plan" : Sim.PresetName)</div>
+                <p class="home-card-desc">No run is currently active. Start the loaded plan or build a fresh one.</p>
+                <div class="home-kpi-row mono">
+                    <div><b>@plan.Scenarios.Count</b><span>@(plan.Scenarios.Count == 1 ? "scenario" : "scenarios")</span></div>
+                    <div><b>@Format.Rate(totalPlanRate)</b><span>bees/min</span></div>
+                    <div><b>@Format.Time(plan.DurationSeconds)</b><span>duration</span></div>
+                </div>
+                <div class="home-card-foot">
+                    <span class="home-link">Configure plan →</span>
+                    @if (plan.Scenarios.Count > 0)
+                    {
+                        <button type="button" class="btn btn-sm primary" @onclick="StartAndWatch" @onclick:stopPropagation="true">
+                            <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none" /></svg>
+                            <span>Start run</span>
+                        </button>
+                    }
+                </div>
+            </article>
+        }
+
+        @* Right spotlight: Last completed run *@
+        @if (latestCompleted is { } last)
+        {
+            var okPct = last.TotalBees > 0 ? (last.TotalBees - last.FailedBees) * 100.0 / last.TotalBees : 100.0;
+            var hasIssues = last.FailedBees > 0 || !string.IsNullOrEmpty(last.Error);
+            <article class="home-card" role="button" tabindex="0" @onclick="() => OpenRunAsync(last.RunId)" @onkeydown="e => OnCardKeyAsync(e, () => OpenRunAsync(last.RunId))">
+                <div class="home-card-head">
+                    <span class="home-kicker">Last run</span>
+                    <span class="home-badge @(hasIssues ? "is-bad" : "is-good")">@last.State</span>
+                </div>
+                <div class="home-card-title mono">@FormatLocalDate(last.StartedUtc) <small class="home-ago">@FormatAgo(last.StartedUtc)</small></div>
+                <p class="home-card-desc mono home-run-id">@last.RunId</p>
+                <div class="home-kpi-row mono">
+                    <div class="@(hasIssues ? "bad" : "good")"><b>@okPct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</b><span>ok</span></div>
+                    <div><b>@Format.Num(last.TotalBees)</b><span>bees</span></div>
+                    <div class="@(last.FailedBees > 0 ? "bad" : "")"><b>@Format.Num(last.FailedBees)</b><span>failed</span></div>
+                    <div><b>@Format.Time(last.ElapsedSeconds)</b><span>elapsed</span></div>
+                </div>
+                <div class="home-card-foot">
+                    <span class="home-link">Open run →</span>
+                    <div class="home-card-links" @onclick:stopPropagation="true">
+                        <button type="button" class="btn btn-sm ghost" @onclick='() => OpenRunPageAsync(last.RunId, "calls")'>Calls</button>
+                        <button type="button" class="btn btn-sm ghost" @onclick='() => OpenRunPageAsync(last.RunId, "logs")'>Logs</button>
+                    </div>
+                </div>
+            </article>
+        }
+        else if (isFake && !s.IsIdlePlan)
+        {
+            var fakeFinished = s.Scenarios.Sum(x => x.Finished);
+            var fakeFailed = s.Scenarios.Sum(x => x.Failed);
+            var fakeOk = fakeFinished > 0 ? (fakeFinished - fakeFailed) * 100.0 / fakeFinished : 100.0;
+            <article class="home-card" role="button" tabindex="0" @onclick="OpenOverview" @onkeydown="e => OnCardKey(e, OpenOverview)">
+                <div class="home-card-head">
+                    <span class="home-kicker">Latest simulated run</span>
+                    <span class="home-badge @(fakeFailed > 0 ? "is-bad" : "is-good")">@s.State</span>
+                </div>
+                <div class="home-card-title">@s.DisplayTitle</div>
+                <p class="home-card-desc">In-browser demo data. Switch to Live mode for persisted run history.</p>
+                <div class="home-kpi-row mono">
+                    <div class="@(fakeFailed > 0 ? "bad" : "good")"><b>@fakeOk.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</b><span>ok</span></div>
+                    <div><b>@Format.Num(fakeFinished)</b><span>bees</span></div>
+                    <div class="@(fakeFailed > 0 ? "bad" : "")"><b>@Format.Num(fakeFailed)</b><span>failed</span></div>
+                    <div><b>@Format.Time(s.Elapsed)</b><span>elapsed</span></div>
+                </div>
+                <div class="home-card-foot">
+                    <span class="home-link">Open overview →</span>
+                </div>
+            </article>
+        }
+        else
+        {
+            <article class="home-card home-card-empty">
+                <div class="home-card-head">
+                    <span class="home-kicker">Last run</span>
+                </div>
+                <div class="home-card-title muted">No runs recorded yet</div>
+                <p class="home-card-desc">Once you run a load plan, your latest outcome and historical runs will appear here.</p>
+            </article>
+        }
+    </section>
+
+    @if (Sim.PresetNames.Count > 0)
+    {
+        <section class="home-presets" aria-label="Saved presets">
+            <span class="home-sec-label">Presets</span>
+            <div class="home-preset-pills">
+                @foreach (var pName in Sim.PresetNames)
+                {
+                    var name = pName;
+                    <button type="button" class="home-preset-pill @(string.Equals(name, Sim.PresetName, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
+                            @onclick="() => OpenPreset(name)">
+                        @name
+                    </button>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="home-history" aria-label="Historical runs">
+        <div class="home-history-head">
+            <div class="home-history-title">
+                <h2>Run history</h2>
+                @if (!isFake && !loadingRuns)
+                {
+                    <span class="home-count mono">@filteredRuns.Count</span>
+                }
+            </div>
+            @if (!isFake && runs.Count > 0)
+            {
+                <div class="home-history-tools">
+                    <div class="cl-seg" role="group" aria-label="Filter runs">
+                        <button type="button" class="@(historyFilter == "all" ? "on" : "")" @onclick='() => historyFilter = "all"'>All</button>
+                        <button type="button" class="@(historyFilter == "clean" ? "on" : "")" @onclick='() => historyFilter = "clean"'>Clean</button>
+                        <button type="button" class="bad @(historyFilter == "failed" ? "on" : "")" @onclick='() => historyFilter = "failed"'>Failed</button>
+                    </div>
+                    @if (runs.Count > 6)
+                    {
+                        <input type="search" class="home-search" placeholder="Filter runs…" @bind="historyQuery" @bind:event="oninput" aria-label="Filter historical runs" />
+                    }
+                    <button type="button" class="icon-btn" title="Refresh history" aria-label="Refresh history" @onclick="RefreshHistoryAsync">
+                        <svg class="yt-ico xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8" /><path d="M21 3v5h-5" /></svg>
+                    </button>
+                </div>
+            }
+        </div>
+
+        @if (isFake)
+        {
+            <div class="home-empty">
+                <p class="muted">Run history is stored on the server in <strong>Live</strong> mode.</p>
+            </div>
+        }
+        else if (loadingRuns && runs.Count == 0)
+        {
+            <div class="home-empty">
+                <p class="muted">Loading run history…</p>
+            </div>
+        }
+        else if (filteredRuns.Count == 0)
+        {
+            <div class="home-empty">
+                <p class="muted">@(runs.Count == 0 ? "No historical runs yet." : "No runs match the current filter.")</p>
+            </div>
+        }
+        else
+        {
+            <div class="home-run-list" role="list">
+                @foreach (var r in filteredRuns)
+                {
+                    var run = r;
+                    var isLiveRow = IsActiveRunState(run.State) && string.Equals(run.RunId, ApiRun.CurrentRunId, StringComparison.Ordinal);
+                    var hasFail = run.FailedBees > 0 || !string.IsNullOrEmpty(run.Error);
+                    var okPct = run.TotalBees > 0 ? (run.TotalBees - run.FailedBees) * 100.0 / run.TotalBees : 100.0;
+                    var isOpening = openingRunId == run.RunId;
+
+                    <div class="home-run-row @(isLiveRow ? "is-live" : "") @(isOpening ? "is-loading" : "")"
+                         role="listitem" tabindex="0"
+                         @onclick="() => OpenRunAsync(run.RunId)"
+                         @onkeydown="e => OnCardKeyAsync(e, () => OpenRunAsync(run.RunId))">
+                        <span class="home-run-dot @(isLiveRow ? "live" : hasFail ? "bad" : "good")" aria-hidden="true"></span>
+                        <div class="home-run-when">
+                            <span class="home-run-date mono">@FormatLocalDate(run.StartedUtc)</span>
+                            <span class="home-run-meta mono">@FormatAgo(run.StartedUtc) · @run.RunId</span>
+                        </div>
+                        <span class="home-run-state @(isLiveRow ? "is-live" : hasFail ? "is-bad" : "is-good")">@run.State</span>
+                        <div class="home-run-stats mono">
+                            <span class="@(hasFail ? "bad" : "good")">@okPct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)% ok</span>
+                            <span>@Format.Num(run.TotalBees) bees</span>
+                            @if (run.FailedBees > 0)
+                            {
+                                <span class="bad">@Format.Num(run.FailedBees) failed</span>
+                            }
+                            <span class="muted">@Format.Time(run.ElapsedSeconds)</span>
+                            <span class="muted home-run-logs">@Format.Num(run.TotalLogs) logs</span>
+                        </div>
+                        <div class="home-run-actions" @onclick:stopPropagation="true">
+                            <button type="button" class="btn btn-xs ghost" @onclick='() => OpenRunPageAsync(run.RunId, "calls")'>Calls</button>
+                            <button type="button" class="btn btn-xs ghost" @onclick='() => OpenRunPageAsync(run.RunId, "logs")'>Logs</button>
+                            <span class="home-run-arrow" aria-hidden="true">→</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private List<StoredRunSummary> runs = [];
+    private bool loadingRuns = true;
+    private string historyFilter = "all";
+    private string historyQuery = "";
+    private string? openingRunId;
+    private bool disposed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sim.Changed += OnChanged;
+        DataMode.Changed += OnModeChanged;
+        Envs.Changed += OnChanged;
+        await RefreshHistoryAsync();
+    }
+
+    private async Task RefreshHistoryAsync()
+    {
+        if (DataMode.IsFakeMode)
+        {
+            runs = [];
+            loadingRuns = false;
+            return;
+        }
+
+        loadingRuns = true;
+        try
+        {
+            runs = await ApiRun.ListRunsAsync(limit: 50);
+        }
+        catch
+        {
+            runs = [];
+        }
+        finally
+        {
+            loadingRuns = false;
+        }
+    }
+
+    private void OnChanged()
+    {
+        if (disposed) return;
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OnModeChanged()
+    {
+        if (disposed) return;
+        try
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await RefreshHistoryAsync();
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void OpenOverview()
+    {
+        if (Sim.IsRunning && Sim.Current.IsHistorical)
+            ApiRun.ReturnToLive();
+        Nav.NavigateTo("overview");
+    }
+
+    private void OpenCurrentPlan()
+    {
+        if (!Sim.IsRunning)
+        {
+            if (Sim.Current.IsHistorical) ApiRun.ReturnToLive();
+            else if (!Sim.Current.IsIdlePlan) Sim.EditPlan();
+        }
+        Nav.NavigateTo("overview");
+    }
+
+    private void CreateNewPlan()
+    {
+        if (!Sim.IsRunning)
+        {
+            if (Sim.Current.IsHistorical) ApiRun.ReturnToLive();
+            Sim.ClearEntries();
+        }
+        Nav.NavigateTo("overview");
+    }
+
+    private void StartAndWatch()
+    {
+        if (Sim.Current.IsHistorical) ApiRun.ReturnToLive();
+        Sim.Start();
+        Nav.NavigateTo("overview");
+    }
+
+    private void StopRun() => Sim.Stop();
+
+    private void OpenPreset(string name)
+    {
+        if (!Sim.IsRunning)
+        {
+            if (Sim.Current.IsHistorical) ApiRun.ReturnToLive();
+            Sim.LoadPreset(name);
+        }
+        Nav.NavigateTo("overview");
+    }
+
+    private Task OpenRunAsync(string runId) => OpenRunPageAsync(runId, "overview");
+
+    private async Task OpenRunPageAsync(string runId, string route)
+    {
+        openingRunId = runId;
+        try
+        {
+            if (!DataMode.IsFakeMode && !string.Equals(ApiRun.CurrentRunId, runId, StringComparison.Ordinal))
+                await ApiRun.LoadStoredRunAsync(runId);
+            Nav.NavigateTo(route);
+        }
+        finally
+        {
+            openingRunId = null;
+        }
+    }
+
+    private static void OnCardKey(KeyboardEventArgs e, Action act)
+    {
+        if (e.Key is "Enter" or " ") act();
+    }
+
+    private static Task OnCardKeyAsync(KeyboardEventArgs e, Func<Task> act)
+        => e.Key is "Enter" or " " ? act() : Task.CompletedTask;
+
+    private static bool IsActiveRunState(string state) => state is "Running" or "Paused" or "Preflight" or "Shutdown";
+
+    private static string FormatLocalDate(DateTimeOffset utc)
+    {
+        var local = utc.ToLocalTime();
+        var today = DateTimeOffset.Now.Date;
+        if (local.Date == today) return $"Today · {local:HH:mm:ss}";
+        if (local.Date == today.AddDays(-1)) return $"Yesterday · {local:HH:mm:ss}";
+        return local.ToString("dd MMM · HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatAgo(DateTimeOffset utc)
+    {
+        var span = DateTimeOffset.UtcNow - utc;
+        if (span.TotalSeconds < 60) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+        Sim.Changed -= OnChanged;
+        DataMode.Changed -= OnModeChanged;
+        Envs.Changed -= OnChanged;
+    }
+}

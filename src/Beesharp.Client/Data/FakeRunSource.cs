@@ -147,6 +147,17 @@ public sealed class FakeRunSource : IRunSource
         if (same > 0) config.Label += $" #{same + 1}";
         Plan.Scenarios.Add(config);
         Profiles.Add(FakeProfile.Generic);
+        MarkPlanEdited();
+    }
+
+    public void DuplicateEntry(int index)
+    {
+        if (index < 0 || index >= Plan.Scenarios.Count) return;
+        var copy = Plan.Scenarios[index].Clone();
+        copy.Label = string.IsNullOrWhiteSpace(copy.Label) ? $"{copy.ScenarioId} (copy)" : $"{copy.Label} (copy)";
+        Plan.Scenarios.Insert(index + 1, copy);
+        Profiles.Insert(index + 1, index < Profiles.Count ? Profiles[index] : FakeProfile.Generic);
+        MarkPlanEdited();
     }
 
     public void RemoveEntry(int index)
@@ -154,6 +165,36 @@ public sealed class FakeRunSource : IRunSource
         if (index < 0 || index >= Plan.Scenarios.Count) return;
         Plan.Scenarios.RemoveAt(index);
         Profiles.RemoveAt(index);
+        MarkPlanEdited();
+    }
+
+    public void ClearEntries()
+    {
+        if (Plan.Scenarios.Count == 0 && string.Equals(PresetName, "New Plan", StringComparison.Ordinal)) return;
+        Plan.Scenarios.Clear();
+        Profiles.Clear();
+        MarkPlanEdited();
+    }
+
+    public void RestoreEntries(IReadOnlyList<ScenarioRunConfig> entries)
+    {
+        Plan.Scenarios = entries.Select(e => e.Clone()).ToList();
+        Profiles = entries.Select(_ => FakeProfile.Generic).ToList();
+        MarkPlanEdited();
+    }
+
+    public void EditPlan()
+    {
+        if (IsRunning || Current.IsIdlePlan) return;
+        ResetToIdleSnapshot();
+        Changed?.Invoke();
+    }
+
+    public void MarkPlanEdited()
+    {
+        PresetName = "New Plan";
+        if (!IsRunning) ResetToIdleSnapshot();
+        Changed?.Invoke();
     }
 
     public void SavePreset(string name)
@@ -344,7 +385,9 @@ public sealed class FakeRunSource : IRunSource
 
     private void Fire(int entry, double at)
     {
-        var limit = runPlan.Scenarios[entry].MaxInFlight ?? runPlan.MaxConcurrency;
+        var limit = runPlan.Scenarios[entry].MaxInFlight is > 0
+            ? runPlan.Scenarios[entry].MaxInFlight!.Value
+            : (runPlan.MaxConcurrency > 0 ? runPlan.MaxConcurrency : int.MaxValue);
         if (inFlight[entry] >= limit) return;
         var profile = runProfiles[entry];
 
@@ -548,7 +591,13 @@ public sealed class FakeRunSource : IRunSource
         for (var i = 0; i < n; i++)
             running[i] = pending.Where(p => p.Entry == i).OrderBy(p => p.Sequence).Select(p => new RunningBee(p.Sequence, p.Entry, p.StartedAt, p.Calls)).ToList();
         var steps = runProfiles.Select(p => p.DeclaredSteps).ToArray();
-        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot(), shutdown, preflight, steps);
+        var viewMode = state is FakeRunState.Running or FakeRunState.Paused
+            ? RunViewMode.LiveRun
+            : state == FakeRunState.Finished
+                ? RunViewMode.FinishedRun
+                : RunViewMode.IdlePlan;
+        var title = string.IsNullOrWhiteSpace(PresetName) ? "New Plan" : PresetName;
+        return new RunSnapshot(state, elapsed, runPlan, labels, views, store, running, runtime.Snapshot(), shutdown, preflight, steps, viewMode, title);
     }
 
     // ---------- the fake plan ----------
@@ -637,7 +686,7 @@ public sealed class FakeRunSource : IRunSource
     private void LoadBlackFriday()
     {
         // Short on purpose: the demo run is 30 s, so bees are a few seconds long and rates are generous.
-        Plan = new LoadPlan { DurationSeconds = 30, MaxConcurrency = 40, TimeoutSeconds = 60, ShutdownScriptId = "cleanup" };
+        Plan = new LoadPlan { DurationSeconds = 30, MaxConcurrency = 0, TimeoutSeconds = 60, ShutdownScriptId = "cleanup" };
         Profiles = [];
         void Add(ScenarioRunConfig c, FakeProfile p) { Plan.Scenarios.Add(c); Profiles.Add(p); }
 
@@ -700,7 +749,7 @@ public sealed class FakeRunSource : IRunSource
 
     private FakePreset MakeSmoke()
     {
-        var plan = new LoadPlan { DurationSeconds = 15, MaxConcurrency = 10, TimeoutSeconds = 60 };
+        var plan = new LoadPlan { DurationSeconds = 15, MaxConcurrency = 0, TimeoutSeconds = 60 };
         var profiles = new List<FakeProfile>();
         foreach (var i in new[] { 0, 2 })
         {
